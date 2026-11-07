@@ -39,11 +39,20 @@ export function StormBoard({ stormId, initial, layers, canEdit }: { stormId: str
   };
   useEffect(() => {
     setNow(Date.now());
-    const poll = setInterval(load, 3000);
+    const stopCount = (initial.runs as { stops: unknown[] }[]).reduce((n, r) => n + r.stops.length, 0);
+    const everyMs = stopCount > 300 ? 10000 : stopCount > 100 ? 5000 : 3000;
+    const poll = setInterval(() => {
+      if (document.visibilityState === 'visible') void load();
+    }, everyMs);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     const clock = setInterval(() => setNow(Date.now()), 30000);
     return () => {
       clearInterval(poll);
       clearInterval(clock);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
 

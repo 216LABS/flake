@@ -381,6 +381,71 @@ describe('free plan housekeeping', () => {
 });
 
 describe('job queue', () => {
+  it('companies take turns, so a huge storm cannot hold up a small one', async () => {
+    await drain();
+    const marker = randomUUID();
+    const seen: string[] = [];
+    const handler = async (p: Record<string, unknown>) => { if (p.marker === marker) seen.push(p.who as string); };
+    const old = new Date(Date.now() - 60000);
+    for (let i = 0; i < 30; i++) await enqueue('notify.customer', { marker, who: 'big', tenantId: `big-${marker}` }, { dedupeKey: `fair:${marker}:${i}`, runAt: old });
+    await enqueue('notify.customer', { marker, who: 'small', tenantId: `small-${marker}` }, { dedupeKey: `fair:${marker}:small` });
+    await drainJobs({ 'notify.customer': handler });
+    expect(seen).toHaveLength(31);
+    expect(seen.indexOf('small')).toBeLessThan(4);
+  });
+
+  it('a job that has waited long enough moves up, so low priority work still gets done', async () => {
+    await drain();
+    const marker = randomUUID();
+    const seen: string[] = [];
+    const handler = (name: string) => async (p: Record<string, unknown>) => { if (p.marker === marker) seen.push(name); };
+    await enqueue('report.completion', { marker }, { dedupeKey: `age:${marker}:old`, runAt: new Date(Date.now() - 45 * 60000) });
+    await enqueue('notify.customer', { marker }, { dedupeKey: `age:${marker}:new` });
+    await drainJobs({ 'report.completion': handler('old report'), 'notify.customer': handler('new notice') }, { limit: 1 });
+    expect(seen).toEqual(['old report']);
+    await drain();
+  });
+
+  it('a provider rate limit waits without using up an attempt', async () => {
+    await drain();
+    const key = `limit:${randomUUID()}`;
+    await enqueue('test.limited', { key }, { dedupeKey: key });
+    await drainJobs({ 'test.limited': async () => { throw Object.assign(new Error('slow down'), { retryAfterSeconds: 600 }); } }, { limit: 1 });
+    const [row] = await serviceDb().select().from(job).where(eq(job.dedupe_key, key));
+    expect(row!.attempts).toBe(0);
+    expect(row!.dead_at).toBeNull();
+    expect(Date.parse(row!.run_at!)).toBeGreaterThan(Date.now() + 500000);
+    await serviceDb().execute(sql`update job set done_at = now() where dedupe_key = ${key}`);
+  });
+
+  it('the urgent run leaves everything else for the schedule', async () => {
+    await drain();
+    const marker = randomUUID();
+    const seen: string[] = [];
+    const handler = (name: string) => async (p: Record<string, unknown>) => { if (p.marker === marker) seen.push(name); };
+    await enqueue('report.completion', { marker }, { dedupeKey: `urgent:${marker}:report` });
+    await enqueue('storm.publish_links', { marker }, { dedupeKey: `urgent:${marker}:link` });
+    const handlers = { 'report.completion': handler('report'), 'storm.publish_links': handler('link') };
+    await drainJobs(handlers, { maxLane: 0 });
+    expect(seen).toEqual(['link']);
+    await drainJobs(handlers);
+    expect(seen).toEqual(['link', 'report']);
+  });
+
+  it("a driver's link goes ahead of reports already waiting, and one run clears more than a small batch", async () => {
+    await drain();
+    const marker = randomUUID();
+    const seen: string[] = [];
+    const handler = (name: string) => async (p: Record<string, unknown>) => { if (p.marker === marker) seen.push(name); };
+    const old = new Date(Date.now() - 60000);
+    for (let i = 0; i < 40; i++) await enqueue('report.completion', { marker }, { dedupeKey: `order:${marker}:${i}`, runAt: old });
+    await enqueue('storm.publish_links', { marker }, { dedupeKey: `order:${marker}:link` });
+    const { ran } = await drainJobs({ 'report.completion': handler('report'), 'storm.publish_links': handler('link') });
+    expect(seen[0]).toBe('link');
+    expect(seen).toHaveLength(41);
+    expect(ran).toBeGreaterThanOrEqual(41);
+  });
+
   it('retries with backoff and dead-letters after max attempts', async () => {
     const key = `test:${randomUUID()}`;
     await enqueue('test.fail', { tenantId: randomUUID() }, { dedupeKey: key });

@@ -132,4 +132,7 @@ export const JOB_HANDLERS: Record<string, JobHandler> = {
 
 export const runJobs = (limit?: number) => drainJobs(JOB_HANDLERS, { limit });
 
+/** Right after a request queues something urgent. Only the urgent lane, so the request isn't kept busy with reports. */
+export const runUrgentJobs = () => drainJobs(JOB_HANDLERS, { maxLane: 0, deadlineMs: 20_000 });
+
 export { proof_packet, weather_snapshot };

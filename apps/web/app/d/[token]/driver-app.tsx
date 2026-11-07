@@ -60,7 +60,8 @@ export function DriverApp({ token }: { token: string }) {
   const [run, setRun] = useState<RunData | null>(null);
   const [local, setLocal] = useState<LocalState>(EMPTY);
   const [lang, setLang] = useState<Lang>('en');
-  const [sync, setSync] = useState<Sync>('synced');
+  // Only claim everything has landed once the phone has checked.
+  const [sync, setSync] = useState<Sync>('saved');
   const [dead, setDead] = useState(false);
   const [noCache, setNoCache] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -101,8 +102,10 @@ export function DriverApp({ token }: { token: string }) {
     }
     await kvSet(runKey, data);
     // Once nothing is queued, the server's view of each stop wins over the phone's.
+    const before = generation.current;
     const p = await pending(token);
-    if (p.actions === 0 && Object.keys(localRef.current.statuses).length) saveLocal({ ...localRef.current, statuses: {} });
+    // A tap during that read isn't in the count yet, and clearing now would undo it on screen.
+    if (generation.current === before && p.actions === 0 && Object.keys(localRef.current.statuses).length) saveLocal({ ...localRef.current, statuses: {} });
   }, [runKey, token, saveLocal, flashToast]);
 
   const refresh = useCallback(async () => {
@@ -190,7 +193,9 @@ export function DriverApp({ token }: { token: string }) {
     window.addEventListener('online', onOnline);
     document.addEventListener('visibilitychange', onVisible);
     const sender = setInterval(() => void syncNow(), 15000);
-    const poller = setInterval(() => void refresh(), 8000);
+    const poller = setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh();
+    }, 8000);
     const clock = setInterval(() => setTick((n) => n + 1), 10000);
     return () => {
       window.removeEventListener('online', onOnline);
@@ -251,6 +256,7 @@ export function DriverApp({ token }: { token: string }) {
   };
 
   const apply = async (next: LocalState, actions: Record<string, unknown>[] = [], photo?: { blob: Blob; meta: Record<string, string> }) => {
+    generation.current++;
     await commit({ token, localKey, local: next, actions, photo });
     generation.current++;
     localRef.current = next;

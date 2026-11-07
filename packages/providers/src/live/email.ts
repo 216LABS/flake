@@ -27,7 +27,12 @@ export class LiveEmail implements EmailProvider {
         attachments: msg.attachments?.map((a) => ({ filename: a.filename, content: Buffer.from(a.content).toString('base64') })),
       }),
     });
-    const body = (await res.json()) as { id?: string; message?: string };
+    const body = (await res.json()) as { id?: string; message?: string; name?: string };
+    if (res.status === 429) {
+      // A daily quota won't clear in seconds, so it waits longer than a burst does.
+      const seconds = Number(res.headers.get('retry-after')) || (/quota/i.test(`${body.name} ${body.message}`) ? 3600 : 5);
+      throw Object.assign(new Error(`Resend 429: ${body.message ?? 'rate limited'}`), { retryAfterSeconds: seconds });
+    }
     if (!res.ok) throw new Error(`Resend ${res.status}: ${body.message ?? 'request failed'}`);
     return { id: body.id ?? 'unknown', status: 'sent' };
   }

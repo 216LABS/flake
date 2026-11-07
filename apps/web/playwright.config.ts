@@ -6,7 +6,7 @@ const file = resolve(process.cwd(), '.env.local');
 const fromFile = existsSync(file)
   ? Object.fromEntries(readFileSync(file, 'utf8').split(/\r?\n/).map((l) => l.match(/^([A-Z_0-9]+)=(.*)$/)).filter(Boolean).map((m) => [m![1]!, m![2]!]))
   : {};
-const PORT = 3100;
+const PORT = Number(process.env.E2E_PORT ?? 3100);
 const env = { ...process.env, ...fromFile, APP_ENV: 'test', NEXT_PUBLIC_APP_ENV: 'test', PROVIDERS_MODE: 'mock', APP_BASE_URL: `http://localhost:${PORT}` } as Record<string, string>;
 for (const [k, v] of Object.entries(env)) process.env[k] = v;
 
@@ -30,7 +30,7 @@ export default defineConfig({
     { name: 'webkit-driver', testMatch: /driver\.spec/, grep: /offline: 3 stops/, use: { ...devices['iPhone 13'] } },
   ],
   webServer: {
-    command: 'pnpm build && pnpm exec next start -p 3100',
+    command: `pnpm build && pnpm exec next start -p ${PORT}`,
     url: `http://localhost:${PORT}/api/tiles/mock/0/0/0`,
     timeout: 480_000,
     reuseExistingServer: false,

@@ -339,6 +339,13 @@ describe('live clients', () => {
     expect(await from("Peña's <Plowing>")).toBe("Peña's Plowing <n@flake.test>");
     expect(await from('()')).toBe('n@flake.test');
   });
+  it('reports a rate limit as wait and retry, and a daily quota as a longer wait', async () => {
+    const limited = (status: number, body: object, headers = {}) => new LiveEmail('k', 'n@flake.test', (async () => new Response(JSON.stringify(body), { status, headers })) as typeof fetch);
+    const send = { fromName: 'A', to: 'a@b.c', subject: 's', text: 't', idempotencyKey: 'abc' };
+    await expect(limited(429, { message: 'Too many requests' }).send(send)).rejects.toMatchObject({ retryAfterSeconds: 5 });
+    await expect(limited(429, { message: 'Too many requests' }, { 'retry-after': '30' }).send(send)).rejects.toMatchObject({ retryAfterSeconds: 30 });
+    await expect(limited(429, { name: 'daily_quota_exceeded', message: 'You have reached your daily email sending quota' }).send(send)).rejects.toMatchObject({ retryAfterSeconds: 3600 });
+  });
   it('takes the sender address however EMAIL_FROM was written', async () => {
     for (const written of ['n@flake.test', ' n@flake.test\n', '"n@flake.test"', 'Flake <n@flake.test>', '"Flake" <n@flake.test> ']) {
       let sent = '';

@@ -95,6 +95,18 @@ Environment variables for this free test deployment:
 
 `NEXT_PUBLIC_*` values are built into the page, so redeploy after changing them. Feature keys beyond email (Stripe, Twilio, Sentry, parcel URLs) are in Real production below. Until one is set, that feature refuses and says so. On this staging deployment, Stripe and SMS stay mock.
 
+### How background jobs run
+
+The queue needs no extra service. `pg_cron` calls `/api/cron/jobs` each minute, and a run keeps going for up to 50 seconds while there is work.
+
+- **Lanes.** Route links and alerts go first, then customer notices, then reports, then photos and proof packets. A job moves up one lane for every 10 minutes it waits.
+- **Fair turns.** Inside a lane, companies take turns.
+- **Instant urgent work.** Route links and alerts run right after the request that queued them, so they don't wait for the next minute.
+- **Adaptive speed.** A run starts one job at a time and works up to 4 at once, or to `DB_POOL_MAX` minus one if that is lower. Any failure drops it back to one.
+- **Rate limits.** A 429 from Resend reschedules the job without using up an attempt.
+
+Each finished visit can send a customer two emails, so Resend's free 100 a day runs out at about 50 visits. Queued emails then wait and retry each hour.
+
 ### Optional: push alerts
 
 Web Push needs no account and costs nothing. Until the keys are set, Settings, Alerts says push is off and alerts go by email.
