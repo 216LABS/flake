@@ -11,5 +11,5 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   return data as T;
 }
 
-export const money = (cents: number | null | undefined) => (cents === null || cents === undefined ? '-' : `$${(cents / 100).toFixed(2)}`);
+export const money = (cents: number | null | undefined) => (cents === null || cents === undefined ? '-' : `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 export const dollarsToCents = (v: string | number) => Math.round(Number(v) * 100);

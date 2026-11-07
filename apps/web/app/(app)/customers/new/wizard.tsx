@@ -192,9 +192,9 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
             <div><Label htmlFor="billing">Billing</Label>
               <Select id="billing" value={c.billing_mode} onChange={(e) => setC({ ...c, billing_mode: e.target.value })}><option value="card_on_file">Card on file</option><option value="ach_on_file">Bank (ACH) on file</option><option value="invoice_net30">Net-30 invoice</option><option value="manual">Manual</option></Select>
             </div>
-            <div><Label htmlFor="contact">Contact</Label><Input id="contact" value={c.contact_name} onChange={(e) => setC({ ...c, contact_name: e.target.value })} /></div>
+            <div><Label htmlFor="contact">Contact name</Label><Input id="contact" value={c.contact_name} onChange={(e) => setC({ ...c, contact_name: e.target.value })} /></div>
             <div><Label htmlFor="email">Email</Label><Input id="email" type="email" data-testid="c-email" value={c.email} onChange={(e) => setC({ ...c, email: e.target.value })} /></div>
-            <div><Label htmlFor="phone">Mobile (+1...)</Label><Input id="phone" placeholder="+12165550123" value={c.phone_e164} onChange={(e) => setC({ ...c, phone_e164: e.target.value })} /></div>
+            <div><Label htmlFor="phone">Mobile</Label><Input id="phone" type="tel" autoComplete="off" placeholder="216-555-0123" value={c.phone_e164} onChange={(e) => setC({ ...c, phone_e164: e.target.value })} /></div>
           </div>
         ) : null}
         {step === 1 ? (
@@ -285,7 +285,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
         ) : null}
         {error ? <p className="mt-3 text-sm text-red-700" role="alert">{error}</p> : null}
         <div className="mt-6 flex justify-between">
-          <Button variant="ghost" disabled={step === firstStep} onClick={() => setStep(step - 1)}>Back</Button>
+          {step > firstStep ? <Button variant="ghost" onClick={() => setStep(step - 1)}>Back</Button> : <span />}
           {step < STEPS.length - 1 ? <Button variant="accent" disabled={!canNext} data-testid="next" onClick={() => setStep(step + 1)}>Next</Button> : <Button variant="accent" disabled={busy} data-testid="send-quote" onClick={() => void finish()}>Send quote</Button>}
         </div>
       </Card>

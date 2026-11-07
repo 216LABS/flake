@@ -16,6 +16,16 @@ async function photoLink(tenantId: string, visitId: string): Promise<string | nu
   return p ? shortLink(tenantId, `photo:${p.id}`) : null;
 }
 
+/**
+ * The customer's message links the photos, and on a weak signal they land after the Done. Give them a while, then send
+ * anyway: a message can't wait forever on a photo that may never come.
+ */
+async function holdForPhotos(p: { tenantId: string; visitId: string; photosComing?: number; queuedAt?: number }) {
+  if (!p.photosComing || !p.queuedAt || Date.now() - p.queuedAt > 10 * 60000) return;
+  const photos = await serviceDb().select({ id: visit_photo.id }).from(visit_photo).where(and(eq(visit_photo.tenant_id, p.tenantId), eq(visit_photo.visit_id, p.visitId)));
+  if (photos.length < p.photosComing) throw Object.assign(new Error('Waiting for the driver\'s photos'), { retryAfterSeconds: 30, notAFailure: true });
+}
+
 /** The driver tapped Undo after this job was queued, so nothing should go out about this visit. */
 async function isVoided(tenantId: string, visitId: string) {
   const rows = await serviceDb().select({ id: visit_correction.id }).from(visit_correction).where(and(eq(visit_correction.tenant_id, tenantId), eq(visit_correction.visit_id, visitId), eq(visit_correction.field, 'voided')));
@@ -110,7 +120,10 @@ export const JOB_HANDLERS: Record<string, JobHandler> = {
   'storm.publish_links': (p) => sendRunLink(p.tenantId, p.runId),
   'storm.late_check': async () => void (await lateCheck()),
   'notify.customer': (p) => notifyCustomer(p as Parameters<typeof notifyCustomer>[0]),
-  'notify.visit_done': (p) => visitDone(p.tenantId, p.visitId),
+  'notify.visit_done': async (p) => {
+    await holdForPhotos(p as Parameters<typeof holdForPhotos>[0]);
+    await visitDone(p.tenantId, p.visitId);
+  },
   'notify.push': (p) => sendOfficePush(p.tenantId, p.msg),
   'notify.party': async (p) => {
     const [t] = await serviceDb().select().from(tenant).where(eq(tenant.id, p.tenantId));
@@ -124,7 +137,10 @@ export const JOB_HANDLERS: Record<string, JobHandler> = {
   'billing.charge': (p) => chargeDraft(p.tenantId, p.draftId, p.attempt),
   'billing.installments': async () => void (await billInstallments()),
   'proof.render': async (p) => void (await renderProof(p as Parameters<typeof renderProof>[0])),
-  'report.completion': (p) => completionReport(p.tenantId, p.visitId),
+  'report.completion': async (p) => {
+    await holdForPhotos(p as Parameters<typeof holdForPhotos>[0]);
+    await completionReport(p.tenantId, p.visitId);
+  },
   'photo.process': (p) => processPhoto(p.tenantId, p.photoId),
   'sms.tollfree_submit': (p) => submitTollFree(p.tenantId, decryptToken(p.ein)),
   'sms.mock_approve': (p) => setTollFreeStatus({ tenantId: p.tenantId }, 'approved', null),

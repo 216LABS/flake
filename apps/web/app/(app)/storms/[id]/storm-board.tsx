@@ -17,7 +17,7 @@ function since(iso: string | null, now: number) {
 }
 const dash = (v: number | null, u = '"') => (v === null ? 'unavailable' : `${v}${u}`);
 
-export function StormBoard({ stormId, initial, layers, canEdit }: { stormId: string; initial: any; layers: TileLayers; canEdit: boolean }) {
+export function StormBoard({ stormId, initial, layers, canEdit, canText }: { stormId: string; initial: any; layers: TileLayers; canEdit: boolean; canText: boolean }) {
   const router = useRouter();
   const [live, setLive] = useState<any>(initial);
   const [now, setNow] = useState(Date.parse(initial.storm.started_at));
@@ -118,7 +118,7 @@ export function StormBoard({ stormId, initial, layers, canEdit }: { stormId: str
         </div>
       </Card>
 
-      {editable ? (
+      {editable && canText ? (
         <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
           <span className="text-slate-600">Ask drivers by text, reply YES or NO, plowing expected at</span>
           <Input aria-label="Expected start time" className="h-8 w-28" placeholder="4:00 AM" value={calloutTime} data-testid="callout-time" onChange={(e) => setCalloutTime(e.target.value)} />
@@ -191,6 +191,7 @@ export function StormBoard({ stormId, initial, layers, canEdit }: { stormId: str
                     {live.crew.map((c: any) => <option key={c.id} value={c.id}>{c.name}{c.kind === 'sub' ? ' (sub)' : ''}</option>)}
                   </Select>
                 ) : null}
+                {r.link && r.crew && !r.crew.reachable ? <p className="mt-1 text-xs font-medium text-amber-800" data-testid="no-reach">We can&apos;t text or email {r.crew.name}, so they don&apos;t have this route. Show them the QR code.</p> : null}
                 {r.link ? <Button size="sm" variant="ghost" className="-ml-3" data-testid="show-link" onClick={() => showLink(r)}>QR / copy link</Button> : null}
               </header>
               <ul className="space-y-2">
@@ -218,7 +219,7 @@ export function StormBoard({ stormId, initial, layers, canEdit }: { stormId: str
             </section>
           ))}
         </div>
-        <aside className="w-full shrink-0 lg:w-72">
+        <aside className={cn('order-first w-full shrink-0 lg:order-none lg:block lg:w-72', !live.alerts.length && 'hidden')}>
           <Card>
             <h2 className="font-semibold">Alerts</h2>
             {live.alerts.length ? (

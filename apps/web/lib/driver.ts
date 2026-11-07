@@ -5,10 +5,11 @@ import type { ContractService } from '@flake/core/pricing';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { getBlob, putBlob, signedUploadUrl } from './blob';
 import { log } from './log';
-import { queuePush } from './messaging';
+import { notifyOffice, queuePush } from './messaging';
 import { HttpError } from './http';
 import { enqueue } from './jobs';
 import { baseUrl } from './env';
+import { getSetting } from './providers';
 import { hashToken, sha256Hex } from './tokens';
 
 export const UNDO_WINDOW_MS = 2 * 60 * 1000;
@@ -20,20 +21,39 @@ export interface RunScope {
   storm: typeof storm.$inferSelect;
   crew: typeof crew_member.$inferSelect | null;
   tenant: typeof tenant.$inferSelect;
+  /** Set when the link has been revoked or expired, and this request is only delivering earlier work. */
+  deadAt: string | null;
 }
 
 /** Token to run. Unknown, revoked and expired links all read the same to the driver: ask for a new one. */
-export async function resolveToken(token: string): Promise<RunScope> {
+/** Replacing a link overwrites its token, so the old one is remembered here to let its queued work in. */
+export const retiredLinkKey = (hash: string) => `retired_link:${hash}`;
+
+/** A phone can be out of signal a long time. Past this, a dead link's queued work is refused. */
+const UPLOAD_GRACE_MS = 7 * 24 * 3600 * 1000;
+/** Phone clocks drift, so work stamped just after the link died still counts as before it. */
+const CLOCK_SLACK_MS = 10 * 60 * 1000;
+
+/**
+ * A dead link can't start new work or see the route. With forUpload, it can still deliver what the driver did before
+ * it died: revoking a link must not throw away a plowed lot's only record.
+ */
+export async function resolveToken(token: string, opts: { forUpload?: boolean } = {}): Promise<RunScope> {
   const db = serviceDb();
-  const [row] = await db.select({ run: storm_run, storm, tenant, crew: crew_member }).from(storm_run)
+  const hash = hashToken(token);
+  const find = (where: ReturnType<typeof eq>) => db.select({ run: storm_run, storm, tenant, crew: crew_member }).from(storm_run)
     .innerJoin(storm, eq(storm.id, storm_run.storm_id))
     .innerJoin(tenant, eq(tenant.id, storm_run.tenant_id))
     .leftJoin(crew_member, eq(crew_member.id, storm_run.crew_id))
-    .where(eq(storm_run.link_token_hash, hashToken(token)));
-  const expired = row && Date.parse(row.run.link_expires_at) < Date.now();
-  if (!row || row.run.link_revoked_at || expired) throw new HttpError(410, 'This link is no longer active', 'link_dead');
+    .where(where);
+  let [row] = await find(eq(storm_run.link_token_hash, hash));
+  const retired = !row && opts.forUpload ? await getSetting<{ runId: string; at: string }>(retiredLinkKey(hash)) : null;
+  if (retired) [row] = await find(eq(storm_run.id, retired.runId));
+  const deadAt = row ? (retired?.at ?? row.run.link_revoked_at ?? (Date.parse(row.run.link_expires_at) < Date.now() ? row.run.link_expires_at : null)) : null;
+  if (!row || (deadAt && (!opts.forUpload || Date.now() - Date.parse(deadAt) > UPLOAD_GRACE_MS))) throw new HttpError(410, 'This link is no longer active', 'link_dead');
   return {
     scope: driverScope(db, { tenantId: row.run.tenant_id, runId: row.run.id, crewId: row.run.crew_id, stormId: row.run.storm_id }),
+    deadAt,
     run: row.run,
     storm: row.storm,
     crew: row.crew,
@@ -89,6 +109,7 @@ function setStop(tx: Tx, rs: RunScope, stopId: string, status: Stop['status'], o
 export async function processAction(rs: RunScope, a: DriverAction): Promise<Ack> {
   const { tenantId, runId, crewId, stormId } = rs.scope;
   if (!crewId) return { client_uuid: a.client_uuid, status: 'rejected', reason: 'no_crew' };
+  if (rs.deadAt && Date.parse(a.at) > Date.parse(rs.deadAt) + CLOCK_SLACK_MS) return { client_uuid: a.client_uuid, status: 'rejected', reason: 'link_dead' };
   const stop = a.run_stop_id ? await rs.scope.stop(a.run_stop_id) : null;
   if (a.run_stop_id && !stop) return { client_uuid: a.client_uuid, status: 'rejected', reason: 'out_of_scope' };
   const [st] = stop ? await serviceDb().select().from(site).where(and(eq(site.tenant_id, tenantId), eq(site.id, stop.site_id))) : [];
@@ -141,8 +162,8 @@ export async function processAction(rs: RunScope, a: DriverAction): Promise<Ack>
         }).where(eq(visit.id, v.id));
         await setStop(tx, rs, stop!.id, 'done');
         after.push(async () => {
-          await enqueue('notify.visit_done', { tenantId, visitId: v.id }, { dedupeKey: `done:${v.id}`, runAt: new Date(Date.now() + 20000) });
-          await enqueue('report.completion', { tenantId, visitId: v.id }, { dedupeKey: `report:${v.id}`, runAt: new Date(Date.now() + 60000) });
+          await enqueue('notify.visit_done', { tenantId, visitId: v.id, photosComing: a.photos_coming, queuedAt: Date.now() }, { dedupeKey: `done:${v.id}`, runAt: new Date(Date.now() + 20000) });
+          await enqueue('report.completion', { tenantId, visitId: v.id, photosComing: a.photos_coming, queuedAt: Date.now() }, { dedupeKey: `report:${v.id}`, runAt: new Date(Date.now() + 60000) });
         });
         break;
       }
@@ -193,6 +214,15 @@ export async function processActions(rs: RunScope, actions: unknown[]): Promise<
     }
   }
   for (const a of acks) if (a.status === 'rejected') log.info('driver action rejected', { tenant_id: rs.scope.tenantId, run: rs.scope.runId, reason: a.reason });
+  // The office turned this link off, so it should hear that work still came in on it.
+  if (rs.deadAt && acks.some((a) => a.status === 'ok')) {
+    await notifyOffice(rs.tenant, {
+      headline: `${rs.crew?.name ?? 'A driver'}'s work arrived after their link was turned off. Please check it.`,
+      link: `${baseUrl()}/storms/${rs.scope.stormId}`,
+      key: `late_upload:${rs.scope.runId}`,
+      related: { storm_id: rs.scope.stormId },
+    });
+  }
   return acks;
 }
 

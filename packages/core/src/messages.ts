@@ -36,13 +36,14 @@ export type InboundKind = 'stop' | 'start' | 'help' | 'yes' | 'no' | 'other';
 
 /** YES doubles as Twilio's opt-back-in word, so it's only a call-out reply when the number is opted in. */
 export function classifyInbound(body: string, optedOut: boolean): InboundKind {
-  const word = body.trim().toUpperCase();
+  // People type "No." and "yes!". Only the whole message counts, because "no problem" means yes.
+  const word = body.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim();
   if (STOP.has(word)) return 'stop';
   if (word === 'HELP' || word === 'INFO') return 'help';
   if (optedOut && START.has(word)) return 'start';
   if (word === 'START' || word === 'UNSTOP') return 'start';
-  if (word === 'YES' || word === 'Y') return 'yes';
-  if (word === 'NO' || word === 'N') return 'no';
+  if (['YES', 'Y', 'YEP', 'YEAH', 'YUP', 'OK', 'OKAY', 'SURE'].includes(word)) return 'yes';
+  if (['NO', 'N', 'NOPE'].includes(word)) return 'no';
   return 'other';
 }
 

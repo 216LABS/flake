@@ -1,11 +1,12 @@
-import { and, crew_member, eq, serviceDb, sms_consent, sql, tenant } from '@flake/db';
+import { and, crew_member, customer, eq, serviceDb, sms_consent, sql, tenant } from '@flake/db';
 import { classifyInbound, renderTemplate } from '@flake/core/messages';
 import { MockSms } from '@flake/providers';
 import { baseUrl } from './env';
 import { HttpError } from './http';
 import { enqueue } from './jobs';
+import { notifyOffice } from './messaging';
 import { getProviders } from './providers';
-import { encryptToken } from './tokens';
+import { encryptToken, sha256Hex } from './tokens';
 
 export const SAMPLE_MESSAGES = (company: string) => [
   renderTemplate('crew_link', { company, route: 'West', n: 12, link: `${baseUrl()}/s/abc123` }),
@@ -100,6 +101,13 @@ export async function handleInboundSms(to: string, from: string, body: string): 
     await db.insert(sms_consent).values({ tenant_id: t.id, phone_e164: from, opted_in_at: now, opted_in_source: 'sms_start' }).onConflictDoUpdate({ target: [sms_consent.tenant_id, sms_consent.phone_e164], set: { opted_out_at: null, opted_in_at: now, opted_in_source: 'sms_start' } });
   } else if (kind === 'yes' || kind === 'no') {
     await db.update(crew_member).set({ callout_reply: kind.toUpperCase(), callout_reply_at: now }).where(and(eq(crew_member.tenant_id, t.id), eq(crew_member.phone_e164, from)));
+  }
+  if (kind === 'other' && body.trim()) {
+    // Someone wrote to us in their own words. Only known numbers, so spam doesn't reach the office.
+    const [c] = await db.select({ name: crew_member.name }).from(crew_member).where(and(eq(crew_member.tenant_id, t.id), eq(crew_member.phone_e164, from)));
+    const [k] = c ? [] : await db.select({ name: customer.name }).from(customer).where(and(eq(customer.tenant_id, t.id), eq(customer.phone_e164, from)));
+    const name = c?.name ?? k?.name;
+    if (name) await notifyOffice(t, { headline: `Text from ${name}: ${body.replace(/\s+/g, ' ').trim().slice(0, 200)}`, link: `${baseUrl()}/dashboard`, key: `inbound:${from}:${sha256Hex(`${body}:${now.slice(0, 16)}`)}` });
   }
   const reply = kind === 'help' ? renderTemplate('help', { company: t.name, phone: t.contact_phone ?? 'your dispatcher' }) : null;
   return { kind, reply };

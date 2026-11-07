@@ -12,7 +12,7 @@ export default function Home() {
     <>
       <section className="mx-auto max-w-6xl px-4 py-16">
         <h1 className="max-w-3xl text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl">Your drivers tap a text link, your customers get proof, and you get paid the night of the storm.</h1>
-        <p className="mt-4 max-w-2xl text-lg text-slate-700">Snow plow operations software for companies with 1 to 25 trucks: weather-triggered dispatch, a no-install driver check-in, automatic proof of service and one-click billing.</p>
+        <p className="mt-4 max-w-2xl text-lg text-slate-700">Snow plow operations software for companies with 1 to 25 trucks: weather alerts that tell you when to roll, a no-install driver check-in, automatic proof of service and one-click billing.</p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link href="/login" className={buttonVariants({ variant: 'accent', size: 'lg' })}>Start free</Link>
           <Link href="/pricing" className={buttonVariants({ variant: 'outline', size: 'lg' })}>See pricing</Link>

@@ -96,7 +96,7 @@ export function BillingReview({ stormId, initial, canExport, showFees }: { storm
               </ul>
             ) : null}
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-              <span>{showFees ? `Owner only. Flake fee ${money(r.fee_cents)}. Estimated Stripe fee ${money(r.stripe_fee_cents)}. ` : ''}{r.billing_mode.replace(/_/g, ' ')}.</span>
+              <span>{showFees ? `Only owners see this: Flake fee ${money(r.fee_cents)}. Estimated Stripe fee ${money(r.stripe_fee_cents)}. ` : ''}{r.billing_mode.replace(/_/g, ' ')}.</span>
               {r.status === 'draft' ? <Button size="sm" variant="outline" disabled={busy} data-testid="approve-one" onClick={() => run(() => api('/api/billing/approve', { body: { draftIds: [r.id] } }))}>Approve</Button> : null}
             </div>
           </Card>

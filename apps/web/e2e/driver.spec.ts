@@ -24,6 +24,37 @@ async function doStop(page: Page, firstStop: boolean) {
   await expect(page.getByTestId('progress')).not.toHaveText(before!);
 }
 
+test('a link revoked while the driver has no signal still delivers the work done before it, and nothing after', async ({ page, context }) => {
+  await login(page);
+  const { id: stormId, runs } = await startStorm(page.request, `Revoked ${Date.now()}`, ['West Lakewood']);
+  const run = runs[0]!;
+  await page.goto(run.link);
+  await expect(page.getByTestId('next-stop')).toBeVisible();
+  await waitOfflineReady(page);
+
+  await context.setOffline(true);
+  await doStop(page, true);
+  expect((await page.request.post(`/api/runs/${run.id}/revoke`)).ok()).toBe(true);
+  await context.setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+
+  await expect.poll(async () => (await sql`select count(*)::int as n from visit_photo p join visit v on v.id = p.visit_id where v.storm_id = ${stormId}`)[0]!.n, { timeout: 60000 }).toBe(2);
+  const visits = await sql`select departed_device_at from visit where storm_id = ${stormId}`;
+  expect(visits).toHaveLength(1);
+  expect(visits[0]!.departed_device_at).toBeTruthy();
+  await expect(page.getByTestId('link-dead')).toBeVisible();
+  await expect(page.getByTestId('link-dead-body')).toContainText('Ask your dispatcher');
+
+  // The office hears about it.
+  await expect.poll(async () => (await sql`select count(*)::int as n from message_log where template = 'owner_alert' and idempotency_key like ${`%late_upload:${run.id}%`}`)[0]!.n, { timeout: 30000 }).toBeGreaterThan(0);
+
+  // A dead link can't add anything new or read the route.
+  const token = new URL(run.link).pathname.split('/').pop()!;
+  const later = await page.request.post(`/api/d/${token}/actions`, { data: { actions: [{ client_uuid: randomUUID(), at: new Date(Date.now() + 3600000).toISOString(), kind: 'arrive', run_stop_id: run.stops[1]!.id, visit_client_uuid: randomUUID(), gps: null }] } });
+  expect((await later.json()).acks[0].status).toBe('rejected');
+  expect((await page.request.get(`/api/d/${token}/run`)).status()).toBe(410);
+});
+
 test('offline: 3 stops with photos, a reload, then online: everything lands exactly once', async ({ page, context }) => {
   await login(page);
   const { id: stormId, runs } = await startStorm(page.request, `Offline ${Date.now()}`, ['West Lakewood']);

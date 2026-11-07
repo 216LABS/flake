@@ -175,7 +175,7 @@ test('settings: rate card, Stripe onboarding in mock, crew invite with opt-in, S
   await page.getByTestId('tab-crew').click();
   const name = `Invited ${Date.now()}`;
   await page.getByTestId('crew-name').fill(name);
-  await page.getByLabel('Mobile (+1...)').fill('+12165550155');
+  await page.getByLabel('Mobile').fill('+12165550155');
   await page.getByTestId('crew-invite').click();
   const invite = await page.getByTestId('invite-url').inputValue();
 

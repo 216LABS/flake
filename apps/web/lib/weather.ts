@@ -8,7 +8,7 @@ import { putBlob } from './blob';
 import { baseUrl } from './env';
 import { enqueue } from './jobs';
 import { log } from './log';
-import { queueNotify, queuePush } from './messaging';
+import { notifyOffice } from './messaging';
 import { getProviders, getSetting, setSetting, weatherNow } from './providers';
 import { sha256Hex } from './tokens';
 
@@ -154,14 +154,9 @@ const areaName = (addresses: string[]) => {
 };
 
 async function notifyOwners(t: typeof tenant.$inferSelect, alertId: string, headline: string) {
-  const owners = (await serviceDb().execute(sql`
-    select u.email from membership m join auth.users u on u.id = m.user_id
-    where m.tenant_id = ${t.id} and m.role in ('owner','dispatcher') and u.email is not null`)) as unknown as { email: string }[];
   const link = `${baseUrl()}/alerts/${alertId}`;
   const related = { alert_id: alertId };
-  await queuePush(t.id, { title: 'Flake trigger alert', body: headline, url: `/alerts/${alertId}`, key: `alert:${alertId}`, related });
-  for (const o of owners) await queueNotify(t.id, { email: o.email }, { template: 'owner_alert', vars: { headline, link }, subject: headline, key: `alert:${alertId}:${o.email}`, related });
-  if (t.contact_phone) await queueNotify(t.id, { phone: t.contact_phone }, { template: 'owner_alert', vars: { headline, link }, subject: headline, key: `alert:${alertId}:sms`, related });
+  return notifyOffice(t, { headline, link, key: `alert:${alertId}`, related });
 }
 
 /** trigger.evaluate: ADDENDUM_WEATHER section 3 for one tenant. Creates alerts only, never a dispatch. */

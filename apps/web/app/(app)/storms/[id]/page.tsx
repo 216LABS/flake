@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requirePage } from '@/lib/auth';
 import { HttpError, isUuid } from '@/lib/http';
+import { canTextFrom } from '@/lib/messaging';
 import { getProviders } from '@/lib/providers';
 import { stormLive } from '@/lib/storms';
 import { StormBoard } from './storm-board';
@@ -25,7 +26,7 @@ export default async function StormPage({ params }: { params: Promise<{ id: stri
         <Link className={buttonVariants({ variant: 'outline' })} href={`/billing?storm=${id}`}>Billing</Link>
         <Link className={buttonVariants({ variant: 'outline' })} href={`/storms/${id}/pay`}>Sub pay</Link>
       </>} />
-      <StormBoard stormId={id} initial={JSON.parse(JSON.stringify(live))} layers={tiles.layers()} canEdit={ctx.role !== 'viewer'} />
+      <StormBoard stormId={id} initial={JSON.parse(JSON.stringify(live))} layers={tiles.layers()} canEdit={ctx.role !== 'viewer'} canText={canTextFrom(ctx.tenant)} />
     </>
   );
 }

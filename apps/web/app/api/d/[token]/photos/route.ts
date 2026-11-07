@@ -7,7 +7,7 @@ const MAX_BYTES = 30 * 1024 * 1024;
 export const POST = route<{ params: Promise<{ token: string }> }>(async (req, { params }) => {
   const { token } = await params;
   rateLimit(`d:${clientIp(req) ?? token.slice(0, 12)}`, 600, 60000);
-  const rs = await resolveToken(token);
+  const rs = await resolveToken(token, { forUpload: true });
   const form = await req.formData();
   const file = form.get('file');
   if (!(file instanceof Blob)) throw new HttpError(422, 'file is required');

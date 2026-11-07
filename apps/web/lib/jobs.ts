@@ -112,8 +112,8 @@ export async function drainJobs(handlers: Record<string, JobHandler>, opts: { li
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      log.error('job failed', err, { job_id: row.id, kind: row.kind, tenant_id: row.payload.tenantId });
-      const wait = (err as { retryAfterSeconds?: number }).retryAfterSeconds;
+      const { retryAfterSeconds: wait, notAFailure } = err as { retryAfterSeconds?: number; notAFailure?: boolean };
+      if (!notAFailure) log.error('job failed', err, { job_id: row.id, kind: row.kind, tenant_id: row.payload.tenantId });
       if (wait) {
         // The provider said "not yet". That says nothing about the job, so it doesn't use up an attempt.
         await serviceDb().execute(sql`update job set attempts = attempts - 1, run_at = now() + make_interval(secs => ${wait}), locked_until = null, last_error = ${message} where id = ${row.id}`);
@@ -123,7 +123,7 @@ export async function drainJobs(handlers: Record<string, JobHandler>, opts: { li
         const delay = backoffSeconds(row.attempts);
         await serviceDb().execute(sql`update job set run_at = now() + make_interval(secs => ${delay}), locked_until = null, last_error = ${message} where id = ${row.id}`);
       }
-      return false;
+      return Boolean(notAFailure);
     }
   };
 

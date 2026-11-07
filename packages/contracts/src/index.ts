@@ -171,6 +171,8 @@ export const driverAction = z.discriminatedUnion('kind', [
     depth_in: z.number().min(0).max(120).nullable().optional(),
     salt: saltEntries.nullable().optional(),
     gps,
+    /** Photos the phone took for this visit, which upload after this action. */
+    photos_coming: z.number().int().min(0).max(10).optional(),
   }),
   z.object({
     ...baseAction,

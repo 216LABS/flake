@@ -183,6 +183,46 @@ test('roles: dispatchers run storms but not settings, viewers only look, nobody 
   await page.waitForURL('**/login');
 });
 
+test('texts: natural replies count, free-text reaches the office, and the board says who cannot be reached', async ({ page }) => {
+  await login(page);
+  const phone = `+1216555${String(1000 + Math.floor(Math.random() * 8999))}`;
+  const crew = await (await page.request.post('/api/crew', { data: { name: `Reach ${Date.now()}`, kind: 'employee', phone_e164: phone } })).json();
+  const { id: stormId, runs } = await startStorm(page.request, `Reach ${Date.now()}`, ['West Lakewood']);
+  const run = runs[0]!;
+  expect((await page.request.patch(`/api/runs/${run.id}`, { data: { crew_id: crew.id } })).ok()).toBe(true);
+
+  // Never agreed to texts and has no email, so nothing can reach them. The office has to know.
+  await page.goto(`/storms/${stormId}`);
+  const column = page.getByTestId('run-column').filter({ hasText: crew.name });
+  await expect(column.getByTestId('no-reach')).toBeVisible();
+
+  // After agreeing, the warning goes.
+  const invite = await page.request.post(`/api/crew/${crew.id}/invite`);
+  const token = new URL((await invite.json()).invite_url).pathname.split('/').pop();
+  expect((await page.request.post(`/api/join/${token}`, { data: { consent: true } })).ok()).toBe(true);
+  await page.reload();
+  await expect(page.getByTestId('stop-card').first()).toBeVisible();
+  await expect(column.getByTestId('no-reach')).toHaveCount(0);
+
+  const send = async (body: string) => (await page.request.post('/api/dev/sms', { data: { from: phone, body } })).json();
+  const reply = async () => (await (await page.request.get(`/api/storms/${stormId}/live`)).json()).runs.find((r: { id: string }) => r.id === run.id).crew.callout_reply;
+  expect((await send('yes!')).kind).toBe('yes');
+  expect(await reply()).toBe('YES');
+  expect((await send(' No. ')).kind).toBe('no');
+  expect(await reply()).toBe('NO');
+
+  // Anything else is a person talking, and someone should read it.
+  const words = `running late ${Date.now()}`;
+  expect((await send(words)).kind).toBe('other');
+  await expect.poll(async () => (await sql`select count(*)::int as n from message_log where template = 'owner_alert' and body like ${`%${words}%`}`)[0]!.n, { timeout: 30000 }).toBeGreaterThan(0);
+
+  // After STOP the warning comes back.
+  await send('STOP');
+  await page.reload();
+  await expect(page.getByTestId('stop-card').first()).toBeVisible();
+  await expect(column.getByTestId('no-reach')).toBeVisible();
+});
+
 test('a multi-site customer: add a second site, fix their details, send a renewal quote, retire a site', async ({ page, browser }) => {
   await login(page);
   const name = `Multi ${Date.now()}`;

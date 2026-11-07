@@ -125,6 +125,17 @@ export async function sendOfficePush(tenantId: string, msg: OfficePush) {
   if (failure) throw failure;
 }
 
+/** Tells owners and dispatchers something needs a look: push, email, and a text to the company phone. */
+export async function notifyOffice(t: TenantRow, n: { headline: string; link: string; key: string; related?: Record<string, unknown> }) {
+  const staff = (await serviceDb().execute(sql`
+    select u.email from membership m join auth.users u on u.id = m.user_id
+    where m.tenant_id = ${t.id} and m.role in ('owner','dispatcher') and u.email is not null`)) as unknown as { email: string }[];
+  const vars = { headline: n.headline, link: n.link };
+  await queuePush(t.id, { title: 'Flake', body: n.headline, url: new URL(n.link).pathname, key: n.key, related: n.related });
+  for (const s of staff) await queueNotify(t.id, { email: s.email }, { template: 'owner_alert', vars, subject: n.headline, key: `${n.key}:${s.email}`, related: n.related });
+  if (t.contact_phone) await queueNotify(t.id, { phone: t.contact_phone }, { template: 'owner_alert', vars, subject: n.headline, key: `${n.key}:phone`, related: n.related });
+}
+
 /** Sends over each channel the recipient can get. Email is the always-available fallback. */
 export async function notifyParty(t: TenantRow, party: { phone?: string | null; email?: string | null; wantsSms?: boolean | null; wantsEmail?: boolean | null }, msg: {
   template: TemplateKey;
@@ -146,7 +157,7 @@ export async function notifyParty(t: TenantRow, party: { phone?: string | null; 
     }
   }
   if (party.email && party.wantsEmail !== false) {
-    sent.email = await sendEmail(t, { to: party.email, template: msg.template, subject: msg.subject, text: renderTemplate(msg.template, vars), key: msg.key, related: msg.related });
+    sent.email = await sendEmail(t, { to: party.email, template: msg.template, subject: msg.subject, text: renderTemplate(msg.template, vars).replace(/\s*Reply STOP to opt out\.?/i, ''), key: msg.key, related: msg.related });
   }
   return sent;
 }

@@ -63,6 +63,7 @@ export function DriverApp({ token }: { token: string }) {
   // Only claim everything has landed once the phone has checked.
   const [sync, setSync] = useState<Sync>('saved');
   const [dead, setDead] = useState(false);
+  const [uploadsRefused, setUploadsRefused] = useState(false);
   const [noCache, setNoCache] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [showProblem, setShowProblem] = useState(false);
@@ -122,9 +123,17 @@ export function DriverApp({ token }: { token: string }) {
   }, [token, applyRun]);
 
   const syncNow = useCallback(async () => {
-    const result = await flush(token, () => setSync('sending'));
+    let result = await flush(token, () => setSync('sending'));
+    // Another send is running. Wait for it rather than leave this tap's report until the next timer.
+    for (let i = 0; result === 'idle' && i < 60; i++) {
+      await new Promise((done) => setTimeout(done, 500));
+      result = await flush(token, () => setSync('sending'));
+    }
     generation.current++;
-    if (result === 'dead') return setDead(true);
+    if (result === 'dead') {
+      setUploadsRefused(true);
+      return setDead(true);
+    }
     const p = await pending(token);
     const clear = p.actions === 0 && p.photos === 0;
     setSync(clear ? 'synced' : 'saved');
@@ -343,7 +352,7 @@ export function DriverApp({ token }: { token: string }) {
       const { [stop.id]: _finished, ...visits } = localRef.current.visits;
       await apply(
         { ...localRef.current, visits, statuses: { ...localRef.current.statuses, [stop.id]: 'done' }, last: { stopId: stop.id, visit: v.visit, at: Date.now() } },
-        [action({ at, kind: 'done', run_stop_id: stop.id, visit_client_uuid: v.visit, services: v.services, depth_in: v.depth, salt, gps: fix })],
+        [action({ at, kind: 'done', run_stop_id: stop.id, visit_client_uuid: v.visit, services: v.services, depth_in: v.depth, salt, gps: fix, photos_coming: Number(v.before) + Number(v.after) })],
       );
     });
   };
@@ -386,7 +395,7 @@ export function DriverApp({ token }: { token: string }) {
       <Shell>
         <div className="flex min-h-[70vh] flex-col items-center justify-center p-6 text-center" data-testid="link-dead">
           <h1 className="text-3xl font-bold">{t('link_dead_title')}</h1>
-          <p className="mt-4 text-xl text-slate-200">{t('link_dead_body')}</p>
+          <p className="mt-4 text-xl text-slate-200" data-testid="link-dead-body">{sync !== 'synced' && !uploadsRefused ? t('link_dead_sending') : t('link_dead_body')}</p>
         </div>
       </Shell>
     );
@@ -534,7 +543,7 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; on
         <div className="flex flex-wrap gap-2">
           {stop.services.map((s) => {
             const on = visit.services.includes(s);
-            return <BigButton key={s} tone={on ? 'on' : 'plain'} onClick={() => p.onServices(on ? visit.services.filter((x) => x !== s) : [...visit.services, s])} data-testid={`service-${s}`}>{s}</BigButton>;
+            return <BigButton key={s} tone={on ? 'on' : 'plain'} onClick={() => p.onServices(on ? visit.services.filter((x) => x !== s) : [...visit.services, s])} data-testid={`service-${s}`}>{({ plow: t('service_plow'), salt: t('service_salt'), walks: t('service_walks'), haul: t('service_haul') } as Record<string, string>)[s] ?? s}</BigButton>;
           })}
         </div>
       </div>
@@ -549,6 +558,7 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; on
         </div>
       ) : null}
       <PhotoButton label={t('after_photo')} done={visit.after} testId="after-photo" onChange={(e) => p.onPhoto('after', e)} />
+      {!visit.after ? <p className="text-center text-base font-medium text-amber-300" data-testid="no-photo-hint">{t('no_after_photo')}</p> : null}
       <BigButton tone="done" height="tall" className="w-full" disabled={blocked} onClick={p.onDone} data-testid="done">{t('done')}</BigButton>
       <BigButton tone="warn" className="w-full" onClick={p.onProblem} data-testid="problem">{t('problem')}</BigButton>
     </section>

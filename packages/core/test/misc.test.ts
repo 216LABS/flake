@@ -38,6 +38,12 @@ describe('sms templates', () => {
   });
   it('classifies inbound words', () => {
     expect(classifyInbound(' stop ', false)).toBe('stop');
+    expect(classifyInbound('Stop.', false)).toBe('stop');
+    expect(classifyInbound(' No. ', false)).toBe('no');
+    expect(classifyInbound('yes!', false)).toBe('yes');
+    expect(classifyInbound('Yep', false)).toBe('yes');
+    expect(classifyInbound('no problem', false)).toBe('other');
+    expect(classifyInbound('running late sorry', false)).toBe('other');
     expect(classifyInbound('HELP', false)).toBe('help');
     expect(classifyInbound('YES', true)).toBe('start');
     expect(classifyInbound('START', false)).toBe('start');

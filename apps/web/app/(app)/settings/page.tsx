@@ -8,7 +8,7 @@ import { asUser, requirePage } from '@/lib/auth';
 import { baseUrl } from '@/lib/env';
 import { SAMPLE_MESSAGES } from '@/lib/sms-admin';
 import { breakerOpen, breakerState } from '@/lib/weather';
-import { getProviders } from '@/lib/providers';
+import { getProviders, getSetting } from '@/lib/providers';
 import { listTeam } from '@/lib/team';
 import { PushPanel } from './push-panel';
 import { canSeeUsage, deploymentUsage } from '@/lib/usage';
@@ -80,6 +80,8 @@ async function SystemTab(tenantId: string, tz: string, email: string | null, can
   const retrying = await db.select().from(job).where(and(sql`${job.done_at} is null`, sql`${job.dead_at} is null`, sql`${job.last_error} is not null`, sql`${job.payload}->>'tenantId' = ${tenantId}`)).orderBy(desc(job.id)).limit(50);
   const [{ queued } = { queued: 0 }] = await db.select({ queued: sql<number>`count(*)::int` }).from(job).where(and(sql`${job.done_at} is null`, sql`${job.dead_at} is null`, eq(sql`${job.payload}->>'tenantId'`, tenantId)));
   const breaker = await breakerState();
+  const runs = (await getSetting<string[]>('worker.runs')) ?? [];
+  const gaps = runs.slice(1).map((at, i) => Math.round((Date.parse(at) - Date.parse(runs[i]!)) / 1000));
   const usage = canSeeUsage(email) ? await deploymentUsage() : null;
   const messages = await db.select().from(message_log).where(eq(message_log.tenant_id, tenantId)).orderBy(desc(message_log.created_at)).limit(30);
   return (
@@ -95,6 +97,7 @@ async function SystemTab(tenantId: string, tz: string, email: string | null, can
         <h2 className="font-semibold">Weather poller</h2>
         <p className="mt-1 text-sm" data-testid="breaker">{breakerOpen(breaker) ? `Paused until ${fmtLocal(breaker.open_until!, tz)} after repeated errors.` : `Running. Consecutive failures: ${breaker.failures}.`}</p>
         <p className="mt-1 text-sm">Jobs queued for your company: {queued}</p>
+        <p className="mt-1 text-sm" data-testid="worker-runs">{runs.length ? `Background worker last ran ${fmtLocal(runs[runs.length - 1]!, tz)}.${gaps.length ? ` Seconds between recent runs: ${gaps.join(', ')}.` : ''}` : 'Background worker: no scheduled runs recorded yet.'}</p>
       </Card>
       <h2 className="font-semibold">Recent messages</h2>
       <Table>

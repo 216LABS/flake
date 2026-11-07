@@ -8,7 +8,7 @@ import { isUuid } from '@/lib/http';
 import { tenantHasPro } from '@/lib/billing';
 
 export const metadata = { title: 'Sub pay statements' };
-const money = (c: number) => `$${(c / 100).toFixed(2)}`;
+const money = (c: number) => `$${(c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default async function SubPay({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

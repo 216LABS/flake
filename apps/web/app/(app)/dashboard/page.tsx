@@ -1,4 +1,4 @@
-import { and, contract, customer, desc, eq, message_log, serviceDb, sql, storm, trigger_alert } from '@flake/db';
+import { and, contract, customer, desc, eq, message_log, run_stop, serviceDb, sql, storm, storm_run, trigger_alert } from '@flake/db';
 import { fmtLocal } from '@flake/core/time';
 import { Badge, buttonVariants, Card, EmptyState, PageHeader, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
@@ -16,6 +16,7 @@ export default async function Dashboard() {
     active: await tx.select().from(storm).where(eq(storm.status, 'active')).orderBy(desc(storm.started_at)),
     recent: await tx.select().from(storm).where(sql`${storm.status} <> 'active'`).orderBy(desc(storm.started_at)).limit(5),
     customers: await tx.select({ n: sql<number>`count(*)::int` }).from(customer),
+    progress: await tx.select({ storm_id: storm_run.storm_id, finished: sql<number>`count(*) filter (where ${run_stop.status} in ('done', 'skipped'))::int`, total: sql<number>`count(*)::int` }).from(run_stop).innerJoin(storm_run, eq(storm_run.id, run_stop.storm_run_id)).innerJoin(storm, eq(storm.id, storm_run.storm_id)).where(eq(storm.status, 'active')).groupBy(storm_run.storm_id),
     pendingQuotes: await tx.select({ n: sql<number>`count(*)::int` }).from(contract).where(and(eq(contract.status, 'sent'))),
   }));
   const w = await tenantWeatherHeader(ctx.tenantId);
@@ -68,7 +69,7 @@ export default async function Dashboard() {
       {data.active.length ? (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {data.active.map((s) => (
-            <Link key={s.id} href={`/storms/${s.id}`} data-testid="active-storm"><Card className="hover:border-sky-400"><div className="font-medium">{s.name}</div><div className="text-sm text-slate-600">Started {fmtLocal(s.started_at, tz)}</div></Card></Link>
+            <Link key={s.id} href={`/storms/${s.id}`} data-testid="active-storm"><Card className="hover:border-sky-400"><div className="font-medium">{s.name}</div><div className="text-sm font-medium text-slate-700" data-testid="storm-progress">{(() => { const p = data.progress.find((x) => x.storm_id === s.id); return p ? `${p.finished} of ${p.total} stops finished` : 'No stops yet'; })()}</div><div className="text-sm text-slate-600">Started {fmtLocal(s.started_at, tz)}</div></Card></Link>
           ))}
         </div>
       ) : <EmptyState title="No storm is running" body="Start one by hand, or wait for a trigger alert." />}

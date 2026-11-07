@@ -1,4 +1,4 @@
-import { and, asc, contract, crew_member, customer, desc, driver_position, eq, inArray, message_log, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, withUser } from '@flake/db';
+import { and, asc, contract, crew_member, customer, desc, driver_position, eq, inArray, message_log, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, withUser, sms_consent } from '@flake/db';
 import { isLate } from '@flake/core/time';
 import type { ContractService } from '@flake/core/pricing';
 import { z } from 'zod';
@@ -6,7 +6,9 @@ import { stormCreate, runStopPatch, stormNotify } from '@flake/contracts';
 import { HttpError } from './http';
 import { baseUrl } from './env';
 import { enqueue } from './jobs';
-import { notifyParty, shortLink } from './messaging';
+import { canTextFrom, notifyParty, shortLink } from './messaging';
+import { retiredLinkKey } from './driver';
+import { setSetting } from './providers';
 import { decryptToken, encryptToken, hashToken, newToken } from './tokens';
 import { latestSnapshotIds, tenantWeatherHeader } from './weather';
 
@@ -203,6 +205,9 @@ export async function closeStorm(ctx: Ctx, stormId: string, force: boolean) {
 
 export async function revokeRunLink(ctx: Ctx, runId: string) {
   const link = newLink();
+  const [old] = await withUser(ctx.userId, (tx) => tx.select({ hash: storm_run.link_token_hash }).from(storm_run).where(eq(storm_run.id, runId)));
+  // The phone holding the old link may have finished work it hasn't sent yet. See resolveToken.
+  if (old) await setSetting(retiredLinkKey(old.hash), { runId, at: new Date().toISOString() });
   return withUser(ctx.userId, async (tx) => {
     const [r] = await tx.update(storm_run).set({ link_token_hash: link.hash, link_token_enc: link.enc, link_revoked_at: null }).where(eq(storm_run.id, runId)).returning();
     if (!r) throw new HttpError(404, 'Run not found');
@@ -223,6 +228,10 @@ export async function assignRunDriver(ctx: Ctx, runId: string, crewId: string) {
 
 /** Everything the live board shows. Reads as the signed-in user so RLS applies. */
 export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | 'dispatcher' | 'viewer' }, stormId: string) {
+  const [company] = await serviceDb().select().from(tenant).where(eq(tenant.id, ctx.tenantId));
+  const textable = company && canTextFrom(company)
+    ? new Set((await serviceDb().select().from(sms_consent).where(eq(sms_consent.tenant_id, ctx.tenantId))).filter((c) => c.opted_in_at && !c.opted_out_at).map((c) => c.phone_e164))
+    : new Set<string | null>();
   const data = await withUser(ctx.userId, async (tx) => {
     const [s] = await tx.select().from(storm).where(eq(storm.id, stormId));
     if (!s) throw new HttpError(404, 'Storm not found');
@@ -252,7 +261,7 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     }
     const pos = data.positions.find((p) => p.storm_run_id === run.id);
     return {
-      id: run.id, pass: run.pass, name: r?.name ?? 'Run', crew: crew ? { id: crew.id, name: crew.name, kind: crew.kind, callout_reply: crew.callout_reply } : null,
+      id: run.id, pass: run.pass, name: r?.name ?? 'Run', crew: crew ? { id: crew.id, name: crew.name, kind: crew.kind, callout_reply: crew.callout_reply, reachable: Boolean(crew.email) || textable.has(crew.phone_e164) } : null,
       published_at: run.published_at, started_at: run.started_at, link: run.published_at && ctx.role !== 'viewer' ? runLink(run) : null, stops,
       position: pos ? { lat: pos.lat, lon: pos.lon, at: pos.device_at } : null,
     };
