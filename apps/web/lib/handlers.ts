@@ -103,6 +103,10 @@ export const JOB_HANDLERS: Record<string, JobHandler> = {
   'storm.late_check': async () => void (await lateCheck()),
   'notify.customer': (p) => notifyCustomer(p as Parameters<typeof notifyCustomer>[0]),
   'notify.visit_done': (p) => visitDone(p.tenantId, p.visitId),
+  'notify.party': async (p) => {
+    const [t] = await serviceDb().select().from(tenant).where(eq(tenant.id, p.tenantId));
+    if (t) await notifyParty(t, p.party, p.msg);
+  },
   'notify.invoice_sms': async (p) => {
     const [t] = await serviceDb().select().from(tenant).where(eq(tenant.id, p.tenantId));
     if (t) await sendSms(t, { to: p.to, template: 'invoice', vars: p.vars, key: p.key, related: p.related });

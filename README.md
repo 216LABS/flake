@@ -37,6 +37,10 @@ docs/               Specs and research
 
 Environment variable names are in `.env.example`. Never commit values: this repo is public.
 
+## Deploying
+
+See `docs/DEPLOY.md`.
+
 ## Specs
 
 `PROMPT_FULL_BUILD.md`, `docs/PLAN.md`, `docs/BUILD_SPEC.md`, `docs/ADDENDUM_*.md`, `docs/DECISIONS.md`, `docs/WISHLIST.md`, `docs/UX_BLUEPRINT.md`.

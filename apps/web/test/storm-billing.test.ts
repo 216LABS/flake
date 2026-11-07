@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { closeDb, and, customer, eq, invoice_draft, job, message_log, run_stop, serviceDb, sql, stripe_event, tenant, visit, visit_correction, withUser, storm } from '@flake/db';
-import { signMockWebhook } from '@flake/providers';
+import { MockEmail, signMockWebhook } from '@flake/providers';
 import { POST as webhook } from '@/app/api/webhooks/stripe/route';
 import { GET as cronJobs } from '@/app/api/cron/jobs/route';
 import { applyFlagFix, approveDrafts, chargeDraft, exportQbo, generateDrafts, handleStripeEvent, billInstallments, retryDraft } from '@/lib/billing';
+import { runJobs } from '@/lib/handlers';
 import { notifyParty } from '@/lib/messaging';
 import { processActions, resolveToken } from '@/lib/driver';
 import { closeStorm, createStorm, notifyCustomers, publishStorm, stormLive, patchRunStop, addPass } from '@/lib/storms';
@@ -334,6 +335,29 @@ describe('billing', () => {
     const rows = await serviceDb().execute(sql`select seq, amount_cents from installment_invoice where tenant_id = ${x.tenantId} order by seq`);
     expect(rows.map((r: any) => r.seq)).toEqual([1, 2]);
     expect(rows[0]!.amount_cents).toBe(60000);
+  });
+});
+
+describe('an email outage loses nothing', () => {
+  it('a failed card still gets its pay link once email comes back, and sends it once', async () => {
+    const w = await makeWorld();
+    await serviceDb().update(customer).set({ stripe_payment_method_id: 'pm_mock_0002' }).where(eq(customer.id, w.customerIds[0]!));
+    const { stormId } = await completeStorm(w);
+    await generateDrafts(ctxOf(w), stormId);
+    const id = (await drafts(stormId)).find((r) => r.customer_id === w.customerIds[0])!.id;
+    await approveDrafts(ctxOf(w), [id]);
+    const outage = vi.spyOn(MockEmail.prototype, 'send').mockRejectedValue(new Error('Resend 500: down'));
+    await runJobs(100); // One round, as real backoff would do it. drain() would use up every retry at once.
+    const [during] = await serviceDb().select().from(invoice_draft).where(eq(invoice_draft.id, id));
+    expect(during!.status).toBe('failed');
+    const sent = () => serviceDb().select().from(message_log).where(and(eq(message_log.tenant_id, w.tenantId), sql`related->>'draft_id' = ${id}`, eq(message_log.channel, 'email')));
+    expect((await sent())[0]!.status).toBe('failed');
+    outage.mockRestore();
+    await drain();
+    const rows = await sent();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe('sent');
+    expect(rows[0]!.body).toContain('/dev/pay/');
   });
 });
 

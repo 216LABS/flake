@@ -8,12 +8,14 @@ import { POST as toolContractRoute } from '@/app/api/tools/contract/route';
 import { POST as toolPriceRoute } from '@/app/api/tools/price/route';
 import { generateDrafts } from '@/lib/billing';
 import { getBlob } from '@/lib/blob';
+import { runJobs } from '@/lib/handlers';
 import { processActions, resolveToken } from '@/lib/driver';
 import { drainJobs, enqueue } from '@/lib/jobs';
 import { sendSms } from '@/lib/messaging';
 import { assembleProof, renderProof } from '@/lib/proof';
 import { setSetting } from '@/lib/providers';
 import { createQuote, acceptQuote, getQuote, mockConfirmSetup } from '@/lib/quotes';
+import { MockEmail } from '@flake/providers';
 import { requestTollFree, submitTollFree } from '@/lib/sms-admin';
 import { createStorm } from '@/lib/storms';
 import { decryptToken, sha256Hex } from '@/lib/tokens';
@@ -72,7 +74,24 @@ describe('weather and triggers', () => {
   });
 
   it('emails the owner when an alert fires', async () => {
+    await drain();
     const rows = await serviceDb().select().from(message_log).where(and(eq(message_log.tenant_id, w.tenantId), eq(message_log.template, 'owner_alert')));
+    expect(rows.length).toBeGreaterThan(0);
+  });
+
+  it('an email outage during an alert still tells the owner afterward', async () => {
+    const x = await makeWorld();
+    await setSetting('dev.weather_fixture', 'lakewood-lake-effect-2025-12');
+    await setSetting('dev.clock', '2025-12-12T20:00:00Z');
+    await mapSites(x.tenantId);
+    for (const c of await cellsOf(x.tenantId)) await fetchCell(c.office!, c.x!, c.y!);
+    const outage = vi.spyOn(MockEmail.prototype, 'send').mockRejectedValue(new Error('Resend 500: down'));
+    const created = await evaluateTenant(x.tenantId);
+    expect(created.length).toBeGreaterThan(0);
+    await runJobs(100); // One round, as real backoff would do it.
+    outage.mockRestore();
+    await drain();
+    const rows = await serviceDb().select().from(message_log).where(and(eq(message_log.tenant_id, x.tenantId), eq(message_log.template, 'owner_alert'), eq(message_log.status, 'sent')));
     expect(rows.length).toBeGreaterThan(0);
   });
 

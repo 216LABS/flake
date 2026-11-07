@@ -11,7 +11,7 @@ import { flagFix } from '@flake/contracts';
 import { HttpError } from './http';
 import { enqueue } from './jobs';
 import { log } from './log';
-import { notifyParty } from './messaging';
+import { queueNotify } from './messaging';
 import { getProviders } from './providers';
 import { seriesFromSummary } from './weather';
 import type { Ctx } from './storms';
@@ -166,7 +166,7 @@ async function loadDraft(tenantId: string, draftId: string) {
 const dollars = (c: number) => (c / 100).toFixed(2);
 
 async function sendPayLink(row: NonNullable<Awaited<ReturnType<typeof loadDraft>>>, url: string, reason: string) {
-  await notifyParty(row.tenant, { phone: row.customer.notify_sms ? row.customer.phone_e164 : null, email: row.customer.email }, {
+  await queueNotify(row.tenant.id, { phone: row.customer.notify_sms ? row.customer.phone_e164 : null, email: row.customer.email }, {
     template: 'invoice',
     vars: { storm: row.storm.name, amount: dollars(row.draft.subtotal_cents), link: url },
     subject: `${row.tenant.name}: invoice for ${row.storm.name}, $${dollars(row.draft.subtotal_cents)}`,
@@ -243,7 +243,7 @@ export async function chargeDraft(tenantId: string, draftId: string, attempt?: n
   });
   if (charge.status === 'succeeded' || charge.status === 'processing') {
     await setStatus('charged', charge.status === 'processing' ? 'Bank payment processing' : null, { stripe_payment_intent_id: charge.paymentIntentId, application_fee_cents: fee });
-    await notifyParty(t, { email: c.email }, { template: 'receipt', vars: { storm: s.name, amount: dollars(draft.subtotal_cents) }, subject: `${t.name}: payment for ${s.name}, $${dollars(draft.subtotal_cents)}`, key: `receipt:${draftId}`, related: { draft_id: draftId } });
+    await queueNotify(t.id, { email: c.email }, { template: 'receipt', vars: { storm: s.name, amount: dollars(draft.subtotal_cents) }, subject: `${t.name}: payment for ${s.name}, $${dollars(draft.subtotal_cents)}`, key: `receipt:${draftId}`, related: { draft_id: draftId } });
   } else {
     await db.update(invoice_draft).set({ stripe_payment_intent_id: charge.paymentIntentId, application_fee_cents: fee }).where(eq(invoice_draft.id, draftId));
     await failDraft(tenantId, draftId, charge.failure ?? 'Payment failed');

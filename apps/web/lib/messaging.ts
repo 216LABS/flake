@@ -32,7 +32,7 @@ async function reserve(t: TenantRow, channel: 'sms' | 'email', to: string, templ
     insert into message_log (tenant_id, channel, to_addr, template, body, related, status, idempotency_key)
     values (${t.id}, ${channel}, ${to}, ${template}, ${body}, ${related ? JSON.stringify(related) : null}::jsonb, 'sending', ${key})
     on conflict (tenant_id, idempotency_key) do update set status = 'sending'
-      where message_log.status = 'failed'
+      where message_log.status = 'failed' or (message_log.status = 'sending' and message_log.created_at < now() - interval '5 minutes')
     returning id`)) as unknown as { id: string }[];
   return rows[0]?.id ?? null;
 }
@@ -70,6 +70,22 @@ export async function sendEmail(t: TenantRow, opts: { to: string; template: stri
     throw err;
   }
 }
+
+export interface PartyMessage {
+  template: TemplateKey;
+  vars: Record<string, string | number>;
+  subject: string;
+  key: string;
+  related?: Record<string, unknown>;
+}
+export interface Party { phone?: string | null; email?: string | null; wantsSms?: boolean | null; wantsEmail?: boolean | null }
+
+/**
+ * The safe way to send from inside other work. A provider outage retries this job and can't fail the caller, and
+ * the caller's own retry can't skip the message: its state has already moved on by the time the send would throw.
+ */
+export const queueNotify = (tenantId: string, party: Party, msg: PartyMessage) =>
+  enqueue('notify.party', { tenantId, party, msg }, { dedupeKey: `party:${tenantId}:${msg.key}` });
 
 /** Sends over each channel the recipient can get. Email is the always-available fallback. */
 export async function notifyParty(t: TenantRow, party: { phone?: string | null; email?: string | null; wantsSms?: boolean | null; wantsEmail?: boolean | null }, msg: {

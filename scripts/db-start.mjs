@@ -8,7 +8,14 @@ const run = (cmd, stdio = 'inherit') => execSync(cmd, { stdio, encoding: 'utf8' 
 const parseEnv = (text, re) =>
   Object.fromEntries(text.split(/\r?\n/).map((l) => l.match(re)).filter(Boolean).map((m) => [m[1], m[2]]));
 
-run('pnpm --filter @flake/db exec supabase start');
+// Right after Docker restarts, the containers can still be coming back, so give it a second try.
+try {
+  run('pnpm --filter @flake/db exec supabase start');
+} catch {
+  console.log('Supabase was not ready. Trying once more in 10 seconds.');
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10000);
+  run('pnpm --filter @flake/db exec supabase start');
+}
 const raw = run('pnpm --silent --filter @flake/db exec supabase status -o env', 'pipe');
 const status = parseEnv(raw, /^([A-Z_]+)="?([^"]*)"?$/);
 const path = 'apps/web/.env.local';

@@ -4,7 +4,7 @@ import { quoteAccept, quoteCreate } from '@flake/contracts';
 import { z } from 'zod';
 import { baseUrl } from './env';
 import { HttpError } from './http';
-import { notifyParty, shortLink } from './messaging';
+import { queueNotify, shortLink } from './messaging';
 import { getProviders } from './providers';
 import { handleStripeEvent } from './billing';
 import { putBlob, signedUrl } from './blob';
@@ -29,7 +29,7 @@ export async function createQuote(ctx: Ctx, input: z.infer<typeof quoteCreate>) 
   const url = `${baseUrl()}/q/${token}`;
   if (input.send) {
     const link = await shortLink(ctx.tenantId, `/q/${token}`);
-    await notifyParty(row.tenant, { phone: row.customer.phone_e164, email: row.customer.email }, { template: 'quote', vars: { link }, subject: `${row.tenant.name}: your snow service quote`, key: `quote:${row.contract.id}`, related: { contract_id: row.contract.id } });
+    await queueNotify(row.tenant.id, { phone: row.customer.phone_e164, email: row.customer.email }, { template: 'quote', vars: { link }, subject: `${row.tenant.name}: your snow service quote`, key: `quote:${row.contract.id}`, related: { contract_id: row.contract.id } });
   }
   return { contract: row.contract, url, token };
 }

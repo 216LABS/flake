@@ -8,7 +8,7 @@ import { putBlob } from './blob';
 import { baseUrl } from './env';
 import { enqueue } from './jobs';
 import { log } from './log';
-import { notifyParty } from './messaging';
+import { queueNotify } from './messaging';
 import { getProviders, getSetting, setSetting, weatherNow } from './providers';
 import { sha256Hex } from './tokens';
 
@@ -159,8 +159,8 @@ async function notifyOwners(t: typeof tenant.$inferSelect, alertId: string, head
     where m.tenant_id = ${t.id} and m.role in ('owner','dispatcher') and u.email is not null`)) as unknown as { email: string }[];
   const link = `${baseUrl()}/alerts/${alertId}`;
   const related = { alert_id: alertId };
-  for (const o of owners) await notifyParty(t, { email: o.email }, { template: 'owner_alert', vars: { headline, link }, subject: headline, key: `alert:${alertId}:${o.email}`, related });
-  if (t.contact_phone) await notifyParty(t, { phone: t.contact_phone }, { template: 'owner_alert', vars: { headline, link }, subject: headline, key: `alert:${alertId}:sms`, related });
+  for (const o of owners) await queueNotify(t.id, { email: o.email }, { template: 'owner_alert', vars: { headline, link }, subject: headline, key: `alert:${alertId}:${o.email}`, related });
+  if (t.contact_phone) await queueNotify(t.id, { phone: t.contact_phone }, { template: 'owner_alert', vars: { headline, link }, subject: headline, key: `alert:${alertId}:sms`, related });
 }
 
 /** trigger.evaluate: ADDENDUM_WEATHER section 3 for one tenant. Creates alerts only, never a dispatch. */

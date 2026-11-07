@@ -38,6 +38,9 @@ export function route<C = unknown>(handler: Handler<C>) {
       return out instanceof Response ? out : NextResponse.json(out ?? { ok: true });
     } catch (err) {
       if (err instanceof HttpError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
+      if (err instanceof Error && err.message.endsWith('is not configured')) {
+        return NextResponse.json({ error: 'This is not set up yet. Payments and texts turn on once their accounts are connected.', code: 'not_configured' }, { status: 503 });
+      }
       const code = (err as { code?: string; cause?: { code?: string } }).cause?.code ?? (err as { code?: string }).code;
       // Postgres permission and RLS refusals: the user's role or tenant doesn't allow this.
       if (code === '42501') return NextResponse.json({ error: 'Not allowed' }, { status: 403 });

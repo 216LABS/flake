@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { requireApi, asUser } from '@/lib/auth';
 import { baseUrl } from '@/lib/env';
 import { parseJson, route } from '@/lib/http';
-import { notifyParty, shortLink } from '@/lib/messaging';
+import { queueNotify, shortLink } from '@/lib/messaging';
 import { hashToken, newToken } from '@/lib/tokens';
 
 export const GET = route(async () => {
@@ -23,6 +23,6 @@ export const POST = route(async (req) => {
   });
   const [t] = await serviceDb().select().from(tenant).where(eq(tenant.id, ctx.tenantId));
   const link = await shortLink(ctx.tenantId, `/join/${token}`);
-  await notifyParty(t!, { email: row.email }, { template: 'crew_invite', vars: { link }, subject: `${t!.name} invited you to get route links`, key: `crew_invite:${row.id}`, related: { crew_id: row.id } });
+  await queueNotify(t!.id, { email: row.email }, { template: 'crew_invite', vars: { link }, subject: `${t!.name} invited you to get route links`, key: `crew_invite:${row.id}`, related: { crew_id: row.id } });
   return NextResponse.json({ ...row, invite_url: `${baseUrl()}/join/${token}` }, { status: 201 });
 });

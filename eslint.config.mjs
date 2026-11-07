@@ -17,6 +17,6 @@ export default [
   },
   {
     files: ['**/*.mjs'],
-    languageOptions: { globals: { process: 'readonly', console: 'readonly', URL: 'readonly' } },
+    languageOptions: { globals: { process: "readonly", console: "readonly", URL: "readonly", Atomics: "readonly", Int32Array: "readonly", SharedArrayBuffer: "readonly" } },
   },
 ];
