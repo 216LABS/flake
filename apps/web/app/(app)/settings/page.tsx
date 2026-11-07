@@ -1,0 +1,85 @@
+import { and, crew_member, desc, eq, job, serviceDb, sql } from '@flake/db';
+import { fmtLocal } from '@flake/core/time';
+import { inFreeSeason } from '@flake/core/fees';
+import { DEFAULT_RATE_CARD, type RateCard } from '@flake/core/quote';
+import { Badge, Card, PageHeader, Table, Td, Th } from '@flake/ui';
+import Link from 'next/link';
+import { asUser, requirePage } from '@/lib/auth';
+import { baseUrl } from '@/lib/env';
+import { SAMPLE_MESSAGES } from '@/lib/sms-admin';
+import { breakerOpen, breakerState } from '@/lib/weather';
+import { BusinessForm, CrewPanel, PaymentsPanel, PlanPanel, RateCardForm, RetryJob, SmsSubmit } from './panels';
+
+export const metadata = { title: 'Settings' };
+
+const TABS = [['rate', 'Rate card'], ['crew', 'Crew'], ['payments', 'Payments'], ['sms', 'Text messages'], ['plan', 'Plan'], ['data', 'Data export'], ['system', 'System']] as const;
+const EXPORTS = ['customer', 'site', 'contract', 'crew_member', 'route', 'storm', 'storm_run', 'run_stop', 'visit', 'visit_photo', 'visit_correction', 'problem_report', 'invoice_draft', 'message_log', 'proof_packet'];
+
+export default async function Settings({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const { tab = 'rate' } = await searchParams;
+  const ctx = await requirePage();
+  const t = ctx.tenant;
+  const tz = t.timezone;
+  const today = new Date().toISOString().slice(0, 10);
+  return (
+    <>
+      <PageHeader title="Settings" subtitle={`Routes are edited on the Routes page. You are the ${ctx.role}.`} />
+      <nav className="mb-4 flex flex-wrap gap-2 text-sm">
+        {TABS.map(([k, label]) => <Link key={k} href={`/settings?tab=${k}`} data-testid={`tab-${k}`} className={`rounded-full border px-3 py-1 ${tab === k ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white'}`}>{label}</Link>)}
+      </nav>
+      {tab === 'rate' ? <RateCardForm card={(Object.keys(t.rate_card as object).length ? t.rate_card : DEFAULT_RATE_CARD) as RateCard} /> : null}
+      {tab === 'crew' ? <CrewPanel crew={JSON.parse(JSON.stringify(await asUser(ctx, (tx) => tx.select().from(crew_member).orderBy(crew_member.name))))} /> : null}
+      {tab === 'payments' ? <PaymentsPanel connected={Boolean(t.stripe_account_id)} enabled={Boolean(t.stripe_charges_enabled)} /> : null}
+      {tab === 'sms' ? (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card>
+            <h2 className="font-semibold">Your text number</h2>
+            <p className="mt-1 text-sm">Status: <Badge tone={t.sms_status === 'approved' ? 'green' : t.sms_status === 'rejected' ? 'red' : t.sms_status === 'pending' ? 'amber' : 'gray'} data-testid="sms-status">{t.sms_status}</Badge></p>
+            {t.sms_sender ? <p className="mt-1 text-sm">Number: {t.sms_sender}</p> : null}
+            {t.sms_status_detail ? <p className="mt-1 text-sm text-red-700">Reason: {t.sms_status_detail}. Fix the details and resubmit.</p> : null}
+            <p className="mt-2 text-sm text-slate-600">Texts go out from your own verified toll-free number, in your legal business name. Verification takes 3 to 5 business days. Until then crew links go by email, QR and copy-link, and customer notices go by email.</p>
+            <p className="mt-2 text-sm">Your public opt-in page: <Link className="text-sky-800 underline" href={`/b/${t.slug}/sms`}>{baseUrl()}/b/{t.slug}/sms</Link></p>
+            <SmsSubmit status={t.sms_status ?? 'none'} />
+            <h3 className="mt-4 text-sm font-medium">Sample messages we submit</h3>
+            <ul className="mt-1 list-disc pl-5 text-xs text-slate-600">{SAMPLE_MESSAGES(t.name).map((m) => <li key={m}>{m}</li>)}</ul>
+          </Card>
+          <BusinessForm tenant={JSON.parse(JSON.stringify(t))} />
+        </div>
+      ) : null}
+      {tab === 'plan' ? <PlanPanel plan={t.plan} freeUntil={t.free_season_until} inSeason={inFreeSeason(t.free_season_until, today)} /> : null}
+      {tab === 'data' ? (
+        <Card className="max-w-2xl">
+          <h2 className="font-semibold">Export your data</h2>
+          <p className="mt-1 text-sm text-slate-600">One CSV per table. Records are kept 7 years by default because claims can arrive months or years later. Photos and PDFs stay available through their links.</p>
+          <ul className="mt-3 grid gap-1 text-sm sm:grid-cols-2">{EXPORTS.map((n) => <li key={n}><a className="text-sky-800 underline" href={`/api/settings/export?table=${n}`}>{n}</a></li>)}</ul>
+        </Card>
+      ) : null}
+      {tab === 'system' ? await SystemTab(ctx.tenantId, tz) : null}
+    </>
+  );
+}
+
+/** Dead letters and weather poller health. The job table is server-only, so this filters by tenant explicitly. */
+async function SystemTab(tenantId: string, tz: string) {
+  const db = serviceDb();
+  const dead = await db.select().from(job).where(and(sql`${job.dead_at} is not null`, sql`${job.payload}->>'tenantId' = ${tenantId}`)).orderBy(desc(job.dead_at)).limit(50);
+  const [{ queued } = { queued: 0 }] = await db.select({ queued: sql<number>`count(*)::int` }).from(job).where(and(sql`${job.done_at} is null`, sql`${job.dead_at} is null`, eq(sql`${job.payload}->>'tenantId'`, tenantId)));
+  const breaker = await breakerState();
+  return (
+    <div className="space-y-4">
+      <Card className="max-w-2xl">
+        <h2 className="font-semibold">Weather poller</h2>
+        <p className="mt-1 text-sm" data-testid="breaker">{breakerOpen(breaker) ? `Paused until ${fmtLocal(breaker.open_until!, tz)} after repeated errors.` : `Running. Consecutive failures: ${breaker.failures}.`}</p>
+        <p className="mt-1 text-sm">Jobs queued for your company: {queued}</p>
+      </Card>
+      <h2 className="font-semibold">Failed jobs</h2>
+      <Table>
+        <thead><tr><Th>Kind</Th><Th>Attempts</Th><Th>Error</Th><Th>When</Th><Th></Th></tr></thead>
+        <tbody>
+          {dead.map((j) => <tr key={j.id}><Td>{j.kind}</Td><Td>{j.attempts}</Td><Td>{j.last_error}</Td><Td>{fmtLocal(j.dead_at!, tz)}</Td><Td><RetryJob id={j.id} /></Td></tr>)}
+          {!dead.length ? <tr><Td colSpan={5}>None.</Td></tr> : null}
+        </tbody>
+      </Table>
+    </div>
+  );
+}

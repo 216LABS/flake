@@ -1,0 +1,9 @@
+{
+  "crons": [
+    { "path": "/api/cron/weather", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/jobs", "schedule": "* * * * *" },
+    { "path": "/api/cron/nohrsc", "schedule": "0 */6 * * *" },
+    { "path": "/api/cron/late-check", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/reports", "schedule": "*/15 * * * *" }
+  ]
+}

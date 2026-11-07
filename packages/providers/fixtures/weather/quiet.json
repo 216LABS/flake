@@ -1,0 +1,16 @@
+{
+  "_comment": "SYNTHETIC test data. A dry stretch with no snow.",
+  "_synthetic": true,
+  "lastModified": "2025-12-12T06:00:00Z",
+  "startAt": "2025-12-12T12:00:00Z",
+  "gridpoint": {
+    "updateTime": "2025-12-12T06:00:00+00:00",
+    "snowfallAmount": { "uom": "wmoUnit:mm", "values": [{ "validTime": "2025-12-12T00:00:00+00:00/P4D", "value": 0 }] },
+    "iceAccumulation": { "uom": "wmoUnit:mm", "values": [{ "validTime": "2025-12-12T00:00:00+00:00/P4D", "value": 0 }] },
+    "temperature": { "uom": "wmoUnit:degC", "values": [{ "validTime": "2025-12-12T00:00:00+00:00/P4D", "value": 4 }] },
+    "probabilityOfPrecipitation": { "uom": "wmoUnit:percent", "values": [{ "validTime": "2025-12-12T00:00:00+00:00/P4D", "value": 5 }] },
+    "quantitativePrecipitation": { "uom": "wmoUnit:mm", "values": [{ "validTime": "2025-12-12T00:00:00+00:00/P4D", "value": 0 }] }
+  },
+  "alerts": [],
+  "nohrsc": [{ "valid": "2025-12-12T00:00:00Z", "h6": 0, "h24": 0 }]
+}

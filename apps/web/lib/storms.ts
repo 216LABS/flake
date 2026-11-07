@@ -1,0 +1,281 @@
+import { and, asc, contract, crew_member, customer, desc, driver_position, eq, inArray, message_log, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, withUser } from '@flake/db';
+import { isLate } from '@flake/core/time';
+import type { ContractService } from '@flake/core/pricing';
+import { z } from 'zod';
+import { stormCreate, runStopPatch, stormNotify } from '@flake/contracts';
+import { HttpError } from './http';
+import { baseUrl } from './env';
+import { enqueue } from './jobs';
+import { notifyParty, shortLink } from './messaging';
+import { decryptToken, encryptToken, hashToken, newToken } from './tokens';
+import { latestSnapshotIds, tenantWeatherHeader } from './weather';
+
+export interface Ctx { userId: string; tenantId: string }
+
+const FAR_FUTURE_DAYS = 14;
+
+function newLink() {
+  const token = newToken();
+  return { token, hash: hashToken(token), enc: encryptToken(token), expires: new Date(Date.now() + FAR_FUTURE_DAYS * 86400000).toISOString() };
+}
+
+/** Snapshots master routes into runs. "Publish, then move": the list is never rebuilt after this. */
+export async function createStorm(ctx: Ctx, input: z.infer<typeof stormCreate>) {
+  const snapshotIds = await latestSnapshotIds(ctx.tenantId);
+  return withUser(ctx.userId, async (tx) => {
+    let alertSnapshotIds: string[] = [];
+    if (input.triggerAlertId) {
+      const [a] = await tx.select().from(trigger_alert).where(eq(trigger_alert.id, input.triggerAlertId));
+      if (!a) throw new HttpError(404, 'Alert not found');
+      alertSnapshotIds = a.snapshot_ids;
+      await tx.update(trigger_alert).set({ status: 'dispatched' }).where(eq(trigger_alert.id, a.id));
+    }
+    const [s] = await tx.insert(storm).values({
+      tenant_id: ctx.tenantId,
+      name: input.name,
+      started_at: new Date().toISOString(),
+      trigger_alert_id: input.triggerAlertId ?? null,
+      forecast_snapshot_ids: [...new Set([...alertSnapshotIds, ...snapshotIds])],
+    }).returning();
+    const runs = [];
+    for (const routeId of input.routeIds) {
+      const [r] = await tx.select().from(route).where(eq(route.id, routeId));
+      if (!r) throw new HttpError(404, 'Route not found');
+      // Retired sites stay on old storms but don't join new ones.
+      const stops = await tx.select({ site_id: route_stop.site_id }).from(route_stop).innerJoin(site, eq(site.id, route_stop.site_id)).where(and(eq(route_stop.route_id, routeId), eq(site.active, true))).orderBy(asc(route_stop.seq));
+      const chosen = input.siteIds ? stops.filter((x) => input.siteIds!.includes(x.site_id)) : stops;
+      if (!chosen.length) continue;
+      const link = newLink();
+      const [run] = await tx.insert(storm_run).values({
+        tenant_id: ctx.tenantId, storm_id: s!.id, route_id: routeId, crew_id: input.crewAssignments[routeId] ?? r.default_crew_id,
+        link_token_hash: link.hash, link_token_enc: link.enc, link_expires_at: link.expires,
+      }).returning();
+      await tx.insert(run_stop).values(chosen.map((x, i) => ({ tenant_id: ctx.tenantId, storm_run_id: run!.id, site_id: x.site_id, seq: i + 1 })));
+      runs.push(run!);
+    }
+    return { storm: s!, runs };
+  });
+}
+
+/** A second pass over the same routes. Visits on it count as re-plows. */
+export async function addPass(ctx: Ctx, stormId: string) {
+  return withUser(ctx.userId, async (tx) => {
+    const runs = await tx.select().from(storm_run).where(eq(storm_run.storm_id, stormId));
+    if (!runs.length) throw new HttpError(404, 'Storm not found');
+    const pass = Math.max(...runs.map((r) => r.pass)) + 1;
+    const created = [];
+    for (const old of runs.filter((r) => r.pass === pass - 1)) {
+      const stops = await tx.select().from(run_stop).where(eq(run_stop.storm_run_id, old.id)).orderBy(asc(run_stop.seq));
+      const link = newLink();
+      const [run] = await tx.insert(storm_run).values({ tenant_id: ctx.tenantId, storm_id: stormId, route_id: old.route_id, crew_id: old.crew_id, pass, link_token_hash: link.hash, link_token_enc: link.enc, link_expires_at: link.expires }).returning();
+      await tx.insert(run_stop).values(stops.map((x, i) => ({ tenant_id: ctx.tenantId, storm_run_id: run!.id, site_id: x.site_id, seq: i + 1 })));
+      created.push(run!);
+    }
+    return { pass, runs: created };
+  });
+}
+
+export async function publishStorm(ctx: Ctx, stormId: string) {
+  const runs = await withUser(ctx.userId, async (tx) => {
+    const list = await tx.select().from(storm_run).where(eq(storm_run.storm_id, stormId));
+    if (!list.length) throw new HttpError(404, 'This storm has no runs');
+    const unassigned = list.filter((r) => !r.crew_id);
+    if (unassigned.length) throw new HttpError(409, `${unassigned.length} run(s) have no driver. Assign one first.`, 'no_crew');
+    await tx.update(storm_run).set({ published_at: new Date().toISOString() }).where(and(eq(storm_run.storm_id, stormId), sql`published_at is null`));
+    return list;
+  });
+  for (const r of runs) await enqueue('storm.publish_links', { tenantId: ctx.tenantId, runId: r.id }, { dedupeKey: `publish:${r.id}` });
+  return { runs: runs.length };
+}
+
+export function runLink(run: { link_token_enc: string | null }) {
+  return run.link_token_enc ? `${baseUrl()}/d/${decryptToken(run.link_token_enc)}` : null;
+}
+
+/** storm.publish_links: SMS when the tenant is verified and the driver consented, email always, QR on screen. */
+export async function sendRunLink(tenantId: string, runId: string) {
+  const db = serviceDb();
+  const [row] = await db.select({ run: storm_run, crew: crew_member, route, tenant }).from(storm_run)
+    .innerJoin(tenant, eq(tenant.id, storm_run.tenant_id))
+    .leftJoin(crew_member, eq(crew_member.id, storm_run.crew_id))
+    .leftJoin(route, eq(route.id, storm_run.route_id))
+    .where(and(eq(storm_run.id, runId), eq(storm_run.tenant_id, tenantId)));
+  if (!row?.crew) return;
+  const stops = await db.select({ id: run_stop.id }).from(run_stop).where(and(eq(run_stop.tenant_id, tenantId), eq(run_stop.storm_run_id, runId)));
+  const url = runLink(row.run);
+  if (!url) return;
+  const link = await shortLink(tenantId, new URL(url).pathname);
+  await notifyParty(row.tenant, { phone: row.crew.phone_e164, email: row.crew.email }, {
+    template: 'crew_link',
+    vars: { route: row.route?.name ?? 'your route', n: stops.length, link },
+    subject: `${row.tenant.name}: storm on, your route is ready`,
+    key: `crew_link:${runId}:${row.crew.id}`,
+    related: { storm_run_id: runId },
+  });
+}
+
+/** Reassign, reorder or skip. Moving a stop tells both drivers; their PWAs also poll, so they see it within 10 s. */
+export async function patchRunStop(ctx: Ctx, stopId: string, patch: z.infer<typeof runStopPatch>) {
+  const out = await withUser(ctx.userId, async (tx) => {
+    const [stop] = await tx.select().from(run_stop).where(eq(run_stop.id, stopId));
+    if (!stop) throw new HttpError(404, 'Stop not found');
+    const set: Partial<typeof run_stop.$inferInsert> = { updated_at: new Date().toISOString() };
+    let moved: { from: string; to: string } | null = null;
+    if (patch.storm_run_id && patch.storm_run_id !== stop.storm_run_id) {
+      if (stop.status === 'onsite') throw new HttpError(409, 'The driver is on site. Wait until they finish.', 'onsite');
+      const [target] = await tx.select().from(storm_run).where(eq(storm_run.id, patch.storm_run_id));
+      const [source] = await tx.select().from(storm_run).where(eq(storm_run.id, stop.storm_run_id));
+      if (!target || target.storm_id !== source!.storm_id) throw new HttpError(422, 'That run is not in this storm');
+      const [{ max } = { max: 0 }] = await tx.select({ max: sql<number>`coalesce(max(seq), 0)` }).from(run_stop).where(eq(run_stop.storm_run_id, target.id));
+      set.storm_run_id = target.id;
+      set.seq = patch.seq ?? Number(max) + 1;
+      set.previous_run_ids = [...stop.previous_run_ids, stop.storm_run_id];
+      if (stop.status === 'enroute' || stop.status === 'problem') set.status = 'open';
+      moved = { from: stop.storm_run_id, to: target.id };
+    } else if (patch.seq !== undefined) {
+      set.seq = patch.seq;
+    }
+    if (patch.status) set.status = patch.status;
+    const [updated] = await tx.update(run_stop).set(set).where(eq(run_stop.id, stopId)).returning();
+    return { stop: updated!, moved };
+  });
+  if (out.moved) {
+    for (const runId of [out.moved.from, out.moved.to]) {
+      await enqueue('notify.route_changed', { tenantId: ctx.tenantId, runId, stopId, at: out.stop.updated_at }, { dedupeKey: `moved:${stopId}:${runId}:${out.stop.updated_at}` });
+    }
+  }
+  return out.stop;
+}
+
+export async function notifyRouteChanged(tenantId: string, runId: string, key: string) {
+  const db = serviceDb();
+  const [row] = await db.select({ run: storm_run, crew: crew_member, tenant }).from(storm_run).innerJoin(tenant, eq(tenant.id, storm_run.tenant_id)).leftJoin(crew_member, eq(crew_member.id, storm_run.crew_id)).where(and(eq(storm_run.id, runId), eq(storm_run.tenant_id, tenantId)));
+  const url = row && runLink(row.run);
+  if (!row?.crew || !url) return;
+  const link = await shortLink(tenantId, new URL(url).pathname);
+  await notifyParty(row.tenant, { phone: row.crew.phone_e164, email: row.crew.email }, { template: 'route_changed', vars: { link }, subject: `${row.tenant.name}: your route changed`, key: `route_changed:${key}:${runId}`, related: { storm_run_id: runId } });
+}
+
+/** Each site gets one message per template per storm, however many times the button is pressed. */
+export async function notifyCustomers(ctx: Ctx, stormId: string, input: z.infer<typeof stormNotify>) {
+  await withUser(ctx.userId, async (tx) => {
+    const [s] = await tx.select({ id: storm.id }).from(storm).where(eq(storm.id, stormId));
+    if (!s) throw new HttpError(404, 'Storm not found');
+  });
+  for (const siteId of input.siteIds) {
+    await enqueue('notify.customer', { tenantId: ctx.tenantId, siteId, stormId, template: input.template, time: input.time ?? 'soon', key: `${input.template}:${stormId}:${siteId}` }, { dedupeKey: `notify:${input.template}:${stormId}:${siteId}` });
+  }
+  return { queued: input.siteIds.length };
+}
+
+export async function notifyCustomer(p: { tenantId: string; siteId: string; template: 'late' | 'on_the_way' | 'done'; time?: string; link?: string; key: string; stormId?: string; visitId?: string }) {
+  const db = serviceDb();
+  const [row] = await db.select({ site, customer, tenant }).from(site).innerJoin(customer, eq(customer.id, site.customer_id)).innerJoin(tenant, eq(tenant.id, site.tenant_id)).where(and(eq(site.id, p.siteId), eq(site.tenant_id, p.tenantId)));
+  if (!row) return;
+  const subjects = { late: 'Running late', on_the_way: 'Your plow is on the way', done: 'Service completed' };
+  await notifyParty(row.tenant, { phone: row.customer.notify_sms ? row.customer.phone_e164 : null, email: row.customer.email, wantsEmail: row.customer.notify_email }, {
+    template: p.template,
+    vars: { site: row.site.label, time: p.time ?? '', link: p.link ?? '' },
+    subject: `${row.tenant.name}: ${subjects[p.template]} - ${row.site.label}`,
+    key: p.key,
+    related: { site_id: p.siteId, storm_id: p.stormId, visit_id: p.visitId },
+  });
+}
+
+/** Closing is blocked while anyone is on site unless forced. Links stay alive for 24 h after close. */
+export async function closeStorm(ctx: Ctx, stormId: string, force: boolean) {
+  return withUser(ctx.userId, async (tx) => {
+    const [s] = await tx.select().from(storm).where(eq(storm.id, stormId));
+    if (!s) throw new HttpError(404, 'Storm not found');
+    const runs = await tx.select({ id: storm_run.id }).from(storm_run).where(eq(storm_run.storm_id, stormId));
+    const ids = runs.map((r) => r.id);
+    const onsite = ids.length ? await tx.select({ id: run_stop.id }).from(run_stop).where(and(inArray(run_stop.storm_run_id, ids), eq(run_stop.status, 'onsite'))) : [];
+    if (onsite.length && !force) throw new HttpError(409, `${onsite.length} stop(s) still have a driver on site.`, 'onsite');
+    const now = new Date();
+    const snapshotIds = await latestSnapshotIds(ctx.tenantId);
+    const [closed] = await tx.update(storm).set({ status: 'closed', closed_at: now.toISOString(), forecast_snapshot_ids: [...new Set([...(s.forecast_snapshot_ids ?? []), ...snapshotIds])] }).where(eq(storm.id, stormId)).returning();
+    if (ids.length) await tx.update(storm_run).set({ link_expires_at: new Date(now.getTime() + 24 * 3600000).toISOString() }).where(inArray(storm_run.id, ids));
+    return closed!;
+  });
+}
+
+export async function revokeRunLink(ctx: Ctx, runId: string) {
+  const link = newLink();
+  return withUser(ctx.userId, async (tx) => {
+    const [r] = await tx.update(storm_run).set({ link_token_hash: link.hash, link_token_enc: link.enc, link_revoked_at: null }).where(eq(storm_run.id, runId)).returning();
+    if (!r) throw new HttpError(404, 'Run not found');
+    return r;
+  });
+}
+
+/** Assigns or swaps a run's driver. After publish, the new driver gets the link right away. */
+export async function assignRunDriver(ctx: Ctx, runId: string, crewId: string) {
+  const run = await withUser(ctx.userId, async (tx) => {
+    const [r] = await tx.update(storm_run).set({ crew_id: crewId }).where(eq(storm_run.id, runId)).returning();
+    if (!r) throw new HttpError(404, 'Run not found');
+    return r;
+  });
+  if (run.published_at) await enqueue('storm.publish_links', { tenantId: ctx.tenantId, runId }, { dedupeKey: `publish:${runId}:${crewId}` });
+  return run;
+}
+
+/** Everything the live board shows. Reads as the signed-in user so RLS applies. */
+export async function stormLive(ctx: Ctx & { timezone: string }, stormId: string) {
+  const data = await withUser(ctx.userId, async (tx) => {
+    const [s] = await tx.select().from(storm).where(eq(storm.id, stormId));
+    if (!s) throw new HttpError(404, 'Storm not found');
+    const runs = await tx.select({ run: storm_run, crew: crew_member, route }).from(storm_run).leftJoin(crew_member, eq(crew_member.id, storm_run.crew_id)).leftJoin(route, eq(route.id, storm_run.route_id)).where(eq(storm_run.storm_id, stormId)).orderBy(asc(storm_run.pass), asc(storm_run.created_at));
+    const runIds = runs.map((r) => r.run.id);
+    const stops = runIds.length ? await tx.select({ stop: run_stop, site, customer }).from(run_stop).innerJoin(site, eq(site.id, run_stop.site_id)).innerJoin(customer, eq(customer.id, site.customer_id)).where(inArray(run_stop.storm_run_id, runIds)).orderBy(asc(run_stop.seq)) : [];
+    const visits = await tx.select().from(visit).where(eq(visit.storm_id, stormId));
+    const problems = runIds.length ? await tx.select().from(problem_report).where(and(inArray(problem_report.storm_run_id, runIds), sql`resolved_at is null`)).orderBy(desc(problem_report.created_at)) : [];
+    const positions = runIds.length ? await tx.selectDistinctOn([driver_position.storm_run_id]).from(driver_position).where(inArray(driver_position.storm_run_id, runIds)).orderBy(driver_position.storm_run_id, desc(driver_position.device_at)) : [];
+    const pins = stops.length ? await tx.select().from(site_pin).where(inArray(site_pin.site_id, stops.map((x) => x.site.id))) : [];
+    const crew = await tx.select({ id: crew_member.id, name: crew_member.name, kind: crew_member.kind }).from(crew_member).where(eq(crew_member.active, true)).orderBy(asc(crew_member.name));
+    return { s: s!, runs, stops, visits, problems, positions, pins, crew };
+  });
+  const now = Date.now();
+  const started = Date.parse(data.s.started_at);
+  const alerts: { kind: string; text: string; at?: string | null; stop_id?: string }[] = [];
+  const boards = data.runs.map(({ run, crew, route: r }) => {
+    const stops = data.stops.filter((x) => x.stop.storm_run_id === run.id).map(({ stop, site: st, customer: c }) => {
+      const stopVisits = data.visits.filter((v) => v.run_stop_id === stop.id);
+      const open = stopVisits.find((v) => !v.departed_device_at);
+      const late = (stop.status === 'open' || stop.status === 'enroute') && isLate(st.service_window, started, now, ctx.timezone);
+      if (late) alerts.push({ kind: 'late', text: `${st.label} is past its ${st.service_window?.open_by} deadline`, stop_id: stop.id });
+      return { id: stop.id, seq: stop.seq, status: stop.status, late, priority: st.priority, site_id: st.id, label: st.label, address: st.address, lat: st.lat, lon: st.lon, customer: c.name, arrived_at: stop.status === 'onsite' ? (open?.arrived_device_at ?? null) : null, done_at: stopVisits.find((v) => v.departed_device_at)?.departed_device_at ?? null };
+    }).sort((a, b) => Number(b.late && b.priority <= 2) - Number(a.late && a.priority <= 2) || a.seq - b.seq);
+    if (crew?.kind === 'sub' && run.published_at && !run.started_at && now - Date.parse(run.published_at) > 30 * 60000) {
+      alerts.push({ kind: 'not_started', text: `${crew.name} has not started 30 minutes after publish`, at: run.published_at });
+    }
+    const pos = data.positions.find((p) => p.storm_run_id === run.id);
+    return {
+      id: run.id, pass: run.pass, name: r?.name ?? 'Run', crew: crew ? { id: crew.id, name: crew.name, kind: crew.kind, callout_reply: crew.callout_reply } : null,
+      published_at: run.published_at, started_at: run.started_at, link: run.published_at ? runLink(run) : null, stops,
+      position: pos ? { lat: pos.lat, lon: pos.lon, at: pos.device_at } : null,
+    };
+  });
+  for (const p of data.problems) {
+    const st = data.stops.find((x) => x.site.id === p.site_id);
+    alerts.push({ kind: 'problem', text: `${p.kind} at ${st?.site.label ?? 'a site'}${p.note ? `: ${p.note}` : ''}`, at: p.created_at });
+  }
+  const all = boards.flatMap((b) => b.stops);
+  return {
+    storm: data.s,
+    crew: data.crew,
+    runs: boards,
+    alerts,
+    counts: { done: all.filter((x) => x.status === 'done').length, open: all.filter((x) => ['open', 'enroute', 'problem'].includes(x.status)).length, onsite: all.filter((x) => x.status === 'onsite').length, skipped: all.filter((x) => x.status === 'skipped').length, late: all.filter((x) => x.late).length, total: all.length },
+    weather: await tenantWeatherHeader(ctx.tenantId, [...new Set(data.stops.map((x) => x.site.id))]),
+  };
+}
+
+export async function latestContractFor(tenantId: string, siteId: string) {
+  const [c] = await serviceDb().select().from(contract).where(and(eq(contract.tenant_id, tenantId), eq(contract.site_id, siteId), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)).limit(1);
+  return c ? { services: c.services as ContractService[], salt_pricing: c.salt_pricing as { unit: string; amount_cents: number } | null } : null;
+}
+
+export async function customerMessagesCount(tenantId: string, keyLike: string) {
+  const rows = await serviceDb().select({ id: message_log.id }).from(message_log).where(and(eq(message_log.tenant_id, tenantId), sql`idempotency_key like ${keyLike}`));
+  return rows.length;
+}

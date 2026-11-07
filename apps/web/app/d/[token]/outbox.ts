@@ -1,0 +1,115 @@
+import { openDB, type IDBPDatabase } from 'idb';
+
+/**
+ * The offline outbox. Everything is written here first, then flushed on online, on visibility, on open, and
+ * every 15 s. The server is idempotent on client_uuid, so a flush can repeat safely.
+ */
+interface StoredAction { seq?: number; token: string; run_stop_id?: string; action: Record<string, unknown> }
+interface StoredPhoto { client_uuid: string; token: string; blob: Blob; meta: Record<string, string> }
+
+let dbp: Promise<IDBPDatabase> | null = null;
+function db() {
+  dbp ??= openDB('flake-driver', 1, {
+    upgrade(d) {
+      d.createObjectStore('actions', { keyPath: 'seq', autoIncrement: true });
+      d.createObjectStore('photos', { keyPath: 'client_uuid' });
+      d.createObjectStore('kv');
+      d.createObjectStore('rejected', { keyPath: 'client_uuid' });
+    },
+  });
+  return dbp;
+}
+
+export const kvGet = async <T,>(key: string) => (await (await db()).get('kv', key)) as T | undefined;
+export const kvSet = async (key: string, value: unknown) => void (await (await db()).put('kv', value, key));
+
+/**
+ * One atomic write: the queued actions, any photo, and the phone's view of the route commit together or not at
+ * all. The screen only moves on after this resolves, so a crash or reload can't split a tap in two.
+ */
+export async function commit(opts: { token: string; localKey: string; local: unknown; actions?: Record<string, unknown>[]; photo?: { blob: Blob; meta: Record<string, string> } }) {
+  const tx = (await db()).transaction(['actions', 'photos', 'kv'], 'readwrite');
+  for (const action of opts.actions ?? []) void tx.objectStore('actions').add({ token: opts.token, run_stop_id: action.run_stop_id as string | undefined, action } satisfies StoredAction);
+  if (opts.photo) void tx.objectStore('photos').put({ client_uuid: opts.photo.meta.client_uuid!, token: opts.token, blob: opts.photo.blob, meta: opts.photo.meta } satisfies StoredPhoto);
+  void tx.objectStore('kv').put(opts.local, opts.localKey);
+  await tx.done;
+}
+
+export async function addAction(token: string, action: Record<string, unknown>) {
+  await (await db()).add('actions', { token, run_stop_id: action.run_stop_id as string | undefined, action } satisfies StoredAction);
+}
+export async function addPhoto(token: string, blob: Blob, meta: Record<string, string>) {
+  await (await db()).put('photos', { client_uuid: meta.client_uuid!, token, blob, meta } satisfies StoredPhoto);
+}
+
+export async function pending(token: string) {
+  const d = await db();
+  const actions = ((await d.getAll('actions')) as StoredAction[]).filter((a) => a.token === token);
+  const photos = ((await d.getAll('photos')) as StoredPhoto[]).filter((p) => p.token === token);
+  return { actions: actions.length, photos: photos.length, stopIds: new Set(actions.map((a) => a.run_stop_id).filter(Boolean) as string[]) };
+}
+
+let flushing = false;
+
+/** The host caps request bodies around 4.5 MB, and full-size photos are often bigger. */
+const DIRECT_UPLOAD_OVER_BYTES = 3.5 * 1024 * 1024;
+
+async function sendPhoto(token: string, p: StoredPhoto): Promise<Response> {
+  if (p.blob.size <= DIRECT_UPLOAD_OVER_BYTES || p.meta.phase === 'voice') {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(p.meta)) form.set(k, v);
+    form.set('file', p.blob, `${p.client_uuid}.jpg`);
+    return fetch(`/api/d/${token}/photos`, { method: 'POST', body: form });
+  }
+  const json = { 'Content-Type': 'application/json' };
+  const body = JSON.stringify({ ...p.meta, content_type: p.blob.type || 'image/jpeg' });
+  const signed = await fetch(`/api/d/${token}/photos/sign`, { method: 'POST', headers: json, body });
+  if (!signed.ok) return signed;
+  const out = (await signed.clone().json()) as { status: string; url?: string };
+  if (out.status === 'duplicate') return signed;
+  const put = await fetch(out.url!, { method: 'PUT', headers: { 'Content-Type': p.blob.type || 'image/jpeg', 'x-upsert': 'true' }, body: p.blob });
+  if (!put.ok) return put;
+  return fetch(`/api/d/${token}/photos/finish`, { method: 'POST', headers: json, body });
+}
+
+export type FlushResult = 'idle' | 'synced' | 'offline' | 'dead' | 'partial';
+
+export async function flush(token: string, onStart?: () => void): Promise<FlushResult> {
+  if (flushing) return 'idle';
+  flushing = true;
+  try {
+    const d = await db();
+    const actions = ((await d.getAll('actions')) as StoredAction[]).filter((a) => a.token === token);
+    const photos = ((await d.getAll('photos')) as StoredPhoto[]).filter((p) => p.token === token);
+    if (!actions.length && !photos.length) return 'synced';
+    onStart?.();
+
+    for (let i = 0; i < actions.length; i += 50) {
+      const batch = actions.slice(i, i + 50);
+      const res = await fetch(`/api/d/${token}/actions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ actions: batch.map((a) => a.action) }) });
+      if (res.status === 410) return 'dead';
+      if (!res.ok) return 'partial';
+      const { acks } = (await res.json()) as { acks: { client_uuid: string; status: string; reason?: string }[] };
+      for (const a of batch) {
+        const ack = acks.find((x) => x.client_uuid === a.action.client_uuid);
+        if (!ack) continue;
+        // A rejected action is kept aside, never silently dropped.
+        if (ack.status === 'rejected') await d.put('rejected', { client_uuid: ack.client_uuid, reason: ack.reason, action: a.action });
+        await d.delete('actions', a.seq!);
+      }
+    }
+
+    let waiting = false;
+    for (const p of photos) {
+      const res = await sendPhoto(token, p);
+      if (res.status === 410) return 'dead';
+      if (res.ok) await d.delete('photos', p.client_uuid);
+      else waiting = true;
+    }
+    return waiting ? 'partial' : 'synced';
+  } catch {
+    return 'offline';
+  } finally {
+    flushing = false;
+  }
+}

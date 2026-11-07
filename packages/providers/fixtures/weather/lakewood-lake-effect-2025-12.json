@@ -1,0 +1,50 @@
+{
+  "_comment": "SYNTHETIC test data. Not a real forecast or observation. A made-up 3-day lake-effect event: 0.5, 3.2 and 1.1 inches.",
+  "_synthetic": true,
+  "lastModified": "2025-12-12T06:00:00Z",
+  "startAt": "2025-12-12T12:00:00Z",
+  "gridpoint": {
+    "updateTime": "2025-12-12T06:00:00+00:00",
+    "snowfallAmount": {
+      "uom": "wmoUnit:mm",
+      "values": [
+        { "validTime": "2025-12-12T00:00:00+00:00/PT18H", "value": 0 },
+        { "validTime": "2025-12-12T18:00:00+00:00/PT6H", "value": 12.7 },
+        { "validTime": "2025-12-13T00:00:00+00:00/PT6H", "value": 30.48 },
+        { "validTime": "2025-12-13T06:00:00+00:00/PT6H", "value": 38.1 },
+        { "validTime": "2025-12-13T12:00:00+00:00/PT6H", "value": 12.7 },
+        { "validTime": "2025-12-13T18:00:00+00:00/PT12H", "value": 0 },
+        { "validTime": "2025-12-14T06:00:00+00:00/PT6H", "value": 17.78 },
+        { "validTime": "2025-12-14T12:00:00+00:00/PT6H", "value": 10.16 },
+        { "validTime": "2025-12-14T18:00:00+00:00/P1DT6H", "value": 0 }
+      ]
+    },
+    "iceAccumulation": { "uom": "wmoUnit:mm", "values": [{ "validTime": "2025-12-12T00:00:00+00:00/P4D", "value": 0 }] },
+    "temperature": {
+      "uom": "wmoUnit:degC",
+      "values": [
+        { "validTime": "2025-12-12T00:00:00+00:00/P1D", "value": -3 },
+        { "validTime": "2025-12-13T00:00:00+00:00/P1D", "value": -6 },
+        { "validTime": "2025-12-14T00:00:00+00:00/P2D", "value": -5 }
+      ]
+    },
+    "probabilityOfPrecipitation": { "uom": "wmoUnit:percent", "values": [{ "validTime": "2025-12-12T00:00:00+00:00/P4D", "value": 80 }] },
+    "quantitativePrecipitation": { "uom": "wmoUnit:mm", "values": [{ "validTime": "2025-12-12T18:00:00+00:00/P2D", "value": 2 }] }
+  },
+  "alerts": [
+    {
+      "id": "synthetic-lake-effect-warning-1",
+      "event": "Lake Effect Snow Warning",
+      "headline": "SYNTHETIC: Lake Effect Snow Warning for testing",
+      "onset": "2025-12-12T18:00:00Z",
+      "ends": "2025-12-13T18:00:00Z"
+    }
+  ],
+  "nohrsc": [
+    { "valid": "2025-12-13T00:00:00Z", "h6": 0.5, "h24": 0.5 },
+    { "valid": "2025-12-13T12:00:00Z", "h6": 1.5, "h24": 3.2 },
+    { "valid": "2025-12-14T00:00:00Z", "h6": 0.2, "h24": 3.7 },
+    { "valid": "2025-12-14T12:00:00Z", "h6": 0.7, "h24": 1.1 },
+    { "valid": "2025-12-15T00:00:00Z", "h6": 0.1, "h24": 1.1 }
+  ]
+}

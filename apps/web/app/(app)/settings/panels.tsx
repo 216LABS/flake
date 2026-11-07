@@ -1,0 +1,196 @@
+'use client';
+
+import type { RateCard } from '@flake/core/quote';
+import { Badge, Button, Card, Input, Label, Select, Table, Td, Th } from '@flake/ui';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { api, dollarsToCents, money } from '@/lib/client';
+
+function useAction() {
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const run = async (fn: () => Promise<unknown>, ok = 'Saved') => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await fn();
+      setMsg(ok);
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return { msg, busy, run };
+}
+
+export function RateCardForm({ card }: { card: RateCard }) {
+  const [c, setC] = useState(card);
+  const { msg, busy, run } = useAction();
+  return (
+    <Card className="max-w-xl">
+      <h2 className="font-semibold">Rate card</h2>
+      <p className="mt-1 text-sm text-slate-600">These are your numbers, and they set suggested prices on new quotes. The starting values are placeholders, not market data.</p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div><Label htmlFor="rate">Cents per sq ft, per push</Label><Input id="rate" type="number" step="0.01" value={c.per_sqft_cents_per_push} onChange={(e) => setC({ ...c, per_sqft_cents_per_push: Number(e.target.value) })} data-testid="rate-sqft" /></div>
+        <div><Label htmlFor="min">Minimum push ($)</Label><Input id="min" type="number" value={c.min_push_cents / 100} onChange={(e) => setC({ ...c, min_push_cents: dollarsToCents(e.target.value) })} /></div>
+        <div><Label htmlFor="walk">Cents per foot of walk</Label><Input id="walk" type="number" value={c.walks_per_lf_cents} onChange={(e) => setC({ ...c, walks_per_lf_cents: Number(e.target.value) })} /></div>
+        <div><Label htmlFor="salt">Salt per 50 lb bag ($)</Label><Input id="salt" type="number" value={c.salt_bag_cents / 100} onChange={(e) => setC({ ...c, salt_bag_cents: dollarsToCents(e.target.value) })} /></div>
+        <div><Label htmlFor="pushes">Pushes per season</Label><Input id="pushes" type="number" value={c.season_pushes} onChange={(e) => setC({ ...c, season_pushes: Number(e.target.value) })} /></div>
+      </div>
+      <div className="mt-4 flex items-center gap-2">
+        <Button disabled={busy} data-testid="rate-save" onClick={() => run(() => api('/api/settings/rate-card', { method: 'PUT', body: c }))}>Save</Button>
+        {msg ? <span className="text-sm text-slate-600" data-testid="rate-msg">{msg}</span> : null}
+      </div>
+    </Card>
+  );
+}
+
+export function CrewPanel({ crew }: { crew: any[] }) {
+  const router = useRouter();
+  const blank = { name: '', phone_e164: '', email: '', kind: 'employee', language: 'en', per_visit: '', hourly: '' };
+  const [f, setF] = useState(blank);
+  const [invite, setInvite] = useState<string | null>(null);
+  const { msg, busy, run } = useAction();
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="lg:col-span-2">
+        <Table>
+          <thead><tr><Th>Name</Th><Th>Kind</Th><Th>Contact</Th><Th>Language</Th><Th>Joined</Th><Th></Th></tr></thead>
+          <tbody>
+            {crew.map((c) => (
+              <tr key={c.id} className={c.active ? '' : 'opacity-50'}>
+                <Td>{c.name}</Td>
+                <Td><Badge>{c.kind}</Badge></Td>
+                <Td>{c.phone_e164 ?? ''} {c.email ?? ''}</Td>
+                <Td>{c.language}</Td>
+                <Td>{c.joined_at ? 'Yes' : 'Invited'}</Td>
+                <Td>{c.active ? <Button size="sm" variant="ghost" onClick={() => run(async () => { await api(`/api/crew/${c.id}`, { method: 'DELETE' }); router.refresh(); }, 'Removed')}>Remove</Button> : null}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </div>
+      <Card>
+        <h2 className="font-semibold">Invite crew</h2>
+        <p className="mt-1 text-sm text-slate-600">They choose on the join page whether to get texts.</p>
+        <div className="mt-2 space-y-2">
+          <div><Label htmlFor="crew-name">Name</Label><Input id="crew-name" data-testid="crew-name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
+          <div><Label htmlFor="crew-phone">Mobile (+1...)</Label><Input id="crew-phone" value={f.phone_e164} onChange={(e) => setF({ ...f, phone_e164: e.target.value })} /></div>
+          <div><Label htmlFor="crew-email">Email</Label><Input id="crew-email" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></div>
+          <div className="grid grid-cols-2 gap-2">
+            <div><Label htmlFor="crew-kind">Kind</Label><Select id="crew-kind" value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}><option value="employee">Employee</option><option value="sub">Subcontractor</option></Select></div>
+            <div><Label htmlFor="crew-lang">Language</Label><Select id="crew-lang" value={f.language} onChange={(e) => setF({ ...f, language: e.target.value })}><option value="en">English</option><option value="es">Spanish</option></Select></div>
+          </div>
+          {f.kind === 'sub' ? (
+            <div className="grid grid-cols-2 gap-2">
+              <div><Label htmlFor="sub-visit">Pay per visit ($)</Label><Input id="sub-visit" type="number" value={f.per_visit} onChange={(e) => setF({ ...f, per_visit: e.target.value })} /></div>
+              <div><Label htmlFor="sub-hour">Pay per hour ($)</Label><Input id="sub-hour" type="number" value={f.hourly} onChange={(e) => setF({ ...f, hourly: e.target.value })} /></div>
+            </div>
+          ) : null}
+        </div>
+        <Button className="mt-3 w-full" disabled={busy || !f.name} data-testid="crew-invite" onClick={() => run(async () => {
+          const { per_visit, hourly, ...rest } = f;
+          const sub_rate_card = f.kind === 'sub' ? { ...(per_visit ? { per_visit_cents: dollarsToCents(per_visit) } : {}), ...(hourly ? { hourly_cents: dollarsToCents(hourly) } : {}) } : null;
+          const out = await api('/api/crew', { body: { ...rest, kind: f.kind, sub_rate_card } });
+          setInvite(out.invite_url);
+          setF(blank);
+          router.refresh();
+        }, 'Invited')}>Invite</Button>
+        {msg ? <p className="mt-2 text-sm text-slate-600">{msg}</p> : null}
+        {invite ? <div className="mt-2"><Label>Invite link</Label><Input readOnly value={invite} data-testid="invite-url" /></div> : null}
+      </Card>
+    </div>
+  );
+}
+
+export function PaymentsPanel({ connected, enabled }: { connected: boolean; enabled: boolean }) {
+  const { msg, busy, run } = useAction();
+  return (
+    <Card className="max-w-xl">
+      <h2 className="font-semibold">Stripe</h2>
+      <p className="mt-1 text-sm">Status: <Badge tone={enabled ? 'green' : connected ? 'amber' : 'gray'} data-testid="stripe-status">{enabled ? 'Charges enabled' : connected ? 'Finish onboarding' : 'Not connected'}</Badge></p>
+      <p className="mt-2 text-sm text-slate-600">Payments go straight to your own Stripe account. You pay Stripe&apos;s fees, Stripe handles disputes and losses, and you log in to your own Stripe Dashboard. Flake takes a small application fee on each payment, shown on every billing review. You can skip this and use Flake without online payments.</p>
+      <Button className="mt-3" variant="accent" disabled={busy || enabled} data-testid="stripe-connect" onClick={() => run(async () => { window.location.href = (await api('/api/settings/stripe', { method: 'POST' })).url; }, 'Opening Stripe...')}>{connected ? 'Continue onboarding' : 'Connect Stripe'}</Button>
+      {msg ? <p className="mt-2 text-sm text-slate-600">{msg}</p> : null}
+    </Card>
+  );
+}
+
+export function SmsSubmit({ status }: { status: string }) {
+  const router = useRouter();
+  const [ein, setEin] = useState('');
+  const { msg, busy, run } = useAction();
+  if (status === 'approved') return null;
+  return (
+    <div className="mt-3">
+      <Label htmlFor="ein">EIN (sent to Twilio for verification; we keep only the last 4 digits)</Label>
+      <Input id="ein" value={ein} placeholder="12-3456789" onChange={(e) => setEin(e.target.value)} data-testid="ein" />
+      <Button className="mt-2" variant="accent" disabled={busy || status === 'pending' || !/^\d{2}-?\d{7}$/.test(ein)} data-testid="sms-submit" onClick={() => run(async () => { await api('/api/settings', { body: { ein } }); router.refresh(); }, 'Submitted')}>{status === 'rejected' ? 'Resubmit' : 'Submit for verification'}</Button>
+      {msg ? <p className="mt-2 text-sm text-slate-600" data-testid="sms-msg">{msg}</p> : null}
+    </div>
+  );
+}
+
+export function BusinessForm({ tenant }: { tenant: any }) {
+  const router = useRouter();
+  const v = tenant.sms_verification ?? {};
+  const [f, setF] = useState({
+    business_legal_name: tenant.business_legal_name ?? '', contact_email: tenant.contact_email ?? '', contact_phone: tenant.contact_phone ?? '', contact_name: v.contact_name ?? '', website: v.website ?? '',
+    line1: tenant.address?.line1 ?? '', city: tenant.address?.city ?? '', state: tenant.address?.state ?? '', zip: tenant.address?.zip ?? '', expected_monthly_volume: v.expected_monthly_volume ?? 1000,
+  });
+  const { msg, busy, run } = useAction();
+  const text = (key: keyof typeof f, label: string, testId?: string) => (
+    <div><Label htmlFor={key}>{label}</Label><Input id={key} data-testid={testId} value={f[key]} onChange={(e) => setF({ ...f, [key]: e.target.value })} /></div>
+  );
+  return (
+    <Card>
+      <h2 className="font-semibold">Business details for verification</h2>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {text('business_legal_name', 'Legal business name', 'legal-name')}
+        {text('contact_name', 'Contact name', 'contact-name')}
+        {text('contact_email', 'Contact email', 'contact-email')}
+        {text('contact_phone', 'Contact phone (+1...)', 'contact-phone')}
+        {text('line1', 'Street', 'line1')}
+        {text('city', 'City', 'city')}
+        {text('state', 'State', 'state')}
+        {text('zip', 'ZIP', 'zip')}
+        {text('website', 'Website (blank uses your Flake page)')}
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <Button disabled={busy} data-testid="business-save" onClick={() => run(async () => {
+          await api('/api/settings', { method: 'PATCH', body: { business_legal_name: f.business_legal_name, contact_email: f.contact_email, contact_phone: f.contact_phone, contact_name: f.contact_name, website: f.website, expected_monthly_volume: Number(f.expected_monthly_volume), address: f.line1 ? { line1: f.line1, city: f.city, state: f.state, zip: f.zip } : null } });
+          router.refresh();
+        })}>Save</Button>
+        {msg ? <span className="text-sm text-slate-600" data-testid="business-msg">{msg}</span> : null}
+      </div>
+    </Card>
+  );
+}
+
+export function PlanPanel({ plan, freeUntil, inSeason }: { plan: string; freeUntil: string | null; inSeason: boolean }) {
+  const { msg, busy, run } = useAction();
+  return (
+    <Card className="max-w-xl">
+      <h2 className="font-semibold">Plan</h2>
+      <p className="mt-1 text-sm">Current: <Badge tone={plan === 'pro' ? 'green' : 'gray'} data-testid="plan">{plan}</Badge></p>
+      {inSeason ? <p className="mt-2 text-sm text-slate-600">Free first season through {freeUntil}. Pro features are on and there is no Pro charge. The 1% payment fee still applies.</p> : null}
+      <ul className="mt-3 list-disc pl-5 text-sm text-slate-700">
+        <li>Free: up to 25 sites, all core features, 1% fee on payments (min {money(50)}, max {money(2500)})</li>
+        <li>Pro: {money(7900)}/mo or {money(79000)}/yr, unlimited sites, sub pay statements, QuickBooks export, 0.5% fee</li>
+      </ul>
+      {plan !== 'pro' ? (
+        <div className="mt-3 flex gap-2">
+          <Button disabled={busy} onClick={() => run(async () => { window.location.href = (await api('/api/settings/plan', { body: { interval: 'monthly' } })).url; }, 'Opening checkout...')}>Go Pro monthly</Button>
+          <Button variant="outline" disabled={busy} onClick={() => run(async () => { window.location.href = (await api('/api/settings/plan', { body: { interval: 'yearly' } })).url; }, 'Opening checkout...')}>Go Pro yearly</Button>
+        </div>
+      ) : null}
+      {msg ? <p className="mt-2 text-sm text-slate-600">{msg}</p> : null}
+    </Card>
+  );
+}
+
+export function RetryJob({ id }: { id: number }) {
+  const router = useRouter();
+  return <Button size="sm" variant="ghost" onClick={async () => { await api('/api/settings/jobs', { body: { id } }); router.refresh(); }}>Retry</Button>;
+}

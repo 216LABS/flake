@@ -1,0 +1,35 @@
+{
+  "name": "flake",
+  "private": true,
+  "version": "1.0.0",
+  "packageManager": "pnpm@10.11.0",
+  "engines": { "node": ">=20.9" },
+  "scripts": {
+    "dev": "pnpm --filter @flake/web dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier --write .",
+    "test:unit": "turbo run test:unit",
+    "test:db": "pnpm --filter @flake/db test:db",
+    "test:integration": "pnpm --filter @flake/web test:integration",
+    "test:e2e": "pnpm --filter @flake/web test:e2e",
+    "db:start": "node scripts/db-start.mjs",
+    "db:stop": "pnpm --filter @flake/db exec supabase stop",
+    "db:reset": "pnpm --filter @flake/db exec supabase db reset",
+    "seed:demo": "pnpm --filter @flake/web seed:demo",
+    "verify": "node scripts/verify.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "prettier": "^3.9.10",
+    "turbo": "^2.11.10",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.72.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["supabase", "sharp", "esbuild", "unrs-resolver"]
+  }
+}

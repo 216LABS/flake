@@ -1,0 +1,63 @@
+# Local stack only. Ports are 553xx so this can run next to other Supabase projects on the same machine.
+project_id = "flake"
+
+[api]
+enabled = true
+port = 55321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 55322
+shadow_port = 55320
+major_version = 17
+
+[db.pooler]
+enabled = false
+
+[db.seed]
+enabled = false
+
+[realtime]
+enabled = false
+
+[studio]
+enabled = false
+
+[inbucket]
+enabled = true
+port = 55324
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[storage.image_transformation]
+enabled = false
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/**", "http://localhost:3100/**"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+enable_signup = true
+enable_anonymous_sign_ins = false
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = false
+enable_confirmations = false
+max_frequency = "1s"
+
+[auth.rate_limit]
+email_sent = 1000
+sign_in_sign_ups = 1000
+token_verifications = 1000
+
+[edge_runtime]
+enabled = false
+
+[analytics]
+enabled = false

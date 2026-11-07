@@ -1,0 +1,29 @@
+{
+  "_comment": "SYNTHETIC test data. Light snow, then the temperature drops through 32 F overnight.",
+  "_synthetic": true,
+  "lastModified": "2025-12-12T06:00:00Z",
+  "startAt": "2025-12-12T18:00:00Z",
+  "gridpoint": {
+    "updateTime": "2025-12-12T06:00:00+00:00",
+    "snowfallAmount": {
+      "uom": "wmoUnit:mm",
+      "values": [
+        { "validTime": "2025-12-12T00:00:00+00:00/PT15H", "value": 0 },
+        { "validTime": "2025-12-12T15:00:00+00:00/PT3H", "value": 7.62 },
+        { "validTime": "2025-12-12T18:00:00+00:00/P3D", "value": 0 }
+      ]
+    },
+    "iceAccumulation": { "uom": "wmoUnit:mm", "values": [{ "validTime": "2025-12-12T00:00:00+00:00/P4D", "value": 0 }] },
+    "temperature": {
+      "uom": "wmoUnit:degC",
+      "values": [
+        { "validTime": "2025-12-12T00:00:00+00:00/PT21H", "value": 2 },
+        { "validTime": "2025-12-12T21:00:00+00:00/P3D", "value": -4 }
+      ]
+    },
+    "probabilityOfPrecipitation": { "uom": "wmoUnit:percent", "values": [{ "validTime": "2025-12-12T00:00:00+00:00/P4D", "value": 30 }] },
+    "quantitativePrecipitation": { "uom": "wmoUnit:mm", "values": [{ "validTime": "2025-12-12T00:00:00+00:00/P4D", "value": 0 }] }
+  },
+  "alerts": [],
+  "nohrsc": [{ "valid": "2025-12-12T12:00:00Z", "h6": 0, "h24": 0 }]
+}

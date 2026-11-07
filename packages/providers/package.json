@@ -1,0 +1,29 @@
+{
+  "name": "@flake/providers",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./pdf": "./src/pdf.tsx",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run"
+  },
+  "dependencies": {
+    "@flake/core": "workspace:*",
+    "@react-pdf/renderer": "^4.9.0",
+    "geotiff": "^3.0.5",
+    "react": "^19.3.1",
+    "stripe": "^23.1.0"
+  },
+  "devDependencies": {
+    "@types/geojson": "^7946.0.16",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.3.0",
+    "typescript": "~5.9.3",
+    "vitest": "^5.1.0"
+  }
+}
