@@ -233,6 +233,58 @@ describe('driverScope', () => {
   });
 });
 
+describe('advisor hardening', () => {
+  it('keeps security-definer helpers out of the exposed public schema', async () => {
+    const rows = (await db.execute(sql`
+      select p.proname, n.nspname, p.prosecdef,
+        has_function_privilege('anon', p.oid, 'execute') as anon_exec,
+        has_function_privilege('authenticated', p.oid, 'execute') as auth_exec
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where p.proname in ('auth_tenant_ids','auth_write_tenant_ids','auth_owner_tenant_ids','check_tenant_ref','tenant_weather_snapshot')
+      order by p.proname`)) as unknown as { proname: string; nspname: string; prosecdef: boolean; anon_exec: boolean; auth_exec: boolean }[];
+    expect(rows.map((r) => r.nspname)).toEqual(['private', 'private', 'private', 'private', 'private']);
+    expect(rows.every((r) => r.prosecdef && r.auth_exec && !r.anon_exec)).toBe(true);
+  });
+  it('publishes weather through a security-invoker view', async () => {
+    const rows = (await db.execute(sql`
+      select c.reloptions from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relname = 'tenant_weather_snapshot' and c.relkind = 'v'`)) as unknown as { reloptions: string[] | null }[];
+    expect(String(rows[0]?.reloptions)).toMatch(/security_invoker=(true|on)/);
+  });
+  it('pins search_path on the append-only triggers', async () => {
+    const rows = (await db.execute(sql`
+      select p.proname, p.proconfig from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname in ('reject_change','visit_guard')`)) as unknown as { proconfig: string[] | null }[];
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => (r.proconfig ?? []).some((c) => c.startsWith('search_path=')))).toBe(true);
+  });
+  it('does not overlap permissive membership policies for one command', async () => {
+    const rows = (await db.execute(sql`
+      select pol.polcmd from pg_policy pol
+      join pg_class c on c.oid = pol.polrelid
+      join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relname = 'membership'`)) as unknown as { polcmd: string }[];
+    const commands = rows.map((r) => r.polcmd).sort();
+    expect(commands).toEqual(['a', 'd', 'r', 'w']);
+  });
+  it('indexes every foreign key', async () => {
+    const rows = await db.execute(sql`
+      select c.conrelid::regclass::text as tbl, a.attname as col
+      from pg_constraint c
+      join lateral unnest(c.conkey) with ordinality as k(attnum, ord) on true
+      join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum
+      where c.contype = 'f' and c.connamespace = 'public'::regnamespace and k.ord = 1
+        and not exists (
+          select 1 from pg_index i
+          where i.indrelid = c.conrelid and i.indisvalid and i.indkey[0] = k.attnum
+        )`);
+    expect(rows).toEqual([]);
+  });
+});
+
 describe('schema drift', () => {
   it('every Drizzle column exists in Postgres', async () => {
     const { getTableColumns, getTableName, is } = await import('drizzle-orm');

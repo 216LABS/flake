@@ -4,7 +4,7 @@
 - `local`: Supabase CLI (Postgres + Auth + Storage), `PROVIDERS_MODE=mock`, `/dev/*` pages enabled (inbox, weather clock, impersonate driver link).
 - `staging`: a Vercel preview + separate Supabase project, Stripe **test** mode, Twilio test credentials or mock, the real NWS (it's free) with the real User-Agent. `APP_ENV != production` hard-blocks live charges and real SMS even if live keys are present.
 - `production`: Vercel project `flake` (domain flake.216labs.dev), Supabase prod, Stripe live, Twilio live. `/dev/*` routes return 404.
-- Cron: Vercel Cron entries in `vercel.json` for /api/cron/{weather,jobs,nohrsc,late-check,reports}, protected by `CRON_SECRET` [T: per-minute schedule requires Vercel Pro; fallback is Supabase pg_cron calling the same endpoints].
+- Cron: Supabase `pg_cron` + `pg_net` call GET `/api/cron/{jobs,late-check,weather,reports,nohrsc}` with `Authorization: Bearer <CRON_SECRET>` (`packages/db/sql/schedule_jobs.sql`). `apps/web/vercel.json` has no cron entries, because Vercel Hobby rejects sub-daily schedules at deploy time. Local and mock mode keep the in-process ticker in `instrumentation.ts` when pg_cron is not scheduled.
 
 ## 2. Seed: demo tenant "Lakeshore Plow Co. (Demo)"
 - Clearly fake company, owner `demo@flake.test`, dispatcher, 3 employees + 1 sub (fake names, 555-01xx phone numbers).

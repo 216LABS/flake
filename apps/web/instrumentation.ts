@@ -1,6 +1,7 @@
 /**
- * Local and test only: there is no Vercel Cron on a laptop, so this drains the job table every 2 seconds.
- * Production uses /api/cron/jobs. Sentry starts only when a DSN is configured.
+ * Local and mock only. Hosted Supabase calls GET /api/cron/jobs on a schedule (packages/db/sql/schedule_jobs.sql).
+ * A laptop has no pg_cron schedule, so this process drains the job table every 2 seconds.
+ * Sentry starts only when a DSN is configured.
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
