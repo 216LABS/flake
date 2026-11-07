@@ -177,7 +177,14 @@ describe('factory safety', () => {
     await expect(p.payments.chargeOffSession('a', {} as never)).rejects.toThrow(/not configured/);
     expect(() => p.payments.verifyWebhook('{}', signMockWebhook('{}'))).toThrow();
     expect(p.sms.verifyWebhook('http://x', {}, signTwilio(MOCK_TWILIO_TOKEN, 'http://x', {}))).toBe(false);
-    await expect(p.email.send({} as never)).rejects.toThrow(/not configured/);
+    expect((await p.email.send({} as never)).status).toBe('not_sent');
+  });
+  it('the free test setup: real weather, mock money and texts, and honest about email', async () => {
+    const p = createProviders({ ...base, appEnv: 'staging', env: {} });
+    expect(p.weather).toBeInstanceOf(LiveWeather);
+    expect(p.payments).toBeInstanceOf(MockPayments);
+    expect(p.sms).toBeInstanceOf(MockSms);
+    expect((await p.email.send({} as never)).status).toBe('not_sent');
   });
   it('mock mode never touches a real provider', () => {
     const p = createProviders({ mode: 'mock', appEnv: 'staging', baseUrl: 'http://x', env: { STRIPE_SECRET_KEY: 'sk_live_x', RESEND_API_KEY: 'x' } });

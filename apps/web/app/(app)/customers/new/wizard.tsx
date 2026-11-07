@@ -39,6 +39,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
   const [routeId, setRouteId] = useState('');
   const [position, setPosition] = useState('');
   const [quoteUrl, setQuoteUrl] = useState<string | null>(null);
+  const [emailed, setEmailed] = useState(false);
   const saved = useRef<{ customerId?: string; siteId?: string; pins: number; routed: boolean }>({ customerId: existing?.id, pins: 0, routed: false });
 
   const suggestion = useMemo(() => suggestPrice({ sqft: sqft ?? 0, walks_lf: walkLf }, rateCard), [sqft, walkLf, rateCard]);
@@ -109,6 +110,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
         ...(withSalt ? [{ service: 'salt', trigger_in: null }] : []),
       ];
       const out = await api('/api/quotes', { body: { site_id: siteId, season, services, salt_pricing: withSalt ? { unit: 'bag50lb', amount_cents: suggestion.salt_bag_cents } : null, send: true } });
+      setEmailed(Boolean(out.emailed && c.email));
       setQuoteUrl(out.url);
     } catch (e) {
       setError((e as Error).message);
@@ -120,8 +122,8 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
   if (quoteUrl) {
     return (
       <Card className="mx-auto max-w-xl" data-testid="quote-sent">
-        <h1 className="text-xl font-semibold">Quote sent</h1>
-        <p className="mt-1 text-sm text-slate-600">We emailed the customer a link. You can also share it directly.</p>
+        <h1 className="text-xl font-semibold">{emailed ? 'Quote sent' : 'Quote ready'}</h1>
+        <p className="mt-1 text-sm text-slate-600" data-testid="quote-note">{emailed ? 'We emailed the customer a link. You can also share it directly.' : 'Nothing was emailed, so share this link with the customer.'}</p>
         <Input readOnly className="mt-3" value={quoteUrl} data-testid="quote-url" />
         <div className="mt-4 flex gap-2">
           <Button variant="accent" onClick={() => router.push('/customers')}>Done</Button>

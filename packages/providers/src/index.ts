@@ -30,7 +30,8 @@ const refuse = (name: string) => async () => {
   throw new Error(`${name} is not configured`);
 };
 const unconfiguredSms = (): SmsProvider => ({ send: refuse('Twilio'), provisionTenant: refuse('Twilio'), submitTollFreeVerification: refuse('Twilio'), verifyWebhook: () => false });
-const unconfiguredEmail = (): EmailProvider => ({ send: refuse('Resend') });
+/** Sign-in email is Supabase's, so running without this is a supported way to test. The log says not_sent. */
+const noEmail = (): EmailProvider => ({ send: async () => ({ id: 'none', status: 'not_sent' }) });
 const unconfiguredPayments = (): PaymentsProvider => ({
   isMock: false,
   createConnectedAccount: refuse('Stripe'),
@@ -89,7 +90,7 @@ export function createProviders(opts: ProviderOptions): Providers {
     geocoder: new LiveGeocoder(),
     tiles: new LiveTiles(env.MAPBOX_TOKEN),
     sms: production && env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN ? new LiveSms(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN) : production ? unconfiguredSms() : new MockSms(),
-    email: env.RESEND_API_KEY ? new LiveEmail(env.RESEND_API_KEY, env.EMAIL_FROM ?? 'notifications@flake.216labs.dev') : production ? unconfiguredEmail() : new MockEmail(),
+    email: env.RESEND_API_KEY ? new LiveEmail(env.RESEND_API_KEY, env.EMAIL_FROM ?? 'notifications@flake.216labs.dev') : noEmail(),
     payments: stripeKey
       ? new LivePayments(stripeKey, env.STRIPE_PUBLISHABLE_KEY ?? null, env.STRIPE_WEBHOOK_SECRET ?? '', { monthly: env.STRIPE_PRICE_PRO_MONTHLY, yearly: env.STRIPE_PRICE_PRO_YEARLY })
       : production ? unconfiguredPayments() : new MockPayments(baseUrl),

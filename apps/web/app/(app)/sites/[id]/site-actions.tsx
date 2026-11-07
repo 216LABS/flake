@@ -47,7 +47,7 @@ export function NewQuote({ siteId, defaultSeason, saltCents }: { siteId: string;
         }
       }}>Send quote</Button>
       {error ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
-      {url ? <div className="mt-2"><Label>Quote link</Label><Input readOnly value={url} data-testid="q-url" /></div> : null}
+      {url ? <div className="mt-2"><Label>Quote link. Share it if the customer has no email on file.</Label><Input readOnly value={url} data-testid="q-url" /></div> : null}
     </Card>
   );
 }

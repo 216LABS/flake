@@ -18,6 +18,7 @@
     "db:stop": "pnpm --filter @flake/db exec supabase stop",
     "db:reset": "pnpm --filter @flake/db exec supabase db reset",
     "seed:demo": "pnpm --filter @flake/web seed:demo",
+    "cron:install": "node packages/db/scripts/cron-install.mjs",
     "verify": "node scripts/verify.mjs"
   },
   "devDependencies": {

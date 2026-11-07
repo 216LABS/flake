@@ -3,6 +3,7 @@ import { fmtLocal } from '@flake/core/time';
 import { Badge, buttonVariants, Card, EmptyState, PageHeader, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
+import { canSeeUsage, deploymentUsage } from '@/lib/usage';
 import { tenantWeatherHeader } from '@/lib/weather';
 
 export const metadata = { title: 'Dashboard' };
@@ -18,6 +19,7 @@ export default async function Dashboard() {
     pendingQuotes: await tx.select({ n: sql<number>`count(*)::int` }).from(contract).where(and(eq(contract.status, 'sent'))),
   }));
   const w = await tenantWeatherHeader(ctx.tenantId);
+  const usage = canSeeUsage(ctx.email) ? await deploymentUsage() : null;
   const fmt = (v: number | null, unit = '"') => (v === null ? 'unavailable' : `${v}${unit}`);
   const setup = [
     { done: data.customers[0]!.n > 0, text: 'Add your first customer', href: '/customers/new' },
@@ -27,6 +29,7 @@ export default async function Dashboard() {
   return (
     <>
       <PageHeader title="Dashboard" subtitle={ctx.tenant.name} actions={<Link href="/storms" className={buttonVariants({ variant: 'accent' })}>Start a storm</Link>} />
+      {usage?.near_limit ? <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-800" data-testid="usage-warning">Storage is nearly full ({usage.files_mb} of {usage.files_limit_mb} MB of files, {usage.db_mb} of {usage.db_limit_mb} MB of database). <Link className="underline" href="/settings?tab=system">See details</Link></p> : null}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card>
           <h2 className="text-sm font-medium text-slate-500">Weather</h2>

@@ -39,7 +39,7 @@ Environment variable names are in `.env.example`. Never commit values: this repo
 
 ## Deploying
 
-See `docs/DEPLOY.md`.
+See `docs/DEPLOY.md`. It starts with a test deployment that runs entirely on free plans.
 
 ## Specs
 

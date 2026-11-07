@@ -1,6 +1,7 @@
 import { and, crew_member, eq, serviceDb, sms_consent, sql, tenant } from '@flake/db';
 import { classifyInbound, renderTemplate } from '@flake/core/messages';
-import { baseUrl, isMock } from './env';
+import { MockSms } from '@flake/providers';
+import { baseUrl } from './env';
 import { HttpError } from './http';
 import { enqueue } from './jobs';
 import { getProviders } from './providers';
@@ -76,7 +77,7 @@ async function submitToTwilio(t: typeof tenant.$inferSelect, ein: string) {
   }, base);
   await db.update(tenant).set({ sms_status: res.status, sms_status_detail: null, sms_verification: { ...v, twilio_verification_id: res.id, submitted_at: new Date().toISOString() } }).where(eq(tenant.id, tenantId));
   // Twilio reports the result by webhook. Mock mode auto-approves after 10 s (ADDENDUM_SMS section 7).
-  if (isMock()) await enqueue('sms.mock_approve', { tenantId }, { dedupeKey: `mock_approve:${tenantId}:${res.id}`, runAt: new Date(Date.now() + 10000) });
+  if (sms instanceof MockSms) await enqueue('sms.mock_approve', { tenantId }, { dedupeKey: `mock_approve:${tenantId}:${res.id}`, runAt: new Date(Date.now() + 10000) });
 }
 
 export async function setTollFreeStatus(where: { tenantId?: string; verificationId?: string }, status: 'approved' | 'rejected', detail: string | null) {

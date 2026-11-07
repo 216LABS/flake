@@ -1,4 +1,4 @@
-import { and, crew_member, desc, eq, job, serviceDb, sql } from '@flake/db';
+import { and, crew_member, desc, eq, job, message_log, serviceDb, sql } from '@flake/db';
 import { fmtLocal } from '@flake/core/time';
 import { inFreeSeason } from '@flake/core/fees';
 import { DEFAULT_RATE_CARD, type RateCard } from '@flake/core/quote';
@@ -9,6 +9,7 @@ import { baseUrl } from '@/lib/env';
 import { SAMPLE_MESSAGES } from '@/lib/sms-admin';
 import { breakerOpen, breakerState } from '@/lib/weather';
 import { listTeam } from '@/lib/team';
+import { canSeeUsage, deploymentUsage } from '@/lib/usage';
 import { BusinessForm, CrewPanel, PaymentsPanel, PlanPanel, RateCardForm, RetryJob, SmsSubmit, TeamPanel } from './panels';
 
 export const metadata = { title: 'Settings' };
@@ -56,24 +57,41 @@ export default async function Settings({ searchParams }: { searchParams: Promise
           <ul className="mt-3 grid gap-1 text-sm sm:grid-cols-2">{EXPORTS.map((n) => <li key={n}><a className="text-sky-800 underline" href={`/api/settings/export?table=${n}`}>{n}</a></li>)}</ul>
         </Card>
       ) : null}
-      {tab === 'system' ? await SystemTab(ctx.tenantId, tz) : null}
+      {tab === 'system' ? await SystemTab(ctx.tenantId, tz, ctx.email) : null}
     </>
   );
 }
 
 /** Dead letters and weather poller health. The job table is server-only, so this filters by tenant explicitly. */
-async function SystemTab(tenantId: string, tz: string) {
+async function SystemTab(tenantId: string, tz: string, email: string | null) {
   const db = serviceDb();
   const dead = await db.select().from(job).where(and(sql`${job.dead_at} is not null`, sql`${job.payload}->>'tenantId' = ${tenantId}`)).orderBy(desc(job.dead_at)).limit(50);
   const [{ queued } = { queued: 0 }] = await db.select({ queued: sql<number>`count(*)::int` }).from(job).where(and(sql`${job.done_at} is null`, sql`${job.dead_at} is null`, eq(sql`${job.payload}->>'tenantId'`, tenantId)));
   const breaker = await breakerState();
+  const usage = canSeeUsage(email) ? await deploymentUsage() : null;
+  const messages = await db.select().from(message_log).where(eq(message_log.tenant_id, tenantId)).orderBy(desc(message_log.created_at)).limit(30);
   return (
     <div className="space-y-4">
+      {usage ? (
+        <Card className="max-w-2xl" data-testid="usage">
+          <h2 className="font-semibold">Storage</h2>
+          <p className="mt-1 text-sm">Photos and files: {usage.files_mb} of {usage.files_limit_mb} MB. Database: {usage.db_mb} of {usage.db_limit_mb} MB.</p>
+          {usage.near_limit ? <p className="mt-1 text-sm font-medium text-red-700">Nearly full. When files run out, photos wait on drivers&apos; phones until there is room.</p> : null}
+        </Card>
+      ) : null}
       <Card className="max-w-2xl">
         <h2 className="font-semibold">Weather poller</h2>
         <p className="mt-1 text-sm" data-testid="breaker">{breakerOpen(breaker) ? `Paused until ${fmtLocal(breaker.open_until!, tz)} after repeated errors.` : `Running. Consecutive failures: ${breaker.failures}.`}</p>
         <p className="mt-1 text-sm">Jobs queued for your company: {queued}</p>
       </Card>
+      <h2 className="font-semibold">Recent messages</h2>
+      <Table>
+        <thead><tr><Th>When</Th><Th>Channel</Th><Th>To</Th><Th>Template</Th><Th>Status</Th></tr></thead>
+        <tbody>
+          {messages.map((m) => <tr key={m.id} data-testid="message-row" data-status={m.status ?? ''}><Td>{fmtLocal(m.created_at!, tz)}</Td><Td>{m.channel}</Td><Td>{m.to_addr}</Td><Td>{m.template}</Td><Td>{m.status === 'not_sent' ? 'Not sent: email is off' : m.status}</Td></tr>)}
+          {!messages.length ? <tr><Td colSpan={5}>None yet.</Td></tr> : null}
+        </tbody>
+      </Table>
       <h2 className="font-semibold">Failed jobs</h2>
       <Table>
         <thead><tr><Th>Kind</Th><Th>Attempts</Th><Th>Error</Th><Th>When</Th><Th></Th></tr></thead>

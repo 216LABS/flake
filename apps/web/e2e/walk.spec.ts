@@ -87,6 +87,10 @@ test('walk every office screen and use its main control', async ({ page }) => {
   const exported = await page.request.get('/api/settings/export?table=customer');
   expect(await exported.text()).toContain('billing_mode');
   expect(await (await page.request.get('/api/settings/export?table=storm_run')).text()).not.toContain('link_token');
+  await page.goto('/settings?tab=system');
+  await expect(page.getByTestId('usage')).toContainText('of 1024 MB');
+  await expect(page.getByTestId('message-row').first()).toBeVisible();
+  await expect(page.getByTestId('test-badge')).toBeVisible();
   await page.goto('/b/lakeshore-demo');
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Lakeshore');
   await page.goto('/b/lakeshore-demo/sms');

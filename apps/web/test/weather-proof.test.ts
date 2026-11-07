@@ -352,6 +352,34 @@ describe('SMS compliance', () => {
   });
 });
 
+describe('free plan housekeeping', () => {
+  it('prunes old finished jobs and keeps recent and failed ones', async () => {
+    const { queueMissedReports } = await import('@/lib/handlers');
+    const key = (s: string) => `prune:${s}:${randomUUID()}`;
+    const [oldDone, newDone, oldDead] = [key('a'), key('b'), key('c')];
+    await serviceDb().insert(job).values([
+      { kind: 'x', payload: {}, dedupe_key: oldDone, done_at: '2020-01-01T00:00:00Z' },
+      { kind: 'x', payload: {}, dedupe_key: newDone, done_at: new Date().toISOString() },
+      { kind: 'x', payload: {}, dedupe_key: oldDead, dead_at: '2020-01-01T00:00:00Z' },
+    ]);
+    await queueMissedReports();
+    await drain(); // Leave the queue empty for the job tests that follow.
+    const left = await serviceDb().select({ k: job.dedupe_key }).from(job).where(sql`dedupe_key like 'prune:%'`);
+    const keys = left.map((x) => x.k);
+    expect(keys).not.toContain(oldDone);
+    expect(keys).toContain(newDone);
+    expect(keys).toContain(oldDead);
+  });
+
+  it('reads real storage and database usage', async () => {
+    const { deploymentUsage } = await import('@/lib/usage');
+    const u = await deploymentUsage();
+    expect(u.db_mb).toBeGreaterThan(0);
+    expect(u.files_limit_mb).toBe(1024);
+    expect(typeof u.near_limit).toBe('boolean');
+  });
+});
+
 describe('job queue', () => {
   it('retries with backoff and dead-letters after max attempts', async () => {
     const key = `test:${randomUUID()}`;

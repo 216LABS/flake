@@ -2,7 +2,7 @@ import { Badge } from '@flake/ui';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { requirePage } from '@/lib/auth';
-import { isMock, isProd } from '@/lib/env';
+import { isProd, isTestEnv } from '@/lib/env';
 
 const NAV = [
   ['/dashboard', 'Dashboard'],
@@ -26,7 +26,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             {!isProd() ? <Link href="/dev" className="text-amber-700 hover:text-amber-900">Dev</Link> : null}
           </nav>
           <div className="ml-auto flex items-center gap-2 text-sm text-slate-600">
-            {isMock() ? <Badge tone="amber">Mock mode</Badge> : null}
+            {isTestEnv() ? <Badge tone="amber" data-testid="test-badge">Test: no real charges or texts</Badge> : null}
             <span>{ctx.tenant.name}</span>
             <form action="/auth/signout" method="post"><button type="submit" className="text-slate-600 underline hover:text-slate-900" data-testid="sign-out">Sign out</button></form>
           </div>

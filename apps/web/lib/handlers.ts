@@ -95,6 +95,7 @@ export async function queueMissedReports() {
   const db = serviceDb();
   const rows = await db.select({ id: visit.id, tenant_id: visit.tenant_id }).from(visit).where(sql`${visit.departed_device_at} > now() - interval '2 hours'`);
   for (const r of rows) await enqueue('report.completion', { tenantId: r.tenant_id, visitId: r.id }, { dedupeKey: `report:${r.id}` });
+  await db.execute(sql`delete from job where done_at < now() - interval '14 days'`);
   const now = new Date();
   await enqueue('billing.installments', {}, { dedupeKey: `installments:${now.getUTCFullYear()}-${now.getUTCMonth() + 1}` });
   return { checked: rows.length };
