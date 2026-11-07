@@ -463,15 +463,20 @@ describe('job queue', () => {
     expect(row!.dead_at).not.toBeNull();
   });
 
-  it('dedupe keys enqueue once, and concurrent drains run a job once', async () => {
+  it('dedupe keys enqueue once, and concurrent drains run every job exactly once', async () => {
+    await drain();
     const key = `test:${randomUUID()}`;
-    await enqueue('test.count', {}, { dedupeKey: key });
-    await enqueue('test.count', {}, { dedupeKey: key });
+    await enqueue('test.count', { key }, { dedupeKey: key });
+    await enqueue('test.count', { key }, { dedupeKey: key });
     expect(await serviceDb().select().from(job).where(eq(job.dedupe_key, key))).toHaveLength(1);
-    let n = 0;
-    const handlers = { 'test.count': async () => void n++ };
-    await Promise.all([drainJobs(handlers), drainJobs(handlers), drainJobs(handlers)]);
-    expect(n).toBe(1);
+    // Many jobs and many overlapping runs, so a race shows up every time rather than now and then.
+    const marker = randomUUID();
+    for (let i = 0; i < 30; i++) await enqueue('test.count', { key: marker, i }, { dedupeKey: `${marker}:${i}` });
+    const runs = new Map<number | string, number>();
+    const handlers = { 'test.count': async (p: Record<string, unknown>) => { const k = p.key === marker ? (p.i as number) : 'single'; runs.set(k, (runs.get(k) ?? 0) + 1); } };
+    await Promise.all(Array.from({ length: 6 }, () => drainJobs(handlers)));
+    expect(runs.get('single')).toBe(1);
+    for (let i = 0; i < 30; i++) expect(runs.get(i), `job ${i}`).toBe(1);
   });
 
   it('latest snapshot ids stay empty for a tenant with no weather', async () => {

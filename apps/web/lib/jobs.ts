@@ -80,10 +80,14 @@ async function claim(count: number, maxLane: number): Promise<JobRow[]> {
     ), picked as (
       select id, lane, turn from ranked order by lane, turn, id limit ${count}
     ), locked as (
-      select job.id, picked.lane, picked.turn from job join picked on picked.id = job.id for update of job skip locked
+      -- The choice above was made on a snapshot. Checking again here, on the locked row, stops two runs that chose
+      -- the same job a moment apart from both running it.
+      select job.id, picked.lane, picked.turn from job join picked on picked.id = job.id
+      where job.done_at is null and job.dead_at is null and (job.locked_until is null or job.locked_until < now())
+      for update of job skip locked
     )
     update job set attempts = attempts + 1, locked_until = now() + ${LEASE}
-    from locked where job.id = locked.id
+    from locked where job.id = locked.id and (job.locked_until is null or job.locked_until < now())
     returning job.id, job.kind, job.payload, job.attempts, job.max_attempts, locked.lane, locked.turn`)) as unknown as JobRow[];
   return [...rows].sort((a, b) => Number(a.lane) - Number(b.lane) || Number(a.turn) - Number(b.turn) || Number(a.id) - Number(b.id));
 }
