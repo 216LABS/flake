@@ -253,6 +253,30 @@ test('the map loads with no errors', async ({ page }) => {
   expect(errors.filter((e) => /worker/i.test(e))).toEqual([]);
 });
 
+test('driver: on a phone, finishing a stop never needs scrolling, and the next stop starts at the top', async ({ page, browser, baseURL }) => {
+  await login(page);
+  const { runs } = await startStorm(page.request, `Reach ${Date.now()}`, ['West Lakewood']);
+  const ctx = await browser.newContext({ baseURL, viewport: { width: 390, height: 664 }, isMobile: true, hasTouch: true });
+  const phone = await ctx.newPage();
+  const onScreen = async (id: string) => {
+    const box = (await phone.getByTestId(id).boundingBox())!;
+    return box.y >= 0 && box.y + box.height <= 664;
+  };
+  await phone.goto(runs[0]!.link);
+  for (let i = 0; i < 2; i++) {
+    await expect(phone.getByTestId('next-stop')).toBeVisible();
+    expect(await onScreen('arrive'), `Arrive on stop ${i + 1}`).toBe(true);
+    await phone.getByTestId('arrive').click();
+    await expect(phone.getByTestId('onsite')).toBeVisible();
+    await phone.getByTestId('depth-3').click();
+    expect(await onScreen('done'), `Done on stop ${i + 1}`).toBe(true);
+    await phone.getByTestId('after-photo').setInputFiles(await photo());
+    expect(await onScreen('done')).toBe(true);
+    await phone.getByTestId('done').click();
+  }
+  await ctx.close();
+});
+
 test('driver: arriving near a stop offers one big button to check in', async ({ page, browser, baseURL }) => {
   await login(page);
   const { runs } = await startStorm(page.request, `Near ${Date.now()}`, ['Rocky River']);

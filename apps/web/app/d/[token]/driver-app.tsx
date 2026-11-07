@@ -228,6 +228,10 @@ export function DriverApp({ token }: { token: string }) {
   const nextRef = useRef(next);
   nextRef.current = next;
   const nextId = next?.id;
+  const onsiteNow = next?.status === 'onsite';
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [nextId, onsiteNow]);
   useEffect(() => {
     const at = position.current;
     const stop = nextRef.current;
@@ -563,9 +567,11 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; on
           </div>
         </div>
       ) : null}
-      <PhotoButton label={t('after_photo')} done={visit.after} testId="after-photo" onChange={(e) => p.onPhoto('after', e)} />
-      {!visit.after ? <p className="text-center text-base font-medium text-amber-300" data-testid="no-photo-hint">{t('no_after_photo')}</p> : null}
-      <BigButton tone="done" height="tall" className="w-full" disabled={blocked} onClick={p.onDone} data-testid="done">{t('done')}</BigButton>
+      <div className="sticky bottom-0 -mx-4 space-y-3 bg-slate-800 px-4 pb-4 pt-3 shadow-[0_-10px_16px_rgba(0,0,0,0.4)]">
+        <PhotoButton label={t('after_photo')} done={visit.after} testId="after-photo" onChange={(e) => p.onPhoto('after', e)} />
+        {!visit.after ? <p className="text-center text-base font-medium text-amber-300" data-testid="no-photo-hint">{t('no_after_photo')}</p> : null}
+        <BigButton tone="done" height="tall" className="w-full" disabled={blocked} onClick={p.onDone} data-testid="done">{t('done')}</BigButton>
+      </div>
       <BigButton tone="warn" className="w-full" onClick={p.onProblem} data-testid="problem">{t('problem')}</BigButton>
     </section>
   );
