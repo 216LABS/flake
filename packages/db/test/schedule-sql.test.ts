@@ -9,10 +9,10 @@ describe('free-plan schedules', () => {
     if (!existsSync(vercelPath)) return;
     const vercel = JSON.parse(readFileSync(vercelPath, 'utf8')) as { crons?: { schedule: string }[] };
     for (const cron of vercel.crons ?? []) {
-      const [minute, hour] = cron.schedule.split(' ');
-      expect(cron.schedule).not.toMatch(/[*/]/);
-      expect(minute).not.toBe('*');
-      expect(hour).not.toBe('*');
+      const [minute, hour] = cron.schedule.trim().split(/\s+/);
+      // One clock time per day. A star or a step in the minute or hour runs more often than Hobby allows.
+      expect(minute, cron.schedule).toMatch(/^\d+$/);
+      expect(hour, cron.schedule).toMatch(/^\d+$/);
     }
   });
 
