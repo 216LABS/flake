@@ -32,5 +32,5 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Driver, quote, webhook, cron and static paths have no session to refresh.
-  matcher: ['/((?!_next/|api/d/|api/q/|api/webhooks/|api/cron/|api/tiles/|d/|q/|s/|sw.js|push-sw.js|favicon|icons/|brand/|manifest).*)'],
+  matcher: ['/((?!_next/|api/d/|api/q/|api/webhooks/|api/cron/|api/tiles/|d/|q/|s/|sw.js|push-sw.js|favicon|icons/|brand/|maplibre-gl-worker|manifest).*)'],
 };

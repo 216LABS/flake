@@ -9,6 +9,12 @@ import { contractPdfUrl } from '@/lib/quotes';
 import { NewQuote, RetireSite } from './site-actions';
 import { SiteEditor } from './site-editor';
 
+/** Snow seasons cross the new year: November 2026 and February 2027 are both 2026-27. */
+function currentSeason(now = new Date()) {
+  const start = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${start}-${String(start + 1).slice(2)}`;
+}
+
 export const metadata = { title: 'Site' };
 
 export default async function SitePage({ params }: { params: Promise<{ id: string }> }) {
@@ -44,7 +50,7 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
           </ul>
           {pdf ? <a className="mt-2 block text-sm text-sky-800 underline" href={pdf}>Signed contract PDF</a> : null}
         </Card>
-        <NewQuote siteId={s.id} defaultSeason={contracts[0]?.season ?? ''} saltCents={((ctx.tenant.rate_card as { salt_bag_cents?: number }).salt_bag_cents) ?? 1800} />
+        <NewQuote siteId={s.id} defaultSeason={contracts[0]?.season ?? currentSeason()} saltCents={((ctx.tenant.rate_card as { salt_bag_cents?: number }).salt_bag_cents) ?? 1800} />
         </div>
       </div>
     </>

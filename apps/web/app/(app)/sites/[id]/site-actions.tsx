@@ -55,13 +55,15 @@ export function NewQuote({ siteId, defaultSeason, saltCents }: { siteId: string;
 export function RetireSite({ siteId, customerId, active }: { siteId: string; customerId: string; active: boolean }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
+  const [retireError, setRetireError] = useState<string | null>(null);
   if (!active) return <p className="text-sm text-slate-600" data-testid="site-retired">This site is retired. Its records stay on file, and it won&apos;t join new storms.</p>;
   if (!confirming) return <Button variant="ghost" data-testid="retire" onClick={() => setConfirming(true)}>Retire this site</Button>;
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
       <span>It leaves new storms. Its records stay on file.</span>
-      <Button variant="danger" size="sm" data-testid="retire-confirm" onClick={async () => { await api(`/api/sites/${siteId}`, { method: 'DELETE' }); router.push(`/customers/${customerId}`); router.refresh(); }}>Retire</Button>
+      <Button variant="danger" size="sm" data-testid="retire-confirm" onClick={async () => { setRetireError(null); try { await api(`/api/sites/${siteId}`, { method: 'DELETE' }); router.push(`/customers/${customerId}`); router.refresh(); } catch (e) { setRetireError((e as Error).message); } }}>Retire</Button>
       <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
+      {retireError ? <p className="mt-2 text-sm text-red-700" role="alert">{retireError}</p> : null}
     </div>
   );
 }

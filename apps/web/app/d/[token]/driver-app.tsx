@@ -227,6 +227,12 @@ export function DriverApp({ token }: { token: string }) {
   // Geofence: a foreground prompt only. It never records anything by itself. High accuracy only near the stop.
   const nextRef = useRef(next);
   nextRef.current = next;
+  const nextId = next?.id;
+  useEffect(() => {
+    const at = position.current;
+    const stop = nextRef.current;
+    setHere(Boolean(at && stop && metersBetween(at.lat, at.lon, stop.site.lat, stop.site.lon) <= GEOFENCE_M));
+  }, [nextId]);
   useEffect(() => {
     if (!('geolocation' in navigator)) return;
     let watch: number | null = null;

@@ -10,6 +10,15 @@ export class HttpError extends Error {
   }
 }
 
+/** "season: Too small: expected string to have >=1 characters" becomes "Season is required." */
+function readableIssue(issue: z.core.$ZodIssue) {
+  const key = [...issue.path].reverse().find((p) => typeof p === 'string') as string | undefined;
+  const name = key ? key.replace(/_e164$/, '').replace(/_|(?=[A-Z])/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase()) : 'This';
+  const missing = (issue.code === 'too_small' && issue.minimum === 1) || (issue.code === 'invalid_type' && /received undefined/.test(issue.message));
+  if (missing) return `${name} is required.`;
+  return `${name}: ${issue.message}.`;
+}
+
 export async function parseJson<T extends z.ZodTypeAny>(req: Request, schema: T): Promise<z.infer<T>> {
   let body: unknown;
   try {
@@ -18,7 +27,7 @@ export async function parseJson<T extends z.ZodTypeAny>(req: Request, schema: T)
     throw new HttpError(400, 'Invalid JSON');
   }
   const out = schema.safeParse(body);
-  if (!out.success) throw new HttpError(422, out.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; '), 'validation');
+  if (!out.success) throw new HttpError(422, out.error.issues.map(readableIssue).join(' '), 'validation');
   return out.data;
 }
 

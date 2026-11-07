@@ -50,7 +50,7 @@
 
 /* Map credits sit inside text, so their links need more than color. */
 .maplibregl-ctrl-attrib a {
-  text-decoration: underline;
+  text-decoration: underline !important;
 }
 
 body {

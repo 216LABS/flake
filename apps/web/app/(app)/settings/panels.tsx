@@ -248,5 +248,19 @@ export function PlanPanel({ plan, freeUntil, inSeason }: { plan: string; freeUnt
 
 export function RetryJob({ id }: { id: number }) {
   const router = useRouter();
-  return <Button size="sm" variant="ghost" onClick={async () => { await api('/api/settings/jobs', { body: { id } }); router.refresh(); }}>Retry</Button>;
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <>
+      <Button size="sm" variant="ghost" onClick={async () => {
+        setError(null);
+        try {
+          await api('/api/settings/jobs', { body: { id } });
+          router.refresh();
+        } catch (e) {
+          setError((e as Error).message);
+        }
+      }}>Retry</Button>
+      {error ? <p className="text-sm text-red-700" role="alert">{error}</p> : null}
+    </>
+  );
 }

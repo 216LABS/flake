@@ -1,4 +1,5 @@
 node_modules/
+apps/web/public/maplibre-gl-worker.mjs
 .next/
 .turbo/
 coverage/

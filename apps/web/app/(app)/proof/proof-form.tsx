@@ -18,8 +18,18 @@ export function ProofForm({ sites, packets, preselect, tz }: { sites: { id: stri
   const [error, setError] = useState<string | null>(null);
 
   const open = async (id: string) => {
-    const r = await api(`/api/proof/${id}`);
-    if (r.url) window.open(r.url, '_blank', 'noopener');
+    // Safari only allows a new tab during the tap itself, so it opens first and gets its address after.
+    const tab = window.open('about:blank', '_blank');
+    if (tab) tab.opener = null;
+    try {
+      const r = await api(`/api/proof/${id}`);
+      if (!r.url) throw new Error('That packet is still being made. Try again in a minute.');
+      if (tab) tab.location.href = r.url;
+      else window.location.href = r.url;
+    } catch (e) {
+      tab?.close();
+      setError((e as Error).message);
+    }
   };
 
   const generate = async () => {

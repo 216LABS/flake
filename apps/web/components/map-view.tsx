@@ -91,6 +91,7 @@ export function MapView({ layers, base = 'streets', center, zoom = 17, pins = []
     (async () => {
       try {
         const L = await import('maplibre-gl');
+        L.setWorkerUrl('/maplibre-gl-worker.mjs');
         if (dead || !box.current) return;
         lib.current = L;
         const layer = layers[base];

@@ -70,11 +70,14 @@ export async function addPass(ctx: Ctx, stormId: string) {
     const created = [];
     for (const old of runs.filter((r) => r.pass === pass - 1)) {
       const stops = await tx.select().from(run_stop).where(eq(run_stop.storm_run_id, old.id)).orderBy(asc(run_stop.seq));
+      // Every stop may have been moved off this run, and then there is nothing to plow again.
+      if (!stops.length) continue;
       const link = newLink();
       const [run] = await tx.insert(storm_run).values({ tenant_id: ctx.tenantId, storm_id: stormId, route_id: old.route_id, crew_id: old.crew_id, pass, link_token_hash: link.hash, link_token_enc: link.enc, link_expires_at: link.expires }).returning();
       await tx.insert(run_stop).values(stops.map((x, i) => ({ tenant_id: ctx.tenantId, storm_run_id: run!.id, site_id: x.site_id, seq: i + 1 })));
       created.push(run!);
     }
+    if (!created.length) throw new HttpError(409, 'There are no stops on the last pass to plow again.', 'no_stops');
     return { pass, runs: created };
   });
 }

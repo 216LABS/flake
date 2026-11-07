@@ -142,8 +142,14 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText }: { sto
           <p className="text-sm">{closePrompt} Close anyway?</p>
           <div className="mt-2 flex gap-2">
             <Button variant="danger" data-testid="close-force" onClick={async () => {
-              await api(`/api/storms/${stormId}/close`, { body: { force: true } });
-              router.push(`/billing?storm=${stormId}`);
+              setError(null);
+              try {
+                await api(`/api/storms/${stormId}/close`, { body: { force: true } });
+                router.push(`/billing?storm=${stormId}`);
+              } catch (e) {
+                setClosePrompt(null);
+                setError((e as Error).message);
+              }
             }}>Close anyway</Button>
             <Button variant="outline" onClick={() => setClosePrompt(null)}>Keep open</Button>
           </div>
