@@ -91,9 +91,14 @@ export class LiveGeocoder implements Geocoder {
       const body = (await res.json()) as { features?: { geometry: { coordinates: [number, number] }; properties: Record<string, string | undefined> }[] };
       const seen = new Set<string>();
       const hits: GeocodeHit[] = [];
+      // Someone who typed a house number wants that house. Without a match, Find asks Census for the exact address.
+      const typedNumber = /^\s*(\d+)/.exec(q)?.[1];
       for (const f of body.features ?? []) {
         const p = f.properties;
         if (p.countrycode !== 'US') continue;
+        if (typedNumber && !p.housenumber?.startsWith(typedNumber)) continue;
+        // A shop with no house number would show as just its street.
+        if (!p.housenumber && p.street && p.name !== p.street) continue;
         const street = [p.housenumber, p.street ?? p.name].filter(Boolean).join(' ');
         const label = [street, p.city ?? p.district ?? p.county, [p.state === 'Ohio' ? 'OH' : p.state, p.postcode].filter(Boolean).join(' ')].filter(Boolean).join(', ');
         if (!street || seen.has(label)) continue;

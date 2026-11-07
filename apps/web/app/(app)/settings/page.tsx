@@ -69,6 +69,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
 async function SystemTab(tenantId: string, tz: string, email: string | null) {
   const db = serviceDb();
   const dead = await db.select().from(job).where(and(sql`${job.dead_at} is not null`, sql`${job.payload}->>'tenantId' = ${tenantId}`)).orderBy(desc(job.dead_at)).limit(50);
+  const retrying = await db.select().from(job).where(and(sql`${job.done_at} is null`, sql`${job.dead_at} is null`, sql`${job.last_error} is not null`, sql`${job.payload}->>'tenantId' = ${tenantId}`)).orderBy(desc(job.id)).limit(50);
   const [{ queued } = { queued: 0 }] = await db.select({ queued: sql<number>`count(*)::int` }).from(job).where(and(sql`${job.done_at} is null`, sql`${job.dead_at} is null`, eq(sql`${job.payload}->>'tenantId'`, tenantId)));
   const breaker = await breakerState();
   const usage = canSeeUsage(email) ? await deploymentUsage() : null;
@@ -95,6 +96,17 @@ async function SystemTab(tenantId: string, tz: string, email: string | null) {
           {!messages.length ? <tr><Td colSpan={5}>None yet.</Td></tr> : null}
         </tbody>
       </Table>
+      {retrying.length ? (
+        <>
+          <h2 className="font-semibold">Retrying</h2>
+          <Table data-testid="retrying-jobs">
+            <thead><tr><Th>Kind</Th><Th>Attempts</Th><Th>Error</Th><Th>Next try</Th></tr></thead>
+            <tbody>
+              {retrying.map((j) => <tr key={j.id}><Td>{j.kind}</Td><Td>{j.attempts}</Td><Td>{j.last_error}</Td><Td>{fmtLocal(j.run_at!, tz)}</Td></tr>)}
+            </tbody>
+          </Table>
+        </>
+      ) : null}
       <h2 className="font-semibold">Failed jobs</h2>
       <Table>
         <thead><tr><Th>Kind</Th><Th>Attempts</Th><Th>Error</Th><Th>When</Th><Th></Th></tr></thead>

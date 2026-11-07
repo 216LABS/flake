@@ -11,8 +11,8 @@ const env = { ...process.env, ...fromFile, APP_ENV: 'test', NEXT_PUBLIC_APP_ENV:
 for (const [k, v] of Object.entries(env)) process.env[k] = v;
 
 /**
- * Runs against next build + next start with mocks and the local Supabase. Viewports are iPhone 13 and Pixel 7,
- * both in Chromium: WebKit on Windows lacks the service worker support the offline test needs.
+ * Runs against next build + next start with mocks and the local Supabase. Viewports are iPhone 13 and Pixel 7 in
+ * Chromium, plus the driver's offline run in WebKit, the closest thing here to Safari on an iPhone.
  */
 export default defineConfig({
   testDir: './e2e',
@@ -27,6 +27,7 @@ export default defineConfig({
   projects: [
     { name: 'iphone-13', use: { ...devices['iPhone 13'], defaultBrowserType: 'chromium', browserName: 'chromium' } },
     { name: 'pixel-7', use: { ...devices['Pixel 7'] } },
+    { name: 'webkit-driver', testMatch: /driver\.spec/, grep: /offline: 3 stops/, use: { ...devices['iPhone 13'] } },
   ],
   webServer: {
     command: 'pnpm build && pnpm exec next start -p 3100',

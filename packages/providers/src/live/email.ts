@@ -1,5 +1,8 @@
 import type { EmailProvider, EmailSend } from '../types';
 
+/** A company name can hold anything. Commas and brackets would make the From header invalid, so only plain words go in it. */
+export const senderName = (name: string) => name.replace(/[^\p{L}\p{N}&' .-]+/gu, ' ').replace(/\s+/g, ' ').trim();
+
 /** Resend over fetch. The tenant is the display name and the reply-to; the address is Flake's verified subdomain. */
 export class LiveEmail implements EmailProvider {
   constructor(private key: string, private from: string, private fetchImpl: typeof fetch = fetch) {}
@@ -9,7 +12,7 @@ export class LiveEmail implements EmailProvider {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.key}`, 'Content-Type': 'application/json', 'Idempotency-Key': msg.idempotencyKey.slice(0, 256) },
       body: JSON.stringify({
-        from: `${msg.fromName.replace(/[<>"]/g, '')} <${this.from}>`,
+        from: senderName(msg.fromName) ? `${senderName(msg.fromName)} <${this.from}>` : this.from,
         to: [msg.to],
         reply_to: msg.replyTo ?? undefined,
         subject: msg.subject,

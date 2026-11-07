@@ -310,7 +310,7 @@ export function DriverApp({ token }: { token: string }) {
     inOrder(async () => {
       const v = localRef.current.visits[stop.id];
       if (!v) return;
-      // Stored as the original Blob: no compression, so full resolution and EXIF reach the server.
+      // Stored as the original bytes: no compression, so full resolution and EXIF reach the server.
       const meta = { client_uuid: uuid(), visit_client_uuid: v.visit, phase, taken_at: takenAt };
       await apply({ ...localRef.current, visits: { ...localRef.current.visits, [stop.id]: { ...v, ...(phase === 'before' ? { before: true } : { after: true }) } } }, [], { blob: file, meta });
       flashToast(t('photo_saved'));

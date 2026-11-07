@@ -1,4 +1,4 @@
-import { and, contract, customer, desc, eq, sql, storm, trigger_alert } from '@flake/db';
+import { and, contract, customer, desc, eq, message_log, serviceDb, sql, storm, trigger_alert } from '@flake/db';
 import { fmtLocal } from '@flake/core/time';
 import { Badge, buttonVariants, Card, EmptyState, PageHeader, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
@@ -19,6 +19,7 @@ export default async function Dashboard() {
     pendingQuotes: await tx.select({ n: sql<number>`count(*)::int` }).from(contract).where(and(eq(contract.status, 'sent'))),
   }));
   const w = await tenantWeatherHeader(ctx.tenantId);
+  const [{ failedMessages } = { failedMessages: 0 }] = await serviceDb().select({ failedMessages: sql<number>`count(*)::int` }).from(message_log).where(and(eq(message_log.tenant_id, ctx.tenantId), eq(message_log.status, 'failed'), sql`${message_log.created_at} > now() - interval '24 hours'`));
   const usage = canSeeUsage(ctx.email) ? await deploymentUsage() : null;
   const fmt = (v: number | null, unit = '"') => (v === null ? 'unavailable' : `${v}${unit}`);
   const setup = [
@@ -30,6 +31,7 @@ export default async function Dashboard() {
     <>
       <PageHeader title="Dashboard" subtitle={ctx.tenant.name} actions={<Link href="/storms" className={buttonVariants({ variant: 'accent' })}>Start a storm</Link>} />
       {usage?.near_limit ? <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-800" data-testid="usage-warning">Storage is nearly full ({usage.files_mb} of {usage.files_limit_mb} MB of files, {usage.db_mb} of {usage.db_limit_mb} MB of database). <Link className="underline" href="/settings?tab=system">See details</Link></p> : null}
+      {failedMessages ? <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-800" data-testid="messages-failed">{failedMessages === 1 ? '1 message' : `${failedMessages} messages`} could not be sent in the last 24 hours. Flake keeps retrying. <Link className="underline" href="/settings?tab=system">See why</Link></p> : null}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card>
           <h2 className="text-sm font-medium text-slate-500">Weather</h2>

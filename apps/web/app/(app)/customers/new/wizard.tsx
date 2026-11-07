@@ -167,8 +167,8 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
   if (quoteUrl) {
     return (
       <Card className="mx-auto max-w-xl" data-testid="quote-sent">
-        <h1 className="text-xl font-semibold">{emailed ? 'Quote sent' : 'Quote ready'}</h1>
-        <p className="mt-1 text-sm text-slate-600" data-testid="quote-note">{emailed ? 'We emailed the customer a link. You can also share it directly.' : 'Nothing was emailed, so share this link with the customer.'}</p>
+        <h1 className="text-xl font-semibold">Quote ready</h1>
+        <p className="mt-1 text-sm text-slate-600" data-testid="quote-note">{emailed ? 'We are emailing the customer this link. You can also share it directly.' : 'Nothing was emailed, so share this link with the customer.'}</p>
         {photoNote ? <p className="mt-1 text-sm text-amber-800">{photoNote}</p> : null}
         <Input readOnly className="mt-3" value={quoteUrl} data-testid="quote-url" />
         <div className="mt-4 flex gap-2">

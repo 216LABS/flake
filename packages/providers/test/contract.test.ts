@@ -196,6 +196,21 @@ describe('address suggestions', () => {
     ]).suggest('14701 Detroit');
     expect(hits).toEqual([{ label: '14701 Detroit Avenue, Lakewood, OH 44107', lat: 41.48, lon: -81.8 }]);
   });
+  it('never offers a different address from the house number typed', async () => {
+    const hits = await photon([
+      place({ name: 'Madison Ave Car Wash', street: 'Newman Avenue', city: 'Lakewood', state: 'Ohio' }),
+      place({ housenumber: '13100', street: 'Madison Avenue', city: 'Lakewood', state: 'Ohio' }),
+      place({ housenumber: '13400', street: 'Madison Avenue', city: 'Lakewood', state: 'Ohio' }),
+    ]).suggest('13400 Madison Ave Lakewood');
+    expect(hits.map((h) => h.label)).toEqual(['13400 Madison Avenue, Lakewood, OH']);
+  });
+  it('leaves out businesses that have no house number', async () => {
+    const hits = await photon([
+      place({ name: 'Madison Ave Car Wash', street: 'Newman Avenue', city: 'Lakewood', state: 'Ohio' }),
+      place({ name: 'Madison Avenue', street: 'Madison Avenue', city: 'Lakewood', state: 'Ohio' }),
+    ]).suggest('Madison Ave Lakewood');
+    expect(hits.map((h) => h.label)).toEqual(['Madison Avenue, Lakewood, OH']);
+  });
   it('treats a slow or failing service as no suggestions, never an error', async () => {
     expect(await new LiveGeocoder((async () => { throw new Error('down'); }) as typeof fetch).suggest('x y z')).toEqual([]);
     expect(await new LiveGeocoder((async () => new Response('nope', { status: 500 })) as typeof fetch).suggest('x y z')).toEqual([]);
@@ -308,6 +323,21 @@ describe('live clients', () => {
     expect(key).toBe('abc');
     const bad = new LiveEmail('k', 'n@flake.test', (async () => new Response(JSON.stringify({ message: 'no' }), { status: 422 })) as typeof fetch);
     await expect(bad.send({ fromName: 'A', to: 'a@b.c', subject: 's', text: 't', idempotencyKey: 'abc' })).rejects.toThrow('Resend 422');
+  });
+  it('keeps the From header valid whatever the company is called', async () => {
+    const from = async (fromName: string) => {
+      let sent = '';
+      const email = new LiveEmail('k', 'n@flake.test', (async (_u: any, init: any) => {
+        sent = JSON.parse(init.body).from;
+        return new Response(JSON.stringify({ id: 'e1' }));
+      }) as typeof fetch);
+      await email.send({ fromName, to: 'a@b.c', subject: 's', text: 't', idempotencyKey: 'abc' });
+      return sent;
+    };
+    expect(await from('Smith & Sons, LLC')).toBe('Smith & Sons LLC <n@flake.test>');
+    expect(await from('Test Co (delete me)')).toBe('Test Co delete me <n@flake.test>');
+    expect(await from("Peña's <Plowing>")).toBe("Peña's Plowing <n@flake.test>");
+    expect(await from('()')).toBe('n@flake.test');
   });
   it('twilio sends through the tenant subaccount and refuses without one', async () => {
     let url = '';
