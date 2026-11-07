@@ -76,7 +76,7 @@ export function ProofForm({ sites, packets, preselect, tz }: { sites: { id: stri
       <div className="lg:col-span-2">
         <h2 className="mb-2 font-semibold">Past packets</h2>
         <Table>
-          <thead><tr><Th>Site</Th><Th>Period</Th><Th>Created</Th><Th>Manifest</Th><Th></Th></tr></thead>
+          <thead><tr><Th>Site</Th><Th>Period</Th><Th>Created</Th><Th>Manifest</Th><Th><span className="sr-only">Actions</span></Th></tr></thead>
           <tbody>
             {packets.map((p) => (
               <tr key={p.id}>

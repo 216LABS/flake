@@ -292,7 +292,7 @@ test('crew: edit keeps their settings, and a lost invite gets a new link that wo
   await row.getByTestId('crew-edit').click();
   await page.getByTestId('crew-lang').selectOption('es');
   await page.getByTestId('crew-save').click();
-  await expect(row).toContainText('es');
+  await expect(row).toContainText('Español');
   await row.getByTestId('crew-reinvite').click();
   const link = await page.getByTestId('invite-url').inputValue();
   const fresh = await browser.newContext();

@@ -90,7 +90,7 @@ export default async function Dashboard() {
       <Eyebrow className="mb-2 mt-6">Recent storms</Eyebrow>
       {data.recent.length ? (
         <Table>
-          <thead><tr><Th>Storm</Th><Th>Started</Th><Th>Status</Th><Th></Th></tr></thead>
+          <thead><tr><Th>Storm</Th><Th>Started</Th><Th>Status</Th><Th><span className="sr-only">Actions</span></Th></tr></thead>
           <tbody>
             {data.recent.map((s) => (
               <tr key={s.id}>

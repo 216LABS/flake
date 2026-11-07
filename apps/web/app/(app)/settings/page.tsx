@@ -35,7 +35,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   return (
     <>
       <PageHeader title="Settings" subtitle={`Routes are edited on the Routes page. You are the ${ctx.role}.`} />
-      <nav className="mb-5 flex gap-1 overflow-x-auto whitespace-nowrap border-b border-slate-300 text-sm">
+      <nav aria-label="Settings sections" className="mb-5 flex gap-1 overflow-x-auto whitespace-nowrap border-b border-slate-300 text-sm">
         {TABS.filter(([k]) => owner || !OWNER_TABS.includes(k)).map(([k, label]) => <Link key={k} href={`/settings?tab=${k}`} data-testid={`tab-${k}`} aria-current={tab === k ? 'page' : undefined} className={`-mb-px border-b-2 px-3 py-2 font-medium ${tab === k ? 'border-beacon text-slate-950' : 'border-transparent text-slate-600 hover:text-slate-950'}`}>{label}</Link>)}
       </nav>
       {!allowed ? <Card className="max-w-2xl" data-testid="owner-only"><p className="text-sm">Only an owner can open this.</p></Card> : null}
@@ -120,7 +120,7 @@ async function SystemTab(tenantId: string, tz: string, email: string | null, can
       ) : null}
       <h2 className="font-semibold">Failed jobs</h2>
       <Table>
-        <thead><tr><Th>Kind</Th><Th>Attempts</Th><Th>Error</Th><Th>When</Th><Th></Th></tr></thead>
+        <thead><tr><Th>Kind</Th><Th>Attempts</Th><Th>Error</Th><Th>When</Th><Th><span className="sr-only">Actions</span></Th></tr></thead>
         <tbody>
           {dead.map((j) => <tr key={j.id}><Td>{j.kind}</Td><Td>{j.attempts}</Td><Td>{j.last_error}</Td><Td>{fmtLocal(j.dead_at!, tz)}</Td><Td>{canRetry ? <RetryJob id={j.id} /> : null}</Td></tr>)}
           {!dead.length ? <tr><Td colSpan={5}>None.</Td></tr> : null}

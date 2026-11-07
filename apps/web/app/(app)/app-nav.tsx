@@ -21,7 +21,7 @@ const item = 'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medi
 export function AppNav({ showDev }: { showDev: boolean }) {
   const path = usePathname();
   return (
-    <nav className="order-last flex w-full gap-1 overflow-x-auto whitespace-nowrap md:order-none md:flex-col md:overflow-visible">
+    <nav aria-label="Main" className="order-last flex w-full gap-1 overflow-x-auto whitespace-nowrap md:order-none md:flex-col md:overflow-visible">
       {NAV.map(([href, label, Icon]) => {
         const here = path === href || path.startsWith(`${href}/`);
         return (

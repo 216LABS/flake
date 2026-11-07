@@ -80,7 +80,7 @@ export function EmptyState({ title, body, action }: { title: string; body?: stri
 
 export function Table({ className, ...props }: HTMLAttributes<HTMLTableElement>) {
   return (
-    <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
+    <div tabIndex={0} className="relative overflow-x-auto rounded-md border border-slate-200 bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900">
       <table className={cn('w-full text-left text-sm', className)} {...props} />
     </div>
   );
@@ -88,11 +88,11 @@ export function Table({ className, ...props }: HTMLAttributes<HTMLTableElement>)
 export const Th = (props: HTMLAttributes<HTMLTableCellElement>) => <th className="font-display border-b border-slate-200 bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600" {...props} />;
 export const Td = (props: HTMLAttributes<HTMLTableCellElement> & { colSpan?: number }) => <td className="border-b border-slate-100 px-3 py-2.5 align-top" {...props} />;
 
-/** The mark: an F whose arms are cut at the angle of plow striping. */
+/** The mark: a snowflake, with six arms and an amber V near each tip. */
 export function Wordmark({ className, inverse = true }: { className?: string; inverse?: boolean }) {
   return (
     <span className={cn('font-display inline-flex items-center gap-2 text-2xl font-bold tracking-tight', inverse ? 'text-white' : 'text-slate-950', className)}>
-      <svg viewBox="0 0 64 64" width="26" height="26" aria-hidden="true"><path d="M13 10h11v44H13z" fill="currentColor" /><path d="M24 10h30l-7 12H24zM24 28h20l-7 12H24z" fill="#f6b40e" /></svg>
+      <svg viewBox="0 0 64 64" width="28" height="28" aria-hidden="true">{[0, 60, 120, 180, 240, 300].map((d) => <g key={d} transform={`rotate(${d} 32 32)`}><path d="M29.2 3h5.6v29h-5.6z" fill="currentColor" /><path d="M24.6 7.5L32 16l7.4-8.5" fill="none" stroke="#f6b40e" strokeWidth="4.6" /></g>)}</svg>
       Flake
     </span>
   );

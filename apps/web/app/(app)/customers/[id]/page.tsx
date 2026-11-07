@@ -23,7 +23,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
   const { c, sites, contracts } = data;
   return (
     <>
-      <PageHeader title={c.name} subtitle={c.kind} actions={<Link href={`/customers/new?customer=${c.id}`} className={buttonVariants({ variant: 'accent' })} data-testid="add-site">Add a site</Link>} />
+      <PageHeader title={c.name} subtitle={c.kind === 'hoa' ? 'HOA' : `${c.kind[0]!.toUpperCase()}${c.kind.slice(1)}`} actions={<Link href={`/customers/new?customer=${c.id}`} className={buttonVariants({ variant: 'accent' })} data-testid="add-site">Add a site</Link>} />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <CustomerEditor customer={c} />
         <Card>

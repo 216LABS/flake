@@ -29,8 +29,8 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
   const [paid, setPaid] = useState(quote.has_payment_method);
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <p className="text-sm text-slate-600">{quote.company}</p>
-      <h1 className="text-2xl font-semibold">Snow service for {quote.site.label}</h1>
+      <p className="font-display text-lg font-semibold text-slate-900">{quote.company}</p>
+      <h1 className="mt-1 text-4xl font-semibold leading-tight tracking-tight">Snow service for {quote.site.label}</h1>
       <p className="text-sm text-slate-600">{quote.site.address}{quote.site.area_sqft ? `. About ${Number(quote.site.area_sqft).toLocaleString()} sq ft.` : ''}</p>
       <Card className="mt-4">
         <h2 className="font-semibold">Scope and price, season {quote.contract.season}</h2>
@@ -51,7 +51,7 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
           <label className="mt-3 flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={agree} onChange={(e) => setAgree(e.target.checked)} data-testid="agree" /> I agree to this scope, price and these terms, and my typed name is my signature.</label>
           <h3 className="mt-4 text-sm font-semibold">Service updates (optional)</h3>
           <label className="mt-2 flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={sms} onChange={(e) => setSms(e.target.checked)} data-testid="consent-sms" /> {quote.consent_text}</label>
-          {sms ? <div className="mt-2"><Label htmlFor="ph">Mobile number</Label><Input id="ph" value={phone} placeholder="+12165550123" onChange={(e) => setPhone(e.target.value)} /></div> : null}
+          {sms ? <div className="mt-2"><Label htmlFor="ph">Mobile number</Label><Input id="ph" value={phone} type="tel" placeholder="216-555-0123" onChange={(e) => setPhone(e.target.value)} /></div> : null}
           <label className="mt-2 flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={emailOk} onChange={(e) => setEmailOk(e.target.checked)} data-testid="consent-email" /> Email me service updates.</label>
           {error ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
           <Button variant="accent" className="mt-4 w-full" disabled={!agree || name.trim().length < 2} data-testid="accept" onClick={async () => {
@@ -68,6 +68,7 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
       {accepted && quote.payments_ready && quote.customer.billing_mode !== 'manual' ? (
         paid ? <Card className="mt-4" data-testid="payment-saved"><p className="text-sm">Payment method saved. You&apos;re only charged after a storm, for the service you got.</p></Card> : <PaymentSetup token={token} onSaved={() => setPaid(true)} />
       ) : null}
+      <p className="mt-8 text-center text-xs text-slate-600">Quotes and service records by Flake</p>
     </main>
   );
 }

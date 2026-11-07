@@ -1,7 +1,7 @@
 'use client';
 
 import { suggestPrice, type RateCard } from '@flake/core/quote';
-import { Badge, Button, Card, Input, Label, PageHeader, Select } from '@flake/ui';
+import { Badge, Button, Card, Input, Label, PageHeader, Select, Progress } from '@flake/ui';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -167,7 +167,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
   if (quoteUrl) {
     return (
       <Card className="mx-auto max-w-xl" data-testid="quote-sent">
-        <h1 className="text-xl font-semibold">Quote ready</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">Quote ready</h1>
         <p className="mt-1 text-sm text-slate-600" data-testid="quote-note">{emailed ? 'We are emailing the customer this link. You can also share it directly.' : 'Nothing was emailed, so share this link with the customer.'}</p>
         {photoNote ? <p className="mt-1 text-sm text-amber-800">{photoNote}</p> : null}
         <Input readOnly className="mt-3" value={quoteUrl} data-testid="quote-url" />
@@ -182,6 +182,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
   return (
     <>
       <PageHeader title={existing ? `Add a site for ${existing.name}` : 'New customer'} subtitle={`Step ${step + 1} of ${STEPS.length}: ${STEPS[step]}`} />
+      <Progress className="mb-4 max-w-3xl" value={step + 1} max={STEPS.length} label="Steps finished" />
       <Card className="max-w-3xl">
         {step === 0 ? (
           <div className="grid gap-3 sm:grid-cols-2">

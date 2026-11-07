@@ -4,7 +4,7 @@ import type { RateCard } from '@flake/core/quote';
 import { Badge, Button, Card, Input, Label, Select, Table, Td, Th } from '@flake/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { api, dollarsToCents, money } from '@/lib/client';
+import { api, dollarsToCents, money, phone } from '@/lib/client';
 
 function useAction() {
   const [msg, setMsg] = useState<string | null>(null);
@@ -64,22 +64,22 @@ export function CrewPanel({ crew }: { crew: any[] }) {
   };
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <div className="lg:col-span-2">
+      <div className="min-w-0 lg:col-span-2">
         <Table>
-          <thead><tr><Th>Name</Th><Th>Kind</Th><Th>Contact</Th><Th>Language</Th><Th>Joined</Th><Th></Th></tr></thead>
+          <thead><tr><Th>Name</Th><Th>Kind</Th><Th>Contact</Th><Th>Language</Th><Th>Joined</Th><Th><span className="sr-only">Actions</span></Th></tr></thead>
           <tbody>
             {crew.map((c) => (
               <tr key={c.id} className={c.active ? '' : 'opacity-50'} data-testid="crew-row">
                 <Td>{c.name}</Td>
                 <Td><Badge>{c.kind}</Badge></Td>
-                <Td>{c.phone_e164 ?? ''} {c.email ?? ''}</Td>
-                <Td>{c.language}</Td>
+                <Td><div className="whitespace-nowrap">{phone(c.phone_e164)}</div><div>{c.email ?? ''}</div></Td>
+                <Td>{c.language === 'es' ? 'Español' : 'English'}</Td>
                 <Td>{c.joined_at ? 'Yes' : 'Invited'}</Td>
                 <Td>{c.active ? (
-                  <div className="flex flex-wrap gap-1">
-                    <Button size="sm" variant="ghost" data-testid="crew-edit" onClick={() => load(c)}>Edit</Button>
-                    <Button size="sm" variant="ghost" data-testid="crew-reinvite" onClick={() => run(async () => { setInvite((await api(`/api/crew/${c.id}/invite`, { method: 'POST' })).invite_url); }, 'New link ready')}>New link</Button>
-                    <Button size="sm" variant="ghost" onClick={() => run(async () => { await api(`/api/crew/${c.id}`, { method: 'DELETE' }); router.refresh(); }, 'Removed')}>Remove</Button>
+                  <div className="flex gap-0.5">
+                    <Button size="sm" variant="ghost" className="px-2" data-testid="crew-edit" onClick={() => load(c)}>Edit</Button>
+                    <Button size="sm" variant="ghost" className="px-2" data-testid="crew-reinvite" onClick={() => run(async () => { setInvite((await api(`/api/crew/${c.id}/invite`, { method: 'POST' })).invite_url); }, 'New link ready')}>New link</Button>
+                    <Button size="sm" variant="ghost" className="px-2" onClick={() => run(async () => { await api(`/api/crew/${c.id}`, { method: 'DELETE' }); router.refresh(); }, 'Removed')}>Remove</Button>
                   </div>
                 ) : null}</Td>
               </tr>
@@ -132,9 +132,9 @@ export function TeamPanel({ members, me }: { members: { user_id: string; email: 
   const { msg, busy, run } = useAction();
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <div className="lg:col-span-2">
+      <div className="min-w-0 lg:col-span-2">
         <Table>
-          <thead><tr><Th>Email</Th><Th>Role</Th><Th></Th></tr></thead>
+          <thead><tr><Th>Email</Th><Th>Role</Th><Th><span className="sr-only">Actions</span></Th></tr></thead>
           <tbody>
             {members.map((m) => (
               <tr key={m.user_id} data-testid="team-row">

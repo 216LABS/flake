@@ -25,15 +25,15 @@ const s = StyleSheet.create({
 const unavailable = 'unavailable';
 const val = (v: unknown, suffix = '') => (v === null || v === undefined ? unavailable : `${v}${suffix}`);
 
-function Table({ cols, rows }: { cols: string[]; rows: string[][] }) {
+function Table({ cols, rows, widths }: { cols: string[]; rows: string[][]; widths?: number[] }) {
   return (
     <View>
       <View style={s.head} fixed>
-        {cols.map((c) => <Text key={c} style={s.cell}>{c}</Text>)}
+        {cols.map((c, j) => <Text key={c} style={[s.cell, { flex: widths?.[j] ?? 1 }]}>{c}</Text>)}
       </View>
       {rows.map((r, i) => (
         <View key={i} style={s.row} wrap={false}>
-          {r.map((c, j) => <Text key={j} style={s.cell}>{c}</Text>)}
+          {r.map((c, j) => <Text key={j} style={[s.cell, { flex: widths?.[j] ?? 1 }]}>{c}</Text>)}
         </View>
       ))}
     </View>
@@ -76,6 +76,7 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
   return (
     <Document title={`Proof packet - ${m.site.label}`} author="Flake by 216LABS">
       <Page size="LETTER" style={s.page}>
+        <Text style={s.h2}>{m.contractor.name}</Text>
         <Text style={s.h1}>Proof of service packet</Text>
         {synthetic ? <Text style={s.warn}>This packet contains SYNTHETIC weather test data from demo mode. It is not a real forecast or observation.</Text> : null}
         <Text>Site: {m.site.label}</Text>
@@ -95,10 +96,7 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
             <Text>Accepted: {m.contract.accepted_at ? `${when(m.contract.accepted_at)} by ${m.contract.accepted_name ?? unavailable}` : 'not accepted in Flake'}</Text>
           </View>
         ) : <Text style={s.muted}>No contract on file for this site.</Text>}
-        <Footer text={footer} />
-      </Page>
 
-      <Page size="LETTER" style={s.page}>
         <Text style={s.h2}>Storm timeline and weather evidence</Text>
         {m.storms.length === 0 ? <Text style={s.muted}>No storms in this period.</Text> : null}
         {m.storms.map((st) => (
@@ -120,11 +118,12 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
         ))}
         <Text style={s.h2}>Visits</Text>
         <Table
-          cols={['Crew', 'Arrive (device / received)', 'Depart (device / received)', 'GPS + accuracy', 'Services', 'Salt', 'Depth']}
+          widths={[1.1, 2.2, 2.2, 1.5, 1, 0.8, 0.6]}
+          cols={['Crew', 'Arrived', 'Departed', 'GPS and accuracy', 'Services', 'Salt', 'Depth']}
           rows={m.visits.map((v) => [
             v.crew_name,
-            `${when(v.arrived_device_at)} / ${when(v.arrived_received_at)}`,
-            `${when(v.departed_device_at)} / ${when(v.departed_received_at)}`,
+            `Phone: ${when(v.arrived_device_at)}\nServer: ${when(v.arrived_received_at)}`,
+            `Phone: ${when(v.departed_device_at)}\nServer: ${when(v.departed_received_at)}`,
             v.arrive_lat === null ? unavailable : `${v.arrive_lat.toFixed(5)}, ${v.arrive_lon?.toFixed(5)} (${val(v.arrive_acc_m, ' m')})`,
             v.services.join(', ') + (v.is_replow ? ' (re-plow)' : ''),
             Array.isArray(v.salt) && v.salt.length ? (v.salt as any[]).map((x) => `${x.qty} ${x.unit}`).join(', ') : '-',

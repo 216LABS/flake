@@ -8,7 +8,7 @@ Write everything from the 3 AM point of view. Someone tired, cold and possibly g
 
 **Name it this way:** "Flake" in running text, and "Flake by 216LABS" in legal pages, sales material and anywhere a stranger first meets it. Never "FLAKE", "Flake App" or "flake.ai".
 
-**The name's double meaning.** A "flake" is also slang for someone who doesn't show up. Don't hide from it and don't lead with it. Use the joke at most once per campaign, and only where it is plainly about reliability: "The only flake your customers can count on." Never use it in the product, in anything a customer of a plow company reads, or in legal or claims material.
+**What the name means.** Flake is a snowflake. It is the smallest thing in a storm, and the reason for everything that happens that night.
 
 ## How Flake sounds
 
@@ -65,14 +65,14 @@ The stripe is the angled amber and night band from the back of a plow truck. It 
 
 ## Logo
 
-The mark is an F whose arms are cut at the angle of plow striping.
+The mark is a snowflake: six solid arms meeting at the center, with an amber V near each tip.
 
 - Use `flake-logo-on-dark` on `night` and `flake-logo-on-light` on `ground`. Use `flake-logo-by-216labs-*` where a stranger first meets the name.
 - On trucks, printed forms and stamps, use `flake-logo-one-color-black`, or the white mark on a dark door. Amber on a white truck door does not read.
 - Use `flake-mark-*` alone only under 32px or where "Flake" already appears nearby, and `flake-app-icon` for the favicon and home screen.
-- Keep clear space equal to the width of the stem on every side. The smallest logo is 20px tall, and the smallest mark is 16px.
-- Never recolor it, stretch it, add a snowflake, or put it on a photo without a solid panel behind it.
-- No snowflake icons anywhere in the brand. They are this market's cliché, and they stand close to a large company that defends its name.
+- Keep clear space equal to one arm's V on every side. The smallest logo is 20px tall, and the smallest mark is 16px.
+- Never recolor it, stretch it, or put it on a photo without a solid panel behind it.
+- Use only this snowflake. Don't swap in stock snowflake icons or emoji.
 
 ## Icons and imagery
 

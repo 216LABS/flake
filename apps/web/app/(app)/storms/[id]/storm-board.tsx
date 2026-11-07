@@ -87,10 +87,10 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText }: { sto
     <div>
       <section className="mb-4 overflow-hidden rounded-md bg-slate-950 text-white">
         <div className="flex flex-wrap items-end gap-x-8 gap-y-3 p-4">
-        <div><div className="font-display text-xs font-semibold uppercase tracking-wider text-slate-300">Storm time</div><div className="font-display tabular text-3xl font-semibold" data-testid="storm-timer">{elapsed}</div></div>
+        <div><div className="font-display text-xs font-semibold uppercase tracking-wider text-slate-300">Storm time</div><div className="font-display tabular text-2xl font-semibold md:text-3xl" data-testid="storm-timer">{elapsed}</div></div>
         <div>
           <div className="font-display text-xs font-semibold uppercase tracking-wider text-slate-300">Forecast next 12 h / elapsed</div>
-          <div className="font-display tabular text-3xl font-semibold">{dash(live.weather.forecast_in)} / {dash(live.weather.elapsed_in)}</div>
+          <div className="font-display tabular text-2xl font-semibold md:text-3xl">{dash(live.weather.forecast_in)} / {dash(live.weather.elapsed_in)}</div>
           <div className={cn('text-xs', live.weather.synthetic ? 'text-amber-300' : 'text-slate-300')}>{live.weather.breaker_open ? 'Weather unavailable' : live.weather.source}</div>
         </div>
         <div className="w-full min-w-48 flex-1">
@@ -102,7 +102,7 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText }: { sto
           <span className={live.counts.late ? 'font-bold text-amber-300' : ''}><b>{live.counts.late}</b> late</span>
         </div>
         </div>
-        <div className="flex w-full flex-wrap gap-2 lg:ml-auto lg:w-auto">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap lg:ml-auto lg:w-auto">
           {editable && unpublished ? <Button variant="accent" data-testid="publish" onClick={() => act(() => api(`/api/storms/${stormId}/publish`, { method: 'POST' }))}>Publish</Button> : null}
           {editable ? <Button variant="outline" data-testid="notify-open" onClick={() => setNotify(true)}>Notify customers</Button> : null}
           {editable ? <Button variant="outline" onClick={() => act(() => api(`/api/storms/${stormId}/pass`, { method: 'POST' }))}>Another pass</Button> : null}

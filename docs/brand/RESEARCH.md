@@ -30,7 +30,7 @@ Amber isn't a style choice here. It is already what a plow means on the road.
 
 ## Risks in the name
 
-**"Flake" means unreliable.** Dictionaries define it as [someone who proves unreliable or fails to follow through](https://en.wiktionary.com/wiki/flake), and in the US it can also mean [someone eccentric](https://daily.wordreference.com/2025/07/24/intermediate-word-of-the-day-flake/). For a business whose whole promise is showing up, that is a real risk and also a memorable joke. Decide this deliberately before spending on vehicles or print.
+The name means a snowflake, and the mark says so.
 
 **Trademark.** Snowflake Inc. has [opposed similar marks](https://www.docketalarm.com/trademarks/90280784/SNOWFALL/) such as SNOWFALL, and was itself [sued by Yeti Data](https://www.theregister.com/2020/08/06/yeti_snowflake_lawsuit/) over the name. I didn't find or rule out an existing mark for "Flake", because I didn't run a USPTO search. Have a trademark attorney clear it before paying for print, vehicle wraps or a filing. This isn't legal advice.
 

@@ -153,10 +153,10 @@ const areaName = (addresses: string[]) => {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'Your area';
 };
 
-async function notifyOwners(t: typeof tenant.$inferSelect, alertId: string, headline: string) {
+async function notifyOwners(t: typeof tenant.$inferSelect, alertId: string, headline: string, revision = 0) {
   const link = `${baseUrl()}/alerts/${alertId}`;
   const related = { alert_id: alertId };
-  return notifyOffice(t, { headline, link, key: `alert:${alertId}`, related });
+  return notifyOffice(t, { headline, link, key: revision ? `alert:${alertId}:${revision}` : `alert:${alertId}`, related });
 }
 
 /** trigger.evaluate: ADDENDUM_WEATHER section 3 for one tenant. Creates alerts only, never a dispatch. */
@@ -200,8 +200,18 @@ export async function evaluateTenant(tenantId: string): Promise<string[]> {
   const area = areaName(sites.map((s) => s.address));
   const created: string[] = [];
   for (const p of proposals) {
-    const headline = alertHeadline(p, area, t.timezone);
     const snapshotIds = sites.filter((s) => p.site_ids.includes(s.id)).map((s) => latest.get(cellKey(s))?.id).filter((v): v is string => Boolean(v));
+    // More sites reaching a trigger while one is still waiting on someone: that alert grows, and people hear about it.
+    const open = prior.find((a) => a.status === 'open' && a.kind === p.kind);
+    if (open) {
+      const merged = { ...p, site_ids: [...new Set([...(open.site_ids ?? []), ...p.site_ids])], sites: [...((open.detail.sites ?? []) as SiteDecision[]), ...p.sites] };
+      const grown = alertHeadline(merged as typeof p, area, t.timezone);
+      await db.update(trigger_alert).set({ site_ids: merged.site_ids, snapshot_ids: [...new Set([...(open.snapshot_ids ?? []), ...snapshotIds])], detail: { ...open.detail, headline: grown, sites: merged.sites, evaluated_at: now.toISOString(), evaluated_at_local: fmtLocal(now, t.timezone) } }).where(eq(trigger_alert.id, open.id));
+      created.push(open.id);
+      await notifyOwners(t, open.id, grown, merged.site_ids.length);
+      continue;
+    }
+    const headline = alertHeadline(p, area, t.timezone);
     const [row] = await db.insert(trigger_alert).values({
       tenant_id: tenantId,
       kind: p.kind,

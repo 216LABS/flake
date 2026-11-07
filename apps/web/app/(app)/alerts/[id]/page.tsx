@@ -27,7 +27,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
   const siteDetail = (a.detail.sites ?? []) as { site_id: string; value_in: number | null; label?: string }[];
   return (
     <>
-      <PageHeader title={a.detail.headline} subtitle={`${a.kind?.replace('_', ' ')} alert, ${fmtLocal(a.created_at!, ctx.tenant.timezone)}`} actions={<Badge tone={a.status === 'open' ? 'amber' : 'gray'}>{a.status}</Badge>} />
+      <PageHeader title={a.detail.headline} subtitle={`${a.kind === 'nws_alert' ? 'National Weather Service alert' : 'Trigger alert'}, ${fmtLocal(a.created_at!, ctx.tenant.timezone)}`} actions={<Badge tone={a.status === 'open' ? 'amber' : 'gray'}>{a.status}</Badge>} />
       <p className="mb-4 text-sm text-slate-600">Flake never dispatches by itself. Nothing happens until you tap Start storm.</p>
       <AlertActions alertId={a.id} status={a.status!} routeIds={grouped.map((g) => g.route.id)} siteIds={a.site_ids} name={`Storm ${fmtLocal(new Date(), ctx.tenant.timezone, { month: 'short', day: 'numeric' })}`} />
       <div className="mt-6 grid gap-4 md:grid-cols-2">

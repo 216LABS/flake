@@ -40,6 +40,19 @@
 :root {
   color-scheme: light;
 }
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-slate-200);
+  }
+}
+
+/* Map credits sit inside text, so their links need more than color. */
+.maplibregl-ctrl-attrib a {
+  text-decoration: underline;
+}
+
 body {
   background: var(--color-slate-50);
   color: var(--color-slate-900);
