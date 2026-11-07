@@ -22,14 +22,15 @@ export default async function Dashboard() {
   const [{ failedMessages } = { failedMessages: 0 }] = await serviceDb().select({ failedMessages: sql<number>`count(*)::int` }).from(message_log).where(and(eq(message_log.tenant_id, ctx.tenantId), eq(message_log.status, 'failed'), sql`${message_log.created_at} > now() - interval '24 hours'`));
   const usage = canSeeUsage(ctx.email) ? await deploymentUsage() : null;
   const fmt = (v: number | null, unit = '"') => (v === null ? 'unavailable' : `${v}${unit}`);
-  const setup = [
+  const canEdit = ctx.role !== 'viewer';
+  const setup = ctx.role !== 'owner' ? [] : [
     { done: data.customers[0]!.n > 0, text: 'Add your first customer', href: '/customers/new' },
     { done: Boolean(ctx.tenant.stripe_charges_enabled), text: 'Connect Stripe to get paid', href: '/settings?tab=payments' },
     { done: ctx.tenant.sms_status === 'approved', text: 'Verify your text number. Links go by email and QR until then.', href: '/settings?tab=sms' },
   ];
   return (
     <>
-      <PageHeader title="Dashboard" subtitle={ctx.tenant.name} actions={<Link href="/storms" className={buttonVariants({ variant: 'accent' })}>Start a storm</Link>} />
+      <PageHeader title="Dashboard" subtitle={ctx.tenant.name} actions={canEdit ? <Link href="/storms" className={buttonVariants({ variant: 'accent' })}>Start a storm</Link> : null} />
       {usage?.near_limit ? <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-800" data-testid="usage-warning">Storage is nearly full ({usage.files_mb} of {usage.files_limit_mb} MB of files, {usage.db_mb} of {usage.db_limit_mb} MB of database). <Link className="underline" href="/settings?tab=system">See details</Link></p> : null}
       {failedMessages ? <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-800" data-testid="messages-failed">{failedMessages === 1 ? '1 message' : `${failedMessages} messages`} could not be sent in the last 24 hours. Flake keeps retrying. <Link className="underline" href="/settings?tab=system">See why</Link></p> : null}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

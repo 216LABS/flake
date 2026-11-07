@@ -23,7 +23,7 @@ export interface DraftRow {
 
 const TONE: Record<string, 'gray' | 'blue' | 'green' | 'amber' | 'red'> = { draft: 'gray', approved: 'blue', charged: 'green', sent: 'blue', paid: 'green', failed: 'red', void: 'gray' };
 
-export function BillingReview({ stormId, initial, canExport }: { stormId: string; initial: DraftRow[]; canExport: boolean }) {
+export function BillingReview({ stormId, initial, canExport, showFees }: { stormId: string; initial: DraftRow[]; canExport: boolean; showFees: boolean }) {
   const router = useRouter();
   const [rows, setRows] = useState(initial);
   const [flaggedOnly, setFlaggedOnly] = useState(true);
@@ -68,7 +68,7 @@ export function BillingReview({ stormId, initial, canExport }: { stormId: string
       </div>
       {error ? <p className="mb-3 rounded-md bg-red-50 p-3 text-sm text-red-800" role="alert">{error}</p> : null}
       {!rows.length ? <EmptyState title="No drafts yet" body="Generate drafts to price this storm's visits." /> : null}
-      {rows.length ? <p className="mb-3 text-sm text-slate-600">{flagged.length} flagged, {clean.length} clean and ready. Total {money(total)}. Flake fees {money(fees)}.</p> : null}
+      {rows.length ? <p className="mb-3 text-sm text-slate-600">{flagged.length} flagged, {clean.length} clean and ready. Total {money(total)}.{showFees ? ` Flake fees ${money(fees)}.` : ''}</p> : null}
       {flaggedOnly && rows.length && !shown.length ? <EmptyState title="Nothing is flagged" body="Everything here is clean. Approve it, or turn off the filter to see it." /> : null}
       <div className="space-y-3">
         {shown.map((r) => (
@@ -96,7 +96,7 @@ export function BillingReview({ stormId, initial, canExport }: { stormId: string
               </ul>
             ) : null}
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-              <span>Owner only. Flake fee {money(r.fee_cents)}. Estimated Stripe fee {money(r.stripe_fee_cents)}. {r.billing_mode.replace(/_/g, ' ')}.</span>
+              <span>{showFees ? `Owner only. Flake fee ${money(r.fee_cents)}. Estimated Stripe fee ${money(r.stripe_fee_cents)}. ` : ''}{r.billing_mode.replace(/_/g, ' ')}.</span>
               {r.status === 'draft' ? <Button size="sm" variant="outline" disabled={busy} data-testid="approve-one" onClick={() => run(() => api('/api/billing/approve', { body: { draftIds: [r.id] } }))}>Approve</Button> : null}
             </div>
           </Card>

@@ -13,7 +13,7 @@ export default async function StormPage({ params }: { params: Promise<{ id: stri
   const { id } = await params;
   if (!isUuid(id)) notFound();
   const ctx = await requirePage();
-  const live = await stormLive({ userId: ctx.userId, tenantId: ctx.tenantId, timezone: ctx.tenant.timezone }, id).catch((e) => {
+  const live = await stormLive({ userId: ctx.userId, tenantId: ctx.tenantId, timezone: ctx.tenant.timezone, role: ctx.role }, id).catch((e) => {
     if (e instanceof HttpError && e.status === 404) return null;
     throw e;
   });
@@ -25,7 +25,7 @@ export default async function StormPage({ params }: { params: Promise<{ id: stri
         <Link className={buttonVariants({ variant: 'outline' })} href={`/billing?storm=${id}`}>Billing</Link>
         <Link className={buttonVariants({ variant: 'outline' })} href={`/storms/${id}/pay`}>Sub pay</Link>
       </>} />
-      <StormBoard stormId={id} initial={JSON.parse(JSON.stringify(live))} layers={tiles.layers()} />
+      <StormBoard stormId={id} initial={JSON.parse(JSON.stringify(live))} layers={tiles.layers()} canEdit={ctx.role !== 'viewer'} />
     </>
   );
 }

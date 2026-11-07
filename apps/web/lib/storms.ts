@@ -222,7 +222,7 @@ export async function assignRunDriver(ctx: Ctx, runId: string, crewId: string) {
 }
 
 /** Everything the live board shows. Reads as the signed-in user so RLS applies. */
-export async function stormLive(ctx: Ctx & { timezone: string }, stormId: string) {
+export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | 'dispatcher' | 'viewer' }, stormId: string) {
   const data = await withUser(ctx.userId, async (tx) => {
     const [s] = await tx.select().from(storm).where(eq(storm.id, stormId));
     if (!s) throw new HttpError(404, 'Storm not found');
@@ -253,7 +253,7 @@ export async function stormLive(ctx: Ctx & { timezone: string }, stormId: string
     const pos = data.positions.find((p) => p.storm_run_id === run.id);
     return {
       id: run.id, pass: run.pass, name: r?.name ?? 'Run', crew: crew ? { id: crew.id, name: crew.name, kind: crew.kind, callout_reply: crew.callout_reply } : null,
-      published_at: run.published_at, started_at: run.started_at, link: run.published_at ? runLink(run) : null, stops,
+      published_at: run.published_at, started_at: run.started_at, link: run.published_at && ctx.role !== 'viewer' ? runLink(run) : null, stops,
       position: pos ? { lat: pos.lat, lon: pos.lon, at: pos.device_at } : null,
     };
   });

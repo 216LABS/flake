@@ -17,7 +17,7 @@ function since(iso: string | null, now: number) {
 }
 const dash = (v: number | null, u = '"') => (v === null ? 'unavailable' : `${v}${u}`);
 
-export function StormBoard({ stormId, initial, layers }: { stormId: string; initial: any; layers: TileLayers }) {
+export function StormBoard({ stormId, initial, layers, canEdit }: { stormId: string; initial: any; layers: TileLayers; canEdit: boolean }) {
   const router = useRouter();
   const [live, setLive] = useState<any>(initial);
   const [now, setNow] = useState(Date.parse(initial.storm.started_at));
@@ -59,6 +59,7 @@ export function StormBoard({ stormId, initial, layers }: { stormId: string; init
 
   const move = (stopId: string, runId: string) => act(() => api(`/api/run-stops/${stopId}`, { method: 'PATCH', body: { storm_run_id: runId } }));
   const closed = live.storm.status !== 'active';
+  const editable = !closed && canEdit;
   const unpublished = live.runs.some((r: any) => !r.published_at);
   const allStops: any[] = useMemo(() => live.runs.flatMap((r: any) => r.stops), [live]);
   const pins: MapPin[] = useMemo(() => [
@@ -88,11 +89,11 @@ export function StormBoard({ stormId, initial, layers }: { stormId: string; init
           <span className={live.counts.late ? 'font-bold text-red-700' : ''}><b>{live.counts.late}</b> late</span>
         </div>
         <div className="ml-auto flex flex-wrap gap-2">
-          {!closed && unpublished ? <Button variant="accent" data-testid="publish" onClick={() => act(() => api(`/api/storms/${stormId}/publish`, { method: 'POST' }))}>Publish</Button> : null}
-          {!closed ? <Button variant="outline" data-testid="notify-open" onClick={() => setNotify(true)}>Notify customers</Button> : null}
-          {!closed ? <Button variant="outline" onClick={() => act(() => api(`/api/storms/${stormId}/pass`, { method: 'POST' }))}>Another pass</Button> : null}
+          {editable && unpublished ? <Button variant="accent" data-testid="publish" onClick={() => act(() => api(`/api/storms/${stormId}/publish`, { method: 'POST' }))}>Publish</Button> : null}
+          {editable ? <Button variant="outline" data-testid="notify-open" onClick={() => setNotify(true)}>Notify customers</Button> : null}
+          {editable ? <Button variant="outline" onClick={() => act(() => api(`/api/storms/${stormId}/pass`, { method: 'POST' }))}>Another pass</Button> : null}
           <Button variant="outline" onClick={() => setShowMap(!showMap)}>{showMap ? 'Hide map' : 'Map'}</Button>
-          {!closed ? (
+          {editable ? (
             <Button variant="danger" data-testid="close-storm" onClick={async () => {
               setError(null);
               try {
@@ -104,11 +105,11 @@ export function StormBoard({ stormId, initial, layers }: { stormId: string; init
                 else setError(err.message);
               }
             }}>Close storm</Button>
-          ) : <Badge tone="green" data-testid="storm-closed">{live.storm.status}</Badge>}
+          ) : closed ? <Badge tone="green" data-testid="storm-closed">{live.storm.status}</Badge> : null}
         </div>
       </Card>
 
-      {!closed ? (
+      {editable ? (
         <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
           <span className="text-slate-600">Ask drivers by text, reply YES or NO, plowing expected at</span>
           <Input aria-label="Expected start time" className="h-8 w-28" placeholder="4:00 AM" value={calloutTime} data-testid="callout-time" onChange={(e) => setCalloutTime(e.target.value)} />
@@ -175,7 +176,7 @@ export function StormBoard({ stormId, initial, layers }: { stormId: string; init
               <header className="mb-2 px-1">
                 <div className="font-semibold">{r.name}{r.pass > 1 ? ` (pass ${r.pass})` : ''}</div>
                 <div className="text-sm text-slate-600">{r.crew?.name ?? 'No driver'}{r.crew?.kind === 'sub' ? ' (sub)' : ''}{r.crew?.callout_reply ? `, replied ${r.crew.callout_reply}` : ''}</div>
-                {!closed ? (
+                {editable ? (
                   <Select aria-label={`Driver for ${r.name}`} data-testid="assign-driver" className="mt-1 h-8 py-0 text-xs" value={r.crew?.id ?? ''} onChange={(e) => e.target.value && void act(() => api(`/api/runs/${r.id}`, { method: 'PATCH', body: { crew_id: e.target.value } }))}>
                     <option value="">Choose a driver</option>
                     {live.crew.map((c: any) => <option key={c.id} value={c.id}>{c.name}{c.kind === 'sub' ? ' (sub)' : ''}</option>)}
@@ -185,7 +186,7 @@ export function StormBoard({ stormId, initial, layers }: { stormId: string; init
               </header>
               <ul className="space-y-2">
                 {r.stops.map((s: any) => (
-                  <li key={s.id} draggable={!closed && s.status !== 'onsite' && s.status !== 'done'} onDragStart={(e) => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragging(s.id); }} onDragEnd={() => setDragging(null)} data-testid="stop-card" data-status={s.status} className={cn('rounded-md border bg-white p-2 text-sm', s.late && 'border-red-500 bg-red-50')}>
+                  <li key={s.id} draggable={editable && s.status !== 'onsite' && s.status !== 'done'} onDragStart={(e) => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragging(s.id); }} onDragEnd={() => setDragging(null)} data-testid="stop-card" data-status={s.status} className={cn('rounded-md border bg-white p-2 text-sm', s.late && 'border-red-500 bg-red-50')}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="font-medium">{s.seq}. {s.label}</div>
                       <Badge tone={STATUS_TONE[s.status]}>{s.status}</Badge>
@@ -193,7 +194,7 @@ export function StormBoard({ stormId, initial, layers }: { stormId: string; init
                     <div className="text-xs text-slate-600">{s.customer}</div>
                     {s.late ? <div className="text-xs font-bold text-red-700">Late</div> : null}
                     {s.arrived_at ? <div className="text-xs text-slate-600">On site {since(s.arrived_at, now)}</div> : null}
-                    {!closed && !['done', 'onsite'].includes(s.status) ? (
+                    {editable && !['done', 'onsite'].includes(s.status) ? (
                       <div className="mt-1 flex gap-1">
                         <Select aria-label={`Move ${s.label}`} data-testid="move-to" className="h-8 py-0 text-xs" value="" onChange={(e) => e.target.value && void move(s.id, e.target.value)}>
                           <option value="">Move to...</option>

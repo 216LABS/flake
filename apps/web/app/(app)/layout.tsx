@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { requirePage } from '@/lib/auth';
 import { isProd, isTestEnv } from '@/lib/env';
+import { ViewOnly } from './view-only';
 
 const NAV = [
   ['/dashboard', 'Dashboard'],
@@ -32,7 +33,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
+      <main className="mx-auto max-w-7xl px-4 py-6">
+        {ctx.role === 'viewer' ? <p className="mb-4 rounded-md bg-slate-100 p-3 text-sm text-slate-700" data-testid="view-only">You have view-only access. An owner can change that in Settings.</p> : null}
+        {ctx.role === 'viewer' ? <ViewOnly>{children}</ViewOnly> : children}
+      </main>
     </div>
   );
 }

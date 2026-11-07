@@ -1,5 +1,6 @@
 import { asc, customer, eq, route, route_stop } from '@flake/db';
 import { DEFAULT_RATE_CARD, type RateCard } from '@flake/core/quote';
+import { redirect } from 'next/navigation';
 import { asUser, requirePage } from '@/lib/auth';
 import { isUuid } from '@/lib/http';
 import { getProviders } from '@/lib/providers';
@@ -10,6 +11,7 @@ export const metadata = { title: 'New customer' };
 export default async function NewCustomer({ searchParams }: { searchParams: Promise<{ customer?: string }> }) {
   const { customer: customerId } = await searchParams;
   const ctx = await requirePage();
+  if (ctx.role === 'viewer') redirect('/customers');
   const { routes, stops, existing } = await asUser(ctx, async (tx) => ({
     routes: await tx.select().from(route),
     stops: await tx.select().from(route_stop).orderBy(asc(route_stop.seq)),

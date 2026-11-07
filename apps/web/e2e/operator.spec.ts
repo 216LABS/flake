@@ -120,6 +120,15 @@ test('roles: dispatchers run storms but not settings, viewers only look, nobody 
   expect((await dispatcher.request.post('/api/settings/stripe')).status()).toBe(403);
   expect((await dispatcher.request.post('/api/settings/team', { data: { email: 'x@flake.test', role: 'owner' } })).status()).toBe(403);
   expect((await dispatcher.request.get('/api/settings/export?table=customer')).status()).toBe(403);
+  // A dispatcher is offered the tabs they can use, and owner-only pages say so.
+  const dispatcherPage = await dispatcher.newPage();
+  await dispatcherPage.goto('/settings');
+  await expect(dispatcherPage.getByTestId('tab-crew')).toBeVisible();
+  await expect(dispatcherPage.getByTestId('crew-invite')).toBeVisible();
+  await expect(dispatcherPage.getByTestId('tab-rate')).toHaveCount(0);
+  await expect(dispatcherPage.getByTestId('tab-payments')).toHaveCount(0);
+  await dispatcherPage.goto('/settings?tab=payments');
+  await expect(dispatcherPage.getByTestId('owner-only')).toBeVisible();
   await dispatcher.close();
 
   // The owner adds a viewer who already has a Flake login but no company.
@@ -138,6 +147,28 @@ test('roles: dispatchers run storms but not settings, viewers only look, nobody 
   expect((await viewer.request.get('/api/customers')).status()).toBe(200);
   expect((await viewer.request.post('/api/customers', { data: { name: 'No', kind: 'residential' } })).status()).toBe(403);
   expect((await viewer.request.post('/api/storms', { data: { name: 'No', routeIds: [] } })).status()).toBe(403);
+  // A viewer sees the board but isn't offered changes, and never gets a driver's link, which would let them act as the driver.
+  const { id: stormId } = await startStorm(page.request, `Roles ${Date.now()}`, ['West Lakewood']);
+  const ownerLive = await (await page.request.get(`/api/storms/${stormId}/live`)).json();
+  expect(ownerLive.runs[0].link).toContain('/d/');
+  const viewerLive = await (await viewer.request.get(`/api/storms/${stormId}/live`)).json();
+  expect(viewerLive.runs[0].stops.length).toBeGreaterThan(0);
+  expect(JSON.stringify(viewerLive)).not.toContain('/d/');
+  const viewerPage = await viewer.newPage();
+  await viewerPage.goto(`/storms/${stormId}`);
+  await expect(viewerPage.getByTestId('view-only')).toBeVisible();
+  await expect(viewerPage.getByTestId('stop-card').first()).toBeVisible();
+  await expect(viewerPage.getByTestId('close-storm')).toHaveCount(0);
+  await expect(viewerPage.getByTestId('show-link')).toHaveCount(0);
+  await expect(viewerPage.getByTestId('assign-driver')).toHaveCount(0);
+  await viewerPage.goto('/storms');
+  await expect(viewerPage.getByTestId('create-storm')).toBeDisabled();
+  await viewerPage.goto('/customers');
+  await expect(viewerPage.getByTestId('new-customer')).toHaveCount(0);
+  await viewerPage.goto('/customers/new');
+  await viewerPage.waitForURL('**/customers');
+  await viewerPage.goto('/settings?tab=team');
+  await expect(viewerPage.getByTestId('owner-only')).toBeVisible();
   await viewer.close();
 
   // A person in a company can't be added to a second one, and new office staff get a sign-in email.

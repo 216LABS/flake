@@ -94,7 +94,7 @@ export function createProviders(opts: ProviderOptions): Providers {
     geocoder: new LiveGeocoder(),
     tiles: new LiveTiles(env.MAPBOX_TOKEN),
     sms: production && env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN ? new LiveSms(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN) : production ? unconfiguredSms() : new MockSms(),
-    email: env.RESEND_API_KEY ? new LiveEmail(env.RESEND_API_KEY, env.EMAIL_FROM ?? 'notifications@flake.216labs.dev') : noEmail(),
+    email: env.RESEND_API_KEY ? new LiveEmail(env.RESEND_API_KEY, env.EMAIL_FROM?.trim() || 'notifications@flake.216labs.dev') : noEmail(),
     payments: stripeKey
       ? new LivePayments(stripeKey, env.STRIPE_PUBLISHABLE_KEY ?? null, env.STRIPE_WEBHOOK_SECRET ?? '', { monthly: env.STRIPE_PRICE_PRO_MONTHLY, yearly: env.STRIPE_PRICE_PRO_YEARLY })
       : production ? unconfiguredPayments() : new MockPayments(baseUrl),

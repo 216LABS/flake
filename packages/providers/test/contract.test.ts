@@ -339,6 +339,17 @@ describe('live clients', () => {
     expect(await from("Peña's <Plowing>")).toBe("Peña's Plowing <n@flake.test>");
     expect(await from('()')).toBe('n@flake.test');
   });
+  it('takes the sender address however EMAIL_FROM was written', async () => {
+    for (const written of ['n@flake.test', ' n@flake.test\n', '"n@flake.test"', 'Flake <n@flake.test>', '"Flake" <n@flake.test> ']) {
+      let sent = '';
+      const email = new LiveEmail('k', written, (async (_u: any, init: any) => {
+        sent = JSON.parse(init.body).from;
+        return new Response(JSON.stringify({ id: 'e1' }));
+      }) as typeof fetch);
+      await email.send({ fromName: 'Acme', to: 'a@b.c', subject: 's', text: 't', idempotencyKey: 'abc' });
+      expect(sent).toBe('Acme <n@flake.test>');
+    }
+  });
   it('twilio sends through the tenant subaccount and refuses without one', async () => {
     let url = '';
     const sms = new LiveSms('AC', 't', (async (u: any) => {

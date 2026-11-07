@@ -10,7 +10,7 @@ export default async function Customers() {
   const { customers, sites } = await asUser(ctx, async (tx) => ({ customers: await tx.select().from(customer).orderBy(desc(customer.created_at)), sites: await tx.select().from(site) }));
   return (
     <>
-      <PageHeader title="Customers" actions={<Link href="/customers/new" className={buttonVariants({ variant: 'accent' })} data-testid="new-customer">New customer</Link>} />
+      <PageHeader title="Customers" actions={ctx.role !== 'viewer' ? <Link href="/customers/new" className={buttonVariants({ variant: 'accent' })} data-testid="new-customer">New customer</Link> : null} />
       {customers.length ? (
         <Table>
           <thead><tr><Th>Name</Th><Th>Kind</Th><Th>Sites</Th><Th>Billing</Th><Th>Payment on file</Th></tr></thead>

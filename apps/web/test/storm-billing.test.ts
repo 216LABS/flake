@@ -128,12 +128,12 @@ describe('storm lifecycle', () => {
 
   it('the live board reads through RLS and counts correctly', async () => {
     const { stormId } = await completeStorm(w, { skipLast: true });
-    const live = await stormLive({ ...ctxOf(w), timezone: 'America/New_York' }, stormId);
+    const live = await stormLive({ ...ctxOf(w), timezone: 'America/New_York', role: 'owner' }, stormId);
     expect(live.counts).toMatchObject({ done: 4, open: 1, total: 5 });
     expect(live.weather.forecast_in).toBeNull();
     expect(live.weather.source).toBe('unavailable');
     const stranger = await makeWorld();
-    await expect(stormLive({ ...ctxOf(stranger), timezone: 'UTC' }, stormId)).rejects.toThrow(/not found/i);
+    await expect(stormLive({ ...ctxOf(stranger), timezone: 'UTC', role: 'owner' }, stormId)).rejects.toThrow(/not found/i);
   });
 });
 
