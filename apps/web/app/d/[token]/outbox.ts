@@ -51,6 +51,10 @@ export async function pending(token: string) {
 
 let flushing = false;
 
+// Weak storm-night signal can leave a request hanging for minutes. Give up and retry, or the outbox stalls behind it.
+const REQUEST_TIMEOUT_MS = 20_000;
+const UPLOAD_TIMEOUT_MS = 180_000;
+
 /** The host caps request bodies around 4.5 MB, and full-size photos are often bigger. */
 const DIRECT_UPLOAD_OVER_BYTES = 3.5 * 1024 * 1024;
 
@@ -59,17 +63,17 @@ async function sendPhoto(token: string, p: StoredPhoto): Promise<Response> {
     const form = new FormData();
     for (const [k, v] of Object.entries(p.meta)) form.set(k, v);
     form.set('file', p.blob, `${p.client_uuid}.jpg`);
-    return fetch(`/api/d/${token}/photos`, { method: 'POST', body: form });
+    return fetch(`/api/d/${token}/photos`, { method: 'POST', body: form, signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS) });
   }
   const json = { 'Content-Type': 'application/json' };
   const body = JSON.stringify({ ...p.meta, content_type: p.blob.type || 'image/jpeg' });
-  const signed = await fetch(`/api/d/${token}/photos/sign`, { method: 'POST', headers: json, body });
+  const signed = await fetch(`/api/d/${token}/photos/sign`, { method: 'POST', headers: json, body, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
   if (!signed.ok) return signed;
   const out = (await signed.clone().json()) as { status: string; url?: string };
   if (out.status === 'duplicate') return signed;
-  const put = await fetch(out.url!, { method: 'PUT', headers: { 'Content-Type': p.blob.type || 'image/jpeg', 'x-upsert': 'true' }, body: p.blob });
+  const put = await fetch(out.url!, { method: 'PUT', headers: { 'Content-Type': p.blob.type || 'image/jpeg', 'x-upsert': 'true' }, body: p.blob, signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS) });
   if (!put.ok) return put;
-  return fetch(`/api/d/${token}/photos/finish`, { method: 'POST', headers: json, body });
+  return fetch(`/api/d/${token}/photos/finish`, { method: 'POST', headers: json, body, signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS) });
 }
 
 export type FlushResult = 'idle' | 'synced' | 'offline' | 'dead' | 'partial';
@@ -86,7 +90,7 @@ export async function flush(token: string, onStart?: () => void): Promise<FlushR
 
     for (let i = 0; i < actions.length; i += 50) {
       const batch = actions.slice(i, i + 50);
-      const res = await fetch(`/api/d/${token}/actions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ actions: batch.map((a) => a.action) }) });
+      const res = await fetch(`/api/d/${token}/actions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ actions: batch.map((a) => a.action) }), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
       if (res.status === 410) return 'dead';
       if (!res.ok) return 'partial';
       const { acks } = (await res.json()) as { acks: { client_uuid: string; status: string; reason?: string }[] };
@@ -103,8 +107,15 @@ export async function flush(token: string, onStart?: () => void): Promise<FlushR
     for (const p of photos) {
       const res = await sendPhoto(token, p);
       if (res.status === 410) return 'dead';
-      if (res.ok) await d.delete('photos', p.client_uuid);
-      else waiting = true;
+      if (res.ok) {
+        await d.delete('photos', p.client_uuid);
+      } else if ([413, 415, 422].includes(res.status)) {
+        // The server will never take this file. Keep it on the phone, but stop it holding up the badge.
+        await d.put('rejected', { client_uuid: p.client_uuid, reason: `photo ${res.status}`, blob: p.blob, meta: p.meta });
+        await d.delete('photos', p.client_uuid);
+      } else {
+        waiting = true;
+      }
     }
     return waiting ? 'partial' : 'synced';
   } catch {

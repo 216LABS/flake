@@ -12,12 +12,13 @@ const STEPS = ['Customer', 'Property', 'Pricing', 'Pins', 'Route', 'Quote'];
 const PIN_KINDS = ['stake', 'pile', 'ada', 'entrance', 'hazard', 'other'];
 type PricingType = 'per_push' | 'per_inch_tier' | 'per_event' | 'seasonal' | 'hourly';
 
-export function Wizard({ layers, rateCard, routes }: { layers: TileLayers; rateCard: RateCard; routes: { id: string; name: string; site_ids: string[] }[] }) {
+export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLayers; rateCard: RateCard; routes: { id: string; name: string; site_ids: string[] }[]; existing?: { id: string; name: string; kind: string; email: string } }) {
   const router = useRouter();
-  const [step, setStep] = useState(0);
+  const firstStep = existing ? 1 : 0;
+  const [step, setStep] = useState(firstStep);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [c, setC] = useState({ name: '', kind: 'commercial', contact_name: '', phone_e164: '', email: '', billing_mode: 'card_on_file' });
+  const [c, setC] = useState({ name: existing?.name ?? '', kind: existing?.kind ?? 'commercial', contact_name: '', phone_e164: '', email: existing?.email ?? '', billing_mode: 'card_on_file' });
   const [address, setAddress] = useState('');
   const [hit, setHit] = useState<{ label: string; lat: number; lon: number } | null>(null);
   const [estimate, setEstimate] = useState<{ sqft: number | null; method: string; attribution: string[]; parcel_id?: string; county?: string } | null>(null);
@@ -38,7 +39,7 @@ export function Wizard({ layers, rateCard, routes }: { layers: TileLayers; rateC
   const [routeId, setRouteId] = useState('');
   const [position, setPosition] = useState('');
   const [quoteUrl, setQuoteUrl] = useState<string | null>(null);
-  const saved = useRef<{ customerId?: string; siteId?: string; pins: number; routed: boolean }>({ pins: 0, routed: false });
+  const saved = useRef<{ customerId?: string; siteId?: string; pins: number; routed: boolean }>({ customerId: existing?.id, pins: 0, routed: false });
 
   const suggestion = useMemo(() => suggestPrice({ sqft: sqft ?? 0, walks_lf: walkLf }, rateCard), [sqft, walkLf, rateCard]);
   const suggested = pricingType === 'per_event' ? suggestion.per_event_cents : pricingType === 'seasonal' ? suggestion.seasonal_cents : pricingType === 'hourly' ? 12000 : suggestion.per_push_cents;
@@ -132,7 +133,7 @@ export function Wizard({ layers, rateCard, routes }: { layers: TileLayers; rateC
   const canNext = [Boolean(c.name), Boolean(hit), Boolean(price), true, true][step] ?? true;
   return (
     <>
-      <PageHeader title="New customer" subtitle={`Step ${step + 1} of ${STEPS.length}: ${STEPS[step]}`} />
+      <PageHeader title={existing ? `Add a site for ${existing.name}` : 'New customer'} subtitle={`Step ${step + 1} of ${STEPS.length}: ${STEPS[step]}`} />
       <Card className="max-w-3xl">
         {step === 0 ? (
           <div className="grid gap-3 sm:grid-cols-2">
@@ -230,7 +231,7 @@ export function Wizard({ layers, rateCard, routes }: { layers: TileLayers; rateC
         ) : null}
         {error ? <p className="mt-3 text-sm text-red-700" role="alert">{error}</p> : null}
         <div className="mt-6 flex justify-between">
-          <Button variant="ghost" disabled={step === 0} onClick={() => setStep(step - 1)}>Back</Button>
+          <Button variant="ghost" disabled={step === firstStep} onClick={() => setStep(step - 1)}>Back</Button>
           {step < STEPS.length - 1 ? <Button variant="accent" disabled={!canNext} data-testid="next" onClick={() => setStep(step + 1)}>Next</Button> : <Button variant="accent" disabled={busy} data-testid="send-quote" onClick={() => void finish()}>Send quote</Button>}
         </div>
       </Card>

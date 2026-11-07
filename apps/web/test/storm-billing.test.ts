@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { closeDb, and, customer, eq, invoice_draft, job, message_log, run_stop, serviceDb, sql, stripe_event, tenant, visit, visit_correction, withUser, storm } from '@flake/db';
+import { closeDb, and, customer, eq, invoice_draft, job, message_log, run_stop, serviceDb, site, sql, stripe_event, tenant, trigger_alert, visit, visit_correction, withUser, storm } from '@flake/db';
 import { MockEmail, signMockWebhook } from '@flake/providers';
 import { POST as webhook } from '@/app/api/webhooks/stripe/route';
 import { GET as cronJobs } from '@/app/api/cron/jobs/route';
-import { applyFlagFix, approveDrafts, chargeDraft, exportQbo, generateDrafts, handleStripeEvent, billInstallments, retryDraft } from '@/lib/billing';
+import { applyFlagFix, approveDrafts, chargeDraft, exportQbo, generateDrafts, handleStripeEvent, billInstallments, retryDraft, visitsMissedByDrafts } from '@/lib/billing';
 import { runJobs } from '@/lib/handlers';
 import { notifyParty } from '@/lib/messaging';
 import { processActions, resolveToken } from '@/lib/driver';
@@ -335,6 +335,60 @@ describe('billing', () => {
     const rows = await serviceDb().execute(sql`select seq, amount_cents from installment_invoice where tenant_id = ${x.tenantId} order by seq`);
     expect(rows.map((r: any) => r.seq)).toEqual([1, 2]);
     expect(rows[0]!.amount_cents).toBe(60000);
+  });
+});
+
+describe('edge cases around storms', () => {
+  it('refuses a storm with nothing to plow, and leaves no storm behind', async () => {
+    const w = await makeWorld();
+    const before = (await serviceDb().select().from(storm).where(eq(storm.tenant_id, w.tenantId))).length;
+    await expect(createStorm(ctxOf(w), { name: 'Empty', routeIds: [], crewAssignments: {} })).rejects.toThrow(/nothing to plow/);
+    await expect(createStorm(ctxOf(w), { name: 'Empty', routeIds: [w.routeId], crewAssignments: {}, siteIds: [randomUUID()] })).rejects.toThrow(/nothing to plow/);
+    expect((await serviceDb().select().from(storm).where(eq(storm.tenant_id, w.tenantId))).length).toBe(before);
+  });
+
+  it('retired sites stay out of new storms', async () => {
+    const w = await makeWorld();
+    await serviceDb().update(site).set({ active: false }).where(eq(site.id, w.siteIds[0]!));
+    const out = await createStorm(ctxOf(w), { name: 'x', routeIds: [w.routeId], crewAssignments: {} });
+    const stops = await serviceDb().select().from(run_stop).where(eq(run_stop.storm_run_id, out.runs[0]!.id));
+    expect(stops.map((s) => s.site_id)).not.toContain(w.siteIds[0]);
+    expect(stops).toHaveLength(4);
+  });
+
+  it('a quick Undo stops the done notice and the completion report', async () => {
+    const w = await makeWorld();
+    const out = await createStorm(ctxOf(w), { name: 'Undo', routeIds: [w.routeId], crewAssignments: {} });
+    const rs = await resolveToken(decryptToken(out.runs[0]!.link_token_enc!));
+    const [s] = await serviceDb().select().from(run_stop).where(and(eq(run_stop.storm_run_id, out.runs[0]!.id), eq(run_stop.seq, 2)));
+    const at = new Date();
+    const a = stopActions(s!.id, at, { minutes: 0 });
+    await processActions(rs, [...a.actions, { client_uuid: randomUUID(), at: new Date(at.getTime() + 5000).toISOString(), kind: 'undo_last', run_stop_id: s!.id, visit_client_uuid: a.visit }]);
+    await drain();
+    const [v] = await serviceDb().select().from(visit).where(eq(visit.client_uuid, a.visit));
+    expect(await serviceDb().select().from(message_log).where(and(eq(message_log.tenant_id, w.tenantId), sql`related->>'visit_id' = ${v!.id}`))).toEqual([]);
+  });
+
+  it('names a visit that synced after billing, and stops once it is picked up', async () => {
+    const w = await makeWorld();
+    const { stormId, run, stops } = await completeStorm(w, { skipLast: true });
+    await generateDrafts(ctxOf(w), stormId);
+    expect(await visitsMissedByDrafts(ctxOf(w), stormId)).toEqual([]);
+    const rs = await resolveToken(decryptToken(run.link_token_enc!));
+    await processActions(rs, stopActions(stops[4]!.id, new Date('2026-01-20T15:00:00Z'), { gps: { lat: 41.484, lon: -81.8 } }).actions as never);
+    const missed = await visitsMissedByDrafts(ctxOf(w), stormId);
+    expect(missed.map((m) => m.site)).toEqual(['Site 4']);
+    expect(missed[0]!.in_review).toBe(true);
+    await generateDrafts(ctxOf(w), stormId);
+    expect(await visitsMissedByDrafts(ctxOf(w), stormId)).toEqual([]);
+  });
+
+  it('an alert starts one storm', async () => {
+    const w = await makeWorld();
+    const [alert] = await serviceDb().insert(trigger_alert).values({ tenant_id: w.tenantId, kind: 'forecast', site_ids: w.siteIds, detail: { headline: 'x' } }).returning();
+    const input = { name: 'a', routeIds: [w.routeId], crewAssignments: {}, triggerAlertId: alert!.id };
+    await createStorm(ctxOf(w), input);
+    await expect(createStorm(ctxOf(w), input)).rejects.toThrow(/already handled/);
   });
 });
 

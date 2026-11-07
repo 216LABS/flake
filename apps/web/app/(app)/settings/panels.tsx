@@ -50,8 +50,18 @@ export function CrewPanel({ crew }: { crew: any[] }) {
   const router = useRouter();
   const blank = { name: '', phone_e164: '', email: '', kind: 'employee', language: 'en', per_visit: '', hourly: '' };
   const [f, setF] = useState(blank);
+  const [editing, setEditing] = useState<string | null>(null);
   const [invite, setInvite] = useState<string | null>(null);
   const { msg, busy, run } = useAction();
+  const load = (c: any) => {
+    setEditing(c.id);
+    setInvite(null);
+    setF({ name: c.name, phone_e164: c.phone_e164 ?? '', email: c.email ?? '', kind: c.kind, language: c.language, per_visit: c.sub_rate_card?.per_visit_cents ? String(c.sub_rate_card.per_visit_cents / 100) : '', hourly: c.sub_rate_card?.hourly_cents ? String(c.sub_rate_card.hourly_cents / 100) : '' });
+  };
+  const body = () => {
+    const { per_visit, hourly, ...rest } = f;
+    return { ...rest, kind: f.kind, sub_rate_card: f.kind === 'sub' ? { ...(per_visit ? { per_visit_cents: dollarsToCents(per_visit) } : {}), ...(hourly ? { hourly_cents: dollarsToCents(hourly) } : {}) } : null };
+  };
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <div className="lg:col-span-2">
@@ -59,28 +69,34 @@ export function CrewPanel({ crew }: { crew: any[] }) {
           <thead><tr><Th>Name</Th><Th>Kind</Th><Th>Contact</Th><Th>Language</Th><Th>Joined</Th><Th></Th></tr></thead>
           <tbody>
             {crew.map((c) => (
-              <tr key={c.id} className={c.active ? '' : 'opacity-50'}>
+              <tr key={c.id} className={c.active ? '' : 'opacity-50'} data-testid="crew-row">
                 <Td>{c.name}</Td>
                 <Td><Badge>{c.kind}</Badge></Td>
                 <Td>{c.phone_e164 ?? ''} {c.email ?? ''}</Td>
                 <Td>{c.language}</Td>
                 <Td>{c.joined_at ? 'Yes' : 'Invited'}</Td>
-                <Td>{c.active ? <Button size="sm" variant="ghost" onClick={() => run(async () => { await api(`/api/crew/${c.id}`, { method: 'DELETE' }); router.refresh(); }, 'Removed')}>Remove</Button> : null}</Td>
+                <Td>{c.active ? (
+                  <div className="flex flex-wrap gap-1">
+                    <Button size="sm" variant="ghost" data-testid="crew-edit" onClick={() => load(c)}>Edit</Button>
+                    <Button size="sm" variant="ghost" data-testid="crew-reinvite" onClick={() => run(async () => { setInvite((await api(`/api/crew/${c.id}/invite`, { method: 'POST' })).invite_url); }, 'New link ready')}>New link</Button>
+                    <Button size="sm" variant="ghost" onClick={() => run(async () => { await api(`/api/crew/${c.id}`, { method: 'DELETE' }); router.refresh(); }, 'Removed')}>Remove</Button>
+                  </div>
+                ) : null}</Td>
               </tr>
             ))}
           </tbody>
         </Table>
       </div>
       <Card>
-        <h2 className="font-semibold">Invite crew</h2>
-        <p className="mt-1 text-sm text-slate-600">They choose on the join page whether to get texts.</p>
+        <h2 className="font-semibold">{editing ? 'Edit crew member' : 'Invite crew'}</h2>
+        <p className="mt-1 text-sm text-slate-600">{editing ? 'Texts stay opt-in. A changed number needs a new opt-in from the invite link.' : 'They choose on the join page whether to get texts.'}</p>
         <div className="mt-2 space-y-2">
           <div><Label htmlFor="crew-name">Name</Label><Input id="crew-name" data-testid="crew-name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
           <div><Label htmlFor="crew-phone">Mobile (+1...)</Label><Input id="crew-phone" value={f.phone_e164} onChange={(e) => setF({ ...f, phone_e164: e.target.value })} /></div>
           <div><Label htmlFor="crew-email">Email</Label><Input id="crew-email" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></div>
           <div className="grid grid-cols-2 gap-2">
             <div><Label htmlFor="crew-kind">Kind</Label><Select id="crew-kind" value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}><option value="employee">Employee</option><option value="sub">Subcontractor</option></Select></div>
-            <div><Label htmlFor="crew-lang">Language</Label><Select id="crew-lang" value={f.language} onChange={(e) => setF({ ...f, language: e.target.value })}><option value="en">English</option><option value="es">Spanish</option></Select></div>
+            <div><Label htmlFor="crew-lang">Language</Label><Select id="crew-lang" data-testid="crew-lang" value={f.language} onChange={(e) => setF({ ...f, language: e.target.value })}><option value="en">English</option><option value="es">Spanish</option></Select></div>
           </div>
           {f.kind === 'sub' ? (
             <div className="grid grid-cols-2 gap-2">
@@ -89,16 +105,56 @@ export function CrewPanel({ crew }: { crew: any[] }) {
             </div>
           ) : null}
         </div>
-        <Button className="mt-3 w-full" disabled={busy || !f.name} data-testid="crew-invite" onClick={() => run(async () => {
-          const { per_visit, hourly, ...rest } = f;
-          const sub_rate_card = f.kind === 'sub' ? { ...(per_visit ? { per_visit_cents: dollarsToCents(per_visit) } : {}), ...(hourly ? { hourly_cents: dollarsToCents(hourly) } : {}) } : null;
-          const out = await api('/api/crew', { body: { ...rest, kind: f.kind, sub_rate_card } });
-          setInvite(out.invite_url);
-          setF(blank);
-          router.refresh();
-        }, 'Invited')}>Invite</Button>
-        {msg ? <p className="mt-2 text-sm text-slate-600">{msg}</p> : null}
+        {editing ? (
+          <div className="mt-3 flex gap-2">
+            <Button className="flex-1" disabled={busy || !f.name} data-testid="crew-save" onClick={() => run(async () => { await api(`/api/crew/${editing}`, { method: 'PATCH', body: body() }); setEditing(null); setF(blank); router.refresh(); })}>Save</Button>
+            <Button variant="ghost" onClick={() => { setEditing(null); setF(blank); }}>Cancel</Button>
+          </div>
+        ) : (
+          <Button className="mt-3 w-full" disabled={busy || !f.name} data-testid="crew-invite" onClick={() => run(async () => {
+            const out = await api('/api/crew', { body: body() });
+            setInvite(out.invite_url);
+            setF(blank);
+            router.refresh();
+          }, 'Invited')}>Invite</Button>
+        )}
+        {msg ? <p className="mt-2 text-sm text-slate-600" data-testid="crew-msg">{msg}</p> : null}
         {invite ? <div className="mt-2"><Label>Invite link</Label><Input readOnly value={invite} data-testid="invite-url" /></div> : null}
+      </Card>
+    </div>
+  );
+}
+
+export function TeamPanel({ members, me }: { members: { user_id: string; email: string | null; role: string }[]; me: string }) {
+  const router = useRouter();
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState('dispatcher');
+  const { msg, busy, run } = useAction();
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="lg:col-span-2">
+        <Table>
+          <thead><tr><Th>Email</Th><Th>Role</Th><Th></Th></tr></thead>
+          <tbody>
+            {members.map((m) => (
+              <tr key={m.user_id} data-testid="team-row">
+                <Td>{m.email}</Td>
+                <Td><Badge>{m.role}</Badge></Td>
+                <Td>{m.user_id !== me ? <Button size="sm" variant="ghost" data-testid="team-remove" onClick={() => run(async () => { await api(`/api/settings/team/${m.user_id}`, { method: 'DELETE' }); router.refresh(); }, 'Removed')}>Remove</Button> : <span className="text-xs text-slate-500">You</span>}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </div>
+      <Card>
+        <h2 className="font-semibold">Add someone to the office</h2>
+        <p className="mt-1 text-sm text-slate-600">Dispatchers run storms and billing. Viewers can only look. They sign in with an email link, with no password.</p>
+        <Label className="mt-3" htmlFor="team-email">Email</Label>
+        <Input id="team-email" type="email" data-testid="team-email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <Label className="mt-2" htmlFor="team-role">Role</Label>
+        <Select id="team-role" data-testid="team-role" value={role} onChange={(e) => setRole(e.target.value)}><option value="dispatcher">Dispatcher</option><option value="viewer">Viewer</option><option value="owner">Owner</option></Select>
+        <Button className="mt-3 w-full" disabled={busy || !email.includes('@')} data-testid="team-add" onClick={() => run(async () => { await api('/api/settings/team', { body: { email, role } }); setEmail(''); router.refresh(); }, 'Added. We emailed them a sign-in link.')}>Add</Button>
+        {msg ? <p className="mt-2 text-sm text-slate-600" data-testid="team-msg">{msg}</p> : null}
       </Card>
     </div>
   );

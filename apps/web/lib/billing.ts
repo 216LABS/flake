@@ -1,5 +1,5 @@
 import { and, contract, customer, desc, eq, inArray, invoice_draft, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
-import { draftInvoices, flagKey, isDraftClean, type BillingContract, type BillingFlag, type BillingVisit } from '@flake/core/billing';
+import { applyCorrections, draftInvoices, flagKey, isDraftClean, type BillingContract, type BillingFlag, type BillingVisit } from '@flake/core/billing';
 import { applicationFeeCents, feeRate, proFeaturesEnabled, type Plan } from '@flake/core/fees';
 import type { ContractService, SaltPricing, StormDepthContext } from '@flake/core/pricing';
 import { qboCsv, type QboRow } from '@flake/core/qbo';
@@ -56,6 +56,31 @@ async function loadBillingInput(tx: Tx, stormId: string) {
     is_replow: Boolean(v.is_replow), arrive_lat: v.arrive_lat, arrive_lon: v.arrive_lon, after_photos: photos.filter((p) => p.visit_id === v.id && p.phase === 'after').length,
   }));
   return { s, stops, sites, contracts, billingVisits, corrections };
+}
+
+/**
+ * A driver can sync after the drafts were made, even after they were charged. Those visits appear on no invoice, so
+ * this names them. Seasonal sites and sites with no contract are left out: they have no per-visit price to miss.
+ */
+export async function visitsMissedByDrafts(ctx: Ctx, stormId: string) {
+  return withUser(ctx.userId, async (tx) => {
+    const drafts = await tx.select().from(invoice_draft).where(eq(invoice_draft.storm_id, stormId));
+    if (!drafts.length) return [];
+    const { sites, contracts, billingVisits, corrections } = await loadBillingInput(tx, stormId);
+    const billed = new Set(drafts.flatMap((d) => (d.lines as { source_visit_ids: string[] }[]).flatMap((l) => l.source_visit_ids)));
+    const done = applyCorrections(billingVisits, corrections.map((c) => ({ visit_id: c.visit_id, field: c.field, new_value: c.new_value }))).filter((v) => v.departed_at && !billed.has(v.id));
+    const received = done.length ? await tx.select({ id: visit.id, at: visit.departed_received_at }).from(visit).where(inArray(visit.id, done.map((v) => v.id))) : [];
+    return done.flatMap((v) => {
+      const st = sites.find((x) => x.id === v.site_id)!;
+      const contract = contracts.find((c) => c.site_id === v.site_id);
+      const services = (contract?.services ?? []) as ContractService[];
+      if (!contract || services.some((s) => s.pricing?.type === 'seasonal')) return [];
+      const draft = drafts.find((d) => d.customer_id === st.customer_id);
+      const at = received.find((x) => x.id === v.id)?.at;
+      if (draft && at && Date.parse(at) <= Date.parse(draft.created_at!)) return [];
+      return [{ visit_id: v.id, site: st.label, in_review: draft?.status === 'draft' || !draft }];
+    });
+  });
 }
 
 /** Regenerating replaces drafts still in review. Anything already approved or charged is left alone. */

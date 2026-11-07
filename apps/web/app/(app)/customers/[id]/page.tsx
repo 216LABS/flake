@@ -1,5 +1,6 @@
 import { contract, customer, desc, eq, inArray, site } from '@flake/db';
-import { Badge, Card, PageHeader, Table, Td, Th } from '@flake/ui';
+import { Badge, buttonVariants, Card, PageHeader, Table, Td, Th } from '@flake/ui';
+import { CustomerEditor } from './customer-editor';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { asUser, requirePage } from '@/lib/auth';
@@ -22,19 +23,14 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
   const { c, sites, contracts } = data;
   return (
     <>
-      <PageHeader title={c.name} subtitle={c.kind} />
+      <PageHeader title={c.name} subtitle={c.kind} actions={<Link href={`/customers/new?customer=${c.id}`} className={buttonVariants({ variant: 'accent' })} data-testid="add-site">Add a site</Link>} />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <CustomerEditor customer={c} />
         <Card>
-          <h2 className="font-semibold">Contact</h2>
-          <p className="mt-1 text-sm">{c.contact_name ?? 'No contact name'}</p>
-          <p className="text-sm">{c.email ?? 'No email'}</p>
-          <p className="text-sm">{c.phone_e164 ?? 'No phone'}</p>
-          <p className="mt-2 text-sm">Texts: {c.notify_sms ? 'yes' : 'no'}. Emails: {c.notify_email ? 'yes' : 'no'}.</p>
-        </Card>
-        <Card>
-          <h2 className="font-semibold">Billing</h2>
-          <p className="mt-1 text-sm">{c.billing_mode.replace(/_/g, ' ')}</p>
+          <h2 className="font-semibold">Notices and payment</h2>
+          <p className="mt-1 text-sm">Texts: {c.notify_sms ? 'yes' : 'no'}. Emails: {c.notify_email ? 'yes' : 'no'}.</p>
           <p className="text-sm">Payment on file: {c.stripe_payment_method_id ? 'yes' : 'no'}</p>
+          <p className="mt-2 text-xs text-slate-500">Customers choose texts and add a payment method themselves on their quote page.</p>
         </Card>
       </div>
       <h2 className="mb-2 mt-6 font-semibold">Sites</h2>

@@ -1,4 +1,4 @@
-import { and, crew_member, customer, eq, isNotNull, proof_packet, run_stop, serviceDb, site, sql, storm, storm_run, tenant, visit, visit_photo, weather_snapshot } from '@flake/db';
+import { and, crew_member, customer, eq, isNotNull, proof_packet, visit_correction, run_stop, serviceDb, site, sql, storm, storm_run, tenant, visit, visit_photo, weather_snapshot } from '@flake/db';
 import { fmtLocal, isLate } from '@flake/core/time';
 import { billInstallments, chargeDraft } from './billing';
 import { getBlob, putBlob } from './blob';
@@ -16,11 +16,17 @@ async function photoLink(tenantId: string, visitId: string): Promise<string | nu
   return p ? shortLink(tenantId, `photo:${p.id}`) : null;
 }
 
+/** The driver tapped Undo after this job was queued, so nothing should go out about this visit. */
+async function isVoided(tenantId: string, visitId: string) {
+  const rows = await serviceDb().select({ id: visit_correction.id }).from(visit_correction).where(and(eq(visit_correction.tenant_id, tenantId), eq(visit_correction.visit_id, visitId), eq(visit_correction.field, 'voided')));
+  return rows.length > 0;
+}
+
 /** "Done" with an after-photo link. Waits briefly so the photo has a chance to finish uploading. */
 async function visitDone(tenantId: string, visitId: string) {
   const db = serviceDb();
   const [row] = await db.select({ visit, tenant }).from(visit).innerJoin(tenant, eq(tenant.id, visit.tenant_id)).where(and(eq(visit.id, visitId), eq(visit.tenant_id, tenantId)));
-  if (!row?.visit.departed_device_at) return;
+  if (!row?.visit.departed_device_at || (await isVoided(tenantId, visitId))) return;
   const link = (await photoLink(tenantId, visitId)) ?? `${baseUrl()}/b/${row.tenant.slug}`;
   await notifyCustomer({ tenantId, siteId: row.visit.site_id, template: 'done', time: fmtLocal(row.visit.departed_device_at, row.tenant.timezone, { hour: 'numeric', minute: '2-digit' }), link, key: `done:${visitId}`, stormId: row.visit.storm_id, visitId });
 }
@@ -29,7 +35,7 @@ async function visitDone(tenantId: string, visitId: string) {
 async function completionReport(tenantId: string, visitId: string) {
   const db = serviceDb();
   const [row] = await db.select({ visit, site, customer, tenant, crew: crew_member }).from(visit).innerJoin(site, eq(site.id, visit.site_id)).innerJoin(customer, eq(customer.id, site.customer_id)).innerJoin(tenant, eq(tenant.id, visit.tenant_id)).innerJoin(crew_member, eq(crew_member.id, visit.crew_id)).where(and(eq(visit.id, visitId), eq(visit.tenant_id, tenantId)));
-  if (!row || row.customer.kind === 'residential' || !row.customer.email || !row.visit.departed_device_at) return;
+  if (!row || row.customer.kind === 'residential' || !row.customer.email || !row.visit.departed_device_at || (await isVoided(tenantId, visitId))) return;
   const tz = row.tenant.timezone;
   const when = (iso: string) => fmtLocal(iso, tz);
   const photos = await db.select().from(visit_photo).where(and(eq(visit_photo.tenant_id, tenantId), eq(visit_photo.visit_id, visitId)));

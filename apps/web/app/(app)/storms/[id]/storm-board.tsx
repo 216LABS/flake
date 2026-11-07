@@ -199,7 +199,7 @@ export function StormBoard({ stormId, initial, layers }: { stormId: string; init
                           <option value="">Move to...</option>
                           {live.runs.filter((x: any) => x.id !== r.id).map((x: any) => <option key={x.id} value={x.id}>{x.name} ({x.crew?.name ?? 'no driver'})</option>)}
                         </Select>
-                        {s.status !== 'skipped' ? <Button size="sm" variant="ghost" onClick={() => act(() => api(`/api/run-stops/${s.id}`, { method: 'PATCH', body: { status: 'skipped' } }))}>Skip</Button> : null}
+                        <Button size="sm" variant="ghost" data-testid="skip-toggle" onClick={() => act(() => api(`/api/run-stops/${s.id}`, { method: 'PATCH', body: { status: s.status === 'skipped' ? 'open' : 'skipped' } }))}>{s.status === 'skipped' ? 'Reopen' : 'Skip'}</Button>
                       </div>
                     ) : null}
                   </li>
@@ -213,7 +213,12 @@ export function StormBoard({ stormId, initial, layers }: { stormId: string; init
             <h2 className="font-semibold">Alerts</h2>
             {live.alerts.length ? (
               <ul className="mt-2 space-y-2 text-sm" data-testid="alerts-rail">
-                {live.alerts.map((a: any, i: number) => <li key={i} className={cn('rounded-md p-2', a.kind === 'late' || a.kind === 'problem' ? 'bg-red-50 text-red-900' : 'bg-amber-50 text-amber-900')}>{a.text}</li>)}
+                {live.alerts.map((a: any, i: number) => (
+                  <li key={i} className={cn('rounded-md p-2', a.kind === 'late' || a.kind === 'problem' ? 'bg-red-50 text-red-900' : 'bg-amber-50 text-amber-900')}>
+                    {a.text}
+                    {a.problem_id ? <Button size="sm" variant="ghost" data-testid="resolve-problem" onClick={() => act(() => api(`/api/problems/${a.problem_id}`, { method: 'PATCH' }))}>Resolved</Button> : null}
+                  </li>
+                ))}
               </ul>
             ) : <p className="mt-2 text-sm text-slate-600">Nothing needs you right now.</p>}
           </Card>

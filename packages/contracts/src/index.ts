@@ -266,5 +266,6 @@ export const rateCardSchema = z.object({
   tiers: z.array(z.object({ up_to_in: z.number().positive().nullable(), multiplier: z.number().min(0.1).max(10) })).min(1),
 });
 
+export const teamAdd = z.object({ email, role: z.enum(['owner', 'dispatcher', 'viewer']) });
 export const crewJoin = z.object({ consent: z.boolean() });
 export const proCheckout = z.object({ interval: z.enum(['monthly', 'yearly']) });

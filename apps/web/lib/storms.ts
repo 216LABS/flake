@@ -27,6 +27,7 @@ export async function createStorm(ctx: Ctx, input: z.infer<typeof stormCreate>) 
     if (input.triggerAlertId) {
       const [a] = await tx.select().from(trigger_alert).where(eq(trigger_alert.id, input.triggerAlertId));
       if (!a) throw new HttpError(404, 'Alert not found');
+      if (a.status !== 'open') throw new HttpError(409, 'This alert was already handled.', 'alert_handled');
       alertSnapshotIds = a.snapshot_ids;
       await tx.update(trigger_alert).set({ status: 'dispatched' }).where(eq(trigger_alert.id, a.id));
     }
@@ -53,6 +54,7 @@ export async function createStorm(ctx: Ctx, input: z.infer<typeof stormCreate>) 
       await tx.insert(run_stop).values(chosen.map((x, i) => ({ tenant_id: ctx.tenantId, storm_run_id: run!.id, site_id: x.site_id, seq: i + 1 })));
       runs.push(run!);
     }
+    if (!runs.length) throw new HttpError(422, 'There is nothing to plow: none of these sites is on a route. Add them to a route first.', 'no_stops');
     return { storm: s!, runs };
   });
 }
@@ -236,7 +238,7 @@ export async function stormLive(ctx: Ctx & { timezone: string }, stormId: string
   });
   const now = Date.now();
   const started = Date.parse(data.s.started_at);
-  const alerts: { kind: string; text: string; at?: string | null; stop_id?: string }[] = [];
+  const alerts: { kind: string; text: string; at?: string | null; stop_id?: string; problem_id?: string }[] = [];
   const boards = data.runs.map(({ run, crew, route: r }) => {
     const stops = data.stops.filter((x) => x.stop.storm_run_id === run.id).map(({ stop, site: st, customer: c }) => {
       const stopVisits = data.visits.filter((v) => v.run_stop_id === stop.id);
@@ -257,7 +259,7 @@ export async function stormLive(ctx: Ctx & { timezone: string }, stormId: string
   });
   for (const p of data.problems) {
     const st = data.stops.find((x) => x.site.id === p.site_id);
-    alerts.push({ kind: 'problem', text: `${p.kind} at ${st?.site.label ?? 'a site'}${p.note ? `: ${p.note}` : ''}`, at: p.created_at });
+    alerts.push({ kind: 'problem', problem_id: p.id, text: `${p.kind} at ${st?.site.label ?? 'a site'}${p.note ? `: ${p.note}` : ''}`, at: p.created_at });
   }
   const all = boards.flatMap((b) => b.stops);
   return {

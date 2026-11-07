@@ -108,7 +108,7 @@ export function DriverApp({ token }: { token: string }) {
   const refresh = useCallback(async () => {
     const startedAt = generation.current;
     try {
-      const res = await fetch(`/api/d/${token}/run`, { cache: 'no-store' });
+      const res = await fetch(`/api/d/${token}/run`, { cache: 'no-store', signal: AbortSignal.timeout(15000) });
       if (res.status === 410) return setDead(true);
       if (!res.ok) return;
       const data = (await res.json()) as RunData;
@@ -235,7 +235,7 @@ export function DriverApp({ token }: { token: string }) {
   // Taps run strictly in order. Each one commits to the phone before the screen changes.
   const chain = useRef<Promise<unknown>>(Promise.resolve());
   const inOrder = (fn: () => Promise<void>) => {
-    chain.current = chain.current.then(fn).catch(() => {});
+    chain.current = chain.current.then(fn).catch(() => flashToast(translate(langRef.current, 'save_failed')));
   };
 
   const apply = async (next: LocalState, actions: Record<string, unknown>[] = [], photo?: { blob: Blob; meta: Record<string, string> }) => {
