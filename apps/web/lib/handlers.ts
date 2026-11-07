@@ -4,7 +4,7 @@ import { billInstallments, chargeDraft } from './billing';
 import { getBlob, putBlob } from './blob';
 import { baseUrl } from './env';
 import { drainJobs, enqueue, type JobHandler } from './jobs';
-import { notifyParty, sendEmail, sendSms, shortLink } from './messaging';
+import { notifyParty, queuePush, sendEmail, sendOfficePush, sendSms, shortLink } from './messaging';
 import { renderProof } from './proof';
 import { setTollFreeStatus, submitTollFree } from './sms-admin';
 import { notifyCustomer, notifyRouteChanged, sendRunLink } from './storms';
@@ -81,6 +81,7 @@ export async function lateCheck() {
     for (const { site: st } of stops) {
       if (!isLate(st.service_window, Date.parse(s.started_at), Date.now(), t.timezone)) continue;
       late++;
+      await queuePush(t.id, { title: 'Late site', body: `${st.label} is past its ${st.service_window?.open_by} deadline.`, url: `/storms/${s.id}`, key: `late:${s.id}:${st.id}`, related: { storm_id: s.id } });
       const owners = (await db.execute(sql`select u.email from membership m join auth.users u on u.id = m.user_id where m.tenant_id = ${t.id} and m.role in ('owner','dispatcher') and u.email is not null`)) as unknown as { email: string }[];
       for (const o of owners) {
         await notifyParty(t, { email: o.email }, { template: 'owner_alert', vars: { headline: `${st.label} is past its ${st.service_window?.open_by} deadline.`, link: `${baseUrl()}/storms/${s.id}` }, subject: `Late: ${st.label}`, key: `late_alert:${s.id}:${st.id}:${o.email}`, related: { storm_id: s.id } });
@@ -110,6 +111,7 @@ export const JOB_HANDLERS: Record<string, JobHandler> = {
   'storm.late_check': async () => void (await lateCheck()),
   'notify.customer': (p) => notifyCustomer(p as Parameters<typeof notifyCustomer>[0]),
   'notify.visit_done': (p) => visitDone(p.tenantId, p.visitId),
+  'notify.push': (p) => sendOfficePush(p.tenantId, p.msg),
   'notify.party': async (p) => {
     const [t] = await serviceDb().select().from(tenant).where(eq(tenant.id, p.tenantId));
     if (t) await notifyParty(t, p.party, p.msg);

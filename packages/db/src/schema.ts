@@ -311,7 +311,7 @@ export const installment_invoice = pgTable('installment_invoice', {
 export const message_log = pgTable('message_log', {
   id: id(),
   tenant_id: tenantId(),
-  channel: text('channel').$type<'sms' | 'email'>(),
+  channel: text('channel').$type<'sms' | 'email' | 'push'>(),
   to_addr: text('to_addr').notNull(),
   template: text('template').notNull(),
   body: text('body').notNull(),
@@ -403,6 +403,16 @@ export const short_link = pgTable('short_link', {
   code: text('code').primaryKey(),
   tenant_id: tenantId(),
   target: text('target').notNull(),
+  created_at: createdAt(),
+});
+
+export const push_subscription = pgTable('push_subscription', {
+  id: id(),
+  tenant_id: tenantId(),
+  user_id: uuid('user_id').notNull(),
+  endpoint: text('endpoint').notNull().unique(),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
   created_at: createdAt(),
 });
 

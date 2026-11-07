@@ -66,11 +66,12 @@ beforeAll(async () => {
   await db.insert(s.driver_position).values({ tenant_id: B.tenant, storm_run_id: ids.bRun, lat: 1, lon: 1, device_at: '2025-12-12T01:00:00Z' });
   await db.insert(s.visit_correction).values({ tenant_id: B.tenant, visit_id: ids.bVisit, field: 'notes', reason: 'r', by_user: B.owner });
   await db.insert(s.site_pin).values({ tenant_id: B.tenant, site_id: ids.bSite, kind: 'stake' });
+  await db.insert(s.push_subscription).values({ tenant_id: B.tenant, user_id: B.owner, endpoint: `https://fcm.googleapis.com/fcm/send/${randomUUID()}`, p256dh: 'x', auth: 'y' });
 });
 
 afterAll(() => closeDb());
 
-const TENANT_TABLES = ['crew_member', 'customer', 'site', 'site_pin', 'contract', 'route', 'route_stop', 'trigger_alert', 'storm', 'storm_run', 'run_stop', 'visit', 'visit_photo', 'visit_correction', 'problem_report', 'invoice_draft', 'installment_invoice', 'message_log', 'sms_consent', 'proof_packet', 'driver_action', 'driver_position'] as const;
+const TENANT_TABLES = ['crew_member', 'customer', 'site', 'site_pin', 'contract', 'route', 'route_stop', 'trigger_alert', 'storm', 'storm_run', 'run_stop', 'visit', 'visit_photo', 'visit_correction', 'problem_report', 'invoice_draft', 'installment_invoice', 'message_log', 'sms_consent', 'proof_packet', 'driver_action', 'driver_position', 'push_subscription'] as const;
 const SERVER_ONLY = ['job', 'stripe_event', 'lead', 'short_link', 'cached_lookup', 'app_setting', 'weather_snapshot'] as const;
 
 /** Expects the statement to fail or touch nothing. Each attempt gets its own transaction. */
@@ -138,6 +139,16 @@ describe('tenant isolation', () => {
       await tx.execute(sql`select set_config('role', 'anon', true)`);
       return tx.select().from(s.customer);
     })).rejects.toThrow();
+  });
+});
+
+describe('push subscriptions', () => {
+  it('belong to one person: a teammate can neither see nor remove them, and nobody can add one around the server', async () => {
+    await db.insert(s.push_subscription).values({ tenant_id: A.tenant, user_id: A.owner, endpoint: `https://fcm.googleapis.com/fcm/send/${randomUUID()}`, p256dh: 'x', auth: 'y' });
+    expect(await withUser(A.dispatcher, (tx) => tx.select().from(s.push_subscription))).toEqual([]);
+    expect((await withUser(A.owner, (tx) => tx.select().from(s.push_subscription))).length).toBe(1);
+    await deniedOrZero(A.dispatcher, (tx) => tx.execute(sql`delete from push_subscription where tenant_id = ${A.tenant} returning 1`));
+    await rejectsWith(withUser(A.owner, (tx) => tx.insert(s.push_subscription).values({ tenant_id: A.tenant, user_id: A.owner, endpoint: 'https://evil.example.com', p256dh: 'x', auth: 'y' })), /permission denied/);
   });
 });
 

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { api, dollarsToCents, money } from '@/lib/client';
+import { uploadPinPhoto } from '@/lib/shrink-image';
 import { MapView, type MapMode, type TileLayers } from '@/components/map-view';
 
 const STEPS = ['Customer', 'Property', 'Pricing', 'Pins', 'Route', 'Quote'];
@@ -34,7 +35,9 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
   const [withSalt, setWithSalt] = useState(false);
   const [price, setPrice] = useState('');
   const [season, setSeason] = useState('2026-27');
-  const [pins, setPins] = useState<{ kind: string; lat: number; lon: number; note: string }[]>([]);
+  const [pins, setPins] = useState<{ kind: string; lat: number; lon: number; note: string; file?: File }[]>([]);
+  const [suggestions, setSuggestions] = useState<{ label: string; lat: number; lon: number }[]>([]);
+  const [photoNote, setPhotoNote] = useState<string | null>(null);
   const [pinKind, setPinKind] = useState('stake');
   const [routeId, setRouteId] = useState('');
   const [position, setPosition] = useState('');
@@ -48,16 +51,56 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
     setPrice((suggested / 100).toFixed(2));
   }, [suggested]);
 
+  // Type-ahead, after a pause in typing. Stale answers are dropped, and a miss just leaves the Find button.
+  const picked = useRef<string | null>(null);
+  useEffect(() => {
+    const q = address.trim();
+    if (q.length < 3 || q === picked.current) {
+      setSuggestions([]);
+      return;
+    }
+    let stale = false;
+    const timer = setTimeout(async () => {
+      const out = await api<{ hits: { label: string; lat: number; lon: number }[] }>('/api/sites/suggest', { body: { q } }).catch(() => ({ hits: [] }));
+      if (!stale) setSuggestions(out.hits);
+    }, 300);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [address]);
+
+  const choose = (s: { label: string; lat: number; lon: number }) => {
+    picked.current = s.label;
+    setAddress(s.label);
+    setSuggestions([]);
+    void measure(s, s.label);
+  };
+
   const find = async () => {
     setError(null);
+    setSuggestions([]);
+    picked.current = address.trim();
     setBusy(true);
     try {
       const { hits } = await api<{ hits: { label: string; lat: number; lon: number }[] }>('/api/sites/geocode', { body: { q: address } });
       if (!hits[0]) throw new Error('We could not find that address. Check the street and city.');
-      setHit(hits[0]);
-      if (!label) setLabel(address.split(',')[0] ?? address);
+      await measure(hits[0], address);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const measure = async (place: { label: string; lat: number; lon: number }, text: string) => {
+    setError(null);
+    setBusy(true);
+    try {
+      setHit(place);
+      if (!label) setLabel(text.split(',')[0] ?? text);
       const landUse = c.kind === 'residential' ? 'residential' : 'commercial';
-      const m = await api('/api/sites/measure', { body: { lat: hits[0].lat, lon: hits[0].lon, land_use: landUse } });
+      const m = await api('/api/sites/measure', { body: { lat: place.lat, lon: place.lon, land_use: landUse } });
       setEstimate({ sqft: m.estimateSqft, method: m.method, attribution: m.attribution, parcel_id: m.parcel?.id, county: m.parcel?.county });
       setPolygon(m.suggestedPolygon);
       setSqft(m.estimateSqft);
@@ -93,9 +136,11 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
         },
       })).id;
       const siteId = saved.current.siteId!;
-      for (const p of pins.slice(saved.current.pins)) {
-        await api('/api/pins', { body: { site_id: siteId, ...p } });
+      for (const { file, ...p } of pins.slice(saved.current.pins)) {
+        const pin = await api('/api/pins', { body: { site_id: siteId, ...p } });
         saved.current.pins++;
+        // A photo that won't upload shouldn't stop the quote. It can be added from the site page.
+        if (file) await uploadPinPhoto(pin.id, file).catch(() => setPhotoNote('A pin photo did not upload. You can add it from the site page.'));
       }
       if (routeId && !saved.current.routed) {
         const r = routes.find((x) => x.id === routeId)!;
@@ -124,6 +169,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
       <Card className="mx-auto max-w-xl" data-testid="quote-sent">
         <h1 className="text-xl font-semibold">{emailed ? 'Quote sent' : 'Quote ready'}</h1>
         <p className="mt-1 text-sm text-slate-600" data-testid="quote-note">{emailed ? 'We emailed the customer a link. You can also share it directly.' : 'Nothing was emailed, so share this link with the customer.'}</p>
+        {photoNote ? <p className="mt-1 text-sm text-amber-800">{photoNote}</p> : null}
         <Input readOnly className="mt-3" value={quoteUrl} data-testid="quote-url" />
         <div className="mt-4 flex gap-2">
           <Button variant="accent" onClick={() => router.push('/customers')}>Done</Button>
@@ -154,7 +200,13 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
         {step === 1 ? (
           <div>
             <Label htmlFor="address">Address</Label>
-            <div className="flex gap-2"><Input id="address" data-testid="address" value={address} placeholder="14701 Detroit Ave, Lakewood, OH" onChange={(e) => setAddress(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void find()} /><Button disabled={busy || address.trim().length < 3} data-testid="find" onClick={() => void find()}>Find</Button></div>
+            <div className="flex gap-2"><Input id="address" data-testid="address" value={address} placeholder="14701 Detroit Ave, Lakewood, OH" onChange={(e) => setAddress(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void find()} autoComplete="off" /><Button disabled={busy || address.trim().length < 3} data-testid="find" onClick={() => void find()}>Find</Button></div>
+            {suggestions.length ? (
+              <ul className="mt-1 rounded-md border border-slate-200 bg-white shadow-xs" aria-label="Address suggestions">
+                {suggestions.map((s) => <li key={s.label}><button type="button" className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-slate-50" data-testid="address-suggestion" onClick={() => choose(s)}>{s.label}</button></li>)}
+                <li className="px-3 py-1 text-xs text-slate-500">Suggestions © OpenStreetMap contributors</li>
+              </ul>
+            ) : null}
             {hit ? (
               <div className="mt-3">
                 <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -210,7 +262,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
             {hit ? <MapView layers={layers} base="satellite" center={{ lat: hit.lat, lon: hit.lon }} zoom={18} polygon={polygon} mode="pin" pins={pins.map((p, i) => ({ id: String(i), lat: p.lat, lon: p.lon, label: p.kind }))} onPin={(lat, lon) => setPins((list) => [...list, { kind: pinKind, lat, lon, note: '' }])} /> : null}
             <ul className="mt-2 space-y-1 text-sm">
               {pins.map((p, i) => (
-                <li key={i} className="flex items-center gap-2"><Badge>{p.kind}</Badge><Input aria-label="Pin note" placeholder="Note" value={p.note} onChange={(e) => setPins(pins.map((x, j) => (j === i ? { ...x, note: e.target.value } : x)))} /><Button size="sm" variant="ghost" onClick={() => setPins(pins.filter((_, j) => j !== i))}>Remove</Button></li>
+                <li key={i} className="flex items-center gap-2"><Badge>{p.kind}</Badge><Input aria-label="Pin note" placeholder="Note" value={p.note} onChange={(e) => setPins(pins.map((x, j) => (j === i ? { ...x, note: e.target.value } : x)))} /><label className="cursor-pointer whitespace-nowrap text-sky-800 underline">{p.file ? 'Photo added' : 'Add photo'}<input type="file" accept="image/*" className="sr-only" data-testid="wizard-pin-photo" onChange={(e) => { const file = e.target.files?.[0]; if (file) setPins((list) => list.map((x, j) => (j === i ? { ...x, file } : x))); }} /></label><Button size="sm" variant="ghost" onClick={() => setPins(pins.filter((_, j) => j !== i))}>Remove</Button></li>
               ))}
             </ul>
           </div>

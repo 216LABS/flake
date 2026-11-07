@@ -8,13 +8,15 @@ import { asUser, requirePage } from '@/lib/auth';
 import { baseUrl } from '@/lib/env';
 import { SAMPLE_MESSAGES } from '@/lib/sms-admin';
 import { breakerOpen, breakerState } from '@/lib/weather';
+import { getProviders } from '@/lib/providers';
 import { listTeam } from '@/lib/team';
+import { PushPanel } from './push-panel';
 import { canSeeUsage, deploymentUsage } from '@/lib/usage';
 import { BusinessForm, CrewPanel, PaymentsPanel, PlanPanel, RateCardForm, RetryJob, SmsSubmit, TeamPanel } from './panels';
 
 export const metadata = { title: 'Settings' };
 
-const TABS = [['rate', 'Rate card'], ['crew', 'Crew'], ['team', 'Team'], ['payments', 'Payments'], ['sms', 'Text messages'], ['plan', 'Plan'], ['data', 'Data export'], ['system', 'System']] as const;
+const TABS = [['rate', 'Rate card'], ['crew', 'Crew'], ['team', 'Team'], ['alerts', 'Alerts'], ['payments', 'Payments'], ['sms', 'Text messages'], ['plan', 'Plan'], ['data', 'Data export'], ['system', 'System']] as const;
 const EXPORTS = ['customer', 'site', 'contract', 'crew_member', 'route', 'storm', 'storm_run', 'run_stop', 'visit', 'visit_photo', 'visit_correction', 'problem_report', 'invoice_draft', 'message_log', 'proof_packet'];
 
 export default async function Settings({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
@@ -31,6 +33,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       </nav>
       {tab === 'rate' ? <RateCardForm card={(Object.keys(t.rate_card as object).length ? t.rate_card : DEFAULT_RATE_CARD) as RateCard} /> : null}
       {tab === 'crew' ? <CrewPanel crew={JSON.parse(JSON.stringify(await asUser(ctx, (tx) => tx.select().from(crew_member).orderBy(crew_member.name))))} /> : null}
+      {tab === 'alerts' ? <PushPanel publicKey={(await getProviders()).push.publicKey} /> : null}
       {tab === 'team' ? <TeamPanel members={await listTeam(ctx.tenantId)} me={ctx.userId} /> : null}
       {tab === 'payments' ? <PaymentsPanel connected={Boolean(t.stripe_account_id)} enabled={Boolean(t.stripe_charges_enabled)} /> : null}
       {tab === 'sms' ? (

@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import crypto from 'node:crypto';
+import webpush from 'web-push';
+import { describe, expect, it, vi } from 'vitest';
 import { expandSeries, sumRange, toInches } from '@flake/core/trigger';
 import { buildManifest } from '@flake/core/proof';
-import { LiveEmail, LiveGeocoder, LiveSms, LiveWeather, MockEmail, MockFootprints, MockGeocoder, MockOsm, MockParcels, MockPayments, MockSms, MockTiles, MockWeather, countyParcels, createProviders, nearestValidCell, nohrscCellToInches, nohrscUrl, signMockWebhook, signTwilio, MOCK_TWILIO_TOKEN, type EmailProvider, type Geocoder, type PaymentsProvider, type SmsProvider, type WeatherProvider } from '../src/index';
+import { LiveEmail, LiveGeocoder, LivePush, LiveSms, LiveWeather, MockEmail, MockFootprints, MockGeocoder, MockOsm, MockParcels, MockPayments, MockSms, MockTiles, MockWeather, countyParcels, createProviders, nearestValidCell, nohrscCellToInches, nohrscUrl, signMockWebhook, signTwilio, MOCK_TWILIO_TOKEN, type EmailProvider, type Geocoder, type PaymentsProvider, type SmsProvider, type WeatherProvider } from '../src/index';
 import { renderContractPdf, renderProofPdf } from '../src/pdf';
 
 const live = process.env.LIVE_PROVIDER_TESTS === '1';
@@ -137,6 +139,69 @@ describe('LiveWeather', () => {
   });
   it('walks back to an older NOHRSC file and returns null when none exist', async () => {
     expect(await new LiveWeather('ua', stub(404, {})).fetchNohrsc(24, new Date('2026-02-01T13:00:00Z'), [])).toBeNull();
+  });
+});
+
+describe('web push', () => {
+  const { createECDH, randomBytes } = crypto;
+  const target = (endpoint: string) => {
+    const ecdh = createECDH('prime256v1');
+    ecdh.generateKeys();
+    return { endpoint, p256dh: ecdh.getPublicKey().toString('base64url'), auth: randomBytes(16).toString('base64url') };
+  };
+  const keys = webpush.generateVAPIDKeys();
+  const live = new LivePush(keys.publicKey, keys.privateKey, 'mailto:test@flake.test');
+  const msg = { title: 't', body: 'secret body', url: '/x' };
+  const failing = (statusCode: number) => vi.spyOn(webpush, 'sendNotification').mockRejectedValueOnce(Object.assign(new Error('push'), { statusCode }));
+
+  it('produces an encrypted, VAPID-signed request with the body not in the clear', () => {
+    const t = target('https://fcm.googleapis.com/fcm/send/x');
+    const details = webpush.generateRequestDetails({ endpoint: t.endpoint, keys: { p256dh: t.p256dh, auth: t.auth } }, JSON.stringify(msg), { vapidDetails: { subject: 'mailto:test@flake.test', publicKey: keys.publicKey, privateKey: keys.privateKey } });
+    expect(details.headers['Content-Encoding']).toBe('aes128gcm');
+    expect(String(details.headers.Authorization)).toContain(keys.publicKey);
+    expect(Buffer.from(details.body as Buffer).toString('latin1')).not.toContain('secret body');
+  });
+  it('sends through the library with our keys', async () => {
+    const spy = vi.spyOn(webpush, 'sendNotification').mockResolvedValueOnce({ statusCode: 201, body: '', headers: {} });
+    const t = target('https://fcm.googleapis.com/fcm/send/x');
+    expect((await live.send(t, msg)).status).toBe('sent');
+    expect(spy.mock.calls[0]![0]).toEqual({ endpoint: t.endpoint, keys: { p256dh: t.p256dh, auth: t.auth } });
+    expect(spy.mock.calls[0]![2]!.vapidDetails!.publicKey).toBe(keys.publicKey);
+  });
+  it('reports a dead subscription as gone, and a server error as a failure to retry', async () => {
+    failing(410);
+    expect((await live.send(target('https://x/1'), msg)).status).toBe('gone');
+    failing(404);
+    expect((await live.send(target('https://x/2'), msg)).status).toBe('gone');
+    failing(500);
+    await expect(live.send(target('https://x/3'), msg)).rejects.toThrow('status 500');
+  });
+  it('is off with no keys and on with both, in every environment', () => {
+    const base = { mode: 'live' as const, baseUrl: 'http://x' };
+    expect(createProviders({ ...base, appEnv: 'production', env: {} }).push.publicKey).toBeNull();
+    expect(createProviders({ ...base, appEnv: 'staging', env: { VAPID_PUBLIC_KEY: 'p' } }).push.publicKey).toBeNull();
+    expect(createProviders({ ...base, appEnv: 'staging', env: { VAPID_PUBLIC_KEY: keys.publicKey, VAPID_PRIVATE_KEY: keys.privateKey } }).push).toBeInstanceOf(LivePush);
+  });
+});
+
+describe('address suggestions', () => {
+  const photon = (features: unknown[]) => new LiveGeocoder((async () => new Response(JSON.stringify({ features }))) as typeof fetch);
+  const place = (p: Record<string, string>, c = [-81.8, 41.48]) => ({ geometry: { coordinates: c }, properties: { countrycode: 'US', ...p } });
+  it('writes a usable address, drops other countries and duplicates, and reads coordinates the right way round', async () => {
+    const hits = await photon([
+      place({ housenumber: '14701', street: 'Detroit Avenue', city: 'Lakewood', state: 'Ohio', postcode: '44107' }),
+      place({ housenumber: '14701', street: 'Detroit Avenue', city: 'Lakewood', state: 'Ohio', postcode: '44107' }),
+      { geometry: { coordinates: [1, 2] }, properties: { countrycode: 'CA', street: 'Detroit St', city: 'Windsor' } },
+      place({ city: 'Lakewood', state: 'Ohio' }),
+    ]).suggest('14701 Detroit');
+    expect(hits).toEqual([{ label: '14701 Detroit Avenue, Lakewood, OH 44107', lat: 41.48, lon: -81.8 }]);
+  });
+  it('treats a slow or failing service as no suggestions, never an error', async () => {
+    expect(await new LiveGeocoder((async () => { throw new Error('down'); }) as typeof fetch).suggest('x y z')).toEqual([]);
+    expect(await new LiveGeocoder((async () => new Response('nope', { status: 500 })) as typeof fetch).suggest('x y z')).toEqual([]);
+  });
+  it('the mock is deterministic', async () => {
+    expect(await new MockGeocoder().suggest('12 Main')).toEqual(await new MockGeocoder().suggest('12 Main'));
   });
 });
 

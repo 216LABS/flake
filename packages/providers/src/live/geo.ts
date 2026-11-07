@@ -78,6 +78,33 @@ export class LiveGeocoder implements Geocoder {
     const body = (await res.json()) as { result?: { addressMatches?: { matchedAddress: string; coordinates: { x: number; y: number } }[] } };
     return (body.result?.addressMatches ?? []).map((m) => ({ label: m.matchedAddress, lat: m.coordinates.y, lon: m.coordinates.x }));
   }
+
+  /**
+   * Photon (OpenStreetMap data, free, no key). Census only answers complete addresses, so it can't do type-ahead,
+   * and Nominatim's usage policy forbids it. Biased to Northeast Ohio. Any failure just means no suggestions.
+   */
+  async suggest(q: string): Promise<GeocodeHit[]> {
+    const params = new URLSearchParams({ q, limit: '6', lat: '41.48', lon: '-81.8', lang: 'en' });
+    try {
+      const res = await this.fetchImpl(`https://photon.komoot.io/api/?${params}`, { signal: AbortSignal.timeout(4000), headers: { 'User-Agent': 'Flake (flake.216labs.dev)' } });
+      if (!res.ok) return [];
+      const body = (await res.json()) as { features?: { geometry: { coordinates: [number, number] }; properties: Record<string, string | undefined> }[] };
+      const seen = new Set<string>();
+      const hits: GeocodeHit[] = [];
+      for (const f of body.features ?? []) {
+        const p = f.properties;
+        if (p.countrycode !== 'US') continue;
+        const street = [p.housenumber, p.street ?? p.name].filter(Boolean).join(' ');
+        const label = [street, p.city ?? p.district ?? p.county, [p.state === 'Ohio' ? 'OH' : p.state, p.postcode].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+        if (!street || seen.has(label)) continue;
+        seen.add(label);
+        hits.push({ label, lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] });
+      }
+      return hits;
+    } catch {
+      return [];
+    }
+  }
 }
 
 /** [T] Confirm the basemap free-tier terms before launch (DECISIONS D2). */

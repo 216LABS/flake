@@ -48,6 +48,15 @@ describe.runIf(live)('real public data', () => {
     expect(r!.samples.ocean).toBeNull();
   }, 120000);
 
+  it('real Photon suggests real Lakewood addresses', async () => {
+    const hits = await new LiveGeocoder().suggest('14701 Detroit Ave Lakewood');
+    console.log('photon', JSON.stringify(hits.slice(0, 3)));
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0]!.label).toMatch(/Detroit/i);
+    expect(hits[0]!.lat).toBeCloseTo(41.48, 0);
+    expect(hits[0]!.lon).toBeCloseTo(-81.8, 0);
+  }, 30000);
+
   it('geocodes, finds the parcel, finds parking, and estimates an area', async () => {
     const [hit] = await new LiveGeocoder().search('14701 Detroit Ave, Lakewood, OH');
     expect(hit!.lat).toBeCloseTo(41.48, 1);

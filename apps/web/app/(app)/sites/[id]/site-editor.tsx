@@ -4,6 +4,7 @@ import { Badge, Button, Card, Input, Label, Select } from '@flake/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api } from '@/lib/client';
+import { uploadPinPhoto } from '@/lib/shrink-image';
 import { MapView, type MapMode, type TileLayers } from '@/components/map-view';
 
 export function SiteEditor({ site, pins, layers }: { site: any; pins: any[]; layers: TileLayers }) {
@@ -46,8 +47,32 @@ export function SiteEditor({ site, pins, layers }: { site: any; pins: any[]; lay
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button onClick={() => void save()}>Save</Button>
         {msg ? <span className="text-sm text-slate-600">{msg}</span> : null}
-        {pins.map((p) => <Badge key={p.id}>{p.kind}</Badge>)}
       </div>
+      {pins.length ? (
+        <ul className="mt-3 space-y-2">
+          {pins.map((p) => (
+            <li key={p.id} className="flex flex-wrap items-center gap-2 text-sm" data-testid="pin-row">
+              <Badge>{p.kind}</Badge>
+              <span>{p.note}</span>
+              {p.photo_path ? <img src={`/api/pins/${p.id}/photo?v=${encodeURIComponent(p.photo_path)}`} alt={p.note ?? p.kind} width={64} height={64} className="h-16 w-16 rounded-sm object-cover" data-testid={`pin-thumb-${p.id}`} /> : null}
+              <label className="cursor-pointer text-sky-800 underline">
+                {p.photo_path ? 'Replace photo' : 'Add photo'}
+                <input type="file" accept="image/*" className="sr-only" data-testid={`pin-photo-${p.id}`} onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!file) return;
+                  try {
+                    await uploadPinPhoto(p.id, file);
+                    router.refresh();
+                  } catch (err) {
+                    setMsg((err as Error).message);
+                  }
+                }} />
+              </label>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </Card>
   );
 }

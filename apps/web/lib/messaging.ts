@@ -1,4 +1,4 @@
-import { and, eq, serviceDb, short_link, sms_consent, sql, tenant } from '@flake/db';
+import { and, eq, inArray, membership, push_subscription, serviceDb, short_link, sms_consent, sql, tenant } from '@flake/db';
 import { inInvoiceHours, renderTemplate, type TemplateKey } from '@flake/core/messages';
 import { localHm, nextInvoiceWindow } from '@flake/core/time';
 import { baseUrl } from './env';
@@ -27,7 +27,7 @@ export const canTextFrom = (t: TenantRow) => t.sms_status === 'approved' && Bool
  * Reserves the idempotency key first. A second caller with the same key sends nothing; a previous failure
  * may be retried. Returns the row id when this caller should send.
  */
-async function reserve(t: TenantRow, channel: 'sms' | 'email', to: string, template: string, body: string, key: string, related: Record<string, unknown> | null) {
+async function reserve(t: TenantRow, channel: 'sms' | 'email' | 'push', to: string, template: string, body: string, key: string, related: Record<string, unknown> | null) {
   const rows = (await serviceDb().execute(sql`
     insert into message_log (tenant_id, channel, to_addr, template, body, related, status, idempotency_key)
     values (${t.id}, ${channel}, ${to}, ${template}, ${body}, ${related ? JSON.stringify(related) : null}::jsonb, 'sending', ${key})
@@ -86,6 +86,44 @@ export interface Party { phone?: string | null; email?: string | null; wantsSms?
  */
 export const queueNotify = (tenantId: string, party: Party, msg: PartyMessage) =>
   enqueue('notify.party', { tenantId, party, msg }, { dedupeKey: `party:${tenantId}:${msg.key}` });
+
+export interface OfficePush {
+  title: string;
+  body: string;
+  url: string;
+  key: string;
+  /** Only this person's devices, for the test button. Otherwise every owner and dispatcher. */
+  userId?: string;
+  related?: Record<string, unknown>;
+}
+
+export const queuePush = (tenantId: string, msg: OfficePush) => enqueue('notify.push', { tenantId, msg }, { dedupeKey: `push:${tenantId}:${msg.key}` });
+
+/** Each device is logged and retried on its own, so one bad device can't repeat the alert on the others. */
+export async function sendOfficePush(tenantId: string, msg: OfficePush) {
+  const { push } = await getProviders();
+  if (!push.publicKey) return;
+  const db = serviceDb();
+  const [t] = await db.select().from(tenant).where(eq(tenant.id, tenantId));
+  if (!t) return;
+  const staff = msg.userId ? [{ user_id: msg.userId }] : await db.select({ user_id: membership.user_id }).from(membership).where(and(eq(membership.tenant_id, tenantId), inArray(membership.role, ['owner', 'dispatcher'])));
+  if (!staff.length) return;
+  const subs = await db.select().from(push_subscription).where(and(eq(push_subscription.tenant_id, tenantId), inArray(push_subscription.user_id, staff.map((s) => s.user_id))));
+  let failure: unknown = null;
+  for (const sub of subs) {
+    const id = await reserve(t, 'push', 'device', 'push', `${msg.title}: ${msg.body}`, `push:${msg.key}:${sub.id}`, msg.related ?? null);
+    if (!id) continue;
+    try {
+      const res = await push.send(sub, { title: msg.title, body: msg.body, url: msg.url });
+      await finish(id, res.status, null);
+      if (res.status === 'gone') await db.delete(push_subscription).where(eq(push_subscription.id, sub.id));
+    } catch (err) {
+      await finish(id, 'failed', null);
+      failure = err;
+    }
+  }
+  if (failure) throw failure;
+}
 
 /** Sends over each channel the recipient can get. Email is the always-available fallback. */
 export async function notifyParty(t: TenantRow, party: { phone?: string | null; email?: string | null; wantsSms?: boolean | null; wantsEmail?: boolean | null }, msg: {

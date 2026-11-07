@@ -5,6 +5,7 @@ import type { ContractService } from '@flake/core/pricing';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { getBlob, putBlob, signedUploadUrl } from './blob';
 import { log } from './log';
+import { queuePush } from './messaging';
 import { HttpError } from './http';
 import { enqueue } from './jobs';
 import { baseUrl } from './env';
@@ -64,7 +65,7 @@ export async function loadRun(rs: RunScope) {
         seq: stop.seq,
         status: stop.status,
         site: { id: st.id, label: st.label, address: st.address, lat: st.lat, lon: st.lon, priority: st.priority, open_by: st.service_window?.open_by ?? null, notes: st.notes },
-        pins: pins.filter((p) => p.site_id === st.id).map((p) => ({ id: p.id, kind: p.kind, note: p.note })),
+        pins: pins.filter((p) => p.site_id === st.id).map((p) => ({ id: p.id, kind: p.kind, note: p.note, has_photo: Boolean(p.photo_path) })),
         services,
         salt_unit: salt?.unit ?? (services.includes('salt') ? 'bag50lb' : null),
       };
@@ -148,6 +149,7 @@ export async function processAction(rs: RunScope, a: DriverAction): Promise<Ack>
       case 'problem': {
         await tx.insert(problem_report).values({ tenant_id: tenantId, client_uuid: a.client_uuid, storm_run_id: runId, site_id: st?.id ?? null, crew_id: crewId, kind: a.problem, note: a.note ?? null }).onConflictDoNothing({ target: problem_report.client_uuid });
         await setStop(tx, rs, stop!.id, a.problem === 'skip' ? 'skipped' : 'problem', ['open', 'enroute', 'onsite', 'problem']);
+        after.push(() => queuePush(tenantId, { title: 'Driver problem', body: `${a.problem} at ${st?.label ?? 'a site'}`, url: `/storms/${stormId}`, key: `problem:${a.client_uuid}`, related: { storm_id: stormId } }));
         break;
       }
       case 'undo_last': {
@@ -293,6 +295,15 @@ export async function readImageMeta(bytes: Uint8Array): Promise<{ width: number 
     exif = null;
   }
   return { width, height, exif };
+}
+
+/** A pin's photo for this link's own stops only. Same-origin, so the service worker can keep it for offline use. */
+export async function pinPhotoForRun(rs: RunScope, pinId: string): Promise<Uint8Array | null> {
+  const db = serviceDb();
+  const [pin] = await db.select().from(site_pin).where(and(eq(site_pin.tenant_id, rs.scope.tenantId), eq(site_pin.id, pinId)));
+  if (!pin?.photo_path) return null;
+  const [onRun] = await db.select({ id: run_stop.id }).from(run_stop).where(and(eq(run_stop.tenant_id, rs.scope.tenantId), eq(run_stop.storm_run_id, rs.scope.runId), eq(run_stop.site_id, pin.site_id)));
+  return onRun ? getBlob('photos', pin.photo_path) : null;
 }
 
 export async function savePosition(rs: RunScope, p: { lat: number; lon: number; acc?: number | null; at: string }) {

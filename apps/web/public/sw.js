@@ -28,6 +28,22 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // A pin's photo: the freshest copy with signal, the last one seen without.
+  if (/^\/api\/d\/[^/]+\/pins\//.test(url.pathname)) {
+    event.respondWith(
+      fetch(request)
+        .then((res) => {
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(url.pathname, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match(url.pathname).then((hit) => hit || new Response('', { status: 503 }))),
+    );
+    return;
+  }
+
   if (request.mode === 'navigate' && url.pathname.startsWith('/d/')) {
     event.respondWith(
       fetch(request)

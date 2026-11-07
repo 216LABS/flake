@@ -59,6 +59,8 @@ export interface GeocodeHit {
 }
 export interface Geocoder {
   search(q: string): Promise<GeocodeHit[]>;
+  /** Type-ahead. Best effort: an empty list just means the person keeps typing and uses Find. */
+  suggest(q: string): Promise<GeocodeHit[]>;
 }
 export interface TileLayer {
   tiles: string[];
@@ -139,7 +141,24 @@ export interface PaymentsProvider {
   isMock: boolean;
 }
 
+export interface PushTarget {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+export interface PushMessage {
+  title: string;
+  body: string;
+  url: string;
+}
+export interface PushProvider {
+  /** Handed to the browser to subscribe. null means push is off on this deployment. */
+  publicKey: string | null;
+  send(target: PushTarget, message: PushMessage): Promise<{ status: 'sent' | 'gone' }>;
+}
+
 export interface Providers {
+  push: PushProvider;
   mode: 'mock' | 'live';
   weather: WeatherProvider;
   parcel: ParcelProvider;

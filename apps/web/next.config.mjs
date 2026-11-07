@@ -19,7 +19,7 @@ const csp = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ['@flake/core', '@flake/contracts', '@flake/db', '@flake/providers', '@flake/ui'],
-  serverExternalPackages: ['@react-pdf/renderer', 'sharp', 'postgres', 'geotiff', 'exifr'],
+  serverExternalPackages: ['@react-pdf/renderer', 'sharp', 'postgres', 'geotiff', 'exifr', 'web-push'],
   poweredByHeader: false,
   async headers() {
     return [
@@ -38,6 +38,7 @@ const nextConfig = {
         headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }, { key: 'X-Robots-Tag', value: 'noindex' }],
       })),
       { source: '/sw.js', headers: [{ key: 'Service-Worker-Allowed', value: '/d/' }, { key: 'Cache-Control', value: 'no-cache' }] },
+      { source: '/push-sw.js', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
     ];
   },
 };

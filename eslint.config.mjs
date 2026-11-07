@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 export default [
-  { ignores: ['**/node_modules/**', '**/.next/**', '**/coverage/**', '**/next-env.d.ts', '**/playwright-report/**', '**/test-results/**', '**/public/sw.js'] },
+  { ignores: ['**/node_modules/**', '**/.next/**', '**/coverage/**', '**/next-env.d.ts', '**/playwright-report/**', '**/test-results/**', '**/public/sw.js', '**/public/push-sw.js'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

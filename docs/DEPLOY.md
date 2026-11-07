@@ -56,8 +56,10 @@ select vault.update_secret((select id from vault.secrets where name = 'cron_secr
 Then schedule the jobs. Use the direct connection (port 5432) as `postgres`, not the transaction pooler on 6543. `pnpm db:schedule` is safe to re-run: it unschedules each job name, then schedules it again. Each run reads `app_base_url` and `cron_secret` from `vault.decrypted_secrets` and sends `Authorization: Bearer <cron_secret>`. `pnpm cron:install` runs the same script.
 
 ```sh
-DATABASE_URL='postgresql://postgres.<ref>:<password>@db.<ref>.supabase.co:5432/postgres' pnpm db:schedule
+DATABASE_URL='postgresql://postgres:<password>@db.<ref>.supabase.co:5432/postgres' pnpm db:schedule
 ```
+
+That direct host is IPv6 only on the free plan. On an IPv4 network, use the session pooler string from the dashboard instead (also port 5432, user `postgres.<ref>`, host `aws-*.pooler.supabase.com`).
 
 | Job name | Cadence | What it calls |
 |---|---|---|
@@ -92,6 +94,16 @@ Environment variables for this free test deployment:
 | `RESEND_API_KEY`, `EMAIL_FROM` | optional; mail the app sends itself. Auth SMTP uses the API key as the SMTP password |
 
 `NEXT_PUBLIC_*` values are built into the page, so redeploy after changing them. Feature keys beyond email (Stripe, Twilio, Sentry, parcel URLs) are in Real production below. Until one is set, that feature refuses and says so. On this staging deployment, Stripe and SMS stay mock.
+
+### Optional: push alerts
+
+Web Push needs no account and costs nothing. Until the keys are set, Settings, Alerts says push is off and alerts go by email.
+
+1. Apply the migrations first: `pnpm exec supabase db push`. Push needs the `push_subscription` table.
+2. Run `npx web-push generate-vapid-keys` once.
+3. In Vercel, set `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` to `mailto:` plus your address. Never commit the private key, and don't change it later: every device would have to turn alerts on again.
+
+On iPhone, notifications need iOS 16.4 or newer and Flake added to the Home Screen.
 
 ### 3. Local and mock
 

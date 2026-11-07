@@ -2,6 +2,7 @@ import { LiveEmail } from './live/email';
 import { LiveFootprints, LiveGeocoder, LiveOsm, LiveParcels, LiveTiles } from './live/geo';
 import { LivePayments } from './live/payments';
 import { LiveSms } from './live/sms';
+import { LivePush, MockPush, noPush } from './live/push';
 import { LiveWeather } from './live/weather';
 import { MockEmail } from './mock/email';
 import { MockFootprints, MockGeocoder, MockOsm, MockParcels, MockTiles } from './mock/geo';
@@ -17,6 +18,7 @@ export { MockPayments, signMockWebhook, MOCK_WEBHOOK_SECRET } from './mock/payme
 export { MockSms, signTwilio, MOCK_TWILIO_TOKEN } from './mock/sms';
 export { MockFootprints, MockGeocoder, MockOsm, MockParcels, MockTiles } from './mock/geo';
 export { LiveWeather, nearestValidCell, nohrscCellToInches, nohrscUrl } from './live/weather';
+export { LivePush, MockPush } from './live/push';
 export { LiveEmail } from './live/email';
 export { LiveSms } from './live/sms';
 export { LivePayments } from './live/payments';
@@ -65,6 +67,7 @@ export function createProviders(opts: ProviderOptions): Providers {
   if (mode === 'mock') {
     return {
       mode,
+      push: new MockPush(),
       weather: new MockWeather(opts.weatherFixture ?? 'lakewood-lake-effect-2025-12'),
       parcel: new MockParcels(),
       footprints: new MockFootprints(),
@@ -83,6 +86,7 @@ export function createProviders(opts: ProviderOptions): Providers {
   }
   return {
     mode,
+    push: env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY ? new LivePush(env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY, env.VAPID_SUBJECT ?? baseUrl) : noPush(),
     weather: new LiveWeather(env.NWS_USER_AGENT ?? '(flake.216labs.dev, sam@216labs.dev)'),
     parcel: new LiveParcels(),
     footprints: new LiveFootprints(env.OVERTURE_EXTRACT_PATH),

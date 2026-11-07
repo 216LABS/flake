@@ -10,7 +10,7 @@ interface Stop {
   seq: number;
   status: string;
   site: { id: string; label: string; address: string; lat: number; lon: number; priority: number; open_by: string | null; notes: string | null };
-  pins: { id: string; kind: string | null; note: string | null }[];
+  pins: { id: string; kind: string | null; note: string | null; has_photo: boolean }[];
   services: string[];
   salt_unit: string | null;
 }
@@ -156,6 +156,18 @@ export function DriverApp({ token }: { token: string }) {
       void navigator.storage?.persist?.();
     })();
   }, []);
+
+  // Keep every pin photo on this route ready for when signal drops, not just the current stop's.
+  const pinPhotos = (run?.stops ?? []).flatMap((s) => s.pins).filter((p) => p.has_photo).map((p) => p.id).join();
+  useEffect(() => {
+    if (!pinPhotos) return;
+    const fetchAll = () => pinPhotos.split(',').forEach((id) => void fetch(`/api/d/${token}/pins/${id}`).catch(() => {}));
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.ready.then(() => {
+      if (navigator.serviceWorker.controller) fetchAll();
+      else navigator.serviceWorker.addEventListener('controllerchange', fetchAll, { once: true });
+    }).catch(() => {});
+  }, [pinPhotos, token]);
 
   // Register the service worker and cache what this page already loaded, for reloads with no signal.
   useEffect(() => {
@@ -430,7 +442,7 @@ export function DriverApp({ token }: { token: string }) {
         ) : showProblem ? (
           <ProblemPanel t={t} onCancel={() => setShowProblem(false)} onSend={(k, v) => sendProblem(next, k, v)} />
         ) : (
-          <NextStop t={t} stop={next} onNavigate={() => navigate(next)} onArrive={() => arrive(next)} onProblem={() => setShowProblem(true)} />
+          <NextStop t={t} token={token} stop={next} onNavigate={() => navigate(next)} onArrive={() => arrive(next)} onProblem={() => setShowProblem(true)} />
         )}
 
         {canUndo ? <BigButton className="w-full" onClick={undo} data-testid="undo">{t('undo_last')}</BigButton> : null}
@@ -459,7 +471,7 @@ const Shell = ({ children }: { children: React.ReactNode }) => <div className="m
 
 type T = (key: DictKey, vars?: Record<string, string | number>) => string;
 
-function NextStop({ t, stop, onNavigate, onArrive, onProblem }: { t: T; stop: Stop; onNavigate: () => void; onArrive: () => void; onProblem: () => void }) {
+function NextStop({ t, token, stop, onNavigate, onArrive, onProblem }: { t: T; token: string; stop: Stop; onNavigate: () => void; onArrive: () => void; onProblem: () => void }) {
   return (
     <section className="rounded-2xl bg-slate-800 p-4" data-testid="next-stop">
       <div className="text-base font-bold uppercase tracking-wide text-sky-200">{t('next_stop')}</div>
@@ -471,6 +483,13 @@ function NextStop({ t, stop, onNavigate, onArrive, onProblem }: { t: T; stop: St
         {stop.pins.map((p) => <span key={p.id} className="rounded-lg bg-slate-700 px-3 py-2">{p.kind}{p.note ? `: ${p.note}` : ''}</span>)}
       </div>
       {stop.site.notes ? <p className="mt-3 text-lg text-slate-100"><b>{t('notes')}:</b> {stop.site.notes}</p> : null}
+      {stop.pins.some((p) => p.has_photo) ? (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {stop.pins.filter((p) => p.has_photo).map((p) => (
+            <img key={p.id} src={`/api/d/${token}/pins/${p.id}`} alt={[p.kind, p.note].filter(Boolean).join(': ')} className="w-full rounded-lg" data-testid={`driver-pin-${p.id}`} />
+          ))}
+        </div>
+      ) : null}
       <div className="mt-4 grid gap-3">
         <BigButton onClick={onNavigate} data-testid="navigate">{t('navigate')}</BigButton>
         <BigButton tone="go" height="tall" onClick={onArrive} data-testid="arrive">{t('arrive')}</BigButton>

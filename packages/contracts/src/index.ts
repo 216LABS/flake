@@ -266,6 +266,15 @@ export const rateCardSchema = z.object({
   tiers: z.array(z.object({ up_to_in: z.number().positive().nullable(), multiplier: z.number().min(0.1).max(10) })).min(1),
 });
 
+/** The server POSTs to this URL, so only the real browser push services are allowed. Anything else would be SSRF. */
+const PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /^updates\.push\.services\.mozilla\.com$/, /^[a-z0-9-]+\.push\.services\.mozilla\.com$/, /^web\.push\.apple\.com$/, /^[a-z0-9-]+\.notify\.windows\.com$/];
+const pushEndpoint = z.url().max(1000).refine((u) => {
+  const url = new URL(u);
+  return url.protocol === 'https:' && !url.port && PUSH_HOSTS.some((h) => h.test(url.hostname));
+}, 'Not a recognized push service');
+export const pushSubscribe = z.object({ endpoint: pushEndpoint, keys: z.object({ p256dh: z.string().min(16).max(200), auth: z.string().min(8).max(100) }) });
+export const pushUnsubscribe = z.object({ endpoint: z.string().max(1000) });
+export const addressSuggest = z.object({ q: z.string().trim().min(3).max(200) });
 export const teamAdd = z.object({ email, role: z.enum(['owner', 'dispatcher', 'viewer']) });
 export const crewJoin = z.object({ consent: z.boolean() });
 export const proCheckout = z.object({ interval: z.enum(['monthly', 'yearly']) });
