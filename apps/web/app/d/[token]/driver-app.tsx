@@ -417,9 +417,9 @@ export function DriverApp({ token }: { token: string }) {
 
   return (
     <Shell>
-      <header className="sticky top-0 z-10 flex items-center justify-between gap-2 bg-[#0b1016] px-4 py-3">
+      <header className="sticky top-0 z-10 flex items-center justify-between gap-2 bg-slate-950 px-4 py-3">
         <div className="min-w-0">
-          <div className="truncate text-lg font-bold">{run.storm.name}</div>
+          <div className="font-display truncate text-xl font-bold">{run.storm.name}</div>
           <div className="text-base text-slate-200" data-testid="progress">{t('of_done', { d: doneCount, n: stops.length })}</div>
         </div>
         <div className="flex items-center gap-2">
@@ -436,7 +436,7 @@ export function DriverApp({ token }: { token: string }) {
 
       <main className="space-y-4 px-4 pb-8">
         {!next ? (
-          <div className="rounded-2xl bg-slate-800 p-8 text-center text-2xl font-bold" data-testid="all-done">{t('all_done')}</div>
+          <div className="rounded-lg bg-slate-800 p-8 text-center text-2xl font-bold" data-testid="all-done">{t('all_done')}</div>
         ) : next.status === 'onsite' && local.visits[next.id] ? (
           showProblem ? (
             <ProblemPanel t={t} onCancel={() => setShowProblem(false)} onSend={(k, v) => sendProblem(next, k, v)} />
@@ -482,14 +482,14 @@ export function DriverApp({ token }: { token: string }) {
   );
 }
 
-const Shell = ({ children }: { children: React.ReactNode }) => <div className="min-h-dvh bg-[#0b1016] text-white">{children}</div>;
+const Shell = ({ children }: { children: React.ReactNode }) => <div className="min-h-dvh bg-slate-950 text-white">{children}</div>;
 
 type T = (key: DictKey, vars?: Record<string, string | number>) => string;
 
 function NextStop({ t, token, stop, onNavigate, onArrive, onProblem }: { t: T; token: string; stop: Stop; onNavigate: () => void; onArrive: () => void; onProblem: () => void }) {
   return (
-    <section className="rounded-2xl bg-slate-800 p-4" data-testid="next-stop">
-      <div className="text-base font-bold uppercase tracking-wide text-sky-200">{t('next_stop')}</div>
+    <section className="rounded-lg bg-slate-800 p-4" data-testid="next-stop">
+      <div className="font-display text-base font-bold uppercase tracking-wider text-beacon">{t('next_stop')}</div>
       <h1 className="mt-1 text-3xl font-bold" data-testid="stop-label">{stop.site.label}</h1>
       <p className="mt-1 text-xl text-slate-100">{stop.site.address}</p>
       <div className="mt-3 flex flex-wrap gap-2 text-base">
@@ -527,8 +527,8 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; on
   const { t, stop, visit } = p;
   const blocked = p.needDepth && visit.depth === null;
   return (
-    <section className="space-y-4 rounded-2xl bg-slate-800 p-4" data-testid="onsite">
-      <h1 className="text-2xl font-bold">{stop.site.label}</h1>
+    <section className="space-y-4 rounded-lg bg-slate-800 p-4" data-testid="onsite">
+      <h1 className="font-display text-3xl font-bold leading-tight">{stop.site.label}</h1>
       <PhotoButton label={t('before_photo')} done={visit.before} testId="before-photo" onChange={(e) => p.onPhoto('before', e)} />
       <div>
         <h2 className="mb-2 text-lg font-bold">{p.needDepth ? t('depth_required') : t('depth')}</h2>
@@ -595,7 +595,7 @@ function ProblemPanel({ t, onCancel, onSend }: { t: T; onCancel: () => void; onS
   };
 
   return (
-    <section className="space-y-3 rounded-2xl bg-slate-800 p-4" data-testid="problem-panel">
+    <section className="space-y-3 rounded-lg bg-slate-800 p-4" data-testid="problem-panel">
       <h1 className="text-2xl font-bold">{t('problem')}</h1>
       {canRecord ? <BigButton tone={recording ? 'warn' : voice ? 'on' : 'plain'} className="w-full" onClick={() => void toggle()}>{recording ? t('stop_recording') : voice ? `✓ ${t('voice_note')}` : t('voice_note')}</BigButton> : null}
       {(['blocked', 'breakdown', 'skip', 'damage'] as const).map((k) => (

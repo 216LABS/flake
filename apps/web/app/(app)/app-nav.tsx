@@ -1,29 +1,37 @@
 'use client';
 
+import { cn } from '@flake/ui';
+import { CloudSnow, FileCheck2, LayoutDashboard, Receipt, Route, Settings, Users, Wrench } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { cn } from '@flake/ui';
 
 const NAV = [
-  ['/dashboard', 'Dashboard'],
-  ['/storms', 'Storms'],
-  ['/customers', 'Customers'],
-  ['/routes', 'Routes'],
-  ['/billing', 'Billing'],
-  ['/proof', 'Proof'],
-  ['/settings', 'Settings'],
+  ['/dashboard', 'Dashboard', LayoutDashboard],
+  ['/storms', 'Storms', CloudSnow],
+  ['/customers', 'Customers', Users],
+  ['/routes', 'Routes', Route],
+  ['/billing', 'Billing', Receipt],
+  ['/proof', 'Proof', FileCheck2],
+  ['/settings', 'Settings', Settings],
 ] as const;
 
-/** One line. On a phone it scrolls sideways, so the page starts near the top of the screen. */
+const item = 'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors';
+
+/** A sidebar on a desk, and one line that scrolls sideways on a phone. */
 export function AppNav({ showDev }: { showDev: boolean }) {
   const path = usePathname();
   return (
-    <nav className="order-last -mx-4 flex w-screen gap-4 overflow-x-auto whitespace-nowrap px-4 text-sm text-slate-600 md:order-none md:mx-0 md:w-auto md:overflow-visible md:px-0">
-      {NAV.map(([href, label]) => {
+    <nav className="order-last flex w-full gap-1 overflow-x-auto whitespace-nowrap md:order-none md:flex-col md:overflow-visible">
+      {NAV.map(([href, label, Icon]) => {
         const here = path === href || path.startsWith(`${href}/`);
-        return <Link key={href} href={href} aria-current={here ? 'page' : undefined} className={cn('py-1 hover:text-slate-900', here && 'font-semibold text-slate-900 underline decoration-2 underline-offset-4')}>{label}</Link>;
+        return (
+          <Link key={href} href={href} aria-current={here ? 'page' : undefined} className={cn(item, here ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-900 hover:text-white')}>
+            <Icon size={17} aria-hidden="true" className={here ? 'text-beacon' : undefined} />
+            {label}
+          </Link>
+        );
       })}
-      {showDev ? <Link href="/dev" className="py-1 text-amber-700 hover:text-amber-900">Dev</Link> : null}
+      {showDev ? <Link href="/dev" className={cn(item, 'text-amber-300 hover:bg-slate-900')}><Wrench size={17} aria-hidden="true" />Dev</Link> : null}
     </nav>
   );
 }

@@ -1,10 +1,11 @@
 'use client';
 
-import { Button, Card, Input, Label } from '@flake/ui';
+import { Button, Input, Label } from '@flake/ui';
 import { createBrowserClient } from '@supabase/ssr';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api } from '@/lib/client';
+import { AuthShell } from '../auth-shell';
 
 export function LoginForm({ demo }: { demo: boolean }) {
   const router = useRouter();
@@ -19,9 +20,9 @@ export function LoginForm({ demo }: { demo: boolean }) {
     else setSent(true);
   };
   return (
-    <main className="mx-auto max-w-md px-4 py-16">
-      <Card>
-        <h1 className="text-xl font-semibold">Sign in to Flake</h1>
+    <AuthShell>
+        <h1 className="font-display text-3xl font-semibold tracking-tight">Sign in to Flake</h1>
+        <p className="mt-1 text-sm text-slate-600">We&apos;ll email you a link. There is no password to remember.</p>
         {sent ? <p className="mt-3 text-sm" data-testid="link-sent">Check {email} for your sign-in link.</p> : (
           <>
             <Label className="mt-4" htmlFor="email">Email</Label>
@@ -41,7 +42,6 @@ export function LoginForm({ demo }: { demo: boolean }) {
             }
           }}>Use the demo company (local only)</Button>
         ) : null}
-      </Card>
-    </main>
+    </AuthShell>
   );
 }

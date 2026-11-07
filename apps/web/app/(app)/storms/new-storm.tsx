@@ -27,7 +27,7 @@ export function NewStorm({ routes, crew, defaultName }: { routes: { id: string; 
   };
   return (
     <Card>
-      <h2 className="mb-3 font-semibold">Start a storm</h2>
+      <h2 className="font-display mb-3 text-xl font-semibold">Start a storm</h2>
       <Label htmlFor="storm-name">Name</Label>
       <Input id="storm-name" value={name} onChange={(e) => setName(e.target.value)} data-testid="storm-name" />
       <div className="mt-3 space-y-3">

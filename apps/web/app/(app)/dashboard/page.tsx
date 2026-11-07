@@ -1,6 +1,6 @@
 import { and, contract, customer, desc, eq, message_log, run_stop, serviceDb, sql, storm, storm_run, trigger_alert } from '@flake/db';
 import { fmtLocal } from '@flake/core/time';
-import { Badge, buttonVariants, Card, EmptyState, PageHeader, Table, Td, Th } from '@flake/ui';
+import { Badge, buttonVariants, Card, EmptyState, Eyebrow, PageHeader, Progress, Stat, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
 import { canSeeUsage, deploymentUsage } from '@/lib/usage';
@@ -34,46 +34,60 @@ export default async function Dashboard() {
       <PageHeader title="Dashboard" subtitle={ctx.tenant.name} actions={canEdit ? <Link href="/storms" className={buttonVariants({ variant: 'accent' })}>Start a storm</Link> : null} />
       {usage?.near_limit ? <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-800" data-testid="usage-warning">Storage is nearly full ({usage.files_mb} of {usage.files_limit_mb} MB of files, {usage.db_mb} of {usage.db_limit_mb} MB of database). <Link className="underline" href="/settings?tab=system">See details</Link></p> : null}
       {failedMessages ? <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-800" data-testid="messages-failed">{failedMessages === 1 ? '1 message' : `${failedMessages} messages`} could not be sent in the last 24 hours. Flake keeps retrying. <Link className="underline" href="/settings?tab=system">See why</Link></p> : null}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <Card>
-          <h2 className="text-sm font-medium text-slate-500">Weather</h2>
-          {w.breaker_open ? <p className="mt-2 text-sm text-red-700">Weather unavailable. Polling is paused after repeated errors.</p> : null}
-          <p className="mt-2 text-sm">Next 12 h: <b>{fmt(w.forecast_in)}</b></p>
-          <p className="text-sm">Elapsed this event: <b>{fmt(w.elapsed_in)}</b></p>
-          <p className="text-sm">Temperature: <b>{fmt(w.temp_f, ' F')}</b></p>
-          <p className="mt-2 text-xs text-slate-500">Source: {w.source}{w.fetched_at ? `, ${fmtLocal(w.fetched_at, tz)}` : ''}</p>
-        </Card>
-        <Card className="md:col-span-2">
-          <h2 className="text-sm font-medium text-slate-500">Trigger alerts</h2>
-          {data.alerts.length ? (
-            <ul className="mt-2 divide-y divide-slate-100">
-              {data.alerts.map((a) => (
-                <li key={a.id} className="flex items-center justify-between gap-3 py-2">
-                  <span className="text-sm">{a.detail.headline}</span>
-                  <Link href={`/alerts/${a.id}`} className={buttonVariants({ size: 'sm', variant: 'accent' })} data-testid="alert-review">Review</Link>
-                </li>
-              ))}
-            </ul>
-          ) : <p className="mt-2 text-sm text-slate-600">No open alerts.</p>}
-        </Card>
-      </div>
-      {setup.some((s) => !s.done) ? (
-        <Card className="mt-4">
-          <h2 className="text-sm font-medium text-slate-500">Finish setup</h2>
-          <ul className="mt-2 space-y-1 text-sm">
-            {setup.filter((s) => !s.done).map((s) => <li key={s.href}><Link className="text-sky-800 underline" href={s.href}>{s.text}</Link></li>)}
-          </ul>
-        </Card>
-      ) : null}
-      <h2 className="mb-2 mt-6 font-semibold">Active storms</h2>
-      {data.active.length ? (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {data.active.map((s) => (
-            <Link key={s.id} href={`/storms/${s.id}`} data-testid="active-storm"><Card className="hover:border-sky-400"><div className="font-medium">{s.name}</div><div className="text-sm font-medium text-slate-700" data-testid="storm-progress">{(() => { const p = data.progress.find((x) => x.storm_id === s.id); return p ? `${p.finished} of ${p.total} stops finished` : 'No stops yet'; })()}</div><div className="text-sm text-slate-600">Started {fmtLocal(s.started_at, tz)}</div></Card></Link>
-          ))}
+      <section className="overflow-hidden rounded-md bg-slate-950 text-white" data-testid="conditions">
+        <div className="flex flex-wrap items-end gap-x-10 gap-y-4 p-5">
+          <Stat label="Next 12 h" value={fmt(w.forecast_in)} />
+          <Stat label="Elapsed this event" value={fmt(w.elapsed_in)} />
+          <Stat label="Temperature" value={fmt(w.temp_f, ' F')} />
+          <p className="ml-auto text-xs text-slate-300">{w.breaker_open ? 'Weather unavailable. Polling is paused after repeated errors. ' : ''}Source: {w.source}{w.fetched_at ? `, ${fmtLocal(w.fetched_at, tz)}` : ''}</p>
         </div>
-      ) : <EmptyState title="No storm is running" body="Start one by hand, or wait for a trigger alert." />}
-      <h2 className="mb-2 mt-6 font-semibold">Recent storms</h2>
+      </section>
+      <div className={`mt-6 grid grid-cols-1 gap-6 ${setup.some((s) => !s.done) ? 'lg:grid-cols-3' : ''}`}>
+        <div className={`space-y-6 ${setup.some((s) => !s.done) ? 'lg:col-span-2' : ''}`}>
+          <section>
+            <Eyebrow className="mb-2">Trigger alerts</Eyebrow>
+            {data.alerts.length ? (
+              <ul className="divide-y divide-slate-200 rounded-md border border-beacon bg-white">
+                {data.alerts.map((a) => (
+                  <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
+                    <span className="min-w-0 text-sm font-medium">{a.detail.headline}</span>
+                    <Link href={`/alerts/${a.id}`} className={buttonVariants({ size: 'sm', variant: 'accent' })} data-testid="alert-review">Review</Link>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-600">No open alerts.</p>}
+          </section>
+          <section>
+            <Eyebrow className="mb-2">Active storms</Eyebrow>
+            {data.active.length ? (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {data.active.map((s) => {
+                  const p = data.progress.find((x) => x.storm_id === s.id);
+                  return (
+                    <Link key={s.id} href={`/storms/${s.id}`} data-testid="active-storm">
+                      <Card className="transition-colors hover:border-slate-900">
+                        <div className="flex items-start justify-between gap-2"><div className="font-display text-lg font-semibold leading-tight">{s.name}</div><Badge tone="amber">Live</Badge></div>
+                        <div className="mt-0.5 text-xs text-slate-600">Started {fmtLocal(s.started_at, tz)}</div>
+                        <Progress className="mt-3" value={p?.finished ?? 0} max={p?.total ?? 0} label={`Stops finished in ${s.name}`} />
+                        <div className="tabular mt-1.5 text-sm font-medium text-slate-900" data-testid="storm-progress">{p ? `${p.finished} of ${p.total} stops finished` : 'No stops yet'}</div>
+                      </Card>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : <EmptyState title="No storm is running" body="Start one by hand, or wait for a trigger alert." />}
+          </section>
+        </div>
+        {setup.some((s) => !s.done) ? (
+          <section>
+            <Eyebrow className="mb-2">Finish setup</Eyebrow>
+            <ul className="divide-y divide-slate-200 rounded-md border border-slate-200 bg-white">
+              {setup.filter((s) => !s.done).map((s) => <li key={s.href}><Link className="block p-3 text-sm font-medium text-slate-900 hover:bg-slate-50" href={s.href}>{s.text}</Link></li>)}
+            </ul>
+          </section>
+        ) : null}
+      </div>
+      <Eyebrow className="mb-2 mt-6">Recent storms</Eyebrow>
       {data.recent.length ? (
         <Table>
           <thead><tr><Th>Storm</Th><Th>Started</Th><Th>Status</Th><Th></Th></tr></thead>

@@ -17,7 +17,7 @@ export default async function Customers() {
           <tbody>
             {customers.map((c) => (
               <tr key={c.id}>
-                <Td><Link className="font-medium text-sky-800 underline" href={`/customers/${c.id}`}>{c.name}</Link></Td>
+                <Td><Link className="font-semibold text-slate-950 underline-offset-2 hover:underline" href={`/customers/${c.id}`}>{c.name}</Link></Td>
                 <Td><Badge>{c.kind}</Badge></Td>
                 <Td>{sites.filter((s) => s.customer_id === c.id).length}</Td>
                 <Td>{c.billing_mode.replace(/_/g, ' ')}</Td>

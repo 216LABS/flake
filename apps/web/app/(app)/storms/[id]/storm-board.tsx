@@ -1,12 +1,13 @@
 'use client';
 
-import { Badge, Button, Card, Input, Select, cn } from '@flake/ui';
+import { Badge, Button, Card, Input, Select, cn, Progress } from '@flake/ui';
 import { useRouter } from 'next/navigation';
 import QRCode from 'qrcode';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/client';
 import { MapView, type MapPin, type TileLayers } from '@/components/map-view';
 
+const STATUS_WORD: Record<string, string> = { open: 'Open', enroute: 'On the way', onsite: 'On site', done: 'Done', skipped: 'Skipped', problem: 'Problem' };
 const STATUS_TONE: Record<string, 'gray' | 'blue' | 'green' | 'amber' | 'red'> = { open: 'gray', enroute: 'blue', onsite: 'amber', done: 'green', skipped: 'gray', problem: 'red' };
 const PIN_COLOR: Record<string, string> = { open: '#475569', enroute: '#0284c7', onsite: '#d97706', done: '#059669', skipped: '#94a3b8', problem: '#dc2626' };
 
@@ -84,20 +85,24 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText }: { sto
 
   return (
     <div>
-      <Card className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2">
-        <div><div className="text-xs text-slate-500">Storm time</div><div className="font-semibold" data-testid="storm-timer">{elapsed}</div></div>
+      <section className="mb-4 overflow-hidden rounded-md bg-slate-950 text-white">
+        <div className="flex flex-wrap items-end gap-x-8 gap-y-3 p-4">
+        <div><div className="font-display text-xs font-semibold uppercase tracking-wider text-slate-300">Storm time</div><div className="font-display tabular text-3xl font-semibold" data-testid="storm-timer">{elapsed}</div></div>
         <div>
-          <div className="text-xs text-slate-500">Forecast next 12 h / elapsed</div>
-          <div className="font-semibold">{dash(live.weather.forecast_in)} / {dash(live.weather.elapsed_in)}</div>
-          <div className={cn('text-xs', live.weather.synthetic ? 'text-amber-700' : 'text-slate-500')}>{live.weather.breaker_open ? 'Weather unavailable' : live.weather.source}</div>
+          <div className="font-display text-xs font-semibold uppercase tracking-wider text-slate-300">Forecast next 12 h / elapsed</div>
+          <div className="font-display tabular text-3xl font-semibold">{dash(live.weather.forecast_in)} / {dash(live.weather.elapsed_in)}</div>
+          <div className={cn('text-xs', live.weather.synthetic ? 'text-amber-300' : 'text-slate-300')}>{live.weather.breaker_open ? 'Weather unavailable' : live.weather.source}</div>
         </div>
-        <div className="flex gap-3 text-sm" data-testid="counts">
+        <div className="w-full min-w-48 flex-1">
+          <Progress className="mb-2 bg-slate-700" value={live.counts.done + live.counts.skipped} max={live.counts.total} label="Stops finished" />
+        <div className="tabular flex flex-wrap gap-x-3 text-sm" data-testid="counts">
           <span><b>{live.counts.done}</b> done</span>
           <span><b>{live.counts.open}</b> open</span>
           <span><b>{live.counts.onsite}</b> on site</span>
-          <span className={live.counts.late ? 'font-bold text-red-700' : ''}><b>{live.counts.late}</b> late</span>
+          <span className={live.counts.late ? 'font-bold text-amber-300' : ''}><b>{live.counts.late}</b> late</span>
         </div>
-        <div className="ml-auto flex flex-wrap gap-2">
+        </div>
+        <div className="flex w-full flex-wrap gap-2 lg:ml-auto lg:w-auto">
           {editable && unpublished ? <Button variant="accent" data-testid="publish" onClick={() => act(() => api(`/api/storms/${stormId}/publish`, { method: 'POST' }))}>Publish</Button> : null}
           {editable ? <Button variant="outline" data-testid="notify-open" onClick={() => setNotify(true)}>Notify customers</Button> : null}
           {editable ? <Button variant="outline" onClick={() => act(() => api(`/api/storms/${stormId}/pass`, { method: 'POST' }))}>Another pass</Button> : null}
@@ -116,7 +121,8 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText }: { sto
             }}>Close storm</Button>
           ) : closed ? <Badge tone="green" data-testid="storm-closed">{live.storm.status}</Badge> : null}
         </div>
-      </Card>
+        </div>
+      </section>
 
       {editable && canText ? (
         <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
@@ -132,7 +138,7 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText }: { sto
 
       {error ? <p className="mb-3 rounded-md bg-red-50 p-3 text-sm text-red-800" role="alert">{error}</p> : null}
       {closePrompt ? (
-        <Card className="mb-3 border-amber-300 bg-amber-50">
+        <Card className="mb-3 border-beacon">
           <p className="text-sm">{closePrompt} Close anyway?</p>
           <div className="mt-2 flex gap-2">
             <Button variant="danger" data-testid="close-force" onClick={async () => {
@@ -168,11 +174,11 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText }: { sto
       {showMap ? <div className="mb-4"><MapView layers={layers} center={{ lat: allStops[0]?.lat ?? 41.48, lon: allStops[0]?.lon ?? -81.8 }} zoom={12} pins={pins} className="h-80" /></div> : null}
 
       <div className="flex flex-col gap-4 lg:flex-row">
-        <div className="flex flex-1 gap-3 overflow-x-auto pb-2">
+        <div className="flex min-w-0 flex-1 snap-x gap-3 overflow-x-auto pb-2">
           {live.runs.map((r: any) => (
             <section
               key={r.id}
-              className={cn('w-72 shrink-0 rounded-lg bg-slate-100 p-2', dragging && 'ring-1 ring-sky-300')}
+              className={cn('w-[86%] max-w-80 shrink-0 snap-start rounded-md bg-slate-200/70 p-2 md:w-72', dragging && 'ring-2 ring-slate-900')}
               data-testid="run-column"
               data-run={r.id}
               onDragOver={(e) => e.preventDefault()}
@@ -183,7 +189,7 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText }: { sto
               }}
             >
               <header className="mb-2 px-1">
-                <div className="font-semibold">{r.name}{r.pass > 1 ? ` (pass ${r.pass})` : ''}</div>
+                <div className="flex items-baseline justify-between gap-2"><div className="font-display text-lg font-semibold leading-tight">{r.name}{r.pass > 1 ? ` (pass ${r.pass})` : ''}</div><div className="tabular shrink-0 text-xs font-medium text-slate-600">{r.stops.filter((x: any) => ['done', 'skipped'].includes(x.status)).length} of {r.stops.length}</div></div>
                 <div className="text-sm text-slate-600">{r.crew?.name ?? 'No driver'}{r.crew?.kind === 'sub' ? ' (sub)' : ''}{r.crew?.callout_reply ? `, replied ${r.crew.callout_reply}` : ''}</div>
                 {editable ? (
                   <Select aria-label={`Driver for ${r.name}`} data-testid="assign-driver" className="mt-1 h-8 py-0 text-xs" value={r.crew?.id ?? ''} onChange={(e) => e.target.value && void act(() => api(`/api/runs/${r.id}`, { method: 'PATCH', body: { crew_id: e.target.value } }))}>
@@ -196,10 +202,10 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText }: { sto
               </header>
               <ul className="space-y-2">
                 {r.stops.map((s: any) => (
-                  <li key={s.id} draggable={editable && s.status !== 'onsite' && s.status !== 'done'} onDragStart={(e) => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragging(s.id); }} onDragEnd={() => setDragging(null)} data-testid="stop-card" data-status={s.status} className={cn('rounded-md border bg-white p-2 text-sm', s.late && 'border-red-500 bg-red-50')}>
+                  <li key={s.id} draggable={editable && s.status !== 'onsite' && s.status !== 'done'} onDragStart={(e) => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragging(s.id); }} onDragEnd={() => setDragging(null)} data-testid="stop-card" data-status={s.status} className={cn('rounded-md border border-slate-200 bg-white p-2 text-sm', s.status === 'done' && 'opacity-70', s.status === 'onsite' && 'border-beacon ring-1 ring-beacon', s.late && 'border-red-600 bg-red-50')}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="font-medium">{s.seq}. {s.label}</div>
-                      <Badge tone={STATUS_TONE[s.status]}>{s.status}</Badge>
+                      <Badge className="shrink-0" tone={STATUS_TONE[s.status]}>{STATUS_WORD[s.status] ?? s.status}</Badge>
                     </div>
                     <div className="text-xs text-slate-600">{s.customer}</div>
                     {s.late ? <div className="text-xs font-bold text-red-700">Late</div> : null}

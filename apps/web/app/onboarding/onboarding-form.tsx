@@ -1,18 +1,18 @@
 'use client';
 
-import { Button, Card, Input, Label } from '@flake/ui';
+import { Button, Input, Label } from '@flake/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api } from '@/lib/client';
+import { AuthShell } from '../auth-shell';
 
 export function OnboardingForm() {
   const router = useRouter();
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   return (
-    <main className="mx-auto max-w-md px-4 py-16">
-      <Card>
-        <h1 className="text-xl font-semibold">Set up your company</h1>
+    <AuthShell>
+        <h1 className="font-display text-3xl font-semibold tracking-tight">Set up your company</h1>
         <p className="mt-1 text-sm text-slate-600">Free through April 30, 2027. No card needed.</p>
         <Label className="mt-4" htmlFor="company">Company name</Label>
         <Input id="company" value={name} onChange={(e) => setName(e.target.value)} data-testid="company" />
@@ -25,7 +25,6 @@ export function OnboardingForm() {
             setError((e as Error).message);
           }
         }}>Continue</Button>
-      </Card>
-    </main>
+    </AuthShell>
   );
 }

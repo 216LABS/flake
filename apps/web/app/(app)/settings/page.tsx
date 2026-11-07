@@ -35,8 +35,8 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   return (
     <>
       <PageHeader title="Settings" subtitle={`Routes are edited on the Routes page. You are the ${ctx.role}.`} />
-      <nav className="mb-4 flex flex-wrap gap-2 text-sm">
-        {TABS.filter(([k]) => owner || !OWNER_TABS.includes(k)).map(([k, label]) => <Link key={k} href={`/settings?tab=${k}`} data-testid={`tab-${k}`} className={`rounded-full border px-3 py-1 ${tab === k ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white'}`}>{label}</Link>)}
+      <nav className="mb-5 flex gap-1 overflow-x-auto whitespace-nowrap border-b border-slate-300 text-sm">
+        {TABS.filter(([k]) => owner || !OWNER_TABS.includes(k)).map(([k, label]) => <Link key={k} href={`/settings?tab=${k}`} data-testid={`tab-${k}`} aria-current={tab === k ? 'page' : undefined} className={`-mb-px border-b-2 px-3 py-2 font-medium ${tab === k ? 'border-beacon text-slate-950' : 'border-transparent text-slate-600 hover:text-slate-950'}`}>{label}</Link>)}
       </nav>
       {!allowed ? <Card className="max-w-2xl" data-testid="owner-only"><p className="text-sm">Only an owner can open this.</p></Card> : null}
       {allowed && tab === 'rate' ? <RateCardForm card={(Object.keys(t.rate_card as object).length ? t.rate_card : DEFAULT_RATE_CARD) as RateCard} /> : null}

@@ -1,10 +1,65 @@
 @import 'tailwindcss';
 @source '../../../packages/ui/src';
 
+/*
+ * Flake's look: road signs and night dispatch. Night ink, snow paper, and beacon amber for the one thing to do next.
+ * Slate and sky are redefined here rather than replaced, so every screen picks them up from one place.
+ * Light steps are warm like paper and dark steps are cold like a night cab.
+ */
+@theme {
+  --font-sans: var(--font-public-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-barlow), var(--font-public-sans), ui-sans-serif, system-ui, sans-serif;
+
+  --color-slate-50: #f6f5f1;
+  --color-slate-100: #ecebe4;
+  --color-slate-200: #dddbd1;
+  --color-slate-300: #c9c7bb;
+  --color-slate-400: #8a897e;
+  --color-slate-500: #6f7069;
+  --color-slate-600: #53564f;
+  --color-slate-700: #33434f;
+  --color-slate-800: #1e2c38;
+  --color-slate-900: #13202b;
+  --color-slate-950: #0b151d;
+
+  --color-sky-50: #eef6fa;
+  --color-sky-100: #d8ebf4;
+  --color-sky-200: #b4d8e9;
+  --color-sky-300: #7cc3e4;
+  --color-sky-400: #4fa8d1;
+  --color-sky-500: #2a8bba;
+  --color-sky-600: #14719f;
+  --color-sky-700: #0f5d85;
+  --color-sky-800: #0c4a6b;
+  --color-sky-900: #0a3a54;
+
+  --color-beacon: #f6b40e;
+  --color-beacon-dark: #e0a200;
+}
+
 :root {
   color-scheme: light;
 }
 body {
-  background: #f8fafc;
-  color: #0f172a;
+  background: var(--color-slate-50);
+  color: var(--color-slate-900);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+}
+
+/* The chevrons on the back of a plow truck. Only ever a thin edge, or it stops meaning anything. */
+.chevrons {
+  height: 6px;
+  background: repeating-linear-gradient(-55deg, var(--color-beacon) 0 10px, var(--color-slate-950) 10px 20px);
+}
+
+/* Numbers that change in place shouldn't shift the layout. */
+.tabular {
+  font-variant-numeric: tabular-nums;
 }
