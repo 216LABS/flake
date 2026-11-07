@@ -166,7 +166,8 @@ export function StormBoard({ stormId, initial, layers }: { stormId: string; init
               data-testid="run-column"
               data-run={r.id}
               onDragOver={(e) => e.preventDefault()}
-              onDrop={() => {
+              onDrop={(e) => {
+                e.preventDefault();
                 if (dragging) void move(dragging, r.id);
                 setDragging(null);
               }}
@@ -184,7 +185,7 @@ export function StormBoard({ stormId, initial, layers }: { stormId: string; init
               </header>
               <ul className="space-y-2">
                 {r.stops.map((s: any) => (
-                  <li key={s.id} draggable={!closed && s.status !== 'onsite' && s.status !== 'done'} onDragStart={() => setDragging(s.id)} onDragEnd={() => setDragging(null)} data-testid="stop-card" data-status={s.status} className={cn('rounded-md border bg-white p-2 text-sm', s.late && 'border-red-500 bg-red-50')}>
+                  <li key={s.id} draggable={!closed && s.status !== 'onsite' && s.status !== 'done'} onDragStart={(e) => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragging(s.id); }} onDragEnd={() => setDragging(null)} data-testid="stop-card" data-status={s.status} className={cn('rounded-md border bg-white p-2 text-sm', s.late && 'border-red-500 bg-red-50')}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="font-medium">{s.seq}. {s.label}</div>
                       <Badge tone={STATUS_TONE[s.status]}>{s.status}</Badge>

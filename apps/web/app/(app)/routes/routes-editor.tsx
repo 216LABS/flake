@@ -45,7 +45,7 @@ export function RoutesEditor({ routes, sites, crew }: { routes: R[]; sites: { id
             </Select>
             <ol className="mt-3 space-y-1">
               {r.site_ids.map((id, i) => (
-                <li key={id} draggable onDragStart={() => setDrag({ route: r.id, index: i })} onDragOver={(e) => e.preventDefault()} onDrop={() => { if (drag?.route === r.id) moveTo(r, drag.index, i); setDrag(null); }} className="flex items-center gap-1 rounded-sm border bg-slate-50 px-2 py-1 text-sm">
+                <li key={id} draggable onDragStart={(e) => { e.dataTransfer.setData('text/plain', id); setDrag({ route: r.id, index: i }); }} onDragOver={(e) => e.preventDefault()} onDrop={() => { if (drag?.route === r.id) moveTo(r, drag.index, i); setDrag(null); }} className="flex items-center gap-1 rounded-sm border bg-slate-50 px-2 py-1 text-sm">
                   <span className="flex-1">{i + 1}. {label(id)}</span>
                   <Button size="sm" variant="ghost" aria-label={`Move ${label(id)} up`} disabled={i === 0} onClick={() => moveTo(r, i, i - 1)}>Up</Button>
                   <Button size="sm" variant="ghost" aria-label={`Remove ${label(id)}`} onClick={() => update({ ...r, site_ids: r.site_ids.filter((x) => x !== id) })}>Remove</Button>

@@ -189,7 +189,7 @@ test('a stop can be dragged between columns on the board', async ({ browser, bas
   const river = runs.find((r) => r.name === 'Rocky River')!;
   await page.goto(`/storms/${id}`);
   const stop = west.stops[0]!;
-  await page.getByTestId('stop-card').filter({ hasText: stop.label }).dragTo(page.locator(`[data-run="${river.id}"]`));
+  await page.getByTestId('stop-card').filter({ hasText: stop.label }).dragTo(page.locator(`[data-run="${river.id}"]`), { sourcePosition: { x: 60, y: 10 }, targetPosition: { x: 100, y: 20 } });
   await expect(page.locator(`[data-run="${river.id}"]`).getByText(stop.label)).toBeVisible();
   await expect.poll(async () => (await sql`select storm_run_id from run_stop where id = ${stop.id}`)[0]!.storm_run_id).toBe(river.id);
   await desktop.close();
