@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@flake/ui';
-import { CloudSnow, FileCheck2, LayoutDashboard, Receipt, Route, Settings, Users, Wrench } from 'lucide-react';
+import { ClipboardList, CloudSnow, FileCheck2, LayoutDashboard, Receipt, Route, Settings, Users, Wrench } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -12,6 +12,7 @@ const NAV = [
   ['/routes', 'Routes', Route],
   ['/billing', 'Billing', Receipt],
   ['/proof', 'Proof', FileCheck2],
+  ['/reports', 'Reports', ClipboardList],
   ['/settings', 'Settings', Settings],
 ] as const;
 

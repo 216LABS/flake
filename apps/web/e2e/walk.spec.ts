@@ -126,7 +126,7 @@ test('walk every office screen and use its main control', async ({ page }) => {
 
 test('no office page scrolls sideways on a phone', async ({ page }) => {
   await login(page);
-  for (const path of ['/dashboard', '/storms', '/customers', '/customers/new', '/routes', '/billing', '/proof', '/settings?tab=crew', '/settings?tab=system']) {
+  for (const path of ['/dashboard', '/storms', '/customers', '/customers/new', '/routes', '/billing', '/proof', '/reports', '/settings?tab=crew', '/settings?tab=system']) {
     await page.goto(path);
     await page.waitForLoadState('networkidle');
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

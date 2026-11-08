@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-const APP_PREFIXES = ['/dashboard', '/alerts', '/storms', '/customers', '/sites', '/routes', '/billing', '/proof', '/settings', '/onboarding'];
+const APP_PREFIXES = ['/dashboard', '/alerts', '/storms', '/customers', '/sites', '/routes', '/billing', '/proof', '/reports', '/settings', '/onboarding'];
 
 /** Refreshes the Supabase session cookie, sends signed-out office visits to login, and hides /dev in production. */
 export async function proxy(request: NextRequest) {
