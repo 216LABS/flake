@@ -22,9 +22,9 @@ const PASSWORD = 'flake-demo-only'; // Local-only demo login. /api/dev/login ret
 
 async function ensureUser(email: string): Promise<string> {
   const admin = adminClient().auth.admin;
-  const list = await admin.listUsers({ perPage: 1000 });
-  const existing = list.data.users.find((u) => u.email === email);
-  if (existing) return existing.id;
+  // Look up by email directly: test runs add thousands of users, more than one page of listUsers.
+  const found = (await serviceDb().execute(sql`select id from auth.users where lower(email) = lower(${email}) limit 1`)) as unknown as { id: string }[];
+  if (found[0]) return found[0].id;
   const { data, error } = await admin.createUser({ email, password: PASSWORD, email_confirm: true });
   if (error) throw new Error(`Could not create ${email}: ${error.message}`);
   return data.user.id;

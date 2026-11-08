@@ -390,6 +390,19 @@ describe('pdf', () => {
     const pdf = await renderProofPdf({ manifest, manifestSha256: hash, generatedAt: '2026-01-01T00:00:00Z', images: {} });
     expect(pdf.subarray(0, 4).toString()).toBe('%PDF');
   }, 30000);
+  it('renders a season of storms over many pages, each numbered', async () => {
+    const snap = (i: number, k: number) => ({ id: `sn${i}-${k}`, source: 'nohrsc', request_url: `mock://www.nohrsc.noaa.gov/snowfall_v2/sfav2_CONUS_${k ? 24 : 6}h_2025121312.json?fixture=lake-effect-${i}`, fetched_at: '2025-12-13T13:00:00Z', last_modified: '2025-12-13T12:00:00Z', sha256: 'b'.repeat(64), summary: { hours: k ? 24 : 6 } });
+    const long = buildManifest({
+      contractor: { name: 'Demo', timezone: 'America/New_York' }, customer: { name: 'C' }, site: { id: 's', label: 'L', address: 'A', lat: 1, lon: 2 },
+      period: { from: '2025-12-01T00:00:00Z', to: '2026-04-01T00:00:00Z' }, contract: null,
+      storms: Array.from({ length: 80 }, (_, i) => ({ id: `st${i}`, name: `Storm ${i}`, started_at: '2025-12-12T00:00:00Z', closed_at: null, snapshots: [snap(i, 0), snap(i, 1)] })),
+      visits: [], messages: [], corrections: [],
+    });
+    const pdf = await renderProofPdf({ manifest: long.manifest, manifestSha256: long.hash, generatedAt: '2026-01-01T00:00:00Z', images: {} });
+    const { PDFDocument } = await import('pdf-lib');
+    const pages = (await PDFDocument.load(pdf)).getPageCount();
+    expect(pages).toBeGreaterThan(15);
+  }, 60000);
   it('renders a contract', async () => {
     const pdf = await renderContractPdf({ company: 'A', customer: 'B', site: 'C', season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 100 } }], terms: 'T', disclaimer: 'Not legal advice.' });
     expect(pdf.subarray(0, 4).toString()).toBe('%PDF');

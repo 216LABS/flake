@@ -178,3 +178,22 @@ test('the phone keeps the original image bytes through upload', async ({ page })
   const want = createHash('sha256').update(file.buffer).digest('hex');
   await expect.poll(async () => (await sql`select p.sha256 from visit_photo p join visit v on v.id = p.visit_id where v.storm_id = ${stormId}`)[0]?.sha256, { timeout: 30000 }).toBe(want);
 });
+
+test('a full-size phone photo over the host body limit goes straight to storage and still lands once, intact', async ({ page }) => {
+  await login(page);
+  const { id: stormId, runs } = await startStorm(page.request, `Big photo ${Date.now()}`, ['Rocky River']);
+  await page.goto(runs[0]!.link);
+  await page.getByTestId('arrive').click();
+  // Random noise does not compress, so this is the size of a real 12 MP+ phone photo.
+  const { randomBytes } = await import('node:crypto');
+  const buffer = await sharp(randomBytes(2400 * 1800 * 3), { raw: { width: 2400, height: 1800, channels: 3 } }).jpeg({ quality: 92 }).toBuffer();
+  expect(buffer.length).toBeGreaterThan(3.5 * 1024 * 1024);
+  const used: string[] = [];
+  page.on('request', (r) => { if (/\/photos(\/sign|\/finish)?$/.test(new URL(r.url()).pathname)) used.push(new URL(r.url()).pathname.split('/').pop()!); });
+  await page.getByTestId('before-photo').setInputFiles({ name: 'big.jpg', mimeType: 'image/jpeg', buffer });
+  const want = createHash('sha256').update(buffer).digest('hex');
+  await expect.poll(async () => (await sql`select p.sha256 from visit_photo p join visit v on v.id = p.visit_id where v.storm_id = ${stormId}`).map((r) => r.sha256), { timeout: 60000 }).toEqual([want]);
+  expect(used).toContain('sign');
+  expect(used).toContain('finish');
+  expect(used).not.toContain('photos');
+});

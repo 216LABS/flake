@@ -3,6 +3,7 @@
 import { Document, Image, Page, StyleSheet, Text, View, renderToBuffer } from '@react-pdf/renderer';
 import type { ProofManifest } from '@flake/core/proof';
 import { fmtLocal } from '@flake/core/time';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import type { ReactElement } from 'react';
 
 const s = StyleSheet.create({
@@ -55,9 +56,20 @@ function servicesText(services: unknown): string[] {
   });
 }
 
-const Footer = ({ text }: { text: string }) => (
-  <Text style={s.footer} fixed render={({ pageNumber, totalPages }) => `${text} - page ${pageNumber} of ${totalPages}`} />
-);
+/**
+ * react-pdf's page-number callbacks print nothing on short documents and crash once one runs past about 15
+ * pages (a season of storms), so the page line is stamped onto the finished file instead.
+ */
+async function stampPages(pdf: Buffer, text: string): Promise<Buffer> {
+  const doc = await PDFDocument.load(pdf, { updateMetadata: false });
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const pages = doc.getPages();
+  pages.forEach((page, i) => {
+    const line = `${text} - page ${i + 1} of ${pages.length}`;
+    page.drawText(line, { x: (page.getWidth() - font.widthOfTextAtSize(line, 7)) / 2, y: 20, size: 7, font, color: rgb(0.42, 0.45, 0.5) });
+  });
+  return Buffer.from(await doc.save());
+}
 
 export interface ProofPdfInput {
   manifest: ProofManifest;
@@ -71,7 +83,6 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
   const tz = m.contractor.timezone;
   const when = (iso: string | null | undefined) => (iso ? fmtLocal(iso, tz, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' }) : unavailable);
   const synthetic = m.storms.some((st) => st.snapshots.some((sn) => sn.summary.synthetic === true));
-  const footer = `Flake proof packet ${manifestSha256.slice(0, 16)}`;
   const visitsWithPhotos = m.visits.filter((v) => v.photos.length);
   return (
     <Document title={`Proof packet - ${m.site.label}`} author="Flake by 216LABS">
@@ -130,7 +141,6 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
             val(v.depth_in, '"'),
           ])}
         />
-        <Footer text={footer} />
       </Page>
 
       {visitsWithPhotos.length ? (
@@ -150,7 +160,6 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
               </View>
             </View>
           ))}
-          <Footer text={footer} />
         </Page>
       ) : null}
 
@@ -166,14 +175,14 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
         <Text style={s.h2}>Appendix: data sources</Text>
         <Text>{m.caveat}</Text>
         <Text style={{ marginTop: 4 }}>Visit records are append-only. Device time comes from the driver's phone and received time from the server. Corrections are separate rows that reference the original and never overwrite it. The manifest hash covers every value in this packet except the generated-at time, so regenerating from the same records yields the same hash.</Text>
-        <Footer text={footer} />
       </Page>
     </Document>
   );
 }
 
 export async function renderProofPdf(input: ProofPdfInput): Promise<Buffer> {
-  return renderToBuffer(<ProofDoc {...input} /> as ReactElement<any>);
+  const pdf = await renderToBuffer(<ProofDoc {...input} /> as ReactElement<any>);
+  return stampPages(pdf, `Flake proof packet ${input.manifestSha256.slice(0, 16)}`);
 }
 
 export interface ContractPdfInput {
