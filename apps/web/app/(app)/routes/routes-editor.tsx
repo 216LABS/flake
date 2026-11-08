@@ -3,6 +3,7 @@
 import { Button, Card, Input, Label, Select } from '@flake/ui';
 import { useState } from 'react';
 import { api } from '@/lib/client';
+import { SuggestOrder } from './suggest-order';
 
 interface R { id: string; name: string; default_crew_id: string | null; site_ids: string[] }
 
@@ -52,6 +53,7 @@ export function RoutesEditor({ routes, sites, crew }: { routes: R[]; sites: { id
                 </li>
               ))}
             </ol>
+            <SuggestOrder routeId={r.id} siteIds={r.site_ids} label={label} onAccept={(ids) => update({ ...r, site_ids: ids })} />
             <Select aria-label={`Add a site to ${r.name}`} className="mt-2" value="" onChange={(e) => e.target.value && update({ ...r, site_ids: [...r.site_ids, e.target.value] })}>
               <option value="">Add a site...</option>
               {sites.filter((s) => !r.site_ids.includes(s.id)).map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
