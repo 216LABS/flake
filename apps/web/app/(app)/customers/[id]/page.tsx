@@ -1,6 +1,7 @@
 import { contract, customer, desc, eq, inArray, site } from '@flake/db';
 import { Badge, buttonVariants, Card, PageHeader, Table, Td, Th } from '@flake/ui';
 import { CustomerEditor } from './customer-editor';
+import { PortalCard } from './portal-card';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { asUser, requirePage } from '@/lib/auth';
@@ -32,6 +33,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
           <p className="text-sm">Payment on file: {c.stripe_payment_method_id ? 'yes' : 'no'}</p>
           <p className="mt-2 text-xs text-slate-500">Customers choose texts and add a payment method themselves on their quote page.</p>
         </Card>
+        {ctx.role === 'viewer' ? null : <PortalCard customerId={c.id} email={c.email} />}
       </div>
       <h2 className="mb-2 mt-6 font-semibold">Sites</h2>
       <Table>

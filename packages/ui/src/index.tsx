@@ -85,8 +85,9 @@ export function Table({ className, ...props }: HTMLAttributes<HTMLTableElement>)
     </div>
   );
 }
-export const Th = (props: HTMLAttributes<HTMLTableCellElement>) => <th className="font-display border-b border-slate-200 bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600" {...props} />;
-export const Td = (props: HTMLAttributes<HTMLTableCellElement> & { colSpan?: number }) => <td className="border-b border-slate-100 px-3 py-2.5 align-top" {...props} />;
+/** A class passed in adds to the cell's own look instead of replacing it. */
+export const Th = ({ className, ...props }: HTMLAttributes<HTMLTableCellElement>) => <th className={cn('font-display border-b border-slate-200 bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600', className)} {...props} />;
+export const Td = ({ className, ...props }: HTMLAttributes<HTMLTableCellElement> & { colSpan?: number }) => <td className={cn('border-b border-slate-100 px-3 py-2.5 align-top', className)} {...props} />;
 
 /** The mark: a snowflake, with six arms and an amber V near each tip. */
 export function Wordmark({ className, inverse = true }: { className?: string; inverse?: boolean }) {

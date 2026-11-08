@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { login, startStorm } from './helpers';
+import { login, sql, startStorm } from './helpers';
 
 const axeSource = readFileSync(createRequire(import.meta.url).resolve('axe-core/axe.min.js'), 'utf8');
 
@@ -37,4 +37,15 @@ test('office and driver screens have no serious accessibility problems', async (
   await driver.getByTestId('arrive').click();
   await expect(driver.getByTestId('onsite')).toBeVisible();
   await expectAccessible(driver, 'driver on site');
+});
+
+test('a customer records page has no serious accessibility problems', async ({ page, browser, baseURL }) => {
+  await login(page);
+  const [c] = await sql`select c.id from customer c join tenant t on t.id = c.tenant_id where t.slug = 'lakeshore-demo' limit 1`;
+  const { url } = await (await page.request.get(`/api/customers/${c!.id}/portal`)).json();
+  const guest = await browser.newContext({ baseURL });
+  const g = await guest.newPage();
+  await g.goto(url);
+  await expectAccessible(g, 'records page');
+  await guest.close();
 });

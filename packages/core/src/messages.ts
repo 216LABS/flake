@@ -1,5 +1,5 @@
 /** SMS templates from ADDENDUM_SMS section 4: company name first, two segments at most. */
-export type TemplateKey = 'team_invite' | 'receipt' | 'crew_link' | 'call_out' | 'on_the_way' | 'done' | 'late' | 'invoice' | 'help' | 'route_changed' | 'quote' | 'owner_alert' | 'crew_invite';
+export type TemplateKey = 'team_invite' | 'receipt' | 'crew_link' | 'call_out' | 'on_the_way' | 'done' | 'late' | 'invoice' | 'help' | 'route_changed' | 'quote' | 'owner_alert' | 'crew_invite' | 'portal';
 
 const TEMPLATES: Record<TemplateKey, string> = {
   crew_link: '{company}: Storm on. Route {route} - {n} stops. Start: {link} Reply STOP to opt out.',
@@ -15,6 +15,7 @@ const TEMPLATES: Record<TemplateKey, string> = {
   owner_alert: 'Flake: {headline} Review: {link}',
   crew_invite: '{company} invited you to get route links. Join: {link}',
   team_invite: '{company} added you to Flake. Sign in with this email: {link}',
+  portal: '{company}: Your snow service records, with every visit and photo: {link}',
 };
 
 export function renderTemplate(key: TemplateKey, vars: Record<string, string | number>): string {
