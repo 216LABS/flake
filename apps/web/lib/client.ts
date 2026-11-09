@@ -6,8 +6,13 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   });
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!res.ok) throw Object.assign(new Error(data?.error ?? `Request failed (${res.status})`), { status: res.status, code: data?.code });
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    // The host's own error pages (a timeout, a deploy in progress) are plain text or HTML, not our JSON.
+  }
+  if (!res.ok) throw Object.assign(new Error(data?.error ?? (res.status >= 500 ? 'The server did not answer in time. Check your connection and try again.' : `Request failed (${res.status})`)), { status: res.status, code: data?.code });
   return data as T;
 }
 

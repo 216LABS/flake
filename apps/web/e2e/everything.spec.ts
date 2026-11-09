@@ -49,11 +49,18 @@ test('storm board: every dialog can be backed out of, and closing with someone o
   const arrive = await page.request.post(`/api/d/${token}/actions`, { data: { actions: [{ client_uuid: randomUUID(), at: new Date().toISOString(), kind: 'arrive', run_stop_id: run.stops[run.stops.length - 1]!.id, visit_client_uuid: randomUUID(), gps: null }] } });
   expect(arrive.ok(), open.id).toBe(true);
   await page.reload();
+  // Backing out of the first question leaves the storm on.
+  page.once('dialog', (d) => void d.dismiss());
+  await page.getByTestId('close-storm').click();
+  await expect(page.getByTestId('close-storm')).toBeVisible();
+  await expect(page.getByTestId('close-force')).toHaveCount(0);
+  page.once('dialog', (d) => void d.accept());
   await page.getByTestId('close-storm').click();
   await expect(page.getByTestId('close-force')).toBeVisible();
   await page.getByRole('button', { name: 'Keep open' }).click();
   await expect(page.getByTestId('close-force')).toHaveCount(0);
   await expect(page.getByTestId('close-storm')).toBeVisible();
+  page.once('dialog', (d) => void d.accept());
   await page.getByTestId('close-storm').click();
   await page.getByTestId('close-force').click();
   await page.waitForURL(`**/billing?storm=${id}`);

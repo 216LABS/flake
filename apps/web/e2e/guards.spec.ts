@@ -32,3 +32,84 @@ test('taking someone off the crew kills their route link at once', async ({ page
   expect((await page.request.patch(`/api/runs/${run.id}`, { data: { crew_id: c!.id } })).status()).toBe(422);
   await page.request.post(`/api/storms/${stormId}/close`, { data: { force: true } });
 });
+
+test('the owner can fix the company name, time zone and office contact', async ({ page }) => {
+  await login(page);
+  const [t] = await sql`select name, timezone, contact_email, contact_phone from tenant where slug = 'lakeshore-demo'`;
+  expect((await page.request.patch('/api/settings', { data: { timezone: 'Mars/Olympus' } })).status()).toBe(422);
+  await page.goto('/settings');
+  await expect(page.getByTestId('co-name')).toHaveValue(t!.name);
+  await page.getByTestId('co-tz').selectOption('America/Chicago');
+  await page.getByTestId('co-phone').fill('216-555-0144');
+  await page.getByTestId('co-save').click();
+  await expect(page.getByTestId('co-msg')).toHaveText('Saved');
+  const [after] = await sql`select timezone, contact_phone from tenant where slug = 'lakeshore-demo'`;
+  expect(after).toMatchObject({ timezone: 'America/Chicago', contact_phone: '+12165550144' });
+  await sql`update tenant set timezone = ${t!.timezone}, contact_phone = ${t!.contact_phone} where slug = 'lakeshore-demo'`;
+});
+
+test('removing a driver asks first, and a returning driver can be brought back', async ({ page }) => {
+  await login(page);
+  const [t] = await sql`select id from tenant where slug = 'lakeshore-demo'`;
+  const name = `Seasonal ${Date.now()}`;
+  const [c] = await sql`insert into crew_member (tenant_id, name, kind, email) values (${t!.id}, ${name}, 'employee', ${`seasonal-${Date.now()}@flake.test`}) returning id`;
+  await page.goto('/settings?tab=crew');
+  const row = page.getByTestId('crew-row').filter({ hasText: name });
+  page.once('dialog', (d) => void d.dismiss());
+  await row.getByTestId('crew-remove').click();
+  await expect(row.getByTestId('crew-remove')).toBeVisible();
+  page.once('dialog', (d) => void d.accept());
+  await row.getByTestId('crew-remove').click();
+  await expect(row.getByTestId('crew-restore')).toBeVisible();
+  // Their old invite link is dead while they're off the crew.
+  expect((await page.request.post(`/api/crew/${c!.id}/invite`)).status()).toBe(404);
+  await row.getByTestId('crew-restore').click();
+  await expect(row.getByTestId('crew-reinvite')).toBeVisible();
+  const invite = await page.request.post(`/api/crew/${c!.id}/invite`);
+  expect(invite.ok()).toBe(true);
+  const path = new URL((await invite.json()).invite_url).pathname;
+  await page.goto(path);
+  await expect(page.getByTestId('join')).toBeVisible();
+});
+
+test('billing for a storm still going says to close it first', async ({ page }) => {
+  await login(page);
+  const { id } = await startStorm(page.request, 'Still snowing', ['Rocky River']);
+  expect((await page.request.post(`/api/storms/${id}/billing/draft`)).status()).toBe(409);
+  await page.goto(`/billing?storm=${id}`);
+  await expect(page.getByText('This storm is still going')).toBeVisible();
+  await expect(page.getByTestId('generate')).toHaveCount(0);
+  await page.request.post(`/api/storms/${id}/close`, { data: { force: true } });
+});
+
+test('adding a lot to a route keeps a change someone else just made to it', async ({ page }) => {
+  await login(page);
+  const [t] = await sql`select id from tenant where slug = 'lakeshore-demo'`;
+  const [r] = await sql`insert into route (tenant_id, name) values (${t!.id}, ${`Shared ${Date.now()}`}) returning id`;
+  const sites = await sql`select id from site where tenant_id = ${t!.id} and active order by created_at limit 3`;
+  const add = (site_id: string, position?: number) => page.request.post(`/api/routes/${r!.id}/stops`, { data: { site_id, ...(position ? { position } : {}) } });
+  expect((await add(sites[0]!.id)).ok()).toBe(true);
+  // Two people, two screens, one route: both lots stay on it, the second one first as asked.
+  expect((await add(sites[1]!.id)).ok()).toBe(true);
+  expect((await add(sites[2]!.id, 1)).ok()).toBe(true);
+  expect((await add(sites[2]!.id)).ok()).toBe(true);
+  const stops = await sql`select site_id from route_stop where route_id = ${r!.id} order by seq`;
+  expect(stops.map((s) => s.site_id)).toEqual([sites[2]!.id, sites[0]!.id, sites[1]!.id]);
+  await sql`delete from route where id = ${r!.id}`;
+});
+
+test('another pass and closing a storm both ask first', async ({ page }) => {
+  await login(page);
+  const { id } = await startStorm(page.request, `Ask first ${Date.now()}`, ['Rocky River']);
+  await page.goto(`/storms/${id}`);
+  page.once('dialog', (d) => void d.dismiss());
+  await page.getByTestId('another-pass').click();
+  page.once('dialog', (d) => void d.dismiss());
+  await page.getByTestId('close-storm').click();
+  await expect(page.getByTestId('close-storm')).toBeVisible();
+  const runs = await sql`select max(pass)::int as pass from storm_run where storm_id = ${id}`;
+  expect(runs[0]!.pass).toBe(1);
+  const [s] = await sql`select status from storm where id = ${id}`;
+  expect(s!.status).toBe('active');
+  await page.request.post(`/api/storms/${id}/close`, { data: { force: true } });
+});

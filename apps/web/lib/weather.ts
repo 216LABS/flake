@@ -206,7 +206,10 @@ export async function evaluateTenant(tenantId: string): Promise<string[]> {
     if (open) {
       const merged = { ...p, site_ids: [...new Set([...(open.site_ids ?? []), ...p.site_ids])], sites: [...((open.detail.sites ?? []) as SiteDecision[]), ...p.sites] };
       const grown = alertHeadline(merged as typeof p, area, t.timezone);
-      await db.update(trigger_alert).set({ site_ids: merged.site_ids, snapshot_ids: [...new Set([...(open.snapshot_ids ?? []), ...snapshotIds])], detail: { ...open.detail, headline: grown, sites: merged.sites, evaluated_at: now.toISOString(), evaluated_at_local: fmtLocal(now, t.timezone) } }).where(eq(trigger_alert.id, open.id));
+      // Someone may have dispatched or dismissed it since it was read. Then it stays as they left it.
+      const grew = await db.update(trigger_alert).set({ site_ids: merged.site_ids, snapshot_ids: [...new Set([...(open.snapshot_ids ?? []), ...snapshotIds])], detail: { ...open.detail, headline: grown, sites: merged.sites, evaluated_at: now.toISOString(), evaluated_at_local: fmtLocal(now, t.timezone) } })
+        .where(and(eq(trigger_alert.id, open.id), eq(trigger_alert.status, 'open'))).returning({ id: trigger_alert.id });
+      if (!grew.length) continue;
       created.push(open.id);
       await notifyOwners(t, open.id, grown, merged.site_ids.length);
       continue;

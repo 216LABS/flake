@@ -87,6 +87,8 @@ export async function visitsMissedByDrafts(ctx: Ctx, stormId: string) {
 export async function generateDrafts(ctx: Ctx, stormId: string) {
   return withUser(ctx.userId, async (tx) => {
     const { s, stops, sites, contracts, billingVisits, corrections } = await loadBillingInput(tx, stormId);
+    // Mid-storm, more visits and passes are still coming. Charging now would bill half the work and miss the rest.
+    if (s.status === 'active') throw new HttpError(409, 'Close the storm first. Invoices are drafted once the work is done.', 'storm_active');
     const [t] = await tx.select().from(tenant).where(eq(tenant.id, ctx.tenantId));
     const depth = await depthContext(ctx.tenantId, s, sites);
     const newestBySite = new Map<string, typeof contract.$inferSelect>();
@@ -171,7 +173,7 @@ export async function applyFlagFix(ctx: Ctx, fix: z.infer<typeof flagFix>) {
 /** Moving draft to approved is the idempotency gate: a double click finds nothing left to approve. */
 export async function approveDrafts(ctx: Ctx, draftIds: string[]) {
   const approved = await withUser(ctx.userId, (tx) =>
-    tx.update(invoice_draft).set({ status: 'approved' }).where(and(inArray(invoice_draft.id, draftIds), eq(invoice_draft.status, 'draft'))).returning({ id: invoice_draft.id, storm_id: invoice_draft.storm_id }),
+    tx.update(invoice_draft).set({ status: 'approved' }).where(and(inArray(invoice_draft.id, draftIds), eq(invoice_draft.status, 'draft'), sql`${invoice_draft.storm_id} in (select id from storm where status <> 'active')`)).returning({ id: invoice_draft.id, storm_id: invoice_draft.storm_id }),
   );
   for (const d of approved) await enqueue('billing.charge', { tenantId: ctx.tenantId, draftId: d.id }, { dedupeKey: `charge:${d.id}` });
   const stormIds = [...new Set(approved.map((d) => d.storm_id))];

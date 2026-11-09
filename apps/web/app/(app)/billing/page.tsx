@@ -41,7 +41,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
           {missed.some((m) => !m.in_review) ? 'Any invoice already approved stays as it was, so bill those separately.' : ''}
         </p>
       ) : null}
-      <BillingReview stormId={data.selected.id} initial={rows} canExport={tenantHasPro(ctx.tenant)} showFees={owner} />
+      <BillingReview stormId={data.selected.id} initial={rows} canExport={tenantHasPro(ctx.tenant)} showFees={owner} stormActive={data.selected.status === 'active' && !rows.length} />
     </>
   );
 }

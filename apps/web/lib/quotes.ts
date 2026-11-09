@@ -18,6 +18,7 @@ export async function createQuote(ctx: Ctx, input: z.infer<typeof quoteCreate>) 
   const row = await withUser(ctx.userId, async (tx) => {
     const [st] = await tx.select().from(site).where(eq(site.id, input.site_id));
     if (!st) throw new HttpError(404, 'Site not found');
+    if (!st.active) throw new HttpError(409, 'This site was retired. Add it again to quote it.', 'site_retired');
     const [c] = await tx.insert(contract).values({
       tenant_id: ctx.tenantId, site_id: input.site_id, season: input.season, services: input.services, salt_pricing: input.salt_pricing ?? null,
       terms_md: input.terms_md ?? DEFAULT_TERMS, status: input.send ? 'sent' : 'draft', quote_token_hash: hashToken(token),

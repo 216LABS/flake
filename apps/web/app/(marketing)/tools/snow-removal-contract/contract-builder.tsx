@@ -17,7 +17,7 @@ export function ContractBuilder() {
     setError(null);
     try {
       const res = await fetch('/api/tools/contract', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...f, services, email: f.email || null }) });
-      if (!res.ok) throw new Error(((await res.json()) as { error?: string }).error ?? 'Could not build the PDF');
+      if (!res.ok) throw new Error(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? 'Could not build the PDF');
       const url = URL.createObjectURL(await res.blob());
       const a = document.createElement('a');
       a.href = url;

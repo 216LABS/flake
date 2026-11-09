@@ -10,7 +10,7 @@ export const POST = route<{ params: Promise<{ token: string }> }>(async (req, { 
   const { consent, email } = await parseJson(req, crewJoin);
   const db = serviceDb();
   const [c] = await db.select().from(crew_member).where(eq(crew_member.invite_token_hash, hashToken(token)));
-  if (!c) throw new HttpError(404, 'This invite is no longer active');
+  if (!c || !c.active) throw new HttpError(404, 'This invite is no longer active');
   const now = new Date().toISOString();
   // A driver can add or fix their own email here, so route links reach them before texting is approved.
   await db.update(crew_member).set({ joined_at: now, ...(email ? { email: email.toLowerCase() } : {}) }).where(and(eq(crew_member.id, c.id), eq(crew_member.tenant_id, c.tenant_id)));

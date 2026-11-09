@@ -75,6 +75,7 @@ async function saltVisits(tx: Tx, since: string | null, until?: string): Promise
       coalesce((select c.new_value from visit_correction c where c.visit_id = v.id and c.field = 'salt' order by c.created_at desc limit 1), v.salt) as salt
     from visit v join storm s on s.id = v.storm_id
     where (v.salt is not null or exists (select 1 from visit_correction c where c.visit_id = v.id and c.field = 'salt'))
+      and not exists (select 1 from visit_correction c where c.visit_id = v.id and c.field = 'voided' and c.new_value = 'true'::jsonb)
       and (${since}::timestamptz is null or v.arrived_device_at > ${since}::timestamptz)
       and (${until ?? null}::timestamptz is null or v.arrived_device_at < ${until ?? null}::timestamptz)
     order by v.arrived_device_at`)).map((v) => ({ ...v, at: new Date(v.at).toISOString() }));

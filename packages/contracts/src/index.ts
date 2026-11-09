@@ -5,6 +5,16 @@ const latN = z.number().min(-90).max(90);
 const lonN = z.number().min(-180).max(180);
 
 const cents = z.number().int().min(0).max(100_000_00);
+/** Every date on the company's pages is shown in this zone, so a made-up one would break them all. */
+const isTimeZone = (tz: string) => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+};
+const timeZone = z.string().max(64).refine(isTimeZone, 'Choose a time zone from the list');
 const uuid = z.uuid();
 /** People type 216-555-0123. US numbers normalize to E.164; anything else must already be in it. */
 const e164 = z.preprocess((v) => {
@@ -22,7 +32,7 @@ export const pricingSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('per_push'), amount_cents: cents }),
   z.object({
     type: z.literal('per_inch_tier'),
-    tiers: z.array(z.object({ up_to_in: z.number().positive().nullable(), amount_cents: cents })).min(1),
+    tiers: z.array(z.object({ up_to_in: z.number().positive().max(120).nullable(), amount_cents: cents })).min(1).max(20),
   }),
   z.object({ type: z.literal('per_event'), amount_cents: cents }),
   z.object({ type: z.literal('seasonal'), total_cents: cents, installments: z.number().int().min(1).max(12) }),
@@ -61,14 +71,14 @@ const siteBase = z.object({
   address: z.string().trim().min(1).max(300),
   lat: z.number().min(-90).max(90),
   lon: z.number().min(-180).max(180),
-  parcel_id: emptyToNull(z.string()),
-  parcel_county: emptyToNull(z.string()),
+  parcel_id: emptyToNull(z.string().max(100)),
+  parcel_county: emptyToNull(z.string().max(100)),
   area_estimate_sqft: z.number().min(0).max(50_000_000).nullable().optional(),
   area_confirmed_sqft: z.number().min(0).max(50_000_000).nullable().optional(),
   polygons: geoJsonGeom.nullable().optional(),
   walk_lf: z.number().min(0).max(1_000_000).nullable().optional(),
   priority: z.number().int().min(1).max(5),
-  service_window: z.object({ open_by: z.string().regex(/^\d\d:\d\d$/).optional(), days: z.array(z.string()).optional() }).nullable().optional(),
+  service_window: z.object({ open_by: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), days: z.array(z.string().max(10)).max(7).optional() }).nullable().optional(),
   notes: emptyToNull(z.string().max(4000)),
 });
 export const siteCreate = siteBase.extend({ priority: z.number().int().min(1).max(5).default(3) });
@@ -85,18 +95,20 @@ export const pinCreate = z.object({
 export const contractCreate = z.object({
   site_id: uuid,
   season: z.string().min(1).max(40),
-  services: z.array(contractServiceSchema).min(1),
+  services: z.array(contractServiceSchema).min(1).max(10),
   salt_pricing: saltPricingSchema.nullable().optional(),
   terms_md: emptyToNull(z.string().max(20000)),
 });
 export const contractUpdate = contractCreate.partial().extend({ status: z.enum(['draft', 'void']).optional() });
 
+/** The same lot twice on one route would send the truck there twice. */
+const siteList = z.array(uuid).max(500).transform((ids) => [...new Set(ids)]);
 const routeBase = z.object({
   name: z.string().trim().min(1).max(120),
   default_crew_id: uuid.nullable().optional(),
-  site_ids: z.array(uuid),
+  site_ids: siteList,
 });
-export const routeCreate = routeBase.extend({ site_ids: z.array(uuid).default([]) });
+export const routeCreate = routeBase.extend({ site_ids: siteList.default([]) });
 export const routeUpdate = routeBase.partial();
 
 export const subRateCard = z.object({
@@ -123,7 +135,7 @@ export const quoteCreate = contractCreate.extend({ send: z.boolean().default(tru
 
 export const stormCreate = z.object({
   name: z.string().trim().min(1).max(120),
-  routeIds: z.array(uuid).default([]),
+  routeIds: z.array(uuid).max(200).transform((ids) => [...new Set(ids)]).default([]),
   crewAssignments: z.record(z.string(), uuid).default({}),
   triggerAlertId: uuid.optional(),
   /** Only snapshot these sites from the routes; used when starting from an alert. */
@@ -249,11 +261,11 @@ export const toolPrice = z.object({
   email: emptyToNull(email),
 });
 
-export const onboardTenant = z.object({ name: z.string().trim().min(2).max(120), timezone: z.string().max(64).default('America/New_York') });
+export const onboardTenant = z.object({ name: z.string().trim().min(2).max(120), timezone: timeZone.catch('America/New_York').default('America/New_York') });
 
 export const tenantSettings = z.object({
   name: z.string().trim().min(2).max(120).optional(),
-  timezone: z.string().max(64).optional(),
+  timezone: timeZone.optional(),
   business_legal_name: emptyToNull(z.string().max(200)),
   ein: z.string().regex(/^\d{2}-?\d{7}$/).optional(),
   address: z.object({ line1: z.string().max(200), city: z.string().max(100), state: z.string().max(40), zip: z.string().max(20) }).nullable().optional(),
@@ -270,7 +282,7 @@ export const rateCardSchema = z.object({
   walks_per_lf_cents: z.number().min(0).max(1000),
   salt_bag_cents: cents,
   season_pushes: z.number().int().min(1).max(100),
-  tiers: z.array(z.object({ up_to_in: z.number().positive().nullable(), multiplier: z.number().min(0.1).max(10) })).min(1),
+  tiers: z.array(z.object({ up_to_in: z.number().positive().max(120).nullable(), multiplier: z.number().min(0.1).max(10) })).min(1).max(20),
 });
 
 /** The server POSTs to this URL, so only the real browser push services are allowed. Anything else would be SSRF. */

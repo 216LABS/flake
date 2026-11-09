@@ -227,6 +227,7 @@ test('a real day', async ({ browser }) => {
   await shot(page, 'messages-sent', true);
   await page.goto(`/storms/${stormId}`);
   if (await page.getByTestId('resolve-problem').count()) await page.getByTestId('resolve-problem').first().click();
+  page.once('dialog', (d) => void d.accept());
   await page.getByTestId('close-storm').click();
   await page.waitForURL(/\/billing/);
   await page.goto(`/billing?storm=${stormId}`);

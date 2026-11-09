@@ -112,12 +112,24 @@ export async function queueMissedReports() {
   return { checked: rows.length };
 }
 
+/**
+ * Two runs of the same check at once would both see "no alert yet" and both make one, so everyone hears twice. The
+ * second waits its turn through a retry instead of holding a database connection while it waits.
+ */
+async function oneAtATime(key: string, fn: () => Promise<unknown>) {
+  await serviceDb().transaction(async (tx) => {
+    const [got] = (await tx.execute(sql`select pg_try_advisory_xact_lock(hashtext(${key})) as ok`)) as unknown as { ok: boolean }[];
+    if (!got?.ok) throw Object.assign(new Error(`${key} is already running`), { retryAfterSeconds: 20, notAFailure: true });
+    await fn();
+  });
+}
+
 export const JOB_HANDLERS: Record<string, JobHandler> = {
   'salt.supplier_email': async (p) => { const { emailSupplier } = await import('./salt-orders'); await emailSupplier(p as Parameters<typeof emailSupplier>[0]); },
   'weather.fetch_cell': (p) => fetchCell(p.office, p.x, p.y),
-  'weather.fetch_alerts': (p) => fetchAlerts(p.tenantId),
+  'weather.fetch_alerts': (p) => oneAtATime(`alerts:${p.tenantId}`, () => fetchAlerts(p.tenantId)),
   'weather.nohrsc': async (p) => void (await fetchNohrsc(p.hours ?? 24)),
-  'trigger.evaluate': async (p) => void (await evaluateTenant(p.tenantId)),
+  'trigger.evaluate': (p) => oneAtATime(`alerts:${p.tenantId}`, () => evaluateTenant(p.tenantId)),
   'storm.publish_links': (p) => sendRunLink(p.tenantId, p.runId),
   'storm.late_check': async () => void (await lateCheck()),
   'notify.customer': (p) => notifyCustomer(p as Parameters<typeof notifyCustomer>[0]),

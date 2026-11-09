@@ -1,4 +1,4 @@
-import { and, asc, contract, crew_member, customer, desc, driver_position, eq, inArray, message_log, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, withUser, sms_consent, type Tx } from '@flake/db';
+import { and, asc, contract, crew_member, customer, desc, driver_position, eq, inArray, message_log, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, visitNotVoided, withUser, sms_consent, type Tx } from '@flake/db';
 import { isLate, localHm } from '@flake/core/time';
 import { replanFrom } from '@flake/core/routing';
 import type { ContractService } from '@flake/core/pricing';
@@ -64,7 +64,15 @@ export async function createStorm(ctx: Ctx, input: z.infer<typeof stormCreate>) 
   });
 }
 
-/** A second pass over the same routes. Visits on it count as re-plows. */
+/** Changing who drives what, or messaging about it, only makes sense while the storm is on. */
+async function requireActiveStorm(tx: Tx, where: { stormId?: string; runId?: string }) {
+  const [s] = where.stormId
+    ? await tx.select({ status: storm.status }).from(storm).where(eq(storm.id, where.stormId))
+    : await tx.select({ status: storm.status }).from(storm_run).innerJoin(storm, eq(storm.id, storm_run.storm_id)).where(eq(storm_run.id, where.runId!));
+  if (!s) throw new HttpError(404, where.stormId ? 'Storm not found' : 'Run not found');
+  if (s.status !== 'active') throw new HttpError(409, 'This storm is closed.', 'closed');
+}
+
 /** A route's usual driver may have left since it was set: a run gets nobody rather than someone who's gone. */
 async function activeCrew(tx: Tx, crewId: string | null | undefined): Promise<string | null> {
   if (!crewId) return null;
@@ -72,6 +80,7 @@ async function activeCrew(tx: Tx, crewId: string | null | undefined): Promise<st
   return c?.id ?? null;
 }
 
+/** A second pass over the same routes. Visits on it count as re-plows. */
 export async function addPass(ctx: Ctx, stormId: string) {
   return withUser(ctx.userId, async (tx) => {
     // Locked, so a double tap on Plow again makes one new pass, not two copies of it.
@@ -102,6 +111,7 @@ export async function addPass(ctx: Ctx, stormId: string) {
 
 export async function publishStorm(ctx: Ctx, stormId: string) {
   const runs = await withUser(ctx.userId, async (tx) => {
+    await requireActiveStorm(tx, { stormId });
     const list = await tx.select().from(storm_run).where(eq(storm_run.storm_id, stormId));
     if (!list.length) throw new HttpError(404, 'This storm has no runs');
     const unassigned = list.filter((r) => !r.crew_id);
@@ -145,6 +155,7 @@ export async function patchRunStop(ctx: Ctx, stopId: string, patch: z.infer<type
     // Locked so a driver arriving on site can't slip in between this check and the move.
     const [stop] = await tx.select().from(run_stop).where(eq(run_stop.id, stopId)).for('update');
     if (!stop) throw new HttpError(404, 'Stop not found');
+    await requireActiveStorm(tx, { runId: stop.storm_run_id });
     const set: Partial<typeof run_stop.$inferInsert> = { updated_at: new Date().toISOString() };
     let moved: { from: string; to: string } | null = null;
     if (patch.storm_run_id && patch.storm_run_id !== stop.storm_run_id) {
@@ -204,6 +215,7 @@ export async function reorderRun(ctx: Ctx, runId: string, stopIds: string[]) {
   return withUser(ctx.userId, async (tx) => {
     const stops = await tx.select({ id: run_stop.id }).from(run_stop).where(eq(run_stop.storm_run_id, runId));
     if (!stops.length) throw new HttpError(404, 'Run not found');
+    await requireActiveStorm(tx, { runId });
     const have = new Set(stops.map((x) => x.id));
     if (stopIds.length !== have.size || !stopIds.every((id) => have.has(id))) throw new HttpError(409, 'The route changed while you were editing. Reload and try again.', 'stale');
     const now = new Date().toISOString();
@@ -247,8 +259,11 @@ export async function notifyRouteChanged(tenantId: string, runId: string, key: s
 /** Each site gets one message per template per storm, however many times the button is pressed. */
 export async function notifyCustomers(ctx: Ctx, stormId: string, input: z.infer<typeof stormNotify>) {
   await withUser(ctx.userId, async (tx) => {
-    const [s] = await tx.select({ id: storm.id }).from(storm).where(eq(storm.id, stormId));
-    if (!s) throw new HttpError(404, 'Storm not found');
+    await requireActiveStorm(tx, { stormId });
+    // Only lots on this storm: a stray id must not tell some other customer their plow is late.
+    const onStorm = await tx.select({ site_id: run_stop.site_id }).from(run_stop).innerJoin(storm_run, eq(storm_run.id, run_stop.storm_run_id)).where(and(eq(storm_run.storm_id, stormId), inArray(run_stop.site_id, input.siteIds)));
+    const ok = new Set(onStorm.map((x) => x.site_id));
+    if (input.siteIds.some((id) => !ok.has(id))) throw new HttpError(422, 'Some of those sites are not on this storm.', 'not_on_storm');
   });
   for (const siteId of input.siteIds) {
     await enqueue('notify.customer', { tenantId: ctx.tenantId, siteId, stormId, template: input.template, time: input.time ?? 'soon', key: `${input.template}:${stormId}:${siteId}` }, { dedupeKey: `notify:${input.template}:${stormId}:${siteId}` });
@@ -304,6 +319,7 @@ export async function revokeRunLink(ctx: Ctx, runId: string) {
 /** Assigns or swaps a run's driver. After publish, the new driver gets the link right away. */
 export async function assignRunDriver(ctx: Ctx, runId: string, crewId: string) {
   const run = await withUser(ctx.userId, async (tx) => {
+    await requireActiveStorm(tx, { runId });
     if (!(await activeCrew(tx, crewId))) throw new HttpError(422, 'That person is no longer on your crew.', 'inactive_crew');
     const [r] = await tx.update(storm_run).set({ crew_id: crewId }).where(eq(storm_run.id, runId)).returning();
     if (!r) throw new HttpError(404, 'Run not found');
@@ -325,7 +341,7 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     const runs = await tx.select({ run: storm_run, crew: crew_member, route }).from(storm_run).leftJoin(crew_member, eq(crew_member.id, storm_run.crew_id)).leftJoin(route, eq(route.id, storm_run.route_id)).where(eq(storm_run.storm_id, stormId)).orderBy(asc(storm_run.pass), asc(storm_run.created_at));
     const runIds = runs.map((r) => r.run.id);
     const stops = runIds.length ? await tx.select({ stop: run_stop, site, customer }).from(run_stop).innerJoin(site, eq(site.id, run_stop.site_id)).innerJoin(customer, eq(customer.id, site.customer_id)).where(inArray(run_stop.storm_run_id, runIds)).orderBy(asc(run_stop.seq)) : [];
-    const visits = await tx.select().from(visit).where(eq(visit.storm_id, stormId));
+    const visits = await tx.select().from(visit).where(and(eq(visit.storm_id, stormId), visitNotVoided));
     const problems = runIds.length ? await tx.select().from(problem_report).where(and(inArray(problem_report.storm_run_id, runIds), sql`resolved_at is null`)).orderBy(desc(problem_report.created_at)) : [];
     const positions = runIds.length ? await tx.selectDistinctOn([driver_position.storm_run_id]).from(driver_position).where(inArray(driver_position.storm_run_id, runIds)).orderBy(driver_position.storm_run_id, desc(driver_position.device_at)) : [];
     const pins = stops.length ? await tx.select().from(site_pin).where(inArray(site_pin.site_id, stops.map((x) => x.site.id))) : [];
@@ -348,7 +364,7 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     }
     const pos = data.positions.find((p) => p.storm_run_id === run.id);
     return {
-      id: run.id, pass: run.pass, name: r?.name ?? 'Run', crew: crew ? { id: crew.id, name: crew.name, kind: crew.kind, callout_reply: crew.callout_reply, reachable: Boolean(crew.email) || textable.has(crew.phone_e164) } : null,
+      id: run.id, pass: run.pass, name: r?.name ?? 'Run', crew: crew ? { id: crew.id, name: crew.name, kind: crew.kind, callout_reply: crew.callout_reply_at && Date.parse(crew.callout_reply_at) >= started ? crew.callout_reply : null, reachable: Boolean(crew.email) || textable.has(crew.phone_e164) } : null,
       published_at: run.published_at, started_at: run.started_at, link: run.published_at && ctx.role !== 'viewer' ? runLink(run) : null, stops,
       position: pos ? { lat: pos.lat, lon: pos.lon, at: pos.device_at } : null,
     };

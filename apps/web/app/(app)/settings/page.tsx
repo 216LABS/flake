@@ -14,21 +14,21 @@ import { getProviders, getSetting } from '@/lib/providers';
 import { listTeam } from '@/lib/team';
 import { PushPanel } from './push-panel';
 import { canSeeUsage, deploymentUsage } from '@/lib/usage';
-import { BusinessForm, CrewPanel, PaymentsPanel, PlanPanel, RateCardForm, RetryJob, SmsSubmit, TeamPanel } from './panels';
+import { BusinessForm, CompanyForm, CrewPanel, PaymentsPanel, PlanPanel, RateCardForm, RetryJob, SmsSubmit, TeamPanel } from './panels';
 
 export const metadata = { title: 'Settings' };
 
-const TABS = [['rate', 'Rate card'], ['crew', 'Crew'], ['team', 'Team'], ['alerts', 'Alerts'], ['payments', 'Payments'], ['sms', 'Text messages'], ['plan', 'Plan'], ['data', 'Data export'], ['system', 'System']] as const;
+const TABS = [['company', 'Company'], ['rate', 'Rate card'], ['crew', 'Crew'], ['team', 'Team'], ['alerts', 'Alerts'], ['payments', 'Payments'], ['sms', 'Text messages'], ['plan', 'Plan'], ['data', 'Data export'], ['system', 'System']] as const;
 const EXPORTS = ['customer', 'site', 'contract', 'crew_member', 'route', 'storm', 'storm_run', 'run_stop', 'visit', 'visit_photo', 'visit_correction', 'problem_report', 'invoice_draft', 'message_log', 'proof_packet'];
 
 /** Everything in these saves through owner-only routes. */
-const OWNER_TABS = ['rate', 'team', 'payments', 'sms', 'plan', 'data'];
+const OWNER_TABS = ['company', 'rate', 'team', 'payments', 'sms', 'plan', 'data'];
 
 export default async function Settings({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const { tab: asked } = await searchParams;
   const ctx = await requirePage();
   const owner = ctx.role === 'owner';
-  const tab = asked ?? (owner ? 'rate' : 'crew');
+  const tab = asked ?? (owner ? 'company' : 'crew');
   const allowed = owner || !OWNER_TABS.includes(tab);
   const readOnly = ctx.role === 'viewer';
   const t = ctx.tenant;
@@ -41,6 +41,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         {TABS.filter(([k]) => owner || !OWNER_TABS.includes(k)).map(([k, label]) => <Link key={k} href={`/settings?tab=${k}`} data-testid={`tab-${k}`} aria-current={tab === k ? 'page' : undefined} className={`-mb-px border-b-2 px-3 py-2 font-medium ${tab === k ? 'border-beacon text-slate-950' : 'border-transparent text-slate-600 hover:text-slate-950'}`}>{label}</Link>)}
       </nav>
       {!allowed ? <Card className="max-w-2xl" data-testid="owner-only"><p className="text-sm">Only an owner can open this.</p></Card> : null}
+      {allowed && tab === 'company' ? <CompanyForm tenant={JSON.parse(JSON.stringify(t))} /> : null}
       {allowed && tab === 'rate' ? <RateCardForm card={(Object.keys(t.rate_card as object).length ? t.rate_card : DEFAULT_RATE_CARD) as RateCard} /> : null}
       {tab === 'crew' ? <fieldset disabled={readOnly} className="contents"><CrewPanel canText={canTextFrom(ctx.tenant)} crew={JSON.parse(JSON.stringify(await asUser(ctx, (tx) => tx.select().from(crew_member).orderBy(crew_member.name))))} /></fieldset> : null}
       {tab === 'alerts' ? <PushPanel publicKey={(await getProviders()).push.publicKey} /> : null}

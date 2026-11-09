@@ -7,6 +7,9 @@ export * as schema from './schema';
 export * from './schema';
 export { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, notInArray, or, sql } from 'drizzle-orm';
 
+/** A visit the driver took back with Undo. It stays on record but never counts as work done. */
+export const visitNotVoided = sql`not exists (select 1 from visit_correction vc where vc.visit_id = ${schema.visit.id} and vc.field = 'voided' and vc.new_value = 'true'::jsonb)`;
+
 export type Db = PostgresJsDatabase<typeof schema>;
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 export type Conn = Db | Tx;

@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { and, app_setting, contract, customer, desc, eq, gte, inArray, invoice_draft, proof_packet, serviceDb, site, sql, storm, tenant, visit, visit_correction, visit_photo } from '@flake/db';
+import { and, app_setting, contract, customer, desc, eq, gte, inArray, invoice_draft, proof_packet, serviceDb, site, sql, storm, tenant, visit, visit_correction, visit_photo, visitNotVoided } from '@flake/db';
 import { required } from './env';
 import { isUuid } from './http';
 
@@ -62,7 +62,7 @@ export async function portalData(customerId: string, tenantId: string) {
   const contracts = siteIds.length ? await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), inArray(contract.site_id, siteIds), inArray(contract.status, ['sent', 'accepted']))).orderBy(desc(contract.created_at)) : [];
   const visits = siteIds.length
     ? await db.select({ v: visit, stormName: storm.name }).from(visit).innerJoin(storm, eq(storm.id, visit.storm_id))
-      .where(and(eq(visit.tenant_id, tenantId), inArray(visit.site_id, siteIds), gte(visit.arrived_device_at, since))).orderBy(desc(visit.arrived_device_at)).limit(400)
+      .where(and(eq(visit.tenant_id, tenantId), inArray(visit.site_id, siteIds), gte(visit.arrived_device_at, since), visitNotVoided)).orderBy(desc(visit.arrived_device_at)).limit(400)
     : [];
   const visitIds = visits.map((x) => x.v.id);
   const photos = visitIds.length ? await db.select({ id: visit_photo.id, visit_id: visit_photo.visit_id, phase: visit_photo.phase }).from(visit_photo).where(and(eq(visit_photo.tenant_id, tenantId), inArray(visit_photo.visit_id, visitIds))) : [];
@@ -95,7 +95,7 @@ export async function portalPhotoPath(customerId: string, tenantId: string, phot
   if (!isUuid(photoId)) return null;
   const [p] = await serviceDb().select({ path: visit_photo.storage_path, phase: visit_photo.phase }).from(visit_photo)
     .innerJoin(visit, eq(visit.id, visit_photo.visit_id)).innerJoin(site, eq(site.id, visit.site_id))
-    .where(and(eq(visit_photo.id, photoId), eq(visit_photo.tenant_id, tenantId), eq(site.customer_id, customerId)));
+    .where(and(eq(visit_photo.id, photoId), eq(visit_photo.tenant_id, tenantId), eq(site.customer_id, customerId), visitNotVoided));
   return p && p.phase !== 'issue' ? p.path : null;
 }
 

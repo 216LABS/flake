@@ -143,11 +143,8 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
         if (file) await uploadPinPhoto(pin.id, file).catch(() => setPhotoNote('A pin photo did not upload. You can add it from the site page.'));
       }
       if (routeId && !saved.current.routed) {
-        const r = routes.find((x) => x.id === routeId)!;
-        const at = position ? Math.max(0, Number(position) - 1) : r.site_ids.length;
-        const ids = [...r.site_ids];
-        ids.splice(at, 0, siteId);
-        await api(`/api/routes/${routeId}`, { method: 'PATCH', body: { site_ids: ids } });
+        // Just this stop, so someone editing the same route at the same time keeps their change.
+        await api(`/api/routes/${routeId}/stops`, { body: { site_id: siteId, ...(position ? { position: Math.max(1, Number(position)) } : {}) } });
         saved.current.routed = true;
       }
       const services = [

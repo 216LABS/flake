@@ -79,9 +79,14 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
                   <div className="flex gap-0.5">
                     <Button size="sm" variant="ghost" className="px-2" data-testid="crew-edit" onClick={() => load(c)}>Edit</Button>
                     <Button size="sm" variant="ghost" className="px-2" data-testid="crew-reinvite" onClick={() => run(async () => { setInvite((await api(`/api/crew/${c.id}/invite`, { method: 'POST' })).invite_url); }, 'New link ready')}>New link</Button>
-                    <Button size="sm" variant="ghost" className="px-2" onClick={() => run(async () => { await api(`/api/crew/${c.id}`, { method: 'DELETE' }); router.refresh(); }, 'Removed')}>Remove</Button>
+                    <Button size="sm" variant="ghost" className="px-2" data-testid="crew-remove" onClick={() => {
+                      if (!confirm(`Take ${c.name} off the crew? Any route link they have open stops working now.`)) return;
+                      void run(async () => { await api(`/api/crew/${c.id}`, { method: 'DELETE' }); router.refresh(); }, 'Removed');
+                    }}>Remove</Button>
                   </div>
-                ) : null}</Td>
+                ) : (
+                  <Button size="sm" variant="ghost" className="px-2" data-testid="crew-restore" onClick={() => run(async () => { await api(`/api/crew/${c.id}`, { method: 'PATCH', body: { active: true } }); router.refresh(); }, 'Back on the crew. Send them a new link.')}>Bring back</Button>
+                )}</Td>
               </tr>
             ))}
           </tbody>
@@ -144,7 +149,10 @@ export function TeamPanel({ members, me }: { members: { user_id: string; email: 
               <tr key={m.user_id} data-testid="team-row">
                 <Td>{m.email}</Td>
                 <Td><Badge>{m.role}</Badge></Td>
-                <Td>{m.user_id !== me ? <Button size="sm" variant="ghost" data-testid="team-remove" onClick={() => run(async () => { await api(`/api/settings/team/${m.user_id}`, { method: 'DELETE' }); router.refresh(); }, 'Removed')}>Remove</Button> : <span className="text-xs text-slate-500">You</span>}</Td>
+                <Td>{m.user_id !== me ? <Button size="sm" variant="ghost" data-testid="team-remove" onClick={() => {
+                  if (!confirm(`Remove ${m.email ?? 'this person'} from your company? They lose access right away.`)) return;
+                  void run(async () => { await api(`/api/settings/team/${m.user_id}`, { method: 'DELETE' }); router.refresh(); }, 'Removed');
+                }}>Remove</Button> : <span className="text-xs text-slate-500">You</span>}</Td>
               </tr>
             ))}
           </tbody>
@@ -189,6 +197,44 @@ export function SmsSubmit({ status }: { status: string }) {
       <Button className="mt-2" variant="accent" disabled={busy || status === 'pending' || !/^\d{2}-?\d{7}$/.test(ein)} data-testid="sms-submit" onClick={() => run(async () => { await api('/api/settings', { body: { ein } }); router.refresh(); }, 'Submitted')}>{status === 'rejected' ? 'Resubmit' : 'Submit for verification'}</Button>
       {msg ? <p className="mt-2 text-sm text-slate-600" data-testid="sms-msg">{msg}</p> : null}
     </div>
+  );
+}
+
+const ZONES = [
+  ['America/New_York', 'Eastern'], ['America/Detroit', 'Eastern (Michigan)'], ['America/Indiana/Indianapolis', 'Eastern (Indiana)'], ['America/Chicago', 'Central'],
+  ['America/Denver', 'Mountain'], ['America/Boise', 'Mountain (Idaho)'], ['America/Phoenix', 'Arizona'], ['America/Los_Angeles', 'Pacific'], ['America/Anchorage', 'Alaska'],
+  ['America/Toronto', 'Eastern (Canada)'], ['America/Winnipeg', 'Central (Canada)'], ['America/Edmonton', 'Mountain (Canada)'], ['America/Vancouver', 'Pacific (Canada)'], ['America/Halifax', 'Atlantic (Canada)'],
+] as const;
+
+/** What customers and crew see: the name on every message, the office's reply address and phone, and the clock. */
+export function CompanyForm({ tenant }: { tenant: any }) {
+  const router = useRouter();
+  const [f, setF] = useState({ name: tenant.name ?? '', timezone: tenant.timezone ?? 'America/New_York', contact_email: tenant.contact_email ?? '', contact_phone: tenant.contact_phone ?? '' });
+  const { msg, busy, run } = useAction();
+  const zones = ZONES.some(([z]) => z === f.timezone) ? ZONES : [[f.timezone, f.timezone] as const, ...ZONES];
+  return (
+    <Card className="max-w-2xl">
+      <h2 className="font-semibold">Company</h2>
+      <p className="mt-1 text-sm text-slate-600">Your name goes on every quote, invoice and text. Customer replies go to the email, and drivers see the phone on their route.</p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <div><Label htmlFor="co-name">Company name</Label><Input id="co-name" data-testid="co-name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
+        <div>
+          <Label htmlFor="co-tz">Time zone</Label>
+          <Select id="co-tz" data-testid="co-tz" value={f.timezone} onChange={(e) => setF({ ...f, timezone: e.target.value })}>
+            {zones.map(([z, label]) => <option key={z} value={z}>{label}</option>)}
+          </Select>
+        </div>
+        <div><Label htmlFor="co-email">Office email</Label><Input id="co-email" type="email" data-testid="co-email" value={f.contact_email} onChange={(e) => setF({ ...f, contact_email: e.target.value })} /></div>
+        <div><Label htmlFor="co-phone">Office phone</Label><Input id="co-phone" type="tel" data-testid="co-phone" value={f.contact_phone} onChange={(e) => setF({ ...f, contact_phone: e.target.value })} /></div>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <Button disabled={busy || f.name.trim().length < 2} data-testid="co-save" onClick={() => run(async () => {
+          await api('/api/settings', { method: 'PATCH', body: { name: f.name, timezone: f.timezone, contact_email: f.contact_email, contact_phone: f.contact_phone } });
+          router.refresh();
+        })}>Save</Button>
+        {msg ? <span className="text-sm text-slate-600" role="status" data-testid="co-msg">{msg}</span> : null}
+      </div>
+    </Card>
   );
 }
 

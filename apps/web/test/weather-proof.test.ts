@@ -158,6 +158,8 @@ describe('weather and triggers', () => {
     // The driver saw 1", the 24 h analysis says 3.2": both fall in the first tier here, so raise the tier edge to tell them apart.
     await serviceDb().execute(sql`update contract set services = '[{"service":"plow","pricing":{"type":"per_inch_tier","tiers":[{"up_to_in":2,"amount_cents":10000},{"up_to_in":null,"amount_cents":20000}]}}]'::jsonb where site_id = ${x.siteIds[1]!}`);
     await processActions(rs, stopActions(s!.id, new Date('2025-12-13T12:00:00Z'), { depth: 1 }).actions as never);
+    // Closed directly, so the storm keeps exactly the two files set above. Invoices are drafted only after close.
+    await serviceDb().update(storm).set({ status: 'closed', closed_at: '2025-12-13T14:00:00Z' }).where(eq(storm.id, out.storm.id));
     const drafts = await generateDrafts(ctxOf(x), out.storm.id);
     expect(drafts.find((d) => d.draft.customer_id === x.customerIds[1])!.draft.subtotal_cents).toBe(20000);
   });

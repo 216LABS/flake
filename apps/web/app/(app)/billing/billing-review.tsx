@@ -23,7 +23,7 @@ export interface DraftRow {
 
 const TONE: Record<string, 'gray' | 'blue' | 'green' | 'amber' | 'red'> = { draft: 'gray', approved: 'blue', charged: 'green', sent: 'blue', paid: 'green', failed: 'red', void: 'gray' };
 
-export function BillingReview({ stormId, initial, canExport, showFees }: { stormId: string; initial: DraftRow[]; canExport: boolean; showFees: boolean }) {
+export function BillingReview({ stormId, initial, canExport, showFees, stormActive = false }: { stormId: string; initial: DraftRow[]; canExport: boolean; showFees: boolean; stormActive?: boolean }) {
   const router = useRouter();
   const [rows, setRows] = useState(initial);
   const [flaggedOnly, setFlaggedOnly] = useState(true);
@@ -57,6 +57,8 @@ export function BillingReview({ stormId, initial, canExport, showFees }: { storm
   const shown = flaggedOnly ? rows.filter((r) => r.status !== 'draft' || !isDraftClean(r.flags)) : rows;
   const total = rows.reduce((s, r) => s + r.subtotal_cents, 0);
   const fees = rows.reduce((s, r) => s + r.fee_cents, 0);
+
+  if (stormActive) return <EmptyState title="This storm is still going" body="Close it on the storm board when the work is done. Its invoices are drafted here after that, so nothing still coming in is missed." />;
 
   return (
     <div>

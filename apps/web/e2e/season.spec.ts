@@ -207,6 +207,7 @@ test('a new plow company runs a whole storm from sign up to paid invoices', asyn
   await expect.poll(async () => (await sql`select count(*)::int as n from message_log m where m.tenant_id = ${tenantId} and m.template = 'done'`)[0]!.n, { timeout: 60000 }).toBe(4);
 
   // 9. Close the storm and bill it.
+  page.once('dialog', (d) => void d.accept());
   await page.getByTestId('close-storm').click();
   // Closing takes the office straight to billing for this storm.
   await page.waitForURL(/\/billing/);

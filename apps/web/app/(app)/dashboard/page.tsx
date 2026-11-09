@@ -1,4 +1,4 @@
-import { and, contract, customer, desc, eq, message_log, run_stop, serviceDb, sql, storm, storm_run, trigger_alert } from '@flake/db';
+import { and, contract, crew_member, customer, desc, eq, message_log, route_stop, run_stop, serviceDb, sql, storm, storm_run, trigger_alert } from '@flake/db';
 import { fmtLocal } from '@flake/core/time';
 import { Badge, buttonVariants, Card, EmptyState, Eyebrow, PageHeader, Progress, Stat, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
@@ -16,6 +16,8 @@ export default async function Dashboard() {
     active: await tx.select().from(storm).where(eq(storm.status, 'active')).orderBy(desc(storm.started_at)),
     recent: await tx.select().from(storm).where(sql`${storm.status} <> 'active'`).orderBy(desc(storm.started_at)).limit(5),
     customers: await tx.select({ n: sql<number>`count(*)::int` }).from(customer),
+    crew: await tx.select({ n: sql<number>`count(*)::int` }).from(crew_member).where(eq(crew_member.active, true)),
+    routed: await tx.select({ n: sql<number>`count(*)::int` }).from(route_stop),
     progress: await tx.select({ storm_id: storm_run.storm_id, finished: sql<number>`count(*) filter (where ${run_stop.status} in ('done', 'skipped'))::int`, total: sql<number>`count(*)::int` }).from(run_stop).innerJoin(storm_run, eq(storm_run.id, run_stop.storm_run_id)).innerJoin(storm, eq(storm.id, storm_run.storm_id)).where(eq(storm.status, 'active')).groupBy(storm_run.storm_id),
     pendingQuotes: await tx.select({ n: sql<number>`count(*)::int` }).from(contract).where(and(eq(contract.status, 'sent'))),
   }));
@@ -26,6 +28,8 @@ export default async function Dashboard() {
   const canEdit = ctx.role !== 'viewer';
   const setup = ctx.role !== 'owner' ? [] : [
     { done: data.customers[0]!.n > 0, text: 'Add your first customer', href: '/customers/new' },
+    { done: data.crew[0]!.n > 0, text: 'Invite your drivers', href: '/settings?tab=crew' },
+    { done: data.routed[0]!.n > 0, text: 'Put your lots on a route, so a storm knows where to go', href: '/routes' },
     { done: Boolean(ctx.tenant.stripe_charges_enabled), text: 'Connect Stripe to get paid', href: '/settings?tab=payments' },
     { done: ctx.tenant.sms_status === 'approved', text: 'Verify your text number. Links go by email and QR until then.', href: '/settings?tab=sms' },
   ];

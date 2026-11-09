@@ -115,10 +115,15 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
         <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap lg:ml-auto lg:w-auto">
           {editable && unpublished ? <Button variant="accent" data-testid="publish" onClick={() => act(() => api(`/api/storms/${stormId}/publish`, { method: 'POST' }))}>Publish</Button> : null}
           {editable ? <Button variant="outline" data-testid="notify-open" onClick={() => setNotify(true)}>Notify customers</Button> : null}
-          {editable ? <Button variant="outline" onClick={() => act(() => api(`/api/storms/${stormId}/pass`, { method: 'POST' }))}>Another pass</Button> : null}
+          {editable ? <Button variant="outline" data-testid="another-pass" onClick={() => {
+            if (!confirm('Start another pass? Every driver gets a new route link for it.')) return;
+            act(() => api(`/api/storms/${stormId}/pass`, { method: 'POST' }));
+          }}>Another pass</Button> : null}
           <Button variant="outline" onClick={() => setShowMap(!showMap)}>{showMap ? 'Hide map' : 'Map'}</Button>
           {editable ? (
             <Button variant="danger" data-testid="close-storm" onClick={async () => {
+              // A closed storm can't be changed or reopened, so a stray tap mid-storm must not do it.
+              if (!confirm('Close this storm? Routes and stops can no longer change. Drivers can still send finished work for 24 hours.')) return;
               setError(null);
               try {
                 await api(`/api/storms/${stormId}/close`, { body: { force: false } });
