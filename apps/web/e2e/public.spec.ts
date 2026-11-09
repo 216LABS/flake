@@ -53,3 +53,11 @@ test('security headers are present', async ({ request }) => {
   expect(res.headers()['content-security-policy']).toContain("default-src 'self'");
   expect(res.headers()['x-content-type-options']).toBe('nosniff');
 });
+
+test('health check answers for an uptime monitor and says nothing private', async ({ request }) => {
+  const ok = await request.get('/api/health');
+  expect(ok.status()).toBe(200);
+  const body = await ok.json();
+  expect(body).toMatchObject({ ok: true, database: 'up' });
+  expect(JSON.stringify(body)).not.toMatch(/tenant|email|token/i);
+});

@@ -130,3 +130,14 @@ describe('i18n', () => {
     expect(t('en', 'of_done', { d: 6, n: 14 })).toBe('6 of 14 done');
   });
 });
+
+describe('sub pay checks', () => {
+  const v = (arrived: string, departed: string) => ({ id: 'v', site_label: 'Lot', arrived_at: arrived, departed_at: departed, salt: null });
+  it('flags a long hourly visit and a Done before Arrive, and leaves normal visits alone', () => {
+    const hourly = { hourly_cents: 6000 };
+    expect(subPayStatement(hourly, [v('2026-01-20T03:00:00Z', '2026-01-20T12:00:00Z')]).lines[0]!.check).toContain('9 h on one lot');
+    expect(subPayStatement({ per_visit_cents: 4000 }, [v('2026-01-20T05:00:00Z', '2026-01-20T04:00:00Z')]).lines[0]!.check).toContain('earlier than Arrive');
+    expect(subPayStatement(hourly, [v('2026-01-20T03:00:00Z', '2026-01-20T04:00:00Z')]).lines[0]!.check).toBeUndefined();
+    expect(subPayStatement({ per_visit_cents: 4000 }, [v('2026-01-20T03:00:00Z', '2026-01-20T12:00:00Z')]).lines[0]!.check).toBeUndefined();
+  });
+});

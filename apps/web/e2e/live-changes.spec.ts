@@ -46,3 +46,36 @@ test('the next stop shows how far away it is, and Arrive stays on the first scre
   expect(box!.y + box!.height).toBeLessThanOrEqual(844);
   await ctx.close();
 });
+
+test('the office reorders a truck mid-storm: one stop up, then a re-plan from where the truck is', async ({ page }) => {
+  await login(page);
+  const { id, runs } = await startStorm(page.request, `Reorder ${Date.now()}`, ['West Lakewood']);
+  const run = runs[0]!;
+  const order = async () => (await sql`select id from run_stop where storm_run_id = ${run.id} order by seq`).map((r) => r.id as string);
+  const before = await order();
+  await page.goto(`/storms/${id}`);
+  const column = page.getByTestId('run-column').first();
+
+  // Up: the third stop moves to second.
+  const third = column.getByTestId('stop-card').filter({ hasText: /^3\. / });
+  await third.getByTestId('move-up').click();
+  await expect.poll(order).toEqual([before[0], before[2], before[1], ...before.slice(3)]);
+
+  // Re-plan: the truck reports from the far end of its route, so the far lots should come first.
+  const sites = await sql`select rs.id, s.lat, s.lon from run_stop rs join site s on s.id = rs.site_id where rs.storm_run_id = ${run.id} order by s.lon desc`;
+  const [tenant] = await sql`select tenant_id from storm_run where id = ${run.id}`;
+  await sql`insert into driver_position (tenant_id, storm_run_id, lat, lon, acc_m, device_at) values (${tenant!.tenant_id}, ${run.id}, ${sites[0]!.lat}, ${sites[0]!.lon}, 10, now())`;
+  await page.reload();
+  await column.getByTestId('replan').click();
+  const panel = column.getByTestId('replan-panel');
+  await expect(panel.getByTestId('replan-summary')).toContainText("truck's last position");
+  await panel.getByTestId('replan-accept').click();
+  await expect(panel).toHaveCount(0);
+  await expect.poll(async () => (await order())[0]).not.toBe(before[0]);
+  expect(new Set(await order())).toEqual(new Set(before));
+
+  // Asking again leaves it alone; a stale list is refused.
+  await column.getByTestId('replan').click();
+  await expect(column.getByTestId('replan-summary')).toContainText('already the shortest');
+  expect((await page.request.post(`/api/runs/${run.id}/order`, { data: { stop_ids: before.slice(1) } })).status()).toBe(409);
+});

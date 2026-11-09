@@ -458,7 +458,10 @@ export function DriverApp({ token }: { token: string }) {
 
       <main className="space-y-4 px-4 pb-8">
         {!next ? (
-          <div className="rounded-lg bg-slate-800 p-8 text-center text-2xl font-bold" data-testid="all-done">{t('all_done')}</div>
+          <div className="rounded-lg bg-slate-800 p-8 text-center text-2xl font-bold" data-testid="all-done">
+            {t('all_done')}
+            {sync !== 'synced' ? <p className="mt-3 text-lg font-medium text-amber-300" data-testid="keep-open">{t('keep_open')}</p> : null}
+          </div>
         ) : next.status === 'onsite' && local.visits[next.id] ? (
           showProblem ? (
             <ProblemPanel t={t} onCancel={() => setShowProblem(false)} onSend={(k, v) => sendProblem(next, k, v)} />

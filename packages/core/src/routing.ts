@@ -15,6 +15,8 @@ export interface RouteSite {
   priority: number;
   open_by?: string | null;
   sqft?: number | null;
+  /** Minutes on site, when known better than the size estimate. 0 for a starting point that isn't a lot. */
+  service_min?: number;
 }
 
 export interface RouteOptions {
@@ -70,7 +72,7 @@ function score(order: RouteSite[], start: number) {
     drive += leg;
     clock += leg;
     const arrive = clock;
-    const service = serviceMinutes(s.sqft);
+    const service = s.service_min ?? serviceMinutes(s.sqft);
     clock += service;
     const due = deadline(s.open_by, start);
     const over = due === null ? 0 : clock - due;
@@ -172,4 +174,15 @@ export function compareRoute(sites: RouteSite[], opts: RouteOptions = {}) {
   if (tiered && score(order, start).cost >= now.cost - 1e-9) order = [...sites];
   const changed = order.some((s, i) => s.id !== sites[i]!.id);
   return { current: now.plan, suggested: score(order, start).plan, changed };
+}
+
+/**
+ * Mid-storm: order a truck's remaining stops starting from where the truck is now. The truck's position is a
+ * starting point with no time on site; tiers and open-by times work as they do for a master route.
+ */
+export function replanFrom(at: { lat: number; lon: number }, remaining: RouteSite[], opts: Omit<RouteOptions, 'keepFirst'> = {}) {
+  const truck: RouteSite = { id: '__truck', lat: at.lat, lon: at.lon, priority: 0, service_min: 0 };
+  const r = compareRoute([truck, ...remaining], { ...opts, keepFirst: true });
+  const drop = (p: RoutePlan): RoutePlan => ({ ...p, stops: p.stops.slice(1) });
+  return { current: drop(r.current), suggested: drop(r.suggested), changed: r.changed };
 }

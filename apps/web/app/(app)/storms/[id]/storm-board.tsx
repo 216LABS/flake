@@ -2,6 +2,7 @@
 
 import { Badge, Button, Card, Input, Select, cn, Progress } from '@flake/ui';
 import { useRouter } from 'next/navigation';
+import { RunPlan } from './run-plan';
 import QRCode from 'qrcode';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/client';
@@ -68,6 +69,14 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
   };
 
   const move = (stopId: string, runId: string) => act(() => api(`/api/run-stops/${stopId}`, { method: 'PATCH', body: { storm_run_id: runId } }));
+  /** One place earlier in its truck's order. The list on screen may sort late stops first, so this goes by seq. */
+  const moveUp = (run: any, stopId: string) => {
+    const ids = [...run.stops].sort((a: any, b: any) => a.seq - b.seq).map((x: any) => x.id as string);
+    const i = ids.indexOf(stopId);
+    if (i < 1) return;
+    [ids[i - 1], ids[i]] = [ids[i]!, ids[i - 1]!];
+    return act(() => api(`/api/runs/${run.id}/order`, { body: { stop_ids: ids } }));
+  };
   const closed = live.storm.status !== 'active';
   const editable = !closed && canEdit;
   const unpublished = live.runs.some((r: any) => !r.published_at);
@@ -206,6 +215,7 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
                 ) : null}
                 {r.link && r.crew && !r.crew.reachable ? <p className="mt-1 text-xs font-medium text-amber-800" data-testid="no-reach">We can&apos;t text or email {r.crew.name}, so they don&apos;t have this route. Show them the QR code.</p> : null}
                 {r.link ? <Button size="sm" variant="ghost" className="-ml-3" data-testid="show-link" onClick={() => showLink(r)}>QR / copy link</Button> : null}
+                {editable && r.stops.length > 1 ? <RunPlan runId={r.id} onDone={() => void load()} /> : null}
               </header>
               <ul className="space-y-2">
                 {r.stops.map((s: any) => (
@@ -223,6 +233,7 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
                           <option value="">Move to...</option>
                           {live.runs.filter((x: any) => x.id !== r.id).map((x: any) => <option key={x.id} value={x.id}>{x.name} ({x.crew?.name ?? 'no driver'})</option>)}
                         </Select>
+                        {Math.min(...r.stops.map((x: any) => x.seq)) < s.seq ? <Button size="sm" variant="ghost" aria-label={`Move ${s.label} earlier`} data-testid="move-up" onClick={() => void moveUp(r, s.id)}>Up</Button> : null}
                         <Button size="sm" variant="ghost" data-testid="skip-toggle" onClick={() => act(() => api(`/api/run-stops/${s.id}`, { method: 'PATCH', body: { status: s.status === 'skipped' ? 'open' : 'skipped' } }))}>{s.status === 'skipped' ? 'Reopen' : 'Skip'}</Button>
                       </div>
                     ) : null}

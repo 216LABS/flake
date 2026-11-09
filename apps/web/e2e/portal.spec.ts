@@ -76,3 +76,36 @@ test('customer records page: visits with photos and salt, private to that custom
   expect((await guest.request.get(`/api/customers/${owner!.customer_id}/portal`)).status()).toBe(401);
   await guest.close();
 });
+
+test('a customer asks for another visit from their records page, and the office hears about it once', async ({ page, browser, baseURL }) => {
+  await login(page);
+  const [c] = await sql`select c.id, c.name, s.id as site_id, s.label from customer c join site s on s.customer_id = c.id join tenant t on t.id = c.tenant_id where t.slug = 'lakeshore-demo' order by c.name limit 1`;
+  const { url } = await (await page.request.get(`/api/customers/${c!.id}/portal`)).json();
+  const guest = await browser.newContext({ baseURL });
+  const g = await guest.newPage();
+  await g.goto(url);
+  const box = g.getByTestId('request-visit');
+  await box.getByTestId('request-note').fill('Drifting by the loading dock');
+  await box.getByTestId('request-send').click();
+  await expect(box.getByTestId('request-sent')).toBeVisible();
+  const sent = async () => (await sql`select count(*)::int as n from message_log where template = 'owner_alert' and idempotency_key like ${`%visit_request:${c!.site_id}:%`} and body like '%loading dock%'`)[0]!.n;
+  await expect.poll(sent, { timeout: 30000 }).toBeGreaterThan(0);
+  // One request alerts every owner and dispatcher plus the office phone; wait until they've all gone out.
+  let first = -1;
+  await expect.poll(async () => {
+    const now = await sent();
+    const steady = now === first;
+    first = now;
+    return steady;
+  }, { intervals: [2500], timeout: 30000 }).toBe(true);
+  // Asking again within the hour doesn't alert the office twice.
+  const token = new URL(url).pathname.split('/').pop()!;
+  expect((await guest.request.post(`/api/c/${token}/request`, { data: { site_id: c!.site_id } })).ok()).toBe(true);
+  await g.waitForTimeout(3000);
+  expect(await sent()).toBe(first);
+  // Another customer's lot, or a forged link, goes nowhere.
+  const [other] = await sql`select s.id from site s where s.customer_id <> ${c!.id} limit 1`;
+  expect((await guest.request.post(`/api/c/${token}/request`, { data: { site_id: other!.id } })).status()).toBe(404);
+  expect((await guest.request.post('/api/c/nonsense/request', { data: { site_id: c!.site_id } })).status()).toBe(404);
+  await guest.close();
+});

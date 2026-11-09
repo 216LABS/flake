@@ -3,6 +3,7 @@ import { Badge, Card, Eyebrow, Stat, Table, Td, Th, Wordmark } from '@flake/ui';
 import { notFound } from 'next/navigation';
 import { money, phone } from '@/lib/client';
 import { portalData, resolvePortal } from '@/lib/portal';
+import { RequestVisit } from './request-visit';
 
 export const metadata = { title: 'Your service records', robots: 'noindex, nofollow' };
 export const dynamic = 'force-dynamic';
@@ -131,6 +132,8 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
             </Table>
           </section>
         ) : null}
+
+        <RequestVisit token={token} company={data.company.name} sites={data.sites.map((x) => ({ id: x.id, label: x.label }))} />
 
         <footer className="border-t border-slate-200 pt-4 text-sm text-slate-600">
           <p>Questions about a visit or a bill? Contact {data.company.name}{data.company.phone ? ` at ${phone(data.company.phone)}` : ''}{data.company.email ? <> or <a className="text-sky-800 underline" href={`mailto:${data.company.email}`}>{data.company.email}</a></> : null}.</p>

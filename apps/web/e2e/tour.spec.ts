@@ -64,6 +64,7 @@ test('a real day', async ({ browser }) => {
     const ctx = await phone(browser);
     const j = await ctx.newPage();
     await j.goto(invite);
+    await j.getByTestId('join-email').fill(`${name.split(' ')[0]!.toLowerCase()}@flake.test`);
     if (name.startsWith('Dana')) await shot(j, 'phone-driver-join');
     await j.getByTestId('crew-consent').check();
     await j.getByTestId('join').click();
@@ -214,6 +215,7 @@ test('a real day', async ({ browser }) => {
     }
   };
   await Promise.all([finish(d, true), finish(l, false)]);
+  for (const p of [d, l]) await expect(p.getByTestId('sync-badge')).toHaveAttribute('data-state', 'synced', { timeout: 60000 });
   await shot(d, 'phone-driver-all-done');
   await dctx.close();
   await lctx.close();

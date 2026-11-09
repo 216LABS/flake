@@ -6,6 +6,7 @@ import { generateDrafts } from '@/lib/billing';
 import { closeStorm, createStorm, publishStorm } from '@/lib/storms';
 import { decryptToken } from '@/lib/tokens';
 import { ctxOf, drain, makeWorld, stopActions, type World } from './helpers';
+import { GET as health } from '@/app/api/health/route';
 
 afterAll(() => closeDb());
 
@@ -57,5 +58,22 @@ describe('things that happen on real storm nights', () => {
     const sent = await serviceDb().select().from(message_log).where(sql`${message_log.tenant_id} = ${w.tenantId} and ${message_log.template} = 'done' and ${message_log.related}->>'site_id' = ${w.siteIds[1]!}`);
     expect(sent).toHaveLength(0);
     expect(await serviceDb().select().from(invoice_draft).where(eq(invoice_draft.storm_id, out.storm.id))).toHaveLength(0);
+  });
+});
+
+describe('health check', () => {
+  it('turns red when a job has been waiting too long, and green again once it runs', async () => {
+    const key = `health-${Date.now()}`;
+    await serviceDb().execute(sql`insert into job (kind, payload, dedupe_key, run_at) values ('noop.health_test', '{}'::jsonb, ${key}, now() - interval '1 hour')`);
+    try {
+      const stuck = await health(new Request('http://localhost/api/health'));
+      expect(stuck.status).toBe(503);
+      expect((await stuck.json()).oldest_waiting_job_min).toBeGreaterThanOrEqual(59);
+    } finally {
+      await serviceDb().execute(sql`delete from job where dedupe_key = ${key}`);
+    }
+    const fine = await health(new Request('http://localhost/api/health'));
+    expect([200, 503]).toContain(fine.status);
+    expect((await fine.json()).database).toBe('up');
   });
 });

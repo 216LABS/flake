@@ -107,6 +107,10 @@ The queue needs no extra service. `pg_cron` calls `/api/cron/jobs` each minute, 
 
 Each finished visit can send a customer two emails, so Resend's free 100 a day runs out at about 50 visits. Queued emails then wait and retry each hour.
 
+### Uptime alerts
+
+`/api/health` answers 200 when the database is up and background jobs are moving, and 503 when they're stuck: no worker run for 5 minutes, or a job waiting more than 15. Point a free monitor at it, such as UptimeRobot (5 minute checks on the free plan), and have it text or email you. That's how you hear about a problem at 4 AM before a customer does. It reports timings only, nothing private.
+
 ### Optional: push alerts
 
 Web Push needs no account and costs nothing. Until the keys are set, Settings, Alerts says push is off and alerts go by email.

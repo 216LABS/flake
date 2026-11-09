@@ -47,7 +47,7 @@ export default async function SubPay({ params }: { params: Promise<{ id: string 
               {!crew.sub_rate_card ? <p className="mb-2 text-sm text-amber-800">No rate card for this sub, so amounts are $0. Add one in Settings, Crew.</p> : null}
               <Table>
                 <thead><tr><Th>Visit</Th><Th>Amount</Th></tr></thead>
-                <tbody>{st.lines.map((l) => <tr key={l.visit_id}><Td>{l.description}</Td><Td>{money(l.amount_cents)}</Td></tr>)}</tbody>
+                <tbody>{st.lines.map((l) => <tr key={l.visit_id} data-testid={l.check ? 'sub-check' : undefined}><Td>{l.description}{l.check ? <div className="mt-0.5 text-xs font-medium text-amber-800">{l.check}</div> : null}</Td><Td>{money(l.amount_cents)}</Td></tr>)}</tbody>
               </Table>
             </Card>
           );

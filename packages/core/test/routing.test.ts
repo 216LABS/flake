@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareRoute, driveMinutes, evaluateRoute, serviceMinutes, suggestRoute, type RouteSite } from '../src/routing';
+import { compareRoute, driveMinutes, evaluateRoute, replanFrom, serviceMinutes, suggestRoute, type RouteSite } from '../src/routing';
 
 // A straight east-west street in Lakewood, about 0.5 miles between neighbors.
 const at = (id: string, x: number, extra: Partial<RouteSite> = {}): RouteSite => ({ id, lat: 41.48, lon: -81.8 + x * 0.0096, priority: 3, sqft: 40000, ...extra });
@@ -83,5 +83,16 @@ describe('route ordering, asked twice', () => {
     const kept = suggestRoute(many, { keepFirst: true });
     expect(kept[0]!.id).toBe('s0');
     expect(compareRoute(kept, { keepFirst: true }).changed).toBe(false);
+  });
+});
+
+describe('re-planning mid-storm from the truck', () => {
+  it('starts from where the truck is and leaves its own position out of the list', () => {
+    const left = [at('far', 6), at('near', 1), at('mid', 3)];
+    const r = replanFrom({ lat: 41.48, lon: -81.8 }, left, { start: '05:00' });
+    expect(r.suggested.stops.map((s) => s.id)).toEqual(['near', 'mid', 'far']);
+    expect(r.changed).toBe(true);
+    expect(r.suggested.stops[0]!.arrive).not.toBe('05:00');
+    expect(replanFrom({ lat: 41.48, lon: -81.8 }, [at('a', 1), at('b', 2), at('c', 3)]).changed).toBe(false);
   });
 });

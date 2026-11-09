@@ -46,7 +46,7 @@ export function RateCardForm({ card }: { card: RateCard }) {
   );
 }
 
-export function CrewPanel({ crew }: { crew: any[] }) {
+export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boolean }) {
   const router = useRouter();
   const blank = { name: '', phone_e164: '', email: '', kind: 'employee', language: 'en', per_visit: '', hourly: '' };
   const [f, setF] = useState(blank);
@@ -93,7 +93,11 @@ export function CrewPanel({ crew }: { crew: any[] }) {
         <div className="mt-2 space-y-2">
           <div><Label htmlFor="crew-name">Name</Label><Input id="crew-name" data-testid="crew-name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
           <div><Label htmlFor="crew-phone">Mobile</Label><Input id="crew-phone" value={f.phone_e164} onChange={(e) => setF({ ...f, phone_e164: e.target.value })} /></div>
-          <div><Label htmlFor="crew-email">Email</Label><Input id="crew-email" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></div>
+          <div>
+            <Label htmlFor="crew-email">Email</Label>
+            <Input id="crew-email" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} aria-describedby="crew-email-hint" />
+            {!canText ? <p id="crew-email-hint" className="mt-1 text-xs text-amber-800" data-testid="crew-email-hint">Texting isn&apos;t approved yet, so route links go by email. Add it here, or the driver adds it when they join.</p> : null}
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <div><Label htmlFor="crew-kind">Kind</Label><Select id="crew-kind" value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}><option value="employee">Employee</option><option value="sub">Subcontractor</option></Select></div>
             <div><Label htmlFor="crew-lang">Language</Label><Select id="crew-lang" data-testid="crew-lang" value={f.language} onChange={(e) => setF({ ...f, language: e.target.value })}><option value="en">English</option><option value="es">Spanish</option></Select></div>

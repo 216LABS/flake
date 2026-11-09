@@ -279,5 +279,5 @@ export const pushSubscribe = z.object({ endpoint: pushEndpoint, keys: z.object({
 export const pushUnsubscribe = z.object({ endpoint: z.string().max(1000) });
 export const addressSuggest = z.object({ q: z.string().trim().min(3).max(200) });
 export const teamAdd = z.object({ email, role: z.enum(['owner', 'dispatcher', 'viewer']) });
-export const crewJoin = z.object({ consent: z.boolean() });
+export const crewJoin = z.object({ consent: z.boolean(), email: z.union([z.email().max(254), z.literal('')]).optional() });
 export const proCheckout = z.object({ interval: z.enum(['monthly', 'yearly']) });

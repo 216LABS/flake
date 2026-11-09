@@ -6,6 +6,7 @@ import { Badge, Card, PageHeader, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
 import { baseUrl } from '@/lib/env';
+import { canTextFrom } from '@/lib/messaging';
 import { SAMPLE_MESSAGES } from '@/lib/sms-admin';
 import { breakerOpen, breakerState } from '@/lib/weather';
 import { getProviders, getSetting } from '@/lib/providers';
@@ -40,7 +41,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       </nav>
       {!allowed ? <Card className="max-w-2xl" data-testid="owner-only"><p className="text-sm">Only an owner can open this.</p></Card> : null}
       {allowed && tab === 'rate' ? <RateCardForm card={(Object.keys(t.rate_card as object).length ? t.rate_card : DEFAULT_RATE_CARD) as RateCard} /> : null}
-      {tab === 'crew' ? <fieldset disabled={readOnly} className="contents"><CrewPanel crew={JSON.parse(JSON.stringify(await asUser(ctx, (tx) => tx.select().from(crew_member).orderBy(crew_member.name))))} /></fieldset> : null}
+      {tab === 'crew' ? <fieldset disabled={readOnly} className="contents"><CrewPanel canText={canTextFrom(ctx.tenant)} crew={JSON.parse(JSON.stringify(await asUser(ctx, (tx) => tx.select().from(crew_member).orderBy(crew_member.name))))} /></fieldset> : null}
       {tab === 'alerts' ? <PushPanel publicKey={(await getProviders()).push.publicKey} /> : null}
       {allowed && tab === 'team' ? <TeamPanel members={await listTeam(ctx.tenantId)} me={ctx.userId} /> : null}
       {allowed && tab === 'payments' ? <PaymentsPanel connected={Boolean(t.stripe_account_id)} enabled={Boolean(t.stripe_charges_enabled)} /> : null}

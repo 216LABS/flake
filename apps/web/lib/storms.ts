@@ -1,5 +1,6 @@
 import { and, asc, contract, crew_member, customer, desc, driver_position, eq, inArray, message_log, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, withUser, sms_consent } from '@flake/db';
-import { isLate } from '@flake/core/time';
+import { isLate, localHm } from '@flake/core/time';
+import { replanFrom } from '@flake/core/routing';
 import type { ContractService } from '@flake/core/pricing';
 import { z } from 'zod';
 import { stormCreate, runStopPatch, stormNotify } from '@flake/contracts';
@@ -174,6 +175,42 @@ export async function addStopToRun(ctx: Ctx, runId: string, siteId: string) {
   });
   await enqueue('notify.route_changed', { tenantId: ctx.tenantId, runId, stopId: stop.id, at: stop.updated_at }, { dedupeKey: `added:${stop.id}` });
   return stop;
+}
+
+/** The office reorders one truck's stops. The phone shows the new order on its next refresh. */
+export async function reorderRun(ctx: Ctx, runId: string, stopIds: string[]) {
+  return withUser(ctx.userId, async (tx) => {
+    const stops = await tx.select({ id: run_stop.id }).from(run_stop).where(eq(run_stop.storm_run_id, runId));
+    if (!stops.length) throw new HttpError(404, 'Run not found');
+    const have = new Set(stops.map((x) => x.id));
+    if (stopIds.length !== have.size || !stopIds.every((id) => have.has(id))) throw new HttpError(409, 'The route changed while you were editing. Reload and try again.', 'stale');
+    const now = new Date().toISOString();
+    for (const [i, id] of stopIds.entries()) await tx.update(run_stop).set({ seq: i + 1, updated_at: now }).where(eq(run_stop.id, id));
+    return { ok: true };
+  });
+}
+
+/**
+ * Mid-storm re-plan for one truck: its open stops, ordered from where the truck last reported (or the lot it's on).
+ * Nothing changes until the office accepts, through reorderRun.
+ */
+export async function planRun(ctx: Ctx & { timezone: string }, runId: string) {
+  const data = await withUser(ctx.userId, async (tx) => {
+    const stops = await tx.select({ stop: run_stop, site }).from(run_stop).innerJoin(site, eq(site.id, run_stop.site_id)).where(eq(run_stop.storm_run_id, runId)).orderBy(asc(run_stop.seq));
+    if (!stops.length) throw new HttpError(404, 'Run not found');
+    const [pos] = await tx.select().from(driver_position).where(eq(driver_position.storm_run_id, runId)).orderBy(desc(driver_position.device_at)).limit(1);
+    return { stops, pos };
+  });
+  const onsite = data.stops.find((x) => x.stop.status === 'onsite');
+  const open = data.stops.filter((x) => ['open', 'enroute', 'problem'].includes(x.stop.status));
+  const from = onsite ? { lat: onsite.site.lat, lon: onsite.site.lon, kind: 'lot' as const } : data.pos ? { lat: data.pos.lat, lon: data.pos.lon, kind: 'truck' as const } : null;
+  if (!from || open.length < 2) return { from: from?.kind ?? null, changed: false, order: data.stops.map((x) => x.stop.id), suggested: null, current: null };
+  const plan = replanFrom(from, open.map((x) => ({ id: x.stop.id, lat: x.site.lat, lon: x.site.lon, priority: x.site.priority, open_by: x.site.service_window?.open_by ?? null, sqft: x.site.area_confirmed_sqft ?? x.site.area_estimate_sqft })), { start: localHm(Date.now(), ctx.timezone).hm });
+  // Done, skipped and on-site stops keep their places at the front; the re-planned open ones follow.
+  const fixed = data.stops.filter((x) => !open.includes(x)).map((x) => x.stop.id);
+  const label = new Map(data.stops.map((x) => [x.stop.id, x.site.label]));
+  const named = (p: typeof plan.suggested) => ({ ...p, stops: p.stops.map((x) => ({ ...x, label: label.get(x.id) ?? '' })) });
+  return { from: from.kind, position_at: from.kind === 'truck' ? data.pos!.device_at : null, changed: plan.changed, order: [...fixed, ...plan.suggested.stops.map((x) => x.id)], suggested: named(plan.suggested), current: named(plan.current) };
 }
 
 export async function notifyRouteChanged(tenantId: string, runId: string, key: string) {
