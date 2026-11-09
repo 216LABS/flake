@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
 import { baseUrl } from '@/lib/env';
 import { canTextFrom } from '@/lib/messaging';
+import { isPlatformAdmin, saltOrderingReady } from '@/lib/salt-orders';
 import { SAMPLE_MESSAGES } from '@/lib/sms-admin';
 import { breakerOpen, breakerState } from '@/lib/weather';
 import { getProviders, getSetting } from '@/lib/providers';
@@ -100,6 +101,12 @@ async function SystemTab(tenantId: string, tz: string, email: string | null, can
         <p className="mt-1 text-sm">Jobs queued for your company: {queued}</p>
         <p className="mt-1 text-sm" data-testid="worker-runs">{runs.length ? `Background worker last ran ${fmtLocal(runs[runs.length - 1]!, tz)}.${gaps.length ? ` Seconds between recent runs: ${gaps.join(', ')}.` : ''}` : 'Background worker: no scheduled runs recorded yet.'}</p>
       </Card>
+      {isPlatformAdmin(email) && (await saltOrderingReady()) ? (
+        <Card className="max-w-2xl">
+          <h2 className="font-semibold">216LABS</h2>
+          <p className="mt-1 text-sm"><Link className="text-sky-800 underline" href="/admin/salt" data-testid="admin-salt-link">Salt suppliers and referral fees</Link></p>
+        </Card>
+      ) : null}
       <h2 className="font-semibold">Recent messages</h2>
       <Table>
         <thead><tr><Th>When</Th><Th>Channel</Th><Th>To</Th><Th>Template</Th><Th>Status</Th></tr></thead>

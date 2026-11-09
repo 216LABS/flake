@@ -25,7 +25,7 @@ test('public pages have no serious accessibility problems', async ({ page }) => 
 test('office and driver screens have no serious accessibility problems', async ({ page, browser }) => {
   await login(page);
   const { id, runs } = await startStorm(page.request, `Access ${Date.now()}`, ['West Lakewood']);
-  for (const url of ['/dashboard', '/storms', `/storms/${id}`, '/customers', '/customers/new', '/routes', '/billing', '/proof', '/reports', '/settings?tab=rate', '/settings?tab=crew', '/settings?tab=team', '/settings?tab=payments', '/settings?tab=system']) {
+  for (const url of ['/dashboard', '/storms', `/storms/${id}`, '/customers', '/customers/new', '/routes', '/billing', '/proof', '/reports', '/admin/salt', '/settings?tab=rate', '/settings?tab=crew', '/settings?tab=team', '/settings?tab=payments', '/settings?tab=system']) {
     await page.goto(url);
     await page.waitForLoadState('networkidle');
     await expectAccessible(page, url);

@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-const APP_PREFIXES = ['/dashboard', '/alerts', '/storms', '/customers', '/sites', '/routes', '/billing', '/proof', '/reports', '/settings', '/onboarding'];
+const APP_PREFIXES = ['/admin', '/dashboard', '/alerts', '/storms', '/customers', '/sites', '/routes', '/billing', '/proof', '/reports', '/settings', '/onboarding'];
 
 /** Refreshes the Supabase session cookie, sends signed-out office visits to login, and hides /dev in production. */
 export async function proxy(request: NextRequest) {
@@ -32,5 +32,5 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Driver, quote, webhook, cron and static paths have no session to refresh.
-  matcher: ['/((?!_next/|api/d/|api/q/|api/webhooks/|api/cron/|api/health|api/tiles/|d/|q/|s/|sw.js|push-sw.js|favicon|icons/|brand/|maplibre-gl-worker|manifest).*)'],
+  matcher: ['/((?!_next/|api/d/|api/q/|api/webhooks/|api/cron/|api/health|api/supplier/|supplier/|api/tiles/|d/|q/|s/|sw.js|push-sw.js|favicon|icons/|brand/|maplibre-gl-worker|manifest).*)'],
 };

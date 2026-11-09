@@ -2,6 +2,8 @@ import { fmtLocal } from '@flake/core/time';
 import { buttonVariants, Card, Eyebrow, Input, Label, PageHeader, Stat, Table, Td, Th } from '@flake/ui';
 import { asUser, requirePage } from '@/lib/auth';
 import { crewHours, period, saltReport } from '@/lib/reports';
+import { contractorSalt, saltOrderingReady } from '@/lib/salt-orders';
+import { SaltOrder } from './salt-order';
 import { SaltStockForm } from './salt-stock';
 
 export const metadata = { title: 'Reports' };
@@ -18,6 +20,9 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
     const rows = hours.filter((h) => h.crewId === id);
     return { id, name: rows[0]!.crew, kind: rows[0]!.kind, shifts: rows.length, hours: rows.reduce((n, r) => n + r.hours, 0), stops: rows.reduce((n, r) => n + r.stops, 0) };
   });
+  // Salt ordering shows once its tables exist on this database (supabase db push).
+  const ordering = (await saltOrderingReady()) ? await contractorSalt(ctx) : null;
+  const yard = ctx.tenant.address ? [ctx.tenant.address.line1, ctx.tenant.address.city, ctx.tenant.address.state, ctx.tenant.address.zip].filter(Boolean).join(', ') : '';
   const usedTons = salt.storms.reduce((n, s) => n + s.tons, 0);
   const saltedVisits = salt.storms.reduce((n, s) => n + s.visits, 0);
   return (
@@ -80,6 +85,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
         ) : null}
         <p className="mb-3 max-w-2xl text-xs text-slate-600">Bags count as 50 lb. Salt logged as &quot;applications&quot; has no weight, so it is listed but not taken off the pile.</p>
         <SaltStockForm canEdit={ctx.role !== 'viewer'} entries={salt.entries.map((e) => ({ ...e, when: fmtLocal(e.at, tz, { month: 'short', day: 'numeric', year: 'numeric' }) }))} />
+        {ordering ? <SaltOrder initial={JSON.parse(JSON.stringify(ordering))} defaultAddress={yard} canOrder={ctx.role !== 'viewer'} /> : null}
       </section>
     </>
   );

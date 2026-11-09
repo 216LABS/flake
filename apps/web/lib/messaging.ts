@@ -57,12 +57,12 @@ export async function sendSms(t: TenantRow, opts: { to: string; template: Templa
   }
 }
 
-export async function sendEmail(t: TenantRow, opts: { to: string; template: string; subject: string; text: string; key: string; related?: Record<string, unknown>; attachments?: { filename: string; content: Uint8Array }[] }): Promise<boolean> {
+export async function sendEmail(t: TenantRow, opts: { to: string; template: string; subject: string; text: string; key: string; related?: Record<string, unknown>; attachments?: { filename: string; content: Uint8Array }[]; fromName?: string; replyTo?: string | null }): Promise<boolean> {
   const id = await reserve(t, 'email', opts.to, opts.template, opts.text, `email:${opts.key}`, opts.related ?? null);
   if (!id) return false;
   try {
     const { email } = await getProviders();
-    const res = await email.send({ fromName: t.name, replyTo: t.contact_email, to: opts.to, subject: opts.subject, text: opts.text, idempotencyKey: opts.key, attachments: opts.attachments });
+    const res = await email.send({ fromName: opts.fromName ?? t.name, replyTo: opts.replyTo === undefined ? t.contact_email : opts.replyTo, to: opts.to, subject: opts.subject, text: opts.text, idempotencyKey: opts.key, attachments: opts.attachments });
     await finish(id, res.status, res.id);
     return true;
   } catch (err) {

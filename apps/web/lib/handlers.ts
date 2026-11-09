@@ -113,6 +113,7 @@ export async function queueMissedReports() {
 }
 
 export const JOB_HANDLERS: Record<string, JobHandler> = {
+  'salt.supplier_email': async (p) => { const { emailSupplier } = await import('./salt-orders'); await emailSupplier(p as Parameters<typeof emailSupplier>[0]); },
   'weather.fetch_cell': (p) => fetchCell(p.office, p.x, p.y),
   'weather.fetch_alerts': (p) => fetchAlerts(p.tenantId),
   'weather.nohrsc': async (p) => void (await fetchNohrsc(p.hours ?? 24)),

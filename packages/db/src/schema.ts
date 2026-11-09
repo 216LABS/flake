@@ -426,3 +426,56 @@ export const app_setting = pgTable('app_setting', {
   key: text('key').primaryKey(),
   value: jsonb('value').$type<any>().notNull(),
 });
+
+/** Partner salt distributors. Global, not per tenant: every contractor near one can order from it. */
+export const salt_supplier = pgTable('salt_supplier', {
+  id: id(),
+  name: text('name').notNull(),
+  contact_name: text('contact_name'),
+  email: text('email').notNull(),
+  phone: text('phone'),
+  lat: doublePrecision('lat').notNull(),
+  lon: doublePrecision('lon').notNull(),
+  radius_mi: numeric('radius_mi', { mode: 'number' }).notNull().default(40),
+  price_per_ton_cents: integer('price_per_ton_cents').notNull(),
+  truckload_tons: numeric('truckload_tons', { mode: 'number' }).notNull().default(22),
+  stop_fee_cents: integer('stop_fee_cents').notNull().default(0),
+  referral_fee_per_ton_cents: integer('referral_fee_per_ton_cents').notNull().default(0),
+  active: boolean('active').notNull().default(true),
+  link_rev: integer('link_rev').notNull().default(1),
+  created_at: createdAt(),
+});
+
+export const salt_pool = pgTable('salt_pool', {
+  id: id(),
+  supplier_id: uuid('supplier_id').notNull(),
+  status: text('status').$type<'open' | 'sent' | 'cancelled'>().notNull().default('open'),
+  truckload_tons: numeric('truckload_tons', { mode: 'number' }).notNull(),
+  created_at: createdAt(),
+  sent_at: ts('sent_at'),
+});
+
+export type SaltOrderStatus = 'pooling' | 'ordered' | 'scheduled' | 'delivered' | 'cancelled';
+export const salt_order = pgTable('salt_order', {
+  id: id(),
+  tenant_id: tenantId(),
+  supplier_id: uuid('supplier_id').notNull(),
+  pool_id: uuid('pool_id'),
+  tons: numeric('tons', { mode: 'number' }).notNull(),
+  address: text('address').notNull(),
+  lat: doublePrecision('lat').notNull(),
+  lon: doublePrecision('lon').notNull(),
+  needed_by: date('needed_by', { mode: 'string' }),
+  contact_name: text('contact_name'),
+  contact_phone: text('contact_phone'),
+  notes: text('notes'),
+  status: text('status').$type<SaltOrderStatus>().notNull().default('pooling'),
+  price_per_ton_cents: integer('price_per_ton_cents').notNull(),
+  stop_fee_cents: integer('stop_fee_cents').notNull().default(0),
+  referral_fee_per_ton_cents: integer('referral_fee_per_ton_cents').notNull().default(0),
+  delivery_date: date('delivery_date', { mode: 'string' }),
+  delivered_tons: numeric('delivered_tons', { mode: 'number' }),
+  created_by: uuid('created_by'),
+  created_at: createdAt(),
+  updated_at: ts('updated_at').defaultNow(),
+});
