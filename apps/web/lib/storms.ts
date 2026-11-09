@@ -154,6 +154,28 @@ export async function patchRunStop(ctx: Ctx, stopId: string, patch: z.infer<type
   return out.stop;
 }
 
+/**
+ * A customer calls mid-storm, or a lot that wasn't on tonight's routes needs doing. The stop goes to the end of
+ * that truck's list and the driver's phone shows it on its next refresh, with a "Your route changed" notice.
+ */
+export async function addStopToRun(ctx: Ctx, runId: string, siteId: string) {
+  const stop = await withUser(ctx.userId, async (tx) => {
+    const [run] = await tx.select({ run: storm_run, storm }).from(storm_run).innerJoin(storm, eq(storm.id, storm_run.storm_id)).where(eq(storm_run.id, runId));
+    if (!run) throw new HttpError(404, 'Run not found');
+    if (run.storm.status !== 'active') throw new HttpError(409, 'This storm is closed.');
+    const [st] = await tx.select({ id: site.id }).from(site).where(and(eq(site.id, siteId), eq(site.active, true)));
+    if (!st) throw new HttpError(404, 'Site not found');
+    const runs = await tx.select({ id: storm_run.id }).from(storm_run).where(eq(storm_run.storm_id, run.storm.id));
+    const [already] = await tx.select({ id: run_stop.id }).from(run_stop).where(and(inArray(run_stop.storm_run_id, runs.map((r) => r.id)), eq(run_stop.site_id, siteId)));
+    if (already) throw new HttpError(409, 'That site is already in this storm. Move it or reopen it on the board.', 'already_in_storm');
+    const [{ max } = { max: 0 }] = await tx.select({ max: sql<number>`coalesce(max(seq), 0)` }).from(run_stop).where(eq(run_stop.storm_run_id, runId));
+    const [created] = await tx.insert(run_stop).values({ tenant_id: ctx.tenantId, storm_run_id: runId, site_id: siteId, seq: Number(max) + 1 }).returning();
+    return created!;
+  });
+  await enqueue('notify.route_changed', { tenantId: ctx.tenantId, runId, stopId: stop.id, at: stop.updated_at }, { dedupeKey: `added:${stop.id}` });
+  return stop;
+}
+
 export async function notifyRouteChanged(tenantId: string, runId: string, key: string) {
   const db = serviceDb();
   const [row] = await db.select({ run: storm_run, crew: crew_member, tenant }).from(storm_run).innerJoin(tenant, eq(tenant.id, storm_run.tenant_id)).leftJoin(crew_member, eq(crew_member.id, storm_run.crew_id)).where(and(eq(storm_run.id, runId), eq(storm_run.tenant_id, tenantId)));

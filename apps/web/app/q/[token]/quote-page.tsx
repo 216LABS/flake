@@ -36,7 +36,7 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
         <h2 className="font-semibold">Scope and price, season {quote.contract.season}</h2>
         <ul className="mt-2 space-y-1 text-sm">
           {quote.contract.services.map((s: any, i: number) => (
-            <li key={i} data-testid="scope-line"><b className="capitalize">{s.service}</b>: {s.service === 'salt' && quote.contract.salt_pricing ? `${money(quote.contract.salt_pricing.amount_cents)} per ${quote.contract.salt_pricing.unit === 'bag50lb' ? '50 lb bag' : quote.contract.salt_pricing.unit}` : priceText(s.pricing)}{s.trigger_in != null ? `. Starts at ${s.trigger_in}" of snow.` : ''}</li>
+            <li key={i} data-testid="scope-line"><b className="capitalize">{s.service}</b>: {s.service === 'salt' && quote.contract.salt_pricing ? `${money(quote.contract.salt_pricing.amount_cents)} per ${quote.contract.salt_pricing.unit === 'bag50lb' ? '50 lb bag' : quote.contract.salt_pricing.unit}` : priceText(s.pricing)}{s.trigger_in === 0 ? '. Starts with any measurable snow.' : s.trigger_in != null ? `. Starts at ${s.trigger_in}" of snow.` : ''}</li>
           ))}
         </ul>
         {quote.contract.terms_md ? <><h3 className="mt-3 text-sm font-semibold">Terms</h3><p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{quote.contract.terms_md}</p></> : null}

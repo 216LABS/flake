@@ -18,7 +18,7 @@ function since(iso: string | null, now: number) {
 }
 const dash = (v: number | null, u = '"') => (v === null ? 'unavailable' : `${v}${u}`);
 
-export function StormBoard({ stormId, initial, layers, canEdit, canText }: { stormId: string; initial: any; layers: TileLayers; canEdit: boolean; canText: boolean }) {
+export function StormBoard({ stormId, initial, layers, canEdit, canText, sites = [] }: { stormId: string; initial: any; layers: TileLayers; canEdit: boolean; canText: boolean; sites?: { id: string; label: string }[] }) {
   const router = useRouter();
   const [live, setLive] = useState<any>(initial);
   const [now, setNow] = useState(Date.parse(initial.storm.started_at));
@@ -72,9 +72,10 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText }: { sto
   const editable = !closed && canEdit;
   const unpublished = live.runs.some((r: any) => !r.published_at);
   const allStops: any[] = useMemo(() => live.runs.flatMap((r: any) => r.stops), [live]);
+  const inStorm = useMemo(() => new Set(allStops.map((x: any) => x.site_id as string)), [allStops]);
   const pins: MapPin[] = useMemo(() => [
     ...allStops.map((s) => ({ id: s.id, lat: s.lat, lon: s.lon, color: PIN_COLOR[s.status], label: `${s.label}: ${s.status}` })),
-    ...live.runs.filter((r: any) => r.position).map((r: any) => ({ id: `pos-${r.id}`, lat: r.position.lat, lon: r.position.lon, color: '#7c3aed', label: `${r.crew?.name ?? 'Driver'} last position` })),
+    ...live.runs.filter((r: any) => r.position).map((r: any) => ({ id: `pos-${r.id}`, lat: r.position.lat, lon: r.position.lon, color: '#7c3aed', label: `${r.crew?.name ?? 'Driver'}, last seen ${since(r.position.at, now)} ago` })),
   ], [live, allStops]);
 
   const elapsed = since(live.storm.started_at, live.storm.closed_at ? Date.parse(live.storm.closed_at) : now);
@@ -228,6 +229,12 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText }: { sto
                   </li>
                 ))}
               </ul>
+              {editable ? (
+                <Select aria-label={`Add a site to ${r.name}`} data-testid="add-stop" className="mt-2 h-8 py-0 text-xs" value="" onChange={(e) => e.target.value && void act(() => api(`/api/runs/${r.id}/stops`, { body: { site_id: e.target.value } }))}>
+                  <option value="">Add a site to this truck...</option>
+                  {sites.filter((x) => !inStorm.has(x.id)).map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+                </Select>
+              ) : null}
             </section>
           ))}
         </div>

@@ -9,6 +9,7 @@ const en = {
   link_dead_title: 'This link is no longer active', link_dead_body: 'Ask your dispatcher for a new link.', link_dead_sending: 'Your finished work is still being sent. Keep this page open until it says Synced.', service_plow: 'Plow', service_salt: 'Salt', service_walks: 'Walks', service_haul: 'Haul', no_after_photo: 'No after photo yet. This bill will be flagged for review.', window: 'Open by', priority: 'Priority', notes: 'Notes',
   moved: 'Your route changed.', problem_sent: 'Problem sent', undone: 'Undone', set_next: 'Do this one next', offline_loading: 'No signal and this route is not saved yet. Open it once with signal.',
   save_failed: 'Could not save on this phone. Free up storage and tap again.',
+  call_office: 'Call office', away_mi: '{d} mi away', away_ft: '{d} ft away', stop_n: 'Stop {i} of {n}',
   language: 'Español', status_open: 'Open', status_done: 'Done', status_skipped: 'Skipped', status_problem: 'Problem', status_onsite: 'On site', status_enroute: 'On the way',
 };
 
@@ -21,6 +22,7 @@ const es: typeof en = {
   link_dead_title: 'Este enlace ya no está activo', link_dead_body: 'Pide un enlace nuevo a tu despachador.', link_dead_sending: 'Tu trabajo terminado aún se está enviando. Mantén esta página abierta hasta que diga Sincronizado.', service_plow: 'Arado', service_salt: 'Sal', service_walks: 'Aceras', service_haul: 'Acarreo', no_after_photo: 'Aún no hay foto después. Esta factura se marcará para revisión.', window: 'Abrir antes de', priority: 'Prioridad', notes: 'Notas',
   moved: 'Tu ruta cambió.', problem_sent: 'Problema enviado', undone: 'Deshecho', set_next: 'Hacer esta ahora', offline_loading: 'Sin señal y esta ruta aún no está guardada. Ábrela una vez con señal.',
   save_failed: 'No se pudo guardar en este teléfono. Libera espacio y vuelve a tocar.',
+  call_office: 'Llamar a la oficina', away_mi: 'a {d} mi', away_ft: 'a {d} pies', stop_n: 'Parada {i} de {n}',
   language: 'English', status_open: 'Abierta', status_done: 'Lista', status_skipped: 'Omitida', status_problem: 'Problema', status_onsite: 'En sitio', status_enroute: 'En camino',
 };
 

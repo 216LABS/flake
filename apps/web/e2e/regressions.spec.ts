@@ -56,15 +56,20 @@ test('after reporting a Problem on site, the driver can get back in and finish',
   expect((await sql`select count(*)::int as n from visit where storm_id = ${id}`)[0]!.n).toBe(1);
 });
 
-test('a driver set to Spanish sees Spanish the first time they open the link', async ({ page }) => {
+test('the driver sees the language the office chose, and a change in the office reaches the phone', async ({ page }) => {
   await login(page);
   const { runs } = await startStorm(page.request, `Spanish ${Date.now()}`, ['East Lakewood + Cleveland West']);
+  const [run] = await sql`select crew_id from storm_run where id = ${runs[0]!.id}`;
   await page.goto(runs[0]!.link);
   await expect(page.getByTestId('arrive')).toHaveText('Llegué');
-  await page.getByTestId('lang').click();
-  await expect(page.getByTestId('arrive')).toHaveText('Arrive');
-  await page.reload();
-  await expect(page.getByTestId('arrive')).toHaveText('Arrive');
+  await expect(page.getByTestId('lang')).toHaveCount(0);
+  try {
+    await sql`update crew_member set language = 'en' where id = ${run!.crew_id}`;
+    await page.reload();
+    await expect(page.getByTestId('arrive')).toHaveText('Arrive');
+  } finally {
+    await sql`update crew_member set language = 'es' where id = ${run!.crew_id}`;
+  }
 });
 
 test('night mode text meets 7:1 contrast', async ({ page }) => {

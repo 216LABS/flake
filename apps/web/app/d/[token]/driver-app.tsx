@@ -16,6 +16,7 @@ interface Stop {
 }
 interface RunData {
   company: string;
+  office_phone?: string | null;
   storm: { id: string; name: string; status: string };
   run: { id: string; pass: number };
   crew: { name: string; language: string } | null;
@@ -68,13 +69,13 @@ export function DriverApp({ token }: { token: string }) {
   const [toast, setToast] = useState<string | null>(null);
   const [showProblem, setShowProblem] = useState(false);
   const [here, setHere] = useState(false);
+  const [awayM, setAwayM] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
   const localRef = useRef(local);
   const position = useRef<{ lat: number; lon: number; acc: number } | null>(null);
   const generation = useRef(0);
   const runRef = useRef<RunData | null>(null);
   const langRef = useRef<Lang>('en');
-  const langChosen = useRef(false);
   const runKey = `run:${token}`;
   const localKey = `local:${token}`;
 
@@ -96,11 +97,10 @@ export function DriverApp({ token }: { token: string }) {
     if (prev && prev.stops.map((s) => s.id).join() !== data.stops.map((s) => s.id).join()) flashToast(translate(langRef.current, 'moved'));
     runRef.current = data;
     setRun(data);
-    // First open on this phone: use the language the office set for this driver, until they choose one.
-    if (!langChosen.current && data.crew?.language === 'es') {
-      langRef.current = 'es';
-      setLang('es');
-    }
+    // The office picks each driver's language in Settings, Crew. A change there reaches the phone on its next refresh.
+    const wanted: Lang = data.crew?.language === 'es' ? 'es' : 'en';
+    langRef.current = wanted;
+    setLang(wanted);
     await kvSet(runKey, data);
     // Once nothing is queued, the server's view of each stop wins over the phone's.
     const before = generation.current;
@@ -143,7 +143,7 @@ export function DriverApp({ token }: { token: string }) {
   // Startup: load from the phone first so it opens instantly and with no signal.
   useEffect(() => {
     (async () => {
-      const [cachedRun, cachedLocal, savedLang] = await Promise.all([kvGet<RunData>(runKey), kvGet<LocalState>(localKey), kvGet<Lang>('lang')]);
+      const [cachedRun, cachedLocal] = await Promise.all([kvGet<RunData>(runKey), kvGet<LocalState>(localKey)]);
       if (cachedLocal) {
         localRef.current = cachedLocal;
         setLocal(cachedLocal);
@@ -152,11 +152,7 @@ export function DriverApp({ token }: { token: string }) {
         runRef.current = cachedRun;
         setRun(cachedRun);
       }
-      if (savedLang) {
-        langChosen.current = true;
-        langRef.current = savedLang;
-        setLang(savedLang);
-      } else if (cachedRun?.crew?.language === 'es') {
+      if (cachedRun?.crew?.language === 'es') {
         langRef.current = 'es';
         setLang('es');
       }
@@ -235,8 +231,30 @@ export function DriverApp({ token }: { token: string }) {
   useEffect(() => {
     const at = position.current;
     const stop = nextRef.current;
-    setHere(Boolean(at && stop && metersBetween(at.lat, at.lon, stop.site.lat, stop.site.lon) <= GEOFENCE_M));
+    // The first fix often lands before the route has loaded, and a phone sitting still may not report again,
+    // so distance is worked out again whenever the next stop changes.
+    const distance = at && stop ? metersBetween(at.lat, at.lon, stop.site.lat, stop.site.lon) : null;
+    setHere(distance !== null && distance <= GEOFENCE_M);
+    setAwayM(distance === null ? null : Math.round(distance / 50) * 50);
   }, [nextId]);
+  // Keep the screen on while the route is open, so a phone on the dash keeps showing the stop and keeps sending
+  // its position. A web page can't track location with the screen off or another app in front.
+  useEffect(() => {
+    let lock: { release: () => Promise<void> } | null = null;
+    const ask = async () => {
+      try {
+        if (document.visibilityState === 'visible' && 'wakeLock' in navigator) lock = await (navigator as unknown as { wakeLock: { request: (t: 'screen') => Promise<{ release: () => Promise<void> }> } }).wakeLock.request('screen');
+      } catch {
+        // Low battery mode or an older phone: the screen just sleeps as usual.
+      }
+    };
+    void ask();
+    document.addEventListener('visibilitychange', ask);
+    return () => {
+      document.removeEventListener('visibilitychange', ask);
+      void lock?.release().catch(() => {});
+    };
+  }, []);
   useEffect(() => {
     if (!('geolocation' in navigator)) return;
     let watch: number | null = null;
@@ -252,6 +270,8 @@ export function DriverApp({ token }: { token: string }) {
           const stop = nextRef.current;
           const distance = stop ? metersBetween(lat, lon, stop.site.lat, stop.site.lon) : Infinity;
           setHere(distance <= GEOFENCE_M);
+          // Rounded so the screen only redraws when the number a driver reads actually changes.
+          setAwayM(Number.isFinite(distance) ? Math.round(distance / 50) * 50 : null);
           if (distance <= NEAR_M !== high) start(distance <= NEAR_M);
           if (Date.now() - lastSent > POSITION_EVERY_MS && document.visibilityState === 'visible') {
             lastSent = Date.now();
@@ -392,14 +412,6 @@ export function DriverApp({ token }: { token: string }) {
     });
   };
 
-  const switchLang = () => {
-    const nextLang: Lang = lang === 'en' ? 'es' : 'en';
-    langChosen.current = true;
-    langRef.current = nextLang;
-    setLang(nextLang);
-    void kvSet('lang', nextLang);
-  };
-
   if (dead) {
     return (
       <Shell>
@@ -434,7 +446,7 @@ export function DriverApp({ token }: { token: string }) {
         </div>
         <div className="flex items-center gap-2">
           <span data-testid="sync-badge" data-state={sync} className={cn('rounded-full px-3 py-2 text-sm font-bold', sync === 'synced' ? 'bg-emerald-400 text-black' : sync === 'sending' ? 'bg-sky-300 text-black' : 'bg-amber-300 text-black')}>{badge}</span>
-          <BigButton onClick={switchLang} data-testid="lang" className="text-sm">{t('language')}</BigButton>
+          {run.office_phone ? <a href={`tel:${run.office_phone}`} className="inline-flex min-h-[60px] items-center rounded-xl bg-slate-700 px-4 text-base font-bold text-white" data-testid="call-office">{t('call_office')}</a> : null}
         </div>
       </header>
 
@@ -467,7 +479,7 @@ export function DriverApp({ token }: { token: string }) {
         ) : showProblem ? (
           <ProblemPanel t={t} onCancel={() => setShowProblem(false)} onSend={(k, v) => sendProblem(next, k, v)} />
         ) : (
-          <NextStop t={t} token={token} stop={next} onNavigate={() => navigate(next)} onArrive={() => arrive(next)} onProblem={() => setShowProblem(true)} />
+          <NextStop t={t} token={token} stop={next} awayM={awayM} index={stops.findIndex((x) => x.id === next.id) + 1} total={stops.length} onNavigate={() => navigate(next)} onArrive={() => arrive(next)} onProblem={() => setShowProblem(true)} />
         )}
 
         {canUndo ? <BigButton className="w-full" onClick={undo} data-testid="undo">{t('undo_last')}</BigButton> : null}
@@ -496,30 +508,39 @@ const Shell = ({ children }: { children: React.ReactNode }) => <div className="m
 
 type T = (key: DictKey, vars?: Record<string, string | number>) => string;
 
-function NextStop({ t, token, stop, onNavigate, onArrive, onProblem }: { t: T; token: string; stop: Stop; onNavigate: () => void; onArrive: () => void; onProblem: () => void }) {
+function NextStop({ t, token, stop, awayM, index, total, onNavigate, onArrive, onProblem }: { t: T; token: string; stop: Stop; awayM: number | null; index: number; total: number; onNavigate: () => void; onArrive: () => void; onProblem: () => void }) {
+  const away = awayM === null ? null : awayM < 300 ? t('away_ft', { d: Math.round(awayM * 3.28084 / 50) * 50 }) : t('away_mi', { d: (awayM / 1609.344).toFixed(1) });
   return (
     <section className="rounded-lg bg-slate-800 p-4" data-testid="next-stop">
-      <div className="font-display text-base font-bold uppercase tracking-wider text-beacon">{t('next_stop')}</div>
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="font-display text-base font-bold uppercase tracking-wider text-beacon">{t('next_stop')}</div>
+        <div className="text-base text-slate-300" data-testid="stop-n">{t('stop_n', { i: index, n: total })}</div>
+      </div>
       <h1 className="mt-1 text-3xl font-bold" data-testid="stop-label">{stop.site.label}</h1>
       <p className="mt-1 text-xl text-slate-100">{stop.site.address}</p>
+      {away ? <p className="mt-1 text-lg font-bold text-sky-300" data-testid="away">{away}</p> : null}
       <div className="mt-3 flex flex-wrap gap-2 text-base">
         <span className="rounded-lg bg-slate-700 px-3 py-2">{t('priority')} {stop.site.priority}</span>
         {stop.site.open_by ? <span className="rounded-lg bg-slate-700 px-3 py-2">{t('window')} {stop.site.open_by}</span> : null}
         {stop.pins.map((p) => <span key={p.id} className="rounded-lg bg-slate-700 px-3 py-2">{p.kind}{p.note ? `: ${p.note}` : ''}</span>)}
       </div>
       {stop.site.notes ? <p className="mt-3 text-lg text-slate-100"><b>{t('notes')}:</b> {stop.site.notes}</p> : null}
-      {stop.pins.some((p) => p.has_photo) ? (
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          {stop.pins.filter((p) => p.has_photo).map((p) => (
-            <img key={p.id} src={`/api/d/${token}/pins/${p.id}`} alt={[p.kind, p.note].filter(Boolean).join(': ')} className="w-full rounded-lg" data-testid={`driver-pin-${p.id}`} />
-          ))}
-        </div>
-      ) : null}
       <div className="mt-4 grid gap-3">
         <BigButton onClick={onNavigate} data-testid="navigate">{t('navigate')}</BigButton>
         <BigButton tone="go" height="tall" onClick={onArrive} data-testid="arrive">{t('arrive')}</BigButton>
         <BigButton tone="warn" onClick={onProblem} data-testid="problem">{t('problem')}</BigButton>
       </div>
+      {/* Hazard photos sit under the buttons as thumbnails, so Arrive never scrolls off the screen. */}
+      {stop.pins.some((p) => p.has_photo) ? (
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          {stop.pins.filter((p) => p.has_photo).map((p) => (
+            <figure key={p.id} className="m-0">
+              <img src={`/api/d/${token}/pins/${p.id}`} alt={[p.kind, p.note].filter(Boolean).join(': ')} className="h-24 w-full rounded-lg object-cover" data-testid={`driver-pin-${p.id}`} />
+              <figcaption className="mt-1 truncate text-sm text-slate-300">{p.kind}</figcaption>
+            </figure>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }

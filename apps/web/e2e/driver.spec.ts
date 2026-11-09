@@ -139,14 +139,14 @@ test('tap targets are at least 60 px, and a stop takes 5 taps or fewer plus 2 ph
   await assertTargets();
 });
 
-test('Done is blocked until depth on the first stop, Spanish works, and Undo reopens the stop', async ({ page }) => {
+test('Done is blocked until depth on the first stop, and Undo reopens the stop', async ({ page }) => {
   await login(page);
   const { runs } = await startStorm(page.request, `Depth ${Date.now()}`, ['Rocky River']);
   await page.goto(runs[0]!.link);
-  await page.getByTestId('lang').click();
-  await expect(page.getByTestId('arrive')).toHaveText('Llegué');
-  await page.getByTestId('lang').click();
+  // The office chose English for this driver, so there's no language button to get in the way.
   await expect(page.getByTestId('arrive')).toHaveText('Arrive');
+  await expect(page.getByTestId('lang')).toHaveCount(0);
+  await expect(page.getByTestId('stop-n')).toHaveText(/^Stop 1 of \d+$/);
   const label = await page.getByTestId('stop-label').textContent();
   await page.getByTestId('arrive').click();
   await expect(page.getByTestId('done')).toBeDisabled();

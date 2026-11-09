@@ -72,6 +72,11 @@ describe('reachesTriggerAt', () => {
 });
 
 describe('evaluateSite', () => {
+  it('a zero tolerance (0") contract alerts on any measurable snow, and stays quiet on a dry day', () => {
+    const zero = { ...site, trigger_in: 0 };
+    expect(evaluateSite(zero, wx([0, 0, 0, 0]), T0, [])).toEqual([]);
+    expect(evaluateSite(zero, wx([0, 0.1, 0]), T0, []).map((d) => d.kind)).toContain('forecast');
+  });
   it('fires forecast when next 12 h reaches the trigger', () => {
     const d = evaluateSite(site, wx([0, 1, 1.5]), T0, []);
     expect(d.map((x) => x.kind)).toEqual(['forecast']);

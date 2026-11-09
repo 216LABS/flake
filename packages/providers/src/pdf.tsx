@@ -72,7 +72,7 @@ function servicesText(services: unknown): string[] {
       : p.type === 'hourly' ? `${money(p.rate_cents)} per hour`
       : p.type === 'seasonal' ? `${money(p.total_cents)} seasonal, ${p.installments} installments`
       : 'per-inch tiers';
-    return `${x.service}: ${price}${x.trigger_in != null ? `, trigger ${x.trigger_in}"` : ''}`;
+    return `${x.service}: ${price}${x.trigger_in === 0 ? ', zero tolerance (any measurable snow)' : x.trigger_in != null ? `, trigger ${x.trigger_in}"` : ''}`;
   });
 }
 

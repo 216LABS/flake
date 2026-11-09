@@ -72,6 +72,7 @@ export async function loadRun(rs: RunScope) {
   const stormVisits = await db.select({ id: visit.id }).from(visit).where(and(eq(visit.tenant_id, tenantId), eq(visit.storm_id, stormId), eq(visit.crew_id, rs.run.crew_id ?? '00000000-0000-0000-0000-000000000000')));
   return {
     company: rs.tenant.name,
+    office_phone: rs.tenant.contact_phone ?? null,
     storm: { id: rs.storm.id, name: rs.storm.name, status: rs.storm.status },
     run: { id: rs.run.id, pass: rs.run.pass },
     crew: rs.crew ? { name: rs.crew.name, language: rs.crew.language } : null,

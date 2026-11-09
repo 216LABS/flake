@@ -248,7 +248,11 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
             ) : (
               <div><Label htmlFor="price">Price ($). Suggested from your rate card, editable.</Label><Input id="price" data-testid="price" type="number" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} /></div>
             )}
-            <div><Label htmlFor="trigger">Trigger depth (in)</Label><Input id="trigger" type="number" step="0.5" value={trigger} onChange={(e) => setTrigger(Number(e.target.value))} /></div>
+            <div>
+              <Label htmlFor="trigger">Trigger depth (in)</Label>
+              <Input id="trigger" type="number" min={0} step="0.5" value={trigger} onChange={(e) => setTrigger(Math.max(0, Number(e.target.value)))} aria-describedby="trigger-hint" />
+              <p id="trigger-hint" className="mt-1 text-xs text-slate-600">{trigger === 0 ? 'Zero tolerance: you get an alert for any measurable snow.' : 'Set 0 for zero tolerance, any measurable snow.'}</p>
+            </div>
             <div><Label htmlFor="season">Season</Label><Input id="season" value={season} onChange={(e) => setSeason(e.target.value)} /></div>
             <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" checked={withSalt} onChange={(e) => setWithSalt(e.target.checked)} /> Salt, {money(suggestion.salt_bag_cents)} per 50 lb bag</label>
           </div>
@@ -280,7 +284,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
           <div className="text-sm">
             <p><b>{c.name}</b>, {label || address}</p>
             <p>{sqft ? `${sqft.toLocaleString()} sq ft` : 'Area not set'}{walkLf ? `, ${walkLf} ft of walks` : ''}</p>
-            <p>{pricingType.replace(/_/g, ' ')}{pricingType !== 'per_inch_tier' ? `: $${price}` : ''}, {trigger}&quot; trigger{withSalt ? ', plus salt' : ''}</p>
+            <p>{pricingType.replace(/_/g, ' ')}{pricingType !== 'per_inch_tier' ? `: $${price}` : ''}, {trigger === 0 ? 'zero tolerance' : <>{trigger}&quot; trigger</>}{withSalt ? ', plus salt' : ''}</p>
             <p className="mt-2 text-slate-600">Sending goes to {c.email || 'no email yet, so you will get a link to share'}. The customer sees the scope, price and terms, signs, and can put a card or bank account on file.</p>
           </div>
         ) : null}

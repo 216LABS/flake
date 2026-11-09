@@ -1,7 +1,8 @@
 import { PageHeader, buttonVariants } from '@flake/ui';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { requirePage } from '@/lib/auth';
+import { asc, eq, site } from '@flake/db';
+import { asUser, requirePage } from '@/lib/auth';
 import { HttpError, isUuid } from '@/lib/http';
 import { canTextFrom } from '@/lib/messaging';
 import { getProviders } from '@/lib/providers';
@@ -20,13 +21,14 @@ export default async function StormPage({ params }: { params: Promise<{ id: stri
   });
   if (!live) notFound();
   const { tiles } = await getProviders();
+  const sites = await asUser(ctx, (tx) => tx.select({ id: site.id, label: site.label }).from(site).where(eq(site.active, true)).orderBy(asc(site.label)));
   return (
     <>
       <PageHeader title={live.storm.name} actions={<>
         <Link className={buttonVariants({ variant: 'outline' })} href={`/billing?storm=${id}`}>Billing</Link>
         <Link className={buttonVariants({ variant: 'outline' })} href={`/storms/${id}/pay`}>Sub pay</Link>
       </>} />
-      <StormBoard stormId={id} initial={JSON.parse(JSON.stringify(live))} layers={tiles.layers()} canEdit={ctx.role !== 'viewer'} canText={canTextFrom(ctx.tenant)} />
+      <StormBoard stormId={id} initial={JSON.parse(JSON.stringify(live))} layers={tiles.layers()} canEdit={ctx.role !== 'viewer'} canText={canTextFrom(ctx.tenant)} sites={sites} />
     </>
   );
 }

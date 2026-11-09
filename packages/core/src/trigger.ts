@@ -143,6 +143,9 @@ function refreezeRisk(series: WeatherSeries, now: number): boolean {
   return temps.some((b, i) => i > 0 && temps[i - 1]!.v! > 32 && b.v! <= 32);
 }
 
+/** The smallest snowfall the weather service reports. */
+export const ANY_SNOW_IN = 0.1;
+
 /** ADDENDUM_WEATHER section 3 for one site. Never dispatches anything; the owner still taps Start storm. */
 export function evaluateSite(site: TriggerSite, series: WeatherSeries, now: number, reports: DepthReport[]): SiteDecision[] {
   const out: SiteDecision[] = [];
@@ -151,9 +154,11 @@ export function evaluateSite(site: TriggerSite, series: WeatherSeries, now: numb
   const eventKey = eventT === null ? `quiet:${new Date(now).toISOString().slice(0, 10)}` : new Date(eventT).toISOString();
 
   if (site.trigger_in !== null) {
+    // A 0" trigger is a zero tolerance contract: any measurable snow, not every dry day.
+    const trigger = Math.max(site.trigger_in, ANY_SNOW_IN);
     const next12 = sumRange(series.snowIn, now, now + 12 * HOUR);
-    if (next12 !== null && next12 >= site.trigger_in) {
-      const at = reachesTriggerAt(series.snowIn, now, now + 12 * HOUR, site.trigger_in);
+    if (next12 !== null && next12 >= trigger) {
+      const at = reachesTriggerAt(series.snowIn, now, now + 12 * HOUR, trigger);
       out.push({
         kind: 'forecast',
         site_id: site.site_id,
@@ -168,7 +173,7 @@ export function evaluateSite(site: TriggerSite, series: WeatherSeries, now: numb
       .filter((r) => r.at >= since && r.at <= now && distanceMeters(r.lat, r.lon, site.lat, site.lon) <= DEPTH_REPORT_RADIUS_M)
       .sort((a, b) => b.at - a.at)[0];
     const known = [elapsed, nearby ? nearby.depth_in : null].filter((v): v is number => v !== null);
-    if (known.length && Math.max(...known) >= site.trigger_in) {
+    if (known.length && Math.max(...known) >= trigger) {
       out.push({ kind: 'depth_report', site_id: site.site_id, event_key: eventKey, value_in: Math.max(...known) });
     }
   }
