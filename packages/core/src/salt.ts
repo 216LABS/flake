@@ -53,18 +53,42 @@ export function pickSupplier<T extends SaltSupplierLike>(suppliers: T[], lat: nu
   return covering[0] ?? null;
 }
 
-export type OrderPath = { kind: 'direct' } | { kind: 'pool'; poolTonsAfter: number; fills: boolean };
+export type OrderPath =
+  | { kind: 'direct' }
+  | { kind: 'pool'; poolTonsAfter: number; fills: boolean }
+  /** The open load is nearly full and yours won't fit, so it ships now without you and yours starts the next one. */
+  | { kind: 'next'; shipsNowTons: number; poolTonsAfter: number }
+  /** Yours won't fit: part of it fills the open load, the rest starts the next one. Two drops. */
+  | { kind: 'split'; nowTons: number; laterTons: number };
 
-/** A full truckload ships on its own. Anything smaller joins the open pool, which ships once it reaches a truckload. */
+/** A truck can take a little over its nominal load, but not a second load's worth. */
+export const OVERFILL = 0.1;
+/** An open load this full ships as is when the next order won't fit on it. */
+export const SHIP_AS_IS = 0.85;
+
+const r1 = (n: number) => Math.round(n * 10) / 10;
+
+/**
+ * A full truckload ships on its own. Anything smaller joins the open pool, which ships once it reaches a truckload. An order
+ * that would overflow the truck either waits for the next load (when the open one is nearly full anyway) or is split.
+ */
 export function orderPath(orderTons: number, openPoolTons: number, truckloadTons: number): OrderPath {
   if (orderTons >= truckloadTons) return { kind: 'direct' };
   const after = openPoolTons + orderTons;
-  return { kind: 'pool', poolTonsAfter: after, fills: after >= truckloadTons };
+  if (after <= truckloadTons * (1 + OVERFILL)) return { kind: 'pool', poolTonsAfter: after, fills: after >= truckloadTons };
+  if (openPoolTons >= truckloadTons * SHIP_AS_IS) return { kind: 'next', shipsNowTons: openPoolTons, poolTonsAfter: orderTons };
+  const nowTons = r1(truckloadTons - openPoolTons);
+  return { kind: 'split', nowTons, laterTons: r1(orderTons - nowTons) };
 }
 
-/** What the contractor will pay the supplier, before tax: tons at the delivered price, plus a stop fee on pooled loads. */
-export function orderCostCents(tons: number, pricePerTonCents: number, stopFeeCents: number, pooled: boolean): number {
-  return Math.round(tons * pricePerTonCents) + (pooled ? stopFeeCents : 0);
+/** Stops the supplier makes for this order: none extra on its own truck, one on a shared load, two when split. */
+export function stopsFor(path: OrderPath): number {
+  return path.kind === 'direct' ? 0 : path.kind === 'split' ? 2 : 1;
+}
+
+/** What the contractor will pay the supplier, before tax: tons at the delivered price, plus a stop fee per shared-load drop. */
+export function orderCostCents(tons: number, pricePerTonCents: number, stopFeeCents: number, stops: number | boolean): number {
+  return Math.round(tons * pricePerTonCents) + Number(stops) * stopFeeCents;
 }
 
 /** 216LABS's referral fee on an order, counted on what was delivered when known. */

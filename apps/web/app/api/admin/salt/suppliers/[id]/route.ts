@@ -11,6 +11,7 @@ const patch = z.object({
   truckload_tons: z.number().positive().max(100).optional(),
   active: z.boolean().optional(),
   new_link: z.boolean().optional(),
+  send_now: z.boolean().optional(),
 });
 
 export const PATCH = route<{ params: Promise<{ id: string }> }>(async (req, { params }) => {

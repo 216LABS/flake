@@ -7,12 +7,17 @@ import { api, money } from '@/lib/client';
 
 interface Order {
   id: string; tons: number; address: string; status: string; supplier: string; pool_id: string | null; pool_tons: number | null;
-  needed_by: string | null; delivery_date: string | null; delivered_tons: number | null; price_per_ton_cents: number; stop_fee_cents: number;
+  needed_by: string | null; delivery_date: string | null; pool_truckload_tons: number | null; delivered_tons: number | null; price_per_ton_cents: number; stop_fee_cents: number;
 }
 interface Data { on_hand_tons: number | null; per_storm_tons: number | null; advice: { storms_left: number | null; low: boolean; suggest_tons: number }; orders: Order[] }
+type Path =
+  | { kind: 'direct' }
+  | { kind: 'pool'; poolTonsAfter: number; fills: boolean }
+  | { kind: 'next'; shipsNowTons: number; poolTonsAfter: number }
+  | { kind: 'split'; nowTons: number; laterTons: number };
 type Quote =
   | { covered: false; address: string }
-  | { covered: true; address: string; supplier: string; miles: number; price_per_ton_cents: number; stop_fee_cents: number; truckload_tons: number; pool_tons: number; path: { kind: 'direct' } | { kind: 'pool'; poolTonsAfter: number; fills: boolean }; total_cents: number };
+  | { covered: true; address: string; supplier: string; miles: number; price_per_ton_cents: number; stop_fee_cents: number; truckload_tons: number; pool_tons: number; path: Path; total_cents: number };
 
 const STATUS: Record<string, { label: string; tone: 'amber' | 'blue' | 'green' | 'gray' }> = {
   pooling: { label: 'Filling a shared load', tone: 'amber' },
@@ -22,6 +27,28 @@ const STATUS: Record<string, { label: string; tone: 'amber' | 'blue' | 'green' |
   cancelled: { label: 'Cancelled', tone: 'gray' },
 };
 const t1 = (n: number) => Math.round(n * 10) / 10;
+
+/** What will happen to the order, before it's placed. */
+function plan(p: Path, truck: number): string {
+  switch (p.kind) {
+    case 'direct': return 'A full truckload, so it goes straight to the supplier.';
+    case 'pool': return p.fills
+      ? `This fills the shared load (${t1(p.poolTonsAfter)} of ${t1(truck)} tons), so it goes to the supplier right away.`
+      : `Joins a shared load: ${t1(p.poolTonsAfter)} of ${t1(truck)} tons with yours. It ships when the truck is full. You can cancel until then.`;
+    case 'next': return `The load filling now (${t1(p.shipsNowTons)} of ${t1(truck)} tons) doesn't have room for yours, so it ships now and yours starts the next one. It ships when that truck is full. You can cancel until then.`;
+    case 'split': return `Only ${t1(p.nowTons)} tons fit on the load filling now. Those ship right away and the other ${t1(p.laterTons)} tons start the next load, so it comes in two drops with a stop fee on each. Order ${t1(p.nowTons)} tons instead if you'd rather have one drop.`;
+  }
+}
+
+/** What happened, after it's placed. */
+function placed(p: Path, supplier: string, poolTons: number | null, truck: number): string {
+  switch (p.kind) {
+    case 'direct': return `Ordered. ${supplier} has it and will set a delivery date.`;
+    case 'pool': return p.fills ? `Ordered. Your order filled the truck, so it has gone to ${supplier}.` : `Ordered. You're in a shared load, ${t1(poolTons ?? p.poolTonsAfter)} of ${t1(truck)} tons so far.`;
+    case 'next': return `Ordered. You've started the next shared load, ${t1(poolTons ?? p.poolTonsAfter)} of ${t1(truck)} tons so far.`;
+    case 'split': return `Ordered in two drops. ${t1(p.nowTons)} tons filled the current load and have gone to ${supplier}. The other ${t1(p.laterTons)} tons start the next load.`;
+  }
+}
 
 /**
  * Bulk salt from a partner supplier. A full truckload ships on its own; smaller orders share a load with other
@@ -80,9 +107,10 @@ export function SaltOrder({ initial, defaultAddress, canOrder, truckloadHint = 2
             <Button variant="outline" disabled={busy || !Number(tons) || address.trim().length < 5} data-testid="salt-quote" onClick={() => run(async () => setQ(await api<Quote>('/api/salt/quote', { body: { address, tons: Number(tons) } })))}>Check price</Button>
             {q?.covered ? (
               <Button variant="accent" disabled={busy} data-testid="salt-place" onClick={() => run(async () => {
-                await api('/api/salt/orders', { body: { tons: Number(tons), address, needed_by: neededBy || null, contact_name: contact || null, contact_phone: phone || null } });
+                // The load may have moved since the quote, so describe what actually happened.
+                const r = await api<{ path: Path; supplier: string; pool_tons: number | null; truckload_tons: number }>('/api/salt/orders', { body: { tons: Number(tons), address, needed_by: neededBy || null, contact_name: contact || null, contact_phone: phone || null } });
                 setQ(null);
-                setMsg(q.path.kind === 'direct' ? `Ordered. ${q.supplier} has it and will set a delivery date.` : q.path.fills ? `Ordered. Your order filled the truck, so it has gone to ${q.supplier}.` : `Ordered. You're in a shared load, ${t1(q.path.poolTonsAfter)} of ${t1(q.truckload_tons)} tons so far.`);
+                setMsg(placed(r.path, r.supplier, r.pool_tons, r.truckload_tons));
                 await refresh();
                 router.refresh();
               })}>Place order</Button>
@@ -108,12 +136,10 @@ export function SaltOrder({ initial, defaultAddress, canOrder, truckloadHint = 2
             <p>No partner supplier delivers to {q.address} yet. Ask for one and we&apos;ll tell you when one does.</p>
           ) : (
             <>
-              <p><b>{q.supplier}</b>, {q.miles} miles away: {money(q.price_per_ton_cents)} a ton delivered{q.path.kind === 'pool' && q.stop_fee_cents ? `, plus ${money(q.stop_fee_cents)} for a stop on a shared load` : ''}.</p>
+              <p><b>{q.supplier}</b>, {q.miles} miles away: {money(q.price_per_ton_cents)} a ton delivered{q.path.kind !== 'direct' && q.stop_fee_cents ? `, plus ${money(q.stop_fee_cents)} for each stop on a shared load` : ''}.</p>
               <p className="mt-1">About <b className="tabular">{money(q.total_cents)}</b> before tax, billed by {q.supplier}.</p>
               <p className="mt-1 text-slate-600">
-                {q.path.kind === 'direct' ? 'A full truckload, so it goes straight to the supplier.'
-                  : q.path.fills ? `This fills the shared load (${t1(q.path.poolTonsAfter)} of ${t1(q.truckload_tons)} tons), so it goes to the supplier right away.`
-                  : `Joins a shared load: ${t1(q.path.poolTonsAfter)} of ${t1(q.truckload_tons)} tons with yours. It ships when the truck is full. You can cancel until then.`}
+                {plan(q.path, q.truckload_tons)}
               </p>
             </>
           )}
@@ -133,8 +159,8 @@ export function SaltOrder({ initial, defaultAddress, canOrder, truckloadHint = 2
               <div className="mt-1 text-slate-600">
                 {o.status === 'pooling' && o.pool_tons !== null ? (
                   <>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100" aria-hidden="true"><div className="h-full bg-amber-400" style={{ width: `${Math.min(100, (o.pool_tons / truckloadHint) * 100)}%` }} /></div>
-                    <span className="tabular">{t1(o.pool_tons)} of {truckloadHint} tons in this load so far.</span>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100" aria-hidden="true"><div className="h-full bg-amber-400" style={{ width: `${Math.min(100, (o.pool_tons / (o.pool_truckload_tons ?? truckloadHint)) * 100)}%` }} /></div>
+                    <span className="tabular">{t1(o.pool_tons)} of {t1(o.pool_truckload_tons ?? truckloadHint)} tons in this load so far.</span>
                   </>
                 ) : o.status === 'ordered' ? `${o.supplier} has it and will set a delivery date. ${o.address}` : o.status === 'scheduled' ? `Delivery on ${o.delivery_date}.` : o.status === 'delivered' ? `Delivered ${t1(o.delivered_tons ?? o.tons)} tons${o.delivery_date ? ` on ${o.delivery_date}` : ''}. Added to your salt count.` : o.address}
               </div>

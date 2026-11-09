@@ -6,13 +6,17 @@ import { api, money } from '@/lib/client';
 
 interface Supplier {
   id: string; name: string; email: string; radius_mi: number; price_per_ton_cents: number; truckload_tons: number; stop_fee_cents: number;
-  referral_fee_per_ton_cents: number; active: boolean; link: string; open_tons: number; orders: number; delivered_tons: number; fees_earned_cents: number; fees_pending_cents: number;
+  referral_fee_per_ton_cents: number; active: boolean; link: string; open_tons: number; open_since: string | null; open_needed_by: string | null; orders: number; delivered_tons: number; fees_earned_cents: number; fees_pending_cents: number;
 }
 interface Data { suppliers: Supplier[]; waitlist: { at: string; tenant: string; address: string; tons: number }[] }
 
 const blank = { name: '', contact_name: '', email: '', phone: '', address: '', radius_mi: '40', price: '80.00', truckload: '22', stop_fee: '75.00', fee: '3.00' };
 const cents = (s: string) => Math.round(Number(s) * 100);
 const t1 = (n: number) => Math.round(n * 10) / 10;
+const days = (iso: string) => {
+  const d = Math.floor((Date.now() - Date.parse(iso)) / 86_400_000);
+  return d < 1 ? 'under a day' : d === 1 ? '1 day' : `${d} days`;
+};
 
 export function SaltAdmin({ initial }: { initial: Data }) {
   const [data, setData] = useState(initial);
@@ -65,14 +69,18 @@ export function SaltAdmin({ initial }: { initial: Data }) {
                     </Td>
                     <Td className="tabular text-right">{money(s.price_per_ton_cents)}</Td>
                     <Td className="tabular text-right">{money(s.referral_fee_per_ton_cents)}</Td>
-                    <Td className="tabular text-right">{t1(s.open_tons)} t</Td>
+                    <Td className="text-right">
+                      <div className="tabular">{t1(s.open_tons)} t</div>
+                      {s.open_since ? <div className="text-xs text-slate-600" data-testid="open-age">waiting {days(s.open_since)}{s.open_needed_by ? `, needed by ${s.open_needed_by}` : ''}</div> : null}
+                      {s.open_tons > 0 ? <Button size="sm" variant="ghost" className="mt-1" disabled={busy} data-testid="send-now" onClick={() => { if (confirm(`Send ${t1(s.open_tons)} tons to ${s.name} now, short of a full truck? Check they'll run a partial load first.`)) void run(async () => { const r = await api<{ sent: number | null }>(`/api/admin/salt/suppliers/${s.id}`, { method: 'PATCH', body: { send_now: true } }); setMsg(r.sent ? `Sent ${r.sent} tons to ${s.name}. The companies in it were told.` : 'Nothing was waiting.'); }); }}>Send now</Button> : null}
+                    </Td>
                     <Td className="tabular text-right">{t1(s.delivered_tons)} t</Td>
                     <Td className="tabular text-right">{money(s.fees_earned_cents)}</Td>
                     <Td className="tabular text-right">{money(s.fees_pending_cents)}</Td>
                     <Td>
                       <div className="flex flex-wrap gap-1">
                         <Button size="sm" variant="outline" data-testid="supplier-copy" onClick={() => void copy(s)}>Copy link</Button>
-                        <Button size="sm" variant="ghost" disabled={busy} onClick={() => run(async () => { await api(`/api/admin/salt/suppliers/${s.id}`, { method: 'PATCH', body: { active: !s.active } }); })}>{s.active ? 'Turn off' : 'Turn on'}</Button>
+                        <Button size="sm" variant="ghost" disabled={busy} onClick={() => run(async () => { await api(`/api/admin/salt/suppliers/${s.id}`, { method: 'PATCH', body: { active: !s.active } }); setMsg(s.active ? `${s.name} is off: no new orders, and orders waiting on its shared load were cancelled and those companies told. Its link still works for loads it already has. Use New link to shut that too.` : `${s.name} is taking orders again.`); })}>{s.active ? 'Turn off' : 'Turn on'}</Button>
                         <Button size="sm" variant="ghost" disabled={busy} onClick={() => run(async () => { await api(`/api/admin/salt/suppliers/${s.id}`, { method: 'PATCH', body: { new_link: true } }); setMsg(`New link for ${s.name}. The old one no longer works.`); })}>New link</Button>
                       </div>
                     </Td>

@@ -33,7 +33,7 @@ const nextConfig = {
         ],
       },
       // Signed tokens live in these URLs; never leak them in a Referer header.
-      ...['/d/:path*', '/q/:path*', '/join/:path*', '/s/:path*'].map((source) => ({
+      ...['/d/:path*', '/q/:path*', '/join/:path*', '/s/:path*', '/c/:path*', '/supplier/:path*'].map((source) => ({
         source,
         headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }, { key: 'X-Robots-Tag', value: 'noindex' }],
       })),

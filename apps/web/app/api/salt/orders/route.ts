@@ -6,7 +6,8 @@ import { contractorSalt, placeOrder, saltOrderingReady } from '@/lib/salt-orders
 const order = z.object({
   tons: z.number().positive().max(500),
   address: z.string().trim().min(5).max(200),
-  needed_by: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  // A day of slack for time zones; a date already gone is a typo.
+  needed_by: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((d) => d >= new Date(Date.now() - 86_400_000).toISOString().slice(0, 10), 'That date has already passed.').nullable().optional(),
   contact_name: z.string().trim().max(80).nullable().optional(),
   contact_phone: z.string().trim().max(30).nullable().optional(),
   notes: z.string().trim().max(500).nullable().optional(),

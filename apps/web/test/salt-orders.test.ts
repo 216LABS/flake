@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, eq, job, salt_order, salt_pool, salt_supplier, serviceDb, sql, tenant } from '@flake/db';
-import { cancelOrder, createSupplier, placeOrder, quote, resolveSupplier, supplierUpdate } from '@/lib/salt-orders';
+import { cancelOrder, createSupplier, placeOrder, quote, resolveSupplier, supplierUpdate, updateSupplier } from '@/lib/salt-orders';
 import { makeWorld, type World } from './helpers';
 
 afterAll(() => closeDb());
@@ -64,4 +64,100 @@ describe('salt ordering', () => {
     expect(await resolveSupplier('nonsense')).toBeNull();
     expect(await resolveSupplier(`x.${sup!.link_rev}.${'A'.repeat(32)}`)).toBeNull();
   });
+
+  describe('a truck never carries more than one load', () => {
+    let sid: string;
+    const sum = (rows: { tons: number }[]) => Math.round(rows.reduce((n, r) => n + r.tons, 0) * 10) / 10;
+    const loads = async () => {
+      const pools = await serviceDb().select().from(salt_pool).where(eq(salt_pool.supplier_id, sid));
+      const orders = await serviceDb().select().from(salt_order).where(eq(salt_order.supplier_id, sid));
+      return pools.map((p) => ({ ...p, orders: orders.filter((o) => o.pool_id === p.id && o.status !== 'cancelled') }));
+    };
+
+    beforeAll(async () => {
+      await serviceDb().update(salt_supplier).set({ active: false });
+      sid = (await createSupplier({ name: `Overflow Salt ${Date.now()}`, email: 'over@flake.test', address: '100 Lake Ave, Lakewood, OH', radius_mi: 60, price_per_ton_cents: 7000, truckload_tons: 22, stop_fee_cents: 5000, referral_fee_per_ton_cents: 300 })).id;
+    });
+
+    it('splits an order that would overflow the open load, and starts the next load when the open one is nearly full', async () => {
+      const [ca, cb] = [await ctx(a), await ctx(b)];
+      await placeOrder(ca, { tons: 5, address: '1 Main St, Lakewood, OH' });
+      const split = await placeOrder(cb, { tons: 20, address: '2 Main St, Lakewood, OH' });
+      expect(split.path).toEqual({ kind: 'split', nowTons: 17, laterTons: 3 });
+      expect(split.orders.map((o) => [o.tons, o.status])).toEqual([[17, 'ordered'], [3, 'pooling']]);
+      let all = await loads();
+      expect(all.filter((p) => p.status === 'sent').map((p) => sum(p.orders))).toEqual([22]);
+      expect(all.filter((p) => p.status === 'open').map((p) => sum(p.orders))).toEqual([3]);
+
+      // 3 + 17 = 20 waiting. Another 10 won't fit, and 20 of 22 is close enough to ship as is.
+      await placeOrder(ca, { tons: 17, address: '1 Main St, Lakewood, OH' });
+      const next = await placeOrder(cb, { tons: 10, address: '2 Main St, Lakewood, OH' });
+      expect(next.path).toEqual({ kind: 'next', shipsNowTons: 20, poolTonsAfter: 10 });
+      all = await loads();
+      expect(all.filter((p) => p.status === 'sent').map((p) => sum(p.orders)).sort()).toEqual([20, 22]);
+      expect(all.filter((p) => p.status === 'open').map((p) => sum(p.orders))).toEqual([10]);
+      const quoted = await quote('1 Main St, Lakewood, OH', 18);
+      expect(quoted).toMatchObject({ path: { kind: 'split', nowTons: 12, laterTons: 6 }, total_cents: 18 * 7000 + 2 * 5000 });
+    });
+
+    it('a rush of small orders all land, and no load goes over the truck', async () => {
+      const cs = [await ctx(a), await ctx(b)];
+      const results = await Promise.all(Array.from({ length: 12 }, (_, i) => placeOrder(cs[i % 2]!, { tons: 3 + (i % 4) * 2, address: `${i + 10} Main St, Lakewood, OH` })));
+      expect(results).toHaveLength(12);
+      for (const p of await loads()) expect(sum(p.orders)).toBeLessThanOrEqual(22 * 1.1);
+      expect((await loads()).filter((p) => p.status === 'open')).toHaveLength(1);
+    });
+
+    it('a cancel racing the load filling never leaves a cancelled order on a sent load', async () => {
+      const [ca, cb] = [await ctx(a), await ctx(b)];
+      for (let i = 0; i < 4; i++) {
+        // Empty the open load so the arithmetic is exact: 1 of mine plus 21 of theirs fills it, 21 alone doesn't.
+        await serviceDb().update(salt_order).set({ status: 'cancelled' }).where(sql`${salt_order.supplier_id} = ${sid} and ${salt_order.status} = 'pooling'`);
+        const mine = await placeOrder(ca, { tons: 1, address: '1 Main St, Lakewood, OH' });
+        await Promise.allSettled([cancelOrder(ca, mine.order!.id), placeOrder(cb, { tons: 21, address: '2 Main St, Lakewood, OH' })]);
+        const [o] = await serviceDb().select().from(salt_order).where(eq(salt_order.id, mine.order!.id));
+        const [p] = await serviceDb().select().from(salt_pool).where(eq(salt_pool.id, o!.pool_id!));
+        expect([o!.status, p!.status]).toEqual(o!.status === 'cancelled' ? ['cancelled', 'open'] : ['ordered', 'sent']);
+      }
+    });
+
+    it('two quick Mark delivered taps add the salt once, and a typo is caught', async () => {
+      const c = await ctx(a);
+      const big = await placeOrder(c, { tons: 22, address: '1 Main St, Lakewood, OH' });
+      const [sup] = await serviceDb().select().from(salt_supplier).where(eq(salt_supplier.id, sid));
+      await expect(supplierUpdate(sup!, big.order!.id, { delivered_tons: 220 })).rejects.toMatchObject({ status: 422 });
+      const count = async () => ((await serviceDb().execute(sql`select value from app_setting where key = ${`salt_stock:${a.tenantId}`}`)) as unknown as { value: { entries: { id: string }[] } }[])[0]?.value.entries.filter((e) => e.id === `salt-order-${big.order!.id}`).length ?? 0;
+      await Promise.all([supplierUpdate(sup!, big.order!.id, { delivered_tons: 22 }), supplierUpdate(sup!, big.order!.id, { delivered_tons: 22 })]);
+      expect(await count()).toBe(1);
+      // A date can't be set on a delivered load.
+      await expect(supplierUpdate(sup!, big.order!.id, { delivery_date: '2026-12-02' })).rejects.toMatchObject({ status: 409 });
+    });
+
+    it('a load that is not filling can be sent short of a full truck', async () => {
+      const c = await ctx(a);
+      const w = await placeOrder(c, { tons: 4, address: '1 Main St, Lakewood, OH' });
+      const open = (await loads()).find((p) => p.status === 'open')!;
+      const r = await updateSupplier(sid, { send_now: true });
+      expect(r.sent).toBe(sum(open.orders));
+      const [o] = await serviceDb().select().from(salt_order).where(eq(salt_order.id, w.order!.id));
+      expect(o!.status).toBe('ordered');
+      expect((await updateSupplier(sid, { send_now: true })).sent).toBeNull();
+    });
+
+    it('turning a supplier off cancels orders waiting on its load but lets it finish loads it already has', async () => {
+      const c = await ctx(b);
+      const waiting = await placeOrder(c, { tons: 2, address: '2 Main St, Lakewood, OH' });
+      expect(waiting.order!.status).toBe('pooling');
+      const off = await updateSupplier(sid, { active: false });
+      const [o] = await serviceDb().select().from(salt_order).where(eq(salt_order.id, waiting.order!.id));
+      expect(o!.status).toBe('cancelled');
+      expect((await loads()).filter((p) => p.status === 'open')).toHaveLength(0);
+      const token = off.link.split('/supplier/')[1]!;
+      expect(await resolveSupplier(token)).not.toBeNull();
+      const renewed = await updateSupplier(sid, { new_link: true });
+      expect(await resolveSupplier(token)).toBeNull();
+      expect(await resolveSupplier(renewed.link.split('/supplier/')[1]!)).not.toBeNull();
+    });
+  });
 });
+

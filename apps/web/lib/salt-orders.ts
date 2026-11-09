@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { and, desc, eq, inArray, salt_order, salt_pool, salt_supplier, serviceDb, sql, tenant, type SaltOrderStatus } from '@flake/db';
-import { orderCostCents, orderPath, pickSupplier, referralFeeCents, reorderAdvice } from '@flake/core/salt';
+import { orderCostCents, orderPath, pickSupplier, referralFeeCents, reorderAdvice, stopsFor, type OrderPath } from '@flake/core/salt';
 import { baseUrl, isTestEnv, required } from './env';
 import { HttpError, isUuid } from './http';
 import { enqueue } from './jobs';
@@ -47,7 +47,8 @@ export async function resolveSupplier(token: string): Promise<Supplier | null> {
   const got = Buffer.from(mac);
   if (want.length !== got.length || !timingSafeEqual(want, got)) return null;
   const [s] = await serviceDb().select().from(salt_supplier).where(eq(salt_supplier.id, id));
-  return s && s.link_rev === rev && s.active ? s : null;
+  // A supplier that's turned off can still see and finish loads it already has. New link is what kills a link.
+  return s && s.link_rev === rev ? s : null;
 }
 
 // ---------- Admin: partner suppliers ----------
@@ -71,11 +72,49 @@ export async function createSupplier(input: SupplierInput) {
   return { ...s!, link: supplierLink(s!) };
 }
 
-export async function updateSupplier(id: string, patch: Partial<Pick<Supplier, 'price_per_ton_cents' | 'stop_fee_cents' | 'referral_fee_per_ton_cents' | 'radius_mi' | 'truckload_tons' | 'active' | 'email' | 'phone' | 'contact_name'>> & { new_link?: boolean }) {
-  const { new_link, ...set } = patch;
-  const [s] = await serviceDb().update(salt_supplier).set({ ...set, ...(new_link ? { link_rev: sql`${salt_supplier.link_rev} + 1` } : {}) }).where(eq(salt_supplier.id, id)).returning();
+export async function updateSupplier(id: string, patch: Partial<Pick<Supplier, 'price_per_ton_cents' | 'stop_fee_cents' | 'referral_fee_per_ton_cents' | 'radius_mi' | 'truckload_tons' | 'active' | 'email' | 'phone' | 'contact_name'>> & { new_link?: boolean; send_now?: boolean }) {
+  const { new_link, send_now, ...set } = patch;
+  const changes = { ...set, ...(new_link ? { link_rev: sql`${salt_supplier.link_rev} + 1` } : {}) };
+  // Send now on its own changes nothing on the supplier itself.
+  const [s] = Object.keys(changes).length
+    ? await serviceDb().update(salt_supplier).set(changes).where(eq(salt_supplier.id, id)).returning()
+    : await serviceDb().select().from(salt_supplier).where(eq(salt_supplier.id, id));
   if (!s) throw new HttpError(404, 'Supplier not found');
-  return { ...s, link: supplierLink(s) };
+  if (set.active === false) await releaseOpenLoad(s);
+  const sent = send_now ? await sendOpenLoad(s) : null;
+  return { ...s, link: supplierLink(s), sent };
+}
+
+/** Ship the open load as it is, short of a full truck, when it isn't filling and someone needs their salt. Tons sent, or null. */
+async function sendOpenLoad(s: Supplier): Promise<number | null> {
+  const db = serviceDb();
+  const out = await db.transaction(async (tx) => {
+    const [pool] = (await tx.execute(sql`select id from salt_pool where supplier_id = ${s.id} and status = 'open' for update`)) as unknown as { id: string }[];
+    if (!pool) return null;
+    const now = new Date().toISOString();
+    const orders = await tx.update(salt_order).set({ status: 'ordered', updated_at: now }).where(and(eq(salt_order.pool_id, pool.id), eq(salt_order.status, 'pooling'))).returning();
+    if (!orders.length) return null;
+    await tx.update(salt_pool).set({ status: 'sent', sent_at: now }).where(eq(salt_pool.id, pool.id));
+    await enqueue('salt.supplier_email', { kind: 'pool', id: pool.id, tenantId: orders[0]!.tenant_id }, { dedupeKey: `salt_pool:${pool.id}`, db: tx });
+    return { poolId: pool.id, orders };
+  });
+  if (!out) return null;
+  for (const tid of [...new Set(out.orders.map((o) => o.tenant_id))]) await tellTenant(tid, `Your shared salt load has gone to ${s.name} without waiting for a full truck. They'll set a delivery date.`, `salt_full:${out.poolId}`);
+  return round(out.orders.reduce((n, o) => n + o.tons, 0));
+}
+
+/** A supplier taken off Flake: orders still waiting on its open load are cancelled so those companies can order elsewhere. */
+async function releaseOpenLoad(s: Supplier) {
+  const db = serviceDb();
+  const waiting = await db.transaction(async (tx) => {
+    const pools = await tx.update(salt_pool).set({ status: 'cancelled' }).where(and(eq(salt_pool.supplier_id, s.id), eq(salt_pool.status, 'open'))).returning({ id: salt_pool.id });
+    if (!pools.length) return [];
+    return tx.update(salt_order).set({ status: 'cancelled', updated_at: new Date().toISOString() })
+      .where(and(inArray(salt_order.pool_id, pools.map((p) => p.id)), eq(salt_order.status, 'pooling'))).returning();
+  });
+  for (const o of waiting) {
+    await tellTenant(o.tenant_id, `${s.name} isn't taking salt orders through Flake right now, so your ${round(o.tons)} tons waiting on a shared load was cancelled. Order again to use another supplier.`, `salt_released:${o.id}`);
+  }
 }
 
 const WAITLIST_KEY = 'salt_waitlist';
@@ -91,11 +130,15 @@ export async function adminOverview() {
     suppliers: suppliers.map((s) => {
       const mine = orders.filter((o) => o.supplier_id === s.id && o.status !== 'cancelled');
       const delivered = mine.filter((o) => o.status === 'delivered');
+      const waiting = mine.filter((o) => o.status === 'pooling');
       return {
         ...s,
         link: supplierLink(s),
         open_tons: pools.filter((p) => p.supplier_id === s.id).reduce((n, p) => n + mine.filter((o) => o.pool_id === p.id).reduce((m, o) => m + o.tons, 0), 0),
         orders: mine.length,
+        // A load that isn't filling: how long the first order has waited and the soonest date anyone needs it.
+        open_since: waiting.map((o) => o.created_at).sort()[0] ?? null,
+        open_needed_by: waiting.map((o) => o.needed_by).filter(Boolean).sort()[0] ?? null,
         delivered_tons: delivered.reduce((n, o) => n + (o.delivered_tons ?? o.tons), 0),
         fees_earned_cents: delivered.reduce((n, o) => n + referralFeeCents(o.tons, o.delivered_tons, o.referral_fee_per_ton_cents), 0),
         fees_pending_cents: mine.filter((o) => o.status !== 'delivered').reduce((n, o) => n + referralFeeCents(o.tons, null, o.referral_fee_per_ton_cents), 0),
@@ -116,8 +159,8 @@ export async function quote(address: string, tons: number) {
   const at = await geocode(address);
   const s = pickSupplier(await serviceDb().select().from(salt_supplier).where(eq(salt_supplier.active, true)), at.lat, at.lon);
   if (!s) return { covered: false as const, address: at.label };
-  const poolTons = await openPoolTons(s.id);
-  const path = orderPath(tons, poolTons, s.truckload_tons);
+  const { tons: poolTons, truckload } = await openPool(s.id, s.truckload_tons);
+  const path = orderPath(tons, poolTons, truckload);
   return {
     covered: true as const,
     address: at.label,
@@ -125,18 +168,19 @@ export async function quote(address: string, tons: number) {
     miles: Math.round(s.miles),
     price_per_ton_cents: s.price_per_ton_cents,
     stop_fee_cents: s.stop_fee_cents,
-    truckload_tons: s.truckload_tons,
+    truckload_tons: truckload,
     pool_tons: poolTons,
     path,
-    total_cents: orderCostCents(tons, s.price_per_ton_cents, s.stop_fee_cents, path.kind === 'pool'),
+    total_cents: orderCostCents(tons, s.price_per_ton_cents, s.stop_fee_cents, stopsFor(path)),
   };
 }
 
-async function openPoolTons(supplierId: string): Promise<number> {
+/** The supplier's open load: tons in it so far, and the truck size it was started with. */
+async function openPool(supplierId: string, defaultTruckload: number): Promise<{ tons: number; truckload: number }> {
   const [row] = (await serviceDb().execute(sql`
-    select coalesce(sum(o.tons), 0)::float as tons from salt_pool p join salt_order o on o.pool_id = p.id and o.status = 'pooling'
-    where p.supplier_id = ${supplierId} and p.status = 'open'`)) as unknown as { tons: number }[];
-  return Number(row?.tons ?? 0);
+    select p.truckload_tons::float as truckload, coalesce(sum(o.tons), 0)::float as tons from salt_pool p left join salt_order o on o.pool_id = p.id and o.status = 'pooling'
+    where p.supplier_id = ${supplierId} and p.status = 'open' group by p.id`)) as unknown as { tons: number; truckload: number }[];
+  return { tons: Number(row?.tons ?? 0), truckload: Number(row?.truckload ?? defaultTruckload) };
 }
 
 export async function placeOrder(ctx: OfficeContext, input: OrderInput) {
@@ -161,30 +205,65 @@ export async function placeOrder(ctx: OfficeContext, input: OrderInput) {
     if (input.tons >= s.truckload_tons) {
       const [o] = await tx.insert(salt_order).values({ ...base, status: 'ordered', stop_fee_cents: 0 }).returning();
       await enqueue('salt.supplier_email', { kind: 'order', id: o!.id, tenantId: ctx.tenantId }, { dedupeKey: `salt_order:${o!.id}`, db: tx });
-      return { order: o!, filled: null as string | null, poolTons: null as number | null };
+      return { orders: [o!], sent: [] as string[], path: { kind: 'direct' } as OrderPath, poolTons: null as number | null };
     }
-    // One open pool per supplier (a unique index enforces it); lock it so two orders can't both think they filled it.
-    await tx.execute(sql`insert into salt_pool (supplier_id, truckload_tons) values (${s.id}, ${s.truckload_tons}) on conflict do nothing`);
-    const [pool] = (await tx.execute(sql`select id, truckload_tons from salt_pool where supplier_id = ${s.id} and status = 'open' for update`)) as unknown as { id: string; truckload_tons: number }[];
-    const [o] = await tx.insert(salt_order).values({ ...base, pool_id: pool!.id, status: 'pooling', stop_fee_cents: s.stop_fee_cents }).returning();
-    const [{ tons } = { tons: 0 }] = (await tx.execute(sql`select coalesce(sum(tons), 0)::float as tons from salt_order where pool_id = ${pool!.id} and status = 'pooling'`)) as unknown as { tons: number }[];
-    if (Number(tons) >= Number(pool!.truckload_tons)) {
-      await tx.update(salt_pool).set({ status: 'sent', sent_at: new Date().toISOString() }).where(eq(salt_pool.id, pool!.id));
-      await tx.update(salt_order).set({ status: 'ordered', updated_at: new Date().toISOString() }).where(and(eq(salt_order.pool_id, pool!.id), eq(salt_order.status, 'pooling')));
-      await enqueue('salt.supplier_email', { kind: 'pool', id: pool!.id, tenantId: ctx.tenantId }, { dedupeKey: `salt_pool:${pool!.id}`, db: tx });
-      return { order: { ...o!, status: 'ordered' as SaltOrderStatus }, filled: pool!.id, poolTons: Number(tons) };
+    // One open pool per supplier (a unique index enforces it). Lock it so two orders can't both think they filled it.
+    const openPool = async () => {
+      for (let i = 0; i < 3; i++) {
+        await tx.execute(sql`insert into salt_pool (supplier_id, truckload_tons) values (${s.id}, ${s.truckload_tons}) on conflict do nothing`);
+        const [p] = (await tx.execute(sql`select id, truckload_tons::float as truckload_tons from salt_pool where supplier_id = ${s.id} and status = 'open' for update`)) as unknown as { id: string; truckload_tons: number }[];
+        // Empty when another order filled and sent the pool while this one waited on the lock: make the next one.
+        if (p) return p;
+      }
+      throw new HttpError(503, 'Salt orders are busy right now. Try again in a minute.');
+    };
+    const tonsIn = async (poolId: string) => {
+      const [r] = (await tx.execute(sql`select coalesce(sum(tons), 0)::float as tons from salt_order where pool_id = ${poolId} and status = 'pooling'`)) as unknown as { tons: number }[];
+      return Number(r?.tons ?? 0);
+    };
+    const sent: string[] = [];
+    const ship = async (poolId: string) => {
+      const now = new Date().toISOString();
+      await tx.update(salt_pool).set({ status: 'sent', sent_at: now }).where(eq(salt_pool.id, poolId));
+      await tx.update(salt_order).set({ status: 'ordered', updated_at: now }).where(and(eq(salt_order.pool_id, poolId), eq(salt_order.status, 'pooling')));
+      await enqueue('salt.supplier_email', { kind: 'pool', id: poolId, tenantId: ctx.tenantId }, { dedupeKey: `salt_pool:${poolId}`, db: tx });
+      sent.push(poolId);
+    };
+    const add = async (poolId: string, tons: number) => {
+      const [o] = await tx.insert(salt_order).values({ ...base, tons, pool_id: poolId, status: 'pooling', stop_fee_cents: s.stop_fee_cents }).returning();
+      return o!;
+    };
+
+    const pool = await openPool();
+    const path = orderPath(input.tons, await tonsIn(pool.id), pool.truckload_tons);
+    const orders: Order[] = [];
+    if (path.kind === 'pool') {
+      orders.push(await add(pool.id, input.tons));
+      if (path.fills) await ship(pool.id);
+    } else if (path.kind === 'next') {
+      // The open load is nearly full and this won't fit on the truck: send it as is and start the next one.
+      await ship(pool.id);
+      orders.push(await add((await openPool()).id, input.tons));
+    } else if (path.kind === 'split') {
+      orders.push(await add(pool.id, path.nowTons));
+      await ship(pool.id);
+      orders.push(await add((await openPool()).id, path.laterTons));
     }
-    return { order: o!, filled: null, poolTons: Number(tons) };
+    const last = orders[orders.length - 1]!;
+    const [fresh] = await tx.select({ status: salt_order.status }).from(salt_order).where(eq(salt_order.id, last.id));
+    return { orders: orders.map((o) => ({ ...o, status: sent.includes(o.pool_id!) ? ('ordered' as SaltOrderStatus) : o.status })), sent, path, poolTons: fresh?.status === 'pooling' ? await tonsIn(last.pool_id!) : null };
   });
 
-  if (out.filled) {
+  for (const poolId of out.sent) {
     // Everyone in the load hears it's on its way to the supplier.
-    const members = await db.select({ tenant_id: salt_order.tenant_id }).from(salt_order).where(eq(salt_order.pool_id, out.filled));
-    for (const tid of [...new Set(members.map((m) => m.tenant_id))]) await tellTenant(tid, `Your salt load is full and has gone to ${s.name}. They'll set a delivery date.`, `salt_full:${out.filled}`);
-  } else if (out.order.status === 'pooling') {
-    await tellTenant(ctx.tenantId, `You're in a shared salt load with ${s.name}: ${round(out.poolTons!)} of ${round(s.truckload_tons)} tons so far. It ships when the truck is full.`, `salt_joined:${out.order.id}`);
+    const members = await db.select({ tenant_id: salt_order.tenant_id }).from(salt_order).where(eq(salt_order.pool_id, poolId));
+    for (const tid of [...new Set(members.map((m) => m.tenant_id))]) await tellTenant(tid, `Your salt load is full and has gone to ${s.name}. They'll set a delivery date.`, `salt_full:${poolId}`);
   }
-  return { order: out.order, supplier: s.name, pool_tons: out.poolTons, truckload_tons: s.truckload_tons };
+  const waiting = out.orders.find((o) => o.status === 'pooling');
+  if (waiting && out.poolTons !== null) {
+    await tellTenant(ctx.tenantId, `You're in a shared salt load with ${s.name}: ${round(out.poolTons)} of ${round(s.truckload_tons)} tons so far. It ships when the truck is full.`, `salt_joined:${waiting.id}`);
+  }
+  return { order: out.orders[0], orders: out.orders, path: out.path, supplier: s.name, pool_tons: out.poolTons, truckload_tons: s.truckload_tons };
 }
 
 const round = (n: number) => Math.round(n * 10) / 10;
@@ -200,7 +279,9 @@ export async function cancelOrder(ctx: OfficeContext, orderId: string) {
   const [o] = await db.select().from(salt_order).where(and(eq(salt_order.id, orderId), eq(salt_order.tenant_id, ctx.tenantId)));
   if (!o) throw new HttpError(404, 'Order not found');
   if (o.status === 'pooling' || (o.status === 'ordered' && !o.pool_id)) {
-    await db.update(salt_order).set({ status: 'cancelled', updated_at: new Date().toISOString() }).where(eq(salt_order.id, o.id));
+    // Only if nothing moved it on meanwhile (the load filling, or the supplier setting a date).
+    const done = await db.update(salt_order).set({ status: 'cancelled', updated_at: new Date().toISOString() }).where(and(eq(salt_order.id, o.id), eq(salt_order.status, o.status))).returning({ id: salt_order.id });
+    if (!done.length) throw new HttpError(409, 'The supplier already has this load. Call them to change it.', 'with_supplier');
     if (o.status === 'ordered') await enqueue('salt.supplier_email', { kind: 'cancel', id: o.id, tenantId: ctx.tenantId }, { dedupeKey: `salt_cancel:${o.id}` });
     return { ok: true };
   }
@@ -214,7 +295,7 @@ export async function contractorSalt(ctx: OfficeContext) {
   const used = report.storms.filter((s) => s.tons > 0);
   const perStorm = used.length ? used.reduce((n, s) => n + s.tons, 0) / used.length : null;
   const hasStock = report.entries.length > 0;
-  const orders = await serviceDb().select({ o: salt_order, supplier: salt_supplier.name, pool_status: salt_pool.status }).from(salt_order)
+  const orders = await serviceDb().select({ o: salt_order, supplier: salt_supplier.name, pool_truckload: salt_pool.truckload_tons }).from(salt_order)
     .innerJoin(salt_supplier, eq(salt_supplier.id, salt_order.supplier_id))
     .leftJoin(salt_pool, eq(salt_pool.id, salt_order.pool_id))
     .where(eq(salt_order.tenant_id, ctx.tenantId)).orderBy(desc(salt_order.created_at)).limit(20);
@@ -227,7 +308,7 @@ export async function contractorSalt(ctx: OfficeContext) {
     on_hand_tons: hasStock ? report.stock.tons : null,
     per_storm_tons: perStorm === null ? null : round(perStorm),
     advice: reorderAdvice(hasStock ? report.stock.tons : null, perStorm),
-    orders: orders.map(({ o, supplier }) => ({ ...o, supplier, pool_tons: o.pool_id ? (poolTons.get(o.pool_id) ?? null) : null })),
+    orders: orders.map(({ o, supplier, pool_truckload }) => ({ ...o, supplier, pool_truckload_tons: pool_truckload, pool_tons: o.pool_id ? (poolTons.get(o.pool_id) ?? null) : null })),
   };
 }
 
@@ -259,11 +340,18 @@ export async function supplierUpdate(s: Supplier, orderId: string, change: { del
   const now = new Date().toISOString();
   if ('delivery_date' in change) {
     if (o.status === 'delivered') throw new HttpError(409, 'Already delivered');
-    await db.update(salt_order).set({ status: 'scheduled', delivery_date: change.delivery_date, updated_at: now }).where(eq(salt_order.id, o.id));
+    const done = await db.update(salt_order).set({ status: 'scheduled', delivery_date: change.delivery_date, updated_at: now })
+      .where(and(eq(salt_order.id, o.id), inArray(salt_order.status, ['ordered', 'scheduled']))).returning({ id: salt_order.id });
+    if (!done.length) throw new HttpError(409, 'This order was cancelled or already delivered. Reload the page.');
     await tellTenant(o.tenant_id, `${s.name} will deliver your ${round(o.tons)} tons of salt on ${change.delivery_date}.`, `salt_sched:${o.id}:${change.delivery_date}`);
   } else {
     if (o.status === 'delivered') return { ok: true };
-    await db.update(salt_order).set({ status: 'delivered', delivered_tons: change.delivered_tons, delivery_date: o.delivery_date ?? now.slice(0, 10), updated_at: now }).where(eq(salt_order.id, o.id));
+    // A typo here lands on the contractor's salt count, so catch the obvious ones (50 for 5.0).
+    if (change.delivered_tons > Math.max(o.tons * 2, o.tons + 5)) throw new HttpError(422, `That's a lot more than the ${round(o.tons)} tons ordered. Check the number.`);
+    // Only the first of two quick taps counts, so the delivery is added to the count once.
+    const done = await db.update(salt_order).set({ status: 'delivered', delivered_tons: change.delivered_tons, delivery_date: o.delivery_date ?? now.slice(0, 10), updated_at: now })
+      .where(and(eq(salt_order.id, o.id), inArray(salt_order.status, ['ordered', 'scheduled']))).returning({ id: salt_order.id });
+    if (!done.length) return { ok: true };
     // The delivery goes straight onto the contractor's salt count on the Reports page.
     await addStockEntry(o.tenant_id, { id: `salt-order-${o.id}`, kind: 'delivery', at: now, tons: change.delivered_tons, note: `Delivered by ${s.name}` });
     await tellTenant(o.tenant_id, `${s.name} delivered ${round(change.delivered_tons)} tons of salt. It's added to your salt count.`, `salt_done:${o.id}`);

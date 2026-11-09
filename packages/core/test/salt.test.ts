@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { orderCostCents, orderPath, pickSupplier, referralFeeCents, reorderAdvice, tonsPerStorm } from '../src/salt';
+import { orderCostCents, orderPath, pickSupplier, referralFeeCents, reorderAdvice, stopsFor, tonsPerStorm } from '../src/salt';
 
 const sup = (id: string, lat: number, over: Partial<Parameters<typeof pickSupplier>[0][number]> = {}) => ({ id, lat, lon: -81.8, radius_mi: 40, price_per_ton_cents: 8000, truckload_tons: 22, stop_fee_cents: 7500, active: true, ...over });
 
@@ -34,9 +34,24 @@ describe('salt ordering', () => {
     expect(orderPath(12, 10, 22)).toEqual({ kind: 'pool', poolTonsAfter: 22, fills: true });
   });
 
+  it('never overloads the truck', () => {
+    // A little over is fine: trucks carry some slack.
+    expect(orderPath(14, 10, 22)).toEqual({ kind: 'pool', poolTonsAfter: 24, fills: true });
+    // Nearly full and yours won't fit: it ships without you and yours starts the next load.
+    expect(orderPath(10, 20, 22)).toEqual({ kind: 'next', shipsNowTons: 20, poolTonsAfter: 10 });
+    // Otherwise split across this load and the next.
+    expect(orderPath(20, 5, 22)).toEqual({ kind: 'split', nowTons: 17, laterTons: 3 });
+    expect(orderPath(17.5, 8.3, 22)).toEqual({ kind: 'split', nowTons: 13.7, laterTons: 3.8 });
+    expect(stopsFor({ kind: 'direct' })).toBe(0);
+    expect(stopsFor({ kind: 'pool', poolTonsAfter: 5, fills: false })).toBe(1);
+    expect(stopsFor({ kind: 'next', shipsNowTons: 20, poolTonsAfter: 10 })).toBe(1);
+    expect(stopsFor({ kind: 'split', nowTons: 17, laterTons: 3 })).toBe(2);
+  });
+
   it('prices orders and referral fees', () => {
     expect(orderCostCents(8, 8000, 7500, true)).toBe(71500);
     expect(orderCostCents(22, 8000, 7500, false)).toBe(176000);
+    expect(orderCostCents(20, 8000, 7500, 2)).toBe(175000);
     expect(referralFeeCents(8, null, 300)).toBe(2400);
     expect(referralFeeCents(8, 7.5, 300)).toBe(2250);
   });
