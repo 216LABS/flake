@@ -58,3 +58,32 @@ export function isLate(window: ServiceWindow | null | undefined, stormStartedAt:
   if (started.date === current.date && started.hm > window.open_by) return false;
   return true;
 }
+
+/** The snow season a date falls in, like "2026-27". From July on it is the winter ahead. */
+export function currentSeason(now = new Date()): string {
+  const start = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${start}-${String(start + 1).slice(2)}`;
+}
+
+/**
+ * The signed contract in force at a moment, from a lot's contracts listed newest first. The one for that season wins.
+ * A renewal already signed for a later season never prices or triggers today's work. Seasons written some other way
+ * than "2026-27" can't be placed, so for those the newest stands.
+ */
+export function liveContract<T extends { season: string }>(newestFirst: T[], at: Date | string | number = new Date()): T | undefined {
+  const now = currentSeason(new Date(at));
+  const exact = newestFirst.find((c) => c.season === now);
+  if (exact) return exact;
+  const later = (s: string) => /^\d{4}-\d{2}$/.test(s) && s > now;
+  return newestFirst.find((c) => !later(c.season));
+}
+
+/** liveContract for each lot, from contracts listed newest first. */
+export function liveContracts<T extends { season: string; site_id: string }>(newestFirst: T[], at: Date | string | number = new Date()): T[] {
+  const bySite = new Map<string, T[]>();
+  for (const c of newestFirst) bySite.set(c.site_id, [...(bySite.get(c.site_id) ?? []), c]);
+  return [...bySite.values()].flatMap((list) => {
+    const c = liveContract(list, at);
+    return c ? [c] : [];
+  });
+}

@@ -37,7 +37,12 @@ export function AlertActions({ alertId, status, routeIds, siteIds, name }: { ale
           </>
         ) : (
           <Button variant="accent" size="lg" disabled={busy} data-testid="publish" onClick={() => run(async () => {
-            await api(`/api/storms/${stormId}/publish`, { method: 'POST' });
+            try {
+              await api(`/api/storms/${stormId}/publish`, { method: 'POST' });
+            } catch (e) {
+              // A route with no driver is fixed on the board, so go there instead of leaving them stuck here.
+              if ((e as { code?: string }).code !== 'no_crew') throw e;
+            }
             router.push(`/storms/${stormId}`);
           })}>Publish</Button>
         )}

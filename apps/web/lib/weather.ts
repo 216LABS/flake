@@ -2,7 +2,7 @@ import { gzipSync } from 'node:zlib';
 import { and, app_setting, contract, desc, driver_action, eq, gte, inArray, serviceDb, site, sql, tenant, trigger_alert, weather_snapshot } from '@flake/db';
 import { expandSeries, evaluateSite, groupDecisions, alertHeadline, newWinterAlerts, summarize, toFahrenheit, toInches, type DepthReport, type HourBucket, type NwsAlert, type SiteDecision, type TriggerSite, type WeatherSeries } from '@flake/core/trigger';
 import type { ContractService } from '@flake/core/pricing';
-import { fmtLocal } from '@flake/core/time';
+import { fmtLocal, liveContracts } from '@flake/core/time';
 import type { FetchedDoc } from '@flake/providers';
 import { putBlob } from './blob';
 import { baseUrl } from './env';
@@ -168,7 +168,9 @@ export async function evaluateTenant(tenantId: string): Promise<string[]> {
   const nowMs = now.getTime();
   const sites = await db.select().from(site).where(and(eq(site.tenant_id, tenantId), eq(site.active, true), sql`${site.nws_office} is not null`));
   if (!sites.length) return [];
-  const contracts = await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at));
+  // Triggers come from the contract in force today, not a renewal signed for next winter. Today on the wall clock:
+  // the demo's weather clock replays an old storm, and contracts are signed in real time.
+  const contracts = liveContracts(await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)), new Date());
   const cellKey = (s: { nws_office: string | null; nws_grid_x: number | null; nws_grid_y: number | null }) => `${s.nws_office}/${s.nws_grid_x}/${s.nws_grid_y}`;
   const latest = new Map<string, typeof weather_snapshot.$inferSelect>();
   for (const s of sites) {

@@ -71,7 +71,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
                           <p className="text-xs text-slate-600">{v.storm}</p>
                         </div>
                         <p className="mt-0.5 text-sm text-slate-700">
-                          {v.departed ? v.services.map((x) => SERVICE[x] ?? x).join(', ') : 'Crew on site now'}
+                          {v.departed ? v.services.map((x) => SERVICE[x] ?? x).join(', ') : v.on_site_now ? 'Crew on site now' : 'Crew arrived. No finish time was recorded.'}
                           {v.replow ? ' (second pass)' : ''}
                           {v.depth !== null ? `. ${v.depth}" of snow` : ''}
                           {v.salt?.length ? `. Salt: ${v.salt.map((e) => `${e.qty} ${UNIT[e.unit] ?? e.unit}`).join(', ')}` : ''}

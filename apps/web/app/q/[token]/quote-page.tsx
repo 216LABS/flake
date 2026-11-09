@@ -27,6 +27,7 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
   const [accepted, setAccepted] = useState(quote.contract.status === 'accepted');
   const [error, setError] = useState<string | null>(null);
   const [paid, setPaid] = useState(quote.has_payment_method);
+  const [sending, setSending] = useState(false);
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <p className="font-display text-lg font-semibold text-slate-900">{quote.company}</p>
@@ -54,15 +55,18 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
           {sms ? <div className="mt-2"><Label htmlFor="ph">Mobile number</Label><Input id="ph" value={phone} type="tel" placeholder="216-555-0123" onChange={(e) => setPhone(e.target.value)} /></div> : null}
           <label className="mt-2 flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={emailOk} onChange={(e) => setEmailOk(e.target.checked)} data-testid="consent-email" /> Email me service updates.</label>
           {error ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
-          <Button variant="accent" className="mt-4 w-full" disabled={!agree || name.trim().length < 2} data-testid="accept" onClick={async () => {
+          <Button variant="accent" className="mt-4 w-full" disabled={sending || !agree || name.trim().length < 2} data-testid="accept" onClick={async () => {
             setError(null);
+            setSending(true);
             try {
               await api(`/api/q/${token}/accept`, { body: { name, agree, consentSms: sms, consentEmail: emailOk, phone_e164: phone || null } });
               setAccepted(true);
             } catch (e) {
               setError((e as Error).message);
+            } finally {
+              setSending(false);
             }
-          }}>Accept quote</Button>
+          }}>{sending ? 'Saving your signature...' : 'Accept quote'}</Button>
         </Card>
       )}
       {accepted && quote.payments_ready && quote.customer.billing_mode !== 'manual' ? (
@@ -98,14 +102,24 @@ function PaymentSetup({ token, onSaved }: { token: string; onSaved: () => void }
 
 function MockElement({ token, onSaved }: { token: string; onSaved: () => void }) {
   const [card, setCard] = useState('4242424242424242');
+  const [busy, setBusy] = useState(false);
+  const save = async (body: Record<string, unknown>) => {
+    setBusy(true);
+    try {
+      await api(`/api/q/${token}/mock-confirm`, { body });
+      onSaved();
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3">
       <p className="text-xs text-amber-900">Mock payment form. No real card is used. A number ending 0002 will decline later.</p>
       <Label className="mt-2" htmlFor="card">Test card number</Label>
       <Input id="card" value={card} onChange={(e) => setCard(e.target.value)} data-testid="mock-card" />
       <div className="mt-2 flex gap-2">
-        <Button onClick={async () => { await api(`/api/q/${token}/mock-confirm`, { body: { card } }); onSaved(); }} data-testid="mock-save">Save card</Button>
-        <Button variant="outline" onClick={async () => { await api(`/api/q/${token}/mock-confirm`, { body: { bank: true } }); onSaved(); }}>Use test bank account</Button>
+        <Button disabled={busy} onClick={() => void save({ card })} data-testid="mock-save">Save card</Button>
+        <Button variant="outline" disabled={busy} onClick={() => void save({ bank: true })}>Use test bank account</Button>
       </div>
     </div>
   );
@@ -115,16 +129,21 @@ function LiveElement({ onSaved }: { onSaved: () => void }) {
   const stripe = useStripe();
   const elements = useElements();
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   return (
     <div className="mt-3">
       <PaymentElement />
       {error ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
-      <Button className="mt-3" disabled={!stripe} onClick={async () => {
+      <Button className="mt-3" disabled={!stripe || busy} onClick={async () => {
         if (!stripe || !elements) return;
+        setBusy(true);
+        setError(null);
+        // A second tap while the bank or card is being checked would try to save it twice.
         const { error: err } = await stripe.confirmSetup({ elements, confirmParams: { return_url: location.href }, redirect: 'if_required' });
+        setBusy(false);
         if (err) setError(err.message ?? 'That did not go through.');
         else onSaved();
-      }}>Save</Button>
+      }}>{busy ? 'Saving...' : 'Save'}</Button>
     </div>
   );
 }

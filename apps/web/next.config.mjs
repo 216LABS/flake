@@ -1,4 +1,4 @@
-const prod = process.env.APP_ENV === 'production';
+const prod = (process.env.APP_ENV ?? (process.env.VERCEL_ENV === 'production' ? 'production' : 'local')) === 'production';
 const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 
 // 'unsafe-inline' for scripts is needed by Next's inline bootstrap without per-request nonces.

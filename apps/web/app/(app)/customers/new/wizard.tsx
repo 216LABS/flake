@@ -1,5 +1,6 @@
 'use client';
 
+import { currentSeason } from '@flake/core/time';
 import { suggestPrice, type RateCard } from '@flake/core/quote';
 import { Badge, Button, Card, Input, Label, PageHeader, Select, Progress } from '@flake/ui';
 import { useRouter } from 'next/navigation';
@@ -34,7 +35,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
   const [trigger, setTrigger] = useState(2);
   const [withSalt, setWithSalt] = useState(false);
   const [price, setPrice] = useState('');
-  const [season, setSeason] = useState('2026-27');
+  const [season, setSeason] = useState(() => currentSeason());
   const [pins, setPins] = useState<{ kind: string; lat: number; lon: number; note: string; file?: File }[]>([]);
   const [suggestions, setSuggestions] = useState<{ label: string; lat: number; lon: number }[]>([]);
   const [photoNote, setPhotoNote] = useState<string | null>(null);

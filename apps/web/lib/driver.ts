@@ -1,6 +1,7 @@
 import { and, asc, contract, crew_member, desc, driver_action, driver_position, driverScope, eq, inArray, problem_report, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, visit, visit_correction, visit_photo, type DriverScope, type Tx } from '@flake/db';
 import { driverAction, type DriverAction } from '@flake/contracts';
 import { gpsMatches } from '@flake/core/geo';
+import { liveContracts } from '@flake/core/time';
 import type { ContractService } from '@flake/core/pricing';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { getBlob, putBlob, signedUploadUrl } from './blob';
@@ -67,7 +68,7 @@ export async function loadRun(rs: RunScope) {
   const { tenantId, runId, stormId } = rs.scope;
   const rows = await db.select({ stop: run_stop, site }).from(run_stop).innerJoin(site, eq(site.id, run_stop.site_id)).where(and(eq(run_stop.tenant_id, tenantId), eq(run_stop.storm_run_id, runId))).orderBy(asc(run_stop.seq));
   const siteIds = rows.map((r) => r.site.id);
-  const contracts = siteIds.length ? await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), inArray(contract.site_id, siteIds), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)) : [];
+  const contracts = liveContracts(siteIds.length ? await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), inArray(contract.site_id, siteIds), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)) : [], rs.storm.started_at);
   const pins = siteIds.length ? await db.select().from(site_pin).where(and(eq(site_pin.tenant_id, tenantId), inArray(site_pin.site_id, siteIds))) : [];
   const stormVisits = await db.select({ id: visit.id }).from(visit).where(and(eq(visit.tenant_id, tenantId), eq(visit.storm_id, stormId), eq(visit.crew_id, rs.run.crew_id ?? '00000000-0000-0000-0000-000000000000')));
   return {

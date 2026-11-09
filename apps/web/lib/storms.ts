@@ -1,7 +1,6 @@
-import { and, asc, contract, crew_member, customer, desc, driver_position, eq, inArray, message_log, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, visitNotVoided, withUser, sms_consent, type Tx } from '@flake/db';
+import { and, asc, crew_member, customer, desc, driver_position, eq, inArray, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, visitNotVoided, withUser, sms_consent, type Tx } from '@flake/db';
 import { isLate, localHm } from '@flake/core/time';
 import { replanFrom } from '@flake/core/routing';
-import type { ContractService } from '@flake/core/pricing';
 import { z } from 'zod';
 import { stormCreate, runStopPatch, stormNotify } from '@flake/contracts';
 import { HttpError } from './http';
@@ -382,14 +381,4 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     counts: { done: all.filter((x) => x.status === 'done').length, open: all.filter((x) => ['open', 'enroute', 'problem'].includes(x.status)).length, onsite: all.filter((x) => x.status === 'onsite').length, skipped: all.filter((x) => x.status === 'skipped').length, late: all.filter((x) => x.late).length, total: all.length },
     weather: await tenantWeatherHeader(ctx.tenantId, [...new Set(data.stops.map((x) => x.site.id))]),
   };
-}
-
-export async function latestContractFor(tenantId: string, siteId: string) {
-  const [c] = await serviceDb().select().from(contract).where(and(eq(contract.tenant_id, tenantId), eq(contract.site_id, siteId), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)).limit(1);
-  return c ? { services: c.services as ContractService[], salt_pricing: c.salt_pricing as { unit: string; amount_cents: number } | null } : null;
-}
-
-export async function customerMessagesCount(tenantId: string, keyLike: string) {
-  const rows = await serviceDb().select({ id: message_log.id }).from(message_log).where(and(eq(message_log.tenant_id, tenantId), sql`idempotency_key like ${keyLike}`));
-  return rows.length;
 }

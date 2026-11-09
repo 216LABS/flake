@@ -1,4 +1,4 @@
-import { and, contract, customer, eq, notInArray, serviceDb, site, sms_consent, tenant, withUser } from '@flake/db';
+import { and, contract, customer, eq, ne, notInArray, serviceDb, site, sms_consent, tenant, withUser } from '@flake/db';
 import { CUSTOMER_CONSENT_TEXT } from '@flake/core/messages';
 import { quoteAccept, quoteCreate } from '@flake/contracts';
 import { z } from 'zod';
@@ -76,6 +76,8 @@ export async function acceptQuote(token: string, input: z.infer<typeof quoteAcce
     if (now?.status === 'void') throw new HttpError(404, 'This quote is no longer available', 'quote_dead');
     return { already: true };
   }
+  // A new signature for the same lot and season replaces the old agreement, so only one price is in force.
+  await db.update(contract).set({ status: 'void' }).where(and(eq(contract.tenant_id, r.tenant.id), eq(contract.site_id, r.contract.site_id), eq(contract.season, r.contract.season), eq(contract.status, 'accepted'), ne(contract.id, r.contract.id)));
   const phone = input.phone_e164 ?? r.customer.phone_e164;
   await db.update(customer).set({ notify_sms: input.consentSms && Boolean(phone), notify_email: input.consentEmail, phone_e164: phone }).where(and(eq(customer.id, r.customer.id), eq(customer.tenant_id, r.tenant.id)));
   if (input.consentSms && phone) {

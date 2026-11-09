@@ -1,4 +1,8 @@
-export const appEnv = () => process.env.APP_ENV ?? 'local';
+/**
+ * Fails closed: a live Vercel deployment that is missing APP_ENV is still production. Treating it as a laptop would turn
+ * on the demo login, whose password is in this public repo, and the shared fake weather clock.
+ */
+export const appEnv = () => process.env.APP_ENV ?? (process.env.VERCEL_ENV === 'production' ? 'production' : 'local');
 export const isProd = () => appEnv() === 'production';
 export const isMock = () => (process.env.PROVIDERS_MODE ?? 'mock') !== 'live';
 export const isTestEnv = () => appEnv() !== 'production';

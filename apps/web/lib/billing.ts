@@ -3,7 +3,7 @@ import { applyCorrections, draftInvoices, flagKey, isDraftClean, type BillingCon
 import { applicationFeeCents, feeRate, proFeaturesEnabled, type Plan } from '@flake/core/fees';
 import type { ContractService, SaltPricing, StormDepthContext } from '@flake/core/pricing';
 import { qboCsv, type QboRow } from '@flake/core/qbo';
-import { fmtLocal } from '@flake/core/time';
+import { fmtLocal, liveContracts } from '@flake/core/time';
 import { sumRange } from '@flake/core/trigger';
 import type { StripeEventLike } from '@flake/providers';
 import { z } from 'zod';
@@ -47,7 +47,8 @@ async function loadBillingInput(tx: Tx, stormId: string) {
   const visits = await tx.select().from(visit).where(eq(visit.storm_id, stormId));
   const siteIds = [...new Set([...stops.map((x) => x.site_id), ...visits.map((v) => v.site_id)])];
   const sites = siteIds.length ? await tx.select().from(site).where(inArray(site.id, siteIds)) : [];
-  const contracts = siteIds.length ? await tx.select().from(contract).where(and(inArray(contract.site_id, siteIds), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)) : [];
+  // The contract for the storm's season: a renewal signed for next winter doesn't price this storm.
+  const contracts = liveContracts(siteIds.length ? await tx.select().from(contract).where(and(inArray(contract.site_id, siteIds), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)) : [], s.started_at);
   const visitIds = visits.map((v) => v.id);
   const photos = visitIds.length ? await tx.select({ visit_id: visit_photo.visit_id, phase: visit_photo.phase }).from(visit_photo).where(inArray(visit_photo.visit_id, visitIds)) : [];
   const corrections = visitIds.length ? await tx.select().from(visit_correction).where(inArray(visit_correction.visit_id, visitIds)).orderBy(visit_correction.created_at) : [];
@@ -359,12 +360,19 @@ export async function billInstallments(tenantId?: string) {
   const db = serviceDb();
   const rows = await db.select({ contract, site, customer, tenant }).from(contract)
     .innerJoin(site, eq(site.id, contract.site_id)).innerJoin(customer, eq(customer.id, site.customer_id)).innerJoin(tenant, eq(tenant.id, contract.tenant_id))
-    .where(and(eq(contract.status, 'accepted'), tenantId ? eq(contract.tenant_id, tenantId) : undefined));
+    .where(and(eq(contract.status, 'accepted'), eq(site.active, true), tenantId ? eq(contract.tenant_id, tenantId) : undefined))
+    .orderBy(desc(contract.created_at));
   const { payments } = await getProviders();
+  // A re-quote for the same season leaves the old contract accepted too. Only the newest one for a lot and season bills;
+  // next season's renewal is a different season and doesn't stop this one.
+  const seen = new Set<string>();
   const { seasonalInstallments } = await import('@flake/core/pricing');
   const { installment_invoice } = await import('@flake/db');
   let created = 0;
   for (const r of rows) {
+    const key = `${r.site.id}:${r.contract.season}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     const pricing = (r.contract.services as ContractService[]).find((s) => s.pricing?.type === 'seasonal')?.pricing;
     if (pricing?.type !== 'seasonal' || !r.tenant.stripe_account_id || !r.tenant.stripe_charges_enabled) continue;
     const seq = r.contract.installments_billed + 1;

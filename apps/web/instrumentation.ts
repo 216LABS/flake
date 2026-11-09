@@ -9,7 +9,7 @@ export async function register() {
     const Sentry = await import('@sentry/nextjs');
     Sentry.init({ dsn: process.env.SENTRY_DSN, tracesSampleRate: 0.05 });
   }
-  const env = process.env.APP_ENV ?? 'local';
+  const env = process.env.APP_ENV ?? (process.env.VERCEL_ENV === 'production' ? 'production' : 'local');
   if (env === 'production' || env === 'staging' || process.env.DISABLE_JOB_TICKER === '1') return;
   const { runJobs } = await import('./lib/handlers');
   let running = false;

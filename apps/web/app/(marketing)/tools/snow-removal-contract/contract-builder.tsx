@@ -1,12 +1,13 @@
 'use client';
 
+import { currentSeason } from '@flake/core/time';
 import { Button, Card, Input, Label, Select, Textarea } from '@flake/ui';
 import { useState } from 'react';
 
 const SERVICES = ['plow', 'salt', 'walks', 'haul'] as const;
 
 export function ContractBuilder() {
-  const [f, setF] = useState({ company: '', client: '', site: '', season_start: 'November 1, 2026', season_end: 'April 15, 2027', trigger_in: 2, pricing_type: 'per_push', price_text: '', salt_text: '', insurance_text: 'Contractor carries general liability insurance and will provide a certificate on request.', payment_terms: 'Net 30', email: '' });
+  const [f, setF] = useState({ company: '', client: '', site: '', season_start: `November 1, ${currentSeason().slice(0, 4)}`, season_end: `April 15, ${Number(currentSeason().slice(0, 4)) + 1}`, trigger_in: 2, pricing_type: 'per_push', price_text: '', salt_text: '', insurance_text: 'Contractor carries general liability insurance and will provide a certificate on request.', payment_terms: 'Net 30', email: '' });
   const [services, setServices] = useState<string[]>(['plow']);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

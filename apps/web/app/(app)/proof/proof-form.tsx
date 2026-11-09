@@ -10,7 +10,11 @@ const DAY = 86400000;
 export function ProofForm({ sites, packets, preselect, tz }: { sites: { id: string; label: string; customer: string }[]; packets: any[]; preselect?: string; tz: string }) {
   const [siteId, setSiteId] = useState(preselect ?? sites[0]?.id ?? '');
   const [mode, setMode] = useState<'range' | 'claim'>('range');
-  const [from, setFrom] = useState('2025-12-01');
+  // This season so far: snow seasons start in the fall, so before July it's the one that began last October.
+  const [from, setFrom] = useState(() => {
+    const now = new Date();
+    return `${now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1}-10-01`;
+  });
   const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
   const [claim, setClaim] = useState('');
   const [state, setState] = useState<'idle' | 'working' | 'ready'>('idle');

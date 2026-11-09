@@ -1,3 +1,4 @@
+import { currentSeason } from '@flake/core/time';
 import { contract, customer, desc, eq, site, site_pin } from '@flake/db';
 import { Badge, buttonVariants, Card, PageHeader } from '@flake/ui';
 import Link from 'next/link';
@@ -10,11 +11,6 @@ import { NewQuote, RetireSite } from './site-actions';
 import { SiteEditor } from './site-editor';
 
 /** Snow seasons cross the new year: November 2026 and February 2027 are both 2026-27. */
-function currentSeason(now = new Date()) {
-  const start = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
-  return `${start}-${String(start + 1).slice(2)}`;
-}
-
 export const metadata = { title: 'Site' };
 
 export default async function SitePage({ params }: { params: Promise<{ id: string }> }) {

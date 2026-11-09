@@ -1,12 +1,13 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { isProd } from './lib/env';
 
 const APP_PREFIXES = ['/admin', '/dashboard', '/alerts', '/storms', '/customers', '/sites', '/routes', '/billing', '/proof', '/reports', '/settings', '/onboarding'];
 
 /** Refreshes the Supabase session cookie, sends signed-out office visits to login, and hides /dev in production. */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if ((pathname.startsWith('/dev') || pathname.startsWith('/api/dev')) && process.env.APP_ENV === 'production') {
+  if ((pathname.startsWith('/dev') || pathname.startsWith('/api/dev')) && isProd()) {
     return new NextResponse('Not found', { status: 404 });
   }
   let response = NextResponse.next({ request });

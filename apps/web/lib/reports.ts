@@ -2,7 +2,9 @@ import { app_setting, eq, serviceDb, sql, type Tx } from '@flake/db';
 import { hoursOf, saltOnHand, saltTons, shiftsFrom, type HoursRow, type StockEntry } from '@flake/core/reports';
 import { fmtLocal, localHm, zonedDayStart } from '@flake/core/time';
 
-const ymd = /^\d{4}-\d{2}-\d{2}$/;
+const YMD = /^\d{4}-\d{2}-\d{2}$/;
+/** A real calendar day only: 2026-13-45 from an edited link would otherwise crash the page. */
+const ymd = { test: (v: string) => { const d = new Date(`${v}T12:00:00Z`); return YMD.test(v) && !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v; } };
 const DAY = 86_400_000;
 
 /** A pay period in the company's time zone. Defaults to the last 14 days, today included. */
