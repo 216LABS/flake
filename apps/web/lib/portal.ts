@@ -77,7 +77,7 @@ export async function portalData(customerId: string, tenantId: string) {
     sites: sites.map((s) => {
       const k = contracts.find((x) => x.site_id === s.id);
       return {
-        id: s.id, label: s.label, address: s.address,
+        id: s.id, label: s.label, address: s.address, active: s.active,
         contract: k ? { season: k.season, status: k.status } : null,
         visits: visits.filter((x) => x.v.site_id === s.id).map(({ v, stormName }) => ({
           id: v.id, storm: stormName, arrived: v.arrived_device_at, departed: v.departed_device_at, services: v.services, depth: v.depth_in === null ? null : Number(v.depth_in), salt: saltOf(v.id, v.salt), replow: Boolean(v.is_replow),

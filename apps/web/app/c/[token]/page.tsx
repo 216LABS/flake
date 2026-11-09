@@ -133,7 +133,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
           </section>
         ) : null}
 
-        <RequestVisit token={token} company={data.company.name} sites={data.sites.map((x) => ({ id: x.id, label: x.label }))} />
+        <RequestVisit token={token} company={data.company.name} sites={data.sites.filter((x) => x.active).map((x) => ({ id: x.id, label: x.label }))} />
 
         <footer className="border-t border-slate-200 pt-4 text-sm text-slate-600">
           <p>Questions about a visit or a bill? Contact {data.company.name}{data.company.phone ? ` at ${phone(data.company.phone)}` : ''}{data.company.email ? <> or <a className="text-sky-800 underline" href={`mailto:${data.company.email}`}>{data.company.email}</a></> : null}.</p>

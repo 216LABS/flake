@@ -6,7 +6,7 @@ import { POST as actionsRoute } from '@/app/api/d/[token]/actions/route';
 import { POST as photosRoute } from '@/app/api/d/[token]/photos/route';
 import { GET as runRoute } from '@/app/api/d/[token]/run/route';
 import { getBlob } from '@/lib/blob';
-import { closeStorm, createStorm, patchRunStop, publishStorm, revokeRunLink } from '@/lib/storms';
+import { addStopToRun, closeStorm, createStorm, patchRunStop, publishStorm, revokeRunLink } from '@/lib/storms';
 import { decryptToken, sha256Hex } from '@/lib/tokens';
 import { ctxOf, jsonReq, makeWorld, req, stopActions, type World } from './helpers';
 
@@ -241,6 +241,28 @@ describe('driver API', () => {
     const a = stopActions(s!.id, new Date());
     const t = decryptToken(r1.link_token_enc!);
     expect((await (await post(t, a.actions)).json()).acks[0].status).toBe('ok');
+  });
+});
+
+describe('changing routes mid-storm', () => {
+  it('a finished stop stays with the truck that did it, even from an old tab', async () => {
+    const out = await createStorm(ctxOf(w), { name: 'Done move', routeIds: [w.routeId, w.route2Id], crewAssignments: {} });
+    const r1 = out.runs.find((x) => x.route_id === w.routeId)!;
+    const r2 = out.runs.find((x) => x.route_id === w.route2Id)!;
+    const [s] = await serviceDb().select().from(run_stop).where(and(eq(run_stop.storm_run_id, r1.id), eq(run_stop.seq, 1)));
+    await serviceDb().update(run_stop).set({ status: 'done' }).where(eq(run_stop.id, s!.id));
+    await expect(patchRunStop(ctxOf(w), s!.id, { storm_run_id: r2.id })).rejects.toMatchObject({ status: 409, code: 'done' });
+    const [after] = await serviceDb().select().from(run_stop).where(eq(run_stop.id, s!.id));
+    expect(after!.storm_run_id).toBe(r1.id);
+  });
+
+  it('two people adding the same lot at once add it once', async () => {
+    const out = await createStorm(ctxOf(w), { name: 'Double add', routeIds: [w.routeId], crewAssignments: {} });
+    const extra = w.siteIds[w.siteIds.length - 1]!;
+    const tries = await Promise.allSettled([addStopToRun(ctxOf(w), out.runs[0]!.id, extra), addStopToRun(ctxOf(w), out.runs[0]!.id, extra)]);
+    expect(tries.filter((t) => t.status === 'fulfilled')).toHaveLength(1);
+    expect(tries.find((t) => t.status === 'rejected')).toMatchObject({ reason: { status: 409 } });
+    expect(await serviceDb().select().from(run_stop).where(and(eq(run_stop.storm_run_id, out.runs[0]!.id), eq(run_stop.site_id, extra)))).toHaveLength(1);
   });
 });
 

@@ -125,12 +125,15 @@ export async function sendRunLink(tenantId: string, runId: string) {
 /** Reassign, reorder or skip. Moving a stop tells both drivers; their PWAs also poll, so they see it within 10 s. */
 export async function patchRunStop(ctx: Ctx, stopId: string, patch: z.infer<typeof runStopPatch>) {
   const out = await withUser(ctx.userId, async (tx) => {
-    const [stop] = await tx.select().from(run_stop).where(eq(run_stop.id, stopId));
+    // Locked so a driver arriving on site can't slip in between this check and the move.
+    const [stop] = await tx.select().from(run_stop).where(eq(run_stop.id, stopId)).for('update');
     if (!stop) throw new HttpError(404, 'Stop not found');
     const set: Partial<typeof run_stop.$inferInsert> = { updated_at: new Date().toISOString() };
     let moved: { from: string; to: string } | null = null;
     if (patch.storm_run_id && patch.storm_run_id !== stop.storm_run_id) {
       if (stop.status === 'onsite') throw new HttpError(409, 'The driver is on site. Wait until they finish.', 'onsite');
+      // A finished stop stays with the truck that did it, so pay and records credit the right driver.
+      if (stop.status === 'done') throw new HttpError(409, 'That stop is already done. Reopen it to send a truck back.', 'done');
       const [target] = await tx.select().from(storm_run).where(eq(storm_run.id, patch.storm_run_id));
       const [source] = await tx.select().from(storm_run).where(eq(storm_run.id, stop.storm_run_id));
       if (!target || target.storm_id !== source!.storm_id) throw new HttpError(422, 'That run is not in this storm');
@@ -164,6 +167,8 @@ export async function addStopToRun(ctx: Ctx, runId: string, siteId: string) {
     const [run] = await tx.select({ run: storm_run, storm }).from(storm_run).innerJoin(storm, eq(storm.id, storm_run.storm_id)).where(eq(storm_run.id, runId));
     if (!run) throw new HttpError(404, 'Run not found');
     if (run.storm.status !== 'active') throw new HttpError(409, 'This storm is closed.');
+    // Two people adding the same lot at once would both pass the check below; one at a time per storm.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`add_stop:${run.storm.id}`}))`);
     const [st] = await tx.select({ id: site.id }).from(site).where(and(eq(site.id, siteId), eq(site.active, true)));
     if (!st) throw new HttpError(404, 'Site not found');
     const runs = await tx.select({ id: storm_run.id }).from(storm_run).where(eq(storm_run.storm_id, run.storm.id));

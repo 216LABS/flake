@@ -20,7 +20,7 @@ export const POST = route<{ params: Promise<{ token: string }> }>(async (req, { 
   const [row] = await db.select({ site, customer, tenant }).from(site)
     .innerJoin(customer, eq(customer.id, site.customer_id))
     .innerJoin(tenant, eq(tenant.id, site.tenant_id))
-    .where(and(eq(site.id, site_id), eq(site.customer_id, who.customerId), eq(site.tenant_id, who.tenantId)));
+    .where(and(eq(site.id, site_id), eq(site.customer_id, who.customerId), eq(site.tenant_id, who.tenantId), eq(site.active, true)));
   if (!row) throw new HttpError(404, 'Site not found');
   const hour = Math.floor(Date.now() / 3_600_000);
   const said = note ? ` "${note.replace(/\s+/g, ' ')}"` : '';
