@@ -1,20 +1,40 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource react */
-import { Document, Image, Page, StyleSheet, Text, View, renderToBuffer } from '@react-pdf/renderer';
+import { Document, Font, Image, Page, StyleSheet, Text, View, renderToBuffer } from '@react-pdf/renderer';
+import { NOTO_SANS_BOLD, NOTO_SANS_REGULAR } from './fonts/noto-sans';
 import type { ProofManifest } from '@flake/core/proof';
 import { fmtLocal } from '@flake/core/time';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import type { ReactElement } from 'react';
 
+// The built-in PDF fonts only cover Western European letters: "Nguyễn" or "Łódź" came out garbled, and an emoji
+// cut the rest of the line off. Noto Sans covers every Latin script plus Greek and Cyrillic.
+Font.register({ family: 'Noto Sans', fonts: [{ src: NOTO_SANS_REGULAR }, { src: NOTO_SANS_BOLD, fontWeight: 'bold' }] });
+Font.registerHyphenationCallback((word) => [word]);
+
+/** Letters Noto Sans has: Latin (with Vietnamese), IPA, accents, Greek, Cyrillic, and common punctuation and symbols. */
+const COVERED = /[^\t\n\r\u0020-\u052F\u1E00-\u1FFF\u2000-\u206F\u20A0-\u20CF\u2100-\u22FF]/gu;
+
+/**
+ * Emoji are dropped and other letters the font lacks (Chinese, Arabic) become "?", so the rest of the line still
+ * prints. Only the picture changes: the manifest and its hash are computed from the real text before this.
+ */
+export function pdfSafe<T>(value: T): T {
+  if (typeof value === 'string') return value.normalize('NFC').replace(/\p{Extended_Pictographic}|[\uFE0F\u200D]/gu, '').replace(COVERED, '?') as T;
+  if (Array.isArray(value)) return value.map(pdfSafe) as T;
+  if (value && typeof value === 'object' && !(value instanceof Uint8Array)) return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, pdfSafe(v)])) as T;
+  return value;
+}
+
 const s = StyleSheet.create({
-  page: { padding: 40, fontSize: 10, fontFamily: 'Helvetica', color: '#111827', lineHeight: 1.35 },
-  h1: { fontSize: 20, fontFamily: 'Helvetica-Bold', marginBottom: 6 },
-  h2: { fontSize: 13, fontFamily: 'Helvetica-Bold', marginTop: 14, marginBottom: 6 },
-  h3: { fontSize: 10.5, fontFamily: 'Helvetica-Bold', marginTop: 8, marginBottom: 3 },
+  page: { padding: 40, fontSize: 10, fontFamily: 'Noto Sans', color: '#111827', lineHeight: 1.35 },
+  h1: { fontSize: 20, fontFamily: 'Noto Sans', fontWeight: 'bold', marginBottom: 6 },
+  h2: { fontSize: 13, fontFamily: 'Noto Sans', fontWeight: 'bold', marginTop: 14, marginBottom: 6 },
+  h3: { fontSize: 10.5, fontFamily: 'Noto Sans', fontWeight: 'bold', marginTop: 8, marginBottom: 3 },
   muted: { color: '#4b5563' },
   mono: { fontFamily: 'Courier', fontSize: 8 },
   row: { flexDirection: 'row', borderBottomWidth: 0.5, borderColor: '#d1d5db', paddingVertical: 3 },
-  head: { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#111827', paddingBottom: 3, fontFamily: 'Helvetica-Bold' },
+  head: { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#111827', paddingBottom: 3, fontFamily: 'Noto Sans', fontWeight: 'bold' },
   cell: { flex: 1, paddingRight: 4, fontSize: 8 },
   warn: { backgroundColor: '#fef3c7', padding: 6, marginBottom: 8 },
   photos: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
@@ -181,7 +201,7 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
 }
 
 export async function renderProofPdf(input: ProofPdfInput): Promise<Buffer> {
-  const pdf = await renderToBuffer(<ProofDoc {...input} /> as ReactElement<any>);
+  const pdf = await renderToBuffer(<ProofDoc {...input} manifest={pdfSafe(input.manifest)} /> as ReactElement<any>);
   return stampPages(pdf, `Flake proof packet ${input.manifestSha256.slice(0, 16)}`);
 }
 
@@ -237,5 +257,5 @@ function ContractDoc(i: ContractPdfInput) {
 }
 
 export async function renderContractPdf(input: ContractPdfInput): Promise<Buffer> {
-  return renderToBuffer(<ContractDoc {...input} /> as ReactElement<any>);
+  return renderToBuffer(<ContractDoc {...pdfSafe(input)} /> as ReactElement<any>);
 }

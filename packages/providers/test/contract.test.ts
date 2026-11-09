@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { expandSeries, sumRange, toInches } from '@flake/core/trigger';
 import { buildManifest } from '@flake/core/proof';
 import { LiveEmail, LiveGeocoder, LivePush, LiveSms, LiveWeather, MockEmail, MockFootprints, MockGeocoder, MockOsm, MockParcels, MockPayments, MockSms, MockTiles, MockWeather, countyParcels, createProviders, nearestValidCell, nohrscCellToInches, nohrscUrl, signMockWebhook, signTwilio, MOCK_TWILIO_TOKEN, type EmailProvider, type Geocoder, type PaymentsProvider, type SmsProvider, type WeatherProvider } from '../src/index';
-import { renderContractPdf, renderProofPdf } from '../src/pdf';
+import { pdfSafe, renderContractPdf, renderProofPdf } from '../src/pdf';
 
 const live = process.env.LIVE_PROVIDER_TESTS === '1';
 const POINT = { lat: 41.4819, lon: -81.7982 };
@@ -388,6 +388,12 @@ describe('pdf', () => {
   });
   it('renders a proof packet', async () => {
     const pdf = await renderProofPdf({ manifest, manifestSha256: hash, generatedAt: '2026-01-01T00:00:00Z', images: {} });
+    expect(pdf.subarray(0, 4).toString()).toBe('%PDF');
+  }, 30000);
+  it('keeps every Latin name, and drops only what the font cannot draw', async () => {
+    expect(pdfSafe('Nguyễn Văn Đức, Łódź, José Café')).toBe('Nguyễn Văn Đức, Łódź, José Café');
+    expect(pdfSafe({ a: ['Snow ❄️ Pros 🏢', 7], b: '北京 Plaza', c: null })).toEqual({ a: ['Snow  Pros ', 7], b: '?? Plaza', c: null });
+    const pdf = await renderContractPdf({ company: 'Nguyễn Plow ❄️', customer: 'Łódź Plaza', site: '北京 Lot', season: '2026-27', services: [], terms: 'Café terms', disclaimer: 'x' });
     expect(pdf.subarray(0, 4).toString()).toBe('%PDF');
   }, 30000);
   it('renders a season of storms over many pages, each numbered', async () => {

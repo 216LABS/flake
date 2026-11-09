@@ -78,6 +78,17 @@ export function rateLimit(key: string, max: number, windowMs: number) {
 
 export const clientIp = (req: Request) => req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || null;
 
+/**
+ * Driver links are limited per link, not per address: phone carriers put thousands of phones behind one
+ * address, so on a storm night drivers from many companies would share a single allowance. A much looser
+ * per-address cap still slows anyone trying made-up links.
+ */
+export function driverRateLimit(req: Request, token: string, max = 600, kind = 'd') {
+  rateLimit(`${kind}:${token.slice(0, 64)}`, max, 60000);
+  const ip = clientIp(req);
+  if (ip) rateLimit(`${kind}ip:${ip}`, max * 20, 60000);
+}
+
 export function requireCron(req: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret || req.headers.get('authorization') !== `Bearer ${secret}`) throw new HttpError(401, 'Unauthorized');

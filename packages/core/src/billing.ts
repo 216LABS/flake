@@ -12,7 +12,8 @@ export type FlagCode =
   | 'missing_salt_qty'
   | 'seasonal_info'
   | 'missing_depth'
-  | 'no_contract';
+  | 'no_contract'
+  | 'odd_duration';
 
 export interface BillingFlag {
   code: FlagCode;
@@ -83,6 +84,9 @@ export function applyCorrections(visits: BillingVisit[], corrections: VisitCorre
     });
 }
 
+/** Longer than this on one hourly lot is unusual enough for a person to look before it bills. */
+const LONG_VISIT_MINUTES = 4 * 60;
+
 function flagsForSite(site: BillingSite, contract: BillingContract | undefined, statuses: string[], visits: BillingVisit[]): BillingFlag[] {
   const flags: BillingFlag[] = [];
   const add = (code: FlagCode, message: string, visit_id?: string, severity: BillingFlag['severity'] = 'review') =>
@@ -99,6 +103,14 @@ function flagsForSite(site: BillingSite, contract: BillingContract | undefined, 
     }
     if (!gpsMatches(v.arrive_lat, v.arrive_lon, site)) {
       add('no_gps_match', `${site.label}: arrive location is unavailable or more than 150 m from the site.`, v.id);
+    }
+    // Hourly lots bill straight from the phone's Arrive and Done times, so a Done tapped at the end of a shift, or a
+    // phone clock that jumped, would bill hours nobody worked.
+    const minutes = (Date.parse(v.departed_at!) - Date.parse(v.arrived_at)) / 60000; // only done visits reach here
+    if (minutes < 0) {
+      add('odd_duration', `${site.label}: Done is earlier than Arrive on the phone's clock, so the time on site is unknown.`, v.id);
+    } else if (minutes > LONG_VISIT_MINUTES && contract?.services.some((s) => s.pricing?.type === 'hourly')) {
+      add('odd_duration', `${site.label}: ${Math.round(minutes / 6) / 10} h on site at an hourly rate. Check Done wasn't tapped late.`, v.id);
     }
     if (v.after_photos === 0) add('no_after_photo', `${site.label}: no after photo on this visit.`, v.id);
     if (v.services.includes('salt') && !v.salt?.some((e) => e.qty > 0)) {

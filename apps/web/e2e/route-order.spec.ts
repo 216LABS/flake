@@ -4,7 +4,7 @@ import { login, sql } from './helpers';
 test('suggest order: shows a shorter order with times, saves only when accepted, and is stable when asked again', async ({ page }) => {
   await login(page);
   // Five sites of one priority, put in a zigzag west-east order on purpose.
-  const sites = await sql`select id from site where active and priority = 3 order by lon limit 5`;
+  const sites = await sql`select s.id from site s join tenant t on t.id = s.tenant_id where t.slug = 'lakeshore-demo' and s.active and s.priority = 3 order by s.lon limit 5`;
   test.skip(sites.length < 5, 'needs five priority 3 sites in the seed');
   const zig = [0, 4, 1, 3, 2].map((i) => sites[i]!.id);
   const name = `Order test ${Date.now()}`;

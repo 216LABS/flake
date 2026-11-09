@@ -28,15 +28,25 @@ describe('draftInvoices flags', () => {
   });
   it('duplicate within 60 minutes, not when re-plow or further apart', () => {
     const a = v('s1');
-    expect(flagsOf(input({ visits: [v('s1', { arrived_at: '2025-12-12T10:30:00Z' }), a] }))).toEqual(['duplicate']);
-    expect(flagsOf(input({ visits: [a, v('s1', { arrived_at: '2025-12-12T10:30:00Z', is_replow: true })] }))).toEqual([]);
-    expect(flagsOf(input({ visits: [a, v('s1', { arrived_at: '2025-12-12T11:00:00Z' })] }))).toEqual([]);
+    expect(flagsOf(input({ visits: [v('s1', { arrived_at: '2025-12-12T10:30:00Z', departed_at: '2025-12-12T10:50:00Z' }), a] }))).toEqual(['duplicate']);
+    expect(flagsOf(input({ visits: [a, v('s1', { arrived_at: '2025-12-12T10:30:00Z', departed_at: '2025-12-12T10:50:00Z', is_replow: true })] }))).toEqual([]);
+    expect(flagsOf(input({ visits: [a, v('s1', { arrived_at: '2025-12-12T11:00:00Z', departed_at: '2025-12-12T11:20:00Z' })] }))).toEqual([]);
   });
   it('no_gps_match when far away or unavailable, using the polygon if drawn', () => {
     expect(flagsOf(input({ visits: [v('s1', { arrive_lat: 41.5 })] }))).toEqual(['no_gps_match']);
     expect(flagsOf(input({ visits: [v('s1', { arrive_lat: null })] }))).toEqual(['no_gps_match']);
     const polygons = { type: 'Polygon' as const, coordinates: [[[LON, LAT], [LON + 0.001, LAT], [LON + 0.001, LAT + 0.001], [LON, LAT]]] };
     expect(flagsOf(input({ sites: [{ ...site('s1', 'c1'), polygons }], visits: [v('s1', { arrive_lat: LAT + 0.0005, arrive_lon: LON + 0.0007 })] }))).toEqual([]);
+  });
+  it('odd_duration: Done before Arrive anywhere, and over 4 h only on an hourly lot', () => {
+    const at = (h: number) => new Date(Date.UTC(2026, 0, 20, h)).toISOString();
+    const hourly: BillingContract = { site_id: 's1', services: [{ service: 'plow', pricing: { type: 'hourly', rate_cents: 12000 } }] };
+    expect(flagsOf(input({ visits: [v('s1', { arrived_at: at(5), departed_at: at(4) })] }))).toEqual(['odd_duration']);
+    expect(flagsOf(input({ contracts: [hourly], visits: [v('s1', { arrived_at: at(3), departed_at: at(12) })] }))).toEqual(['odd_duration']);
+    expect(draftInvoices(input({ contracts: [hourly], visits: [v('s1', { arrived_at: at(3), departed_at: at(12) })] }))[0]!.flags[0]!.message).toContain('9 h on site');
+    expect(flagsOf(input({ contracts: [hourly], visits: [v('s1', { arrived_at: at(3), departed_at: at(5) })] }))).toEqual([]);
+    expect(flagsOf(input({ visits: [v('s1', { arrived_at: at(3), departed_at: at(12) })] }))).toEqual([]);
+    expect(flagsOf(input({ visits: [v('s1', { arrived_at: at(3), departed_at: null })] }))).not.toContain('odd_duration');
   });
   it('no_after_photo', () => {
     expect(flagsOf(input({ visits: [v('s1', { after_photos: 0 })] }))).toEqual(['no_after_photo']);

@@ -1,4 +1,4 @@
-import { and, contract, customer, desc, eq, inArray, invoice_draft, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
+import { and, asc, contract, customer, desc, eq, inArray, invoice_draft, isNotNull, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
 import { applyCorrections, draftInvoices, flagKey, isDraftClean, type BillingContract, type BillingFlag, type BillingVisit } from '@flake/core/billing';
 import { applicationFeeCents, feeRate, proFeaturesEnabled, type Plan } from '@flake/core/fees';
 import type { ContractService, SaltPricing, StormDepthContext } from '@flake/core/pricing';
@@ -154,6 +154,13 @@ export async function applyFlagFix(ctx: Ctx, fix: z.infer<typeof flagFix>) {
         const [v] = await tx.select().from(visit).where(eq(visit.id, fix.visit_id));
         if (!v) throw new HttpError(404, 'Visit not found');
         await tx.insert(visit_correction).values({ tenant_id: ctx.tenantId, visit_id: fix.visit_id, field: 'salt', old_value: v.salt, new_value: [{ unit: fix.unit, qty: fix.qty }], reason: 'Salt quantity added in billing review', by_user: ctx.userId });
+        break;
+      }
+      case 'depth': {
+        // Per-inch lots need a depth. The storm's depth is the deepest on any visit, so one correction prices the lot.
+        const [v] = await tx.select().from(visit).where(and(eq(visit.storm_id, fix.storm_id), eq(visit.site_id, fix.site_id), isNotNull(visit.departed_device_at))).orderBy(asc(visit.arrived_device_at)).limit(1);
+        if (!v) throw new HttpError(404, 'No finished visit at this site in this storm');
+        await tx.insert(visit_correction).values({ tenant_id: ctx.tenantId, visit_id: v.id, field: 'depth_in', old_value: v.depth_in === null ? null : Number(v.depth_in), new_value: fix.depth_in, reason: 'Snow depth entered in billing review', by_user: ctx.userId });
         break;
       }
     }

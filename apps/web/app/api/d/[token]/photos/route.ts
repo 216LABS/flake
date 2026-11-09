@@ -1,12 +1,12 @@
 import { driverPhotoMeta } from '@flake/contracts';
 import { resolveToken, savePhoto } from '@/lib/driver';
-import { clientIp, HttpError, rateLimit, route } from '@/lib/http';
+import {driverRateLimit, HttpError, route } from '@/lib/http';
 
 const MAX_BYTES = 30 * 1024 * 1024;
 
 export const POST = route<{ params: Promise<{ token: string }> }>(async (req, { params }) => {
   const { token } = await params;
-  rateLimit(`d:${clientIp(req) ?? token.slice(0, 12)}`, 600, 60000);
+  driverRateLimit(req, token);
   const rs = await resolveToken(token, { forUpload: true });
   const form = await req.formData();
   const file = form.get('file');

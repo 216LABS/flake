@@ -62,7 +62,10 @@ export function BillingReview({ stormId, initial, canExport, showFees }: { storm
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Button variant={rows.length ? 'outline' : 'accent'} disabled={busy} data-testid="generate" onClick={() => run(() => api(`/api/storms/${stormId}/billing/draft`, { method: 'POST' }))}>{rows.length ? 'Regenerate drafts' : 'Generate drafts'}</Button>
-        <Button variant="accent" disabled={busy || !clean.length} data-testid="approve-clean" onClick={() => run(() => api('/api/billing/approve', { body: { draftIds: clean.map((r) => r.id) } }))}>Approve all clean ({clean.length})</Button>
+        <Button variant="accent" disabled={busy || !clean.length} data-testid="approve-clean" onClick={() => run(async () => {
+          // The server takes 500 at a time, and a big company can have more lots than that in one storm.
+          for (let i = 0; i < clean.length; i += 500) await api('/api/billing/approve', { body: { draftIds: clean.slice(i, i + 500).map((r) => r.id) } });
+        })}>Approve all clean ({clean.length})</Button>
         <label className="ml-2 flex items-center gap-2 text-sm"><input type="checkbox" data-testid="flagged-only" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.target.checked)} /> Show flagged only</label>
         {canExport ? <a className={buttonVariants({ variant: 'outline' })} data-testid="qbo" href={`/api/billing/export.csv?storm=${stormId}`}>QuickBooks CSV</a> : null}
       </div>
@@ -121,7 +124,14 @@ function FlagRow({ flag, editable, busy, onFix }: { flag: BillingFlag; editable:
               <Button size="sm" variant="outline" disabled={busy || !qty} data-testid="fix-salt" onClick={() => onFix({ action: 'salt', visit_id: flag.visit_id, unit: 'bag50lb', qty: Number(qty) })}>Add salt qty</Button>
             </>
           ) : null}
-          <Button size="sm" variant="ghost" disabled={busy} data-testid="fix-waive" onClick={() => onFix({ action: 'waive', flag_key: flagKey(flag) })}>Waive</Button>
+          {flag.code === 'missing_depth' ? (
+            <>
+              <Input aria-label="Snow depth in inches" className="h-8 w-20" type="number" min={0} step={0.5} value={qty} onChange={(e) => setQty(e.target.value)} data-testid="depth-in" />
+              <Button size="sm" variant="outline" disabled={busy || qty === ''} data-testid="fix-depth" onClick={() => onFix({ action: 'depth', site_id: flag.site_id, depth_in: Number(qty) })}>Set depth</Button>
+            </>
+          ) : null}
+          {/* Waiving a missing depth would bill a per-inch lot $0, so that one needs a depth instead. */}
+          {flag.code !== 'missing_depth' ? <Button size="sm" variant="ghost" disabled={busy} data-testid="fix-waive" onClick={() => onFix({ action: 'waive', flag_key: flagKey(flag) })}>Waive</Button> : null}
         </div>
       ) : null}
     </li>

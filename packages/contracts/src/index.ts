@@ -144,6 +144,7 @@ export const flagFix = z.discriminatedUnion('action', [
   z.object({ action: z.literal('skip'), storm_id: uuid, site_id: uuid }),
   z.object({ action: z.literal('replow'), storm_id: uuid, visit_id: uuid }),
   z.object({ action: z.literal('salt'), storm_id: uuid, visit_id: uuid, unit: saltUnit, qty: z.number().positive().max(10000) }),
+  z.object({ action: z.literal('depth'), storm_id: uuid, site_id: uuid, depth_in: z.number().min(0).max(120) }),
 ]);
 
 export const proofRequest = z.object({ siteId: uuid, from: z.iso.datetime({ offset: true }), to: z.iso.datetime({ offset: true }) });
