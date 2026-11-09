@@ -18,13 +18,23 @@ export async function addMember(tenantId: string, email: string, role: 'owner' |
   let userId = found[0]?.id;
   if (!userId) {
     const { data, error } = await adminClient().auth.admin.createUser({ email: address, email_confirm: true });
-    if (error || !data.user) throw new Error(`Could not create the user: ${error?.message}`);
-    userId = data.user.id;
+    if (data?.user) userId = data.user.id;
+    else {
+      // Two invites at once: the other one created the account first.
+      const again = (await db.execute(sql`select id from auth.users where lower(email) = ${address} limit 1`)) as unknown as { id: string }[];
+      if (!again[0]) throw new Error(`Could not create the user: ${error?.message}`);
+      userId = again[0].id;
+    }
   }
-  const [other] = await db.select().from(membership).where(eq(membership.user_id, userId));
-  if (other?.tenant_id === tenantId) throw new HttpError(409, 'They are already on your team.', 'already_member');
-  if (other) throw new HttpError(409, 'That email already belongs to another company on Flake.', 'other_company');
-  await db.insert(membership).values({ tenant_id: tenantId, user_id: userId, role });
+  const uid = userId;
+  await db.transaction(async (tx) => {
+    // One company per person: two companies adding the same person at once must not both get them.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`member:${uid}`}))`);
+    const [other] = await tx.select().from(membership).where(eq(membership.user_id, uid));
+    if (other?.tenant_id === tenantId) throw new HttpError(409, 'They are already on your team.', 'already_member');
+    if (other) throw new HttpError(409, 'That email already belongs to another company on Flake.', 'other_company');
+    await tx.insert(membership).values({ tenant_id: tenantId, user_id: uid, role });
+  });
   const [t] = await db.select().from(tenant).where(eq(tenant.id, tenantId));
   await queueNotify(tenantId, { email: address }, { template: 'team_invite', vars: { link: `${baseUrl()}/login` }, subject: `${t!.name} added you to Flake`, key: `team_invite:${userId}` });
   return { user_id: userId };
@@ -32,7 +42,15 @@ export async function addMember(tenantId: string, email: string, role: 'owner' |
 
 export async function removeMember(tenantId: string, userId: string, by: string) {
   if (userId === by) throw new HttpError(409, 'You cannot remove yourself.', 'self');
-  const db = serviceDb();
-  const removed = await db.delete(membership).where(and(eq(membership.tenant_id, tenantId), eq(membership.user_id, userId))).returning();
-  if (!removed.length) throw new HttpError(404, 'Not found');
+  await serviceDb().transaction(async (tx) => {
+    // Two owners removing each other at once must not leave the company with no owner.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`team:${tenantId}`}))`);
+    // Whoever is removing must still be an owner here; another owner may have just removed them.
+    const [me] = await tx.select().from(membership).where(and(eq(membership.tenant_id, tenantId), eq(membership.user_id, by), eq(membership.role, 'owner')));
+    if (!me) throw new HttpError(403, 'You are no longer an owner of this company.', 'not_owner');
+    const removed = await tx.delete(membership).where(and(eq(membership.tenant_id, tenantId), eq(membership.user_id, userId))).returning();
+    if (!removed.length) throw new HttpError(404, 'Not found');
+    const [left] = await tx.select({ n: sql<number>`count(*)::int` }).from(membership).where(and(eq(membership.tenant_id, tenantId), eq(membership.role, 'owner')));
+    if (!left?.n) throw new HttpError(409, 'A company needs at least one owner.', 'last_owner');
+  });
 }

@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+/** Real coordinates only: a stray 999 from a phone or a typo would break distances and routes. */
+const latN = z.number().min(-90).max(90);
+const lonN = z.number().min(-180).max(180);
+
 const cents = z.number().int().min(0).max(100_000_00);
 const uuid = z.uuid();
 /** People type 216-555-0123. US numbers normalize to E.164; anything else must already be in it. */
@@ -59,10 +63,10 @@ const siteBase = z.object({
   lon: z.number().min(-180).max(180),
   parcel_id: emptyToNull(z.string()),
   parcel_county: emptyToNull(z.string()),
-  area_estimate_sqft: z.number().min(0).nullable().optional(),
-  area_confirmed_sqft: z.number().min(0).nullable().optional(),
+  area_estimate_sqft: z.number().min(0).max(50_000_000).nullable().optional(),
+  area_confirmed_sqft: z.number().min(0).max(50_000_000).nullable().optional(),
   polygons: geoJsonGeom.nullable().optional(),
-  walk_lf: z.number().min(0).nullable().optional(),
+  walk_lf: z.number().min(0).max(1_000_000).nullable().optional(),
   priority: z.number().int().min(1).max(5),
   service_window: z.object({ open_by: z.string().regex(/^\d\d:\d\d$/).optional(), days: z.array(z.string()).optional() }).nullable().optional(),
   notes: emptyToNull(z.string().max(4000)),
@@ -73,8 +77,8 @@ export const siteUpdate = siteBase.partial();
 export const pinCreate = z.object({
   site_id: uuid,
   kind: z.enum(['stake', 'pile', 'ada', 'entrance', 'hazard', 'other']),
-  lat: z.number().nullable().optional(),
-  lon: z.number().nullable().optional(),
+  lat: latN.nullable().optional(),
+  lon: lonN.nullable().optional(),
   note: emptyToNull(z.string().max(1000)),
 });
 
@@ -112,7 +116,7 @@ const crewBase = z.object({
 export const crewCreate = crewBase.extend({ language: z.enum(['en', 'es']).default('en') });
 export const crewUpdate = crewBase.partial().extend({ active: z.boolean().optional() });
 
-export const measureRequest = z.object({ lat: z.number(), lon: z.number(), land_use: z.enum(['residential', 'commercial']).default('commercial') });
+export const measureRequest = z.object({ lat: latN, lon: lonN, land_use: z.enum(['residential', 'commercial']).default('commercial') });
 export const geocodeRequest = z.object({ q: z.string().trim().min(3).max(300) });
 
 export const quoteCreate = contractCreate.extend({ send: z.boolean().default(true) });
@@ -154,7 +158,7 @@ const baseAction = {
   at: z.iso.datetime({ offset: true }),
   run_stop_id: uuid.optional(),
 };
-const gps = z.object({ lat: z.number(), lon: z.number(), acc: z.number().nullable().optional() }).nullable().optional();
+const gps = z.object({ lat: latN, lon: lonN, acc: z.number().min(0).max(100_000).nullable().optional() }).nullable().optional();
 const saltEntries = z.array(z.object({ unit: z.string().max(20), qty: z.number().min(0).max(10000) }));
 
 export const driverAction = z.discriminatedUnion('kind', [
@@ -190,7 +194,7 @@ export type DriverAction = z.infer<typeof driverAction>;
 export const driverActions = z.object({ actions: z.array(driverAction).min(1).max(200) });
 /** The batch shape only. Each action validates on its own, so one bad one can't block a phone's whole outbox. */
 export const driverActionBatch = z.object({ actions: z.array(z.unknown()).min(1).max(200) });
-export const driverPosition = z.object({ lat: z.number(), lon: z.number(), acc: z.number().nullable().optional(), at: z.iso.datetime({ offset: true }) });
+export const driverPosition = z.object({ lat: latN, lon: lonN, acc: z.number().min(0).max(100_000).nullable().optional(), at: z.iso.datetime({ offset: true }) });
 export const driverPhotoMeta = z.object({
   client_uuid: uuid,
   visit_client_uuid: uuid.optional(),

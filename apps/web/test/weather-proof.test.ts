@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, closeDb, eq, inArray, job, message_log, proof_packet, run_stop, serviceDb, site, sql, sms_consent, storm, tenant, trigger_alert, visit, visit_correction, weather_snapshot, withUser, desc } from '@flake/db';
 import { signTwilio, MOCK_TWILIO_TOKEN } from '@flake/providers';
 import { POST as inbound } from '@/app/api/webhooks/twilio/inbound/route';
+import { POST as smsStatus } from '@/app/api/webhooks/twilio/status/route';
 import { POST as toolContractRoute } from '@/app/api/tools/contract/route';
 import { POST as toolPriceRoute } from '@/app/api/tools/price/route';
 import { generateDrafts } from '@/lib/billing';
@@ -274,6 +275,21 @@ describe('quotes', () => {
     expect(await serviceDb().select().from(sms_consent).where(eq(sms_consent.tenant_id, w.tenantId))).toHaveLength(0);
   }, 30000);
 
+  it('two taps on Accept keep the first signature, and a voided quote cannot be accepted', async () => {
+    const w = await makeWorld();
+    const mk = () => createQuote(ctxOf(w), { site_id: w.siteIds[5]!, season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 6500 } }], send: false });
+    const { token, contract: c } = await mk();
+    const sign = (name: string) => acceptQuote(token, { name, agree: true, consentSms: false, consentEmail: true, phone_e164: null }, null);
+    const [a, b] = await Promise.all([sign('First Tap'), sign('Second Tap')]);
+    expect([a.already, b.already].sort()).toEqual([false, true]);
+    const [row] = (await serviceDb().execute(sql`select accepted_name, pdf_path from contract where id = ${c.id}`)) as any[];
+    expect(['First Tap', 'Second Tap']).toContain(row.accepted_name);
+    expect(await getBlob('contracts', row.pdf_path)).not.toBeNull();
+    const v = await mk();
+    await serviceDb().execute(sql`update contract set status = 'void' where id = ${v.contract.id}`);
+    await expect(acceptQuote(v.token, { name: 'Late', agree: true, consentSms: false, consentEmail: true, phone_e164: null }, null)).rejects.toMatchObject({ status: 404 });
+  }, 30000);
+
   it('checking the box records consent, and a mock card is stored', async () => {
     const w = await makeWorld();
     const { token } = await createQuote(ctxOf(w), { site_id: w.siteIds[5]!, season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 6500 } }], send: false });
@@ -314,6 +330,23 @@ describe('SMS compliance', () => {
 
   const inboundReq = (params: Record<string, string>, url = 'http://localhost:3999/api/webhooks/twilio/inbound', token = MOCK_TWILIO_TOKEN) =>
     req('/api/webhooks/twilio/inbound', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'x-twilio-signature': signTwilio(token, url, params) }, body: new URLSearchParams(params) });
+
+  it('a late "sent" from Twilio does not overwrite "delivered"', async () => {
+    const w = await makeWorld({ smsApproved: true });
+    const sid = `SM${randomUUID().replace(/-/g, '')}`;
+    await serviceDb().insert(message_log).values({ tenant_id: w.tenantId, channel: 'sms', template: 'on_the_way', to_addr: '+12165550192', body: 'x', status: 'queued', provider_id: sid, idempotency_key: `t:${sid}` } as never);
+    const url = 'http://localhost:3999/api/webhooks/twilio/status';
+    const post = (MessageStatus: string) => {
+      const params = { MessageSid: sid, MessageStatus };
+      return smsStatus(req('/api/webhooks/twilio/status', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'x-twilio-signature': signTwilio(MOCK_TWILIO_TOKEN, url, params) }, body: new URLSearchParams(params) }));
+    };
+    const status = async () => (await serviceDb().select().from(message_log).where(eq(message_log.provider_id, sid)))[0]!.status;
+    await post('delivered');
+    await post('sent');
+    expect(await status()).toBe('delivered');
+    await post('read');
+    expect(await status()).toBe('read');
+  });
 
   it('honors STOP, START and HELP through the signed webhook and rejects a bad signature', async () => {
     const w = await makeWorld({ smsApproved: true });

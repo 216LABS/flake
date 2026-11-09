@@ -30,7 +30,7 @@ export function collectionRoutes<S extends z.ZodTypeAny>(table: T, schema: S, op
   };
 }
 
-export function itemRoutes<S extends z.ZodTypeAny>(table: T, schema: S, opts: { afterUpdate?: (tx: Tx, id: string, body: z.infer<S>, tenantId: string) => Promise<void>; transform?: (body: z.infer<S>) => Record<string, unknown>; softDelete?: Record<string, unknown> } = {}) {
+export function itemRoutes<S extends z.ZodTypeAny>(table: T, schema: S, opts: { beforeUpdate?: (tx: Tx, id: string, body: z.infer<S>) => Promise<void>; afterUpdate?: (tx: Tx, id: string, body: z.infer<S>, tenantId: string) => Promise<void>; transform?: (body: z.infer<S>) => Record<string, unknown>; softDelete?: Record<string, unknown>; afterDelete?: (tx: Tx, id: string) => Promise<void> } = {}) {
   return {
     GET: route<ParamCtx>(async (_req, { params }) => {
       const ctx = await requireApi('viewer');
@@ -44,6 +44,7 @@ export function itemRoutes<S extends z.ZodTypeAny>(table: T, schema: S, opts: { 
       const { id } = await params;
       const body = await parseJson(req, schema);
       return withUser(ctx.userId, async (tx) => {
+        await opts.beforeUpdate?.(tx, id, body);
         const values = opts.transform ? opts.transform(body) : (body as Record<string, unknown>);
         const rows = Object.keys(values).length ? await tx.update(table as any).set(values as any).where(and(eq(table.id, id), eq(table.tenant_id, ctx.tenantId))).returning() : await tx.select().from(table as any).where(eq(table.id, id));
         if (!rows[0]) throw new HttpError(404, 'Not found');
@@ -54,11 +55,13 @@ export function itemRoutes<S extends z.ZodTypeAny>(table: T, schema: S, opts: { 
     DELETE: route<ParamCtx>(async (_req, { params }) => {
       const ctx = await requireApi('dispatcher');
       const { id } = await params;
-      const rows = await withUser(ctx.userId, (tx) =>
-        opts.softDelete
-          ? tx.update(table as any).set(opts.softDelete as any).where(eq(table.id, id)).returning()
-          : tx.delete(table as any).where(eq(table.id, id)).returning(),
-      );
+      const rows = await withUser(ctx.userId, async (tx) => {
+        const out = opts.softDelete
+          ? await tx.update(table as any).set(opts.softDelete as any).where(eq(table.id, id)).returning()
+          : await tx.delete(table as any).where(eq(table.id, id)).returning();
+        if (out[0]) await opts.afterDelete?.(tx, id);
+        return out;
+      });
       if (!rows[0]) throw new HttpError(404, 'Not found');
       return { ok: true };
     }),

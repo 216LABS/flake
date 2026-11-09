@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { closeDb, and, customer, eq, invoice_draft, job, message_log, run_stop, serviceDb, site, sql, stripe_event, tenant, trigger_alert, visit, visit_correction, withUser, storm } from '@flake/db';
+import { closeDb, and, customer, eq, invoice_draft, job, message_log, run_stop, serviceDb, site, sql, storm_run, stripe_event, tenant, trigger_alert, visit, visit_correction, withUser, storm } from '@flake/db';
 import { MockEmail, signMockWebhook } from '@flake/providers';
 import { POST as webhook } from '@/app/api/webhooks/stripe/route';
 import { GET as cronJobs } from '@/app/api/cron/jobs/route';
-import { applyFlagFix, approveDrafts, chargeDraft, exportQbo, generateDrafts, handleStripeEvent, billInstallments, retryDraft, visitsMissedByDrafts } from '@/lib/billing';
+import { applyFlagFix, approveDrafts, chargeDraft, exportQbo, failDraft, generateDrafts, handleStripeEvent, billInstallments, retryDraft, visitsMissedByDrafts } from '@/lib/billing';
 import { runJobs } from '@/lib/handlers';
 import { notifyParty } from '@/lib/messaging';
 import { processActions, resolveToken } from '@/lib/driver';
@@ -387,8 +387,61 @@ describe('edge cases around storms', () => {
     const w = await makeWorld();
     const [alert] = await serviceDb().insert(trigger_alert).values({ tenant_id: w.tenantId, kind: 'forecast', site_ids: w.siteIds, detail: { headline: 'x' } }).returning();
     const input = { name: 'a', routeIds: [w.routeId], crewAssignments: {}, triggerAlertId: alert!.id };
-    await createStorm(ctxOf(w), input);
+    const both = await Promise.allSettled([createStorm(ctxOf(w), input), createStorm(ctxOf(w), input)]);
+    expect(both.filter((x) => x.status === 'fulfilled')).toHaveLength(1);
     await expect(createStorm(ctxOf(w), input)).rejects.toThrow(/already handled/);
+    expect(await serviceDb().select().from(storm).where(eq(storm.trigger_alert_id, alert!.id))).toHaveLength(1);
+  });
+
+  it('Plow again tapped twice makes one new pass, and a closed storm gets none', async () => {
+    const w = await makeWorld();
+    const out = await createStorm(ctxOf(w), { name: 'Passes', routeIds: [w.routeId], crewAssignments: {} });
+    const both = await Promise.allSettled([addPass(ctxOf(w), out.storm.id), addPass(ctxOf(w), out.storm.id)]);
+    const passes = (await serviceDb().select().from(storm_run).where(eq(storm_run.storm_id, out.storm.id))).map((r) => r.pass).sort();
+    expect(passes).toEqual([1, 2]);
+    expect(both.every((x) => x.status === 'fulfilled' && x.value.pass === 2)).toBe(true);
+    await closeStorm(ctxOf(w), out.storm.id, true);
+    await expect(addPass(ctxOf(w), out.storm.id)).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('closing a storm again, or from an old tab, leaves a billed storm billed and its links closed', async () => {
+    const w = await makeWorld();
+    const { stormId } = await completeStorm(w);
+    await serviceDb().update(storm).set({ status: 'billed' }).where(eq(storm.id, stormId));
+    const [before] = await serviceDb().select().from(storm).where(eq(storm.id, stormId));
+    const again = await closeStorm(ctxOf(w), stormId, false);
+    expect(again.status).toBe('billed');
+    const [after] = await serviceDb().select().from(storm).where(eq(storm.id, stormId));
+    expect(after!.closed_at).toBe(before!.closed_at);
+  });
+
+  it('Retry pressed twice charges the card once', async () => {
+    const x = await makeWorld({ connected: false });
+    const { stormId: sid } = await completeStorm(x);
+    await generateDrafts(ctxOf(x), sid);
+    const id = (await drafts(sid)).find((r) => r.customer_id === x.customerIds[0])!.id;
+    await approveDrafts(ctxOf(x), [id]);
+    await drain();
+    await serviceDb().update(tenant).set({ stripe_account_id: 'acct_mock_twice', stripe_charges_enabled: true }).where(eq(tenant.id, x.tenantId));
+    const charges = async () => (await serviceDb().select().from(stripe_event).where(eq(stripe_event.type, 'payment_intent.succeeded'))).length;
+    const n = await charges();
+    await Promise.all([chargeDraft(x.tenantId, id, 1), chargeDraft(x.tenantId, id, 2), chargeDraft(x.tenantId, id, 3)]);
+    expect((await charges()) - n).toBe(1);
+    expect((await serviceDb().select().from(invoice_draft).where(eq(invoice_draft.id, id)))[0]!.status).toBe('paid');
+  });
+
+  it('a late failure from Stripe leaves a voided or paid invoice alone and texts no pay link', async () => {
+    const x = await makeWorld();
+    const { stormId: sid } = await completeStorm(x);
+    await generateDrafts(ctxOf(x), sid);
+    const [d1, d2] = (await drafts(sid)).map((r) => r.id);
+    await serviceDb().update(invoice_draft).set({ status: 'void' }).where(eq(invoice_draft.id, d1!));
+    await serviceDb().update(invoice_draft).set({ status: 'paid' }).where(eq(invoice_draft.id, d2!));
+    await failDraft(x.tenantId, d1!, 'late');
+    await failDraft(x.tenantId, d2!, 'late');
+    const rows = await serviceDb().select().from(invoice_draft).where(sql`${invoice_draft.id} in (${d1}, ${d2})`);
+    expect(rows.map((r) => r.status).sort()).toEqual(['paid', 'void']);
+    expect(await serviceDb().select().from(message_log).where(sql`related->>'draft_id' in (${d1}, ${d2})`)).toHaveLength(0);
   });
 });
 

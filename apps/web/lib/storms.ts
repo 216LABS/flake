@@ -1,4 +1,4 @@
-import { and, asc, contract, crew_member, customer, desc, driver_position, eq, inArray, message_log, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, withUser, sms_consent } from '@flake/db';
+import { and, asc, contract, crew_member, customer, desc, driver_position, eq, inArray, message_log, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, withUser, sms_consent, type Tx } from '@flake/db';
 import { isLate, localHm } from '@flake/core/time';
 import { replanFrom } from '@flake/core/routing';
 import type { ContractService } from '@flake/core/pricing';
@@ -32,7 +32,9 @@ export async function createStorm(ctx: Ctx, input: z.infer<typeof stormCreate>) 
       if (!a) throw new HttpError(404, 'Alert not found');
       if (a.status !== 'open') throw new HttpError(409, 'This alert was already handled.', 'alert_handled');
       alertSnapshotIds = a.snapshot_ids;
-      await tx.update(trigger_alert).set({ status: 'dispatched' }).where(eq(trigger_alert.id, a.id));
+      // Conditional, so a double tap on Dispatch makes one storm, not two.
+      const took = await tx.update(trigger_alert).set({ status: 'dispatched' }).where(and(eq(trigger_alert.id, a.id), eq(trigger_alert.status, 'open'))).returning({ id: trigger_alert.id });
+      if (!took.length) throw new HttpError(409, 'This alert was already handled.', 'alert_handled');
     }
     const [s] = await tx.insert(storm).values({
       tenant_id: ctx.tenantId,
@@ -51,7 +53,7 @@ export async function createStorm(ctx: Ctx, input: z.infer<typeof stormCreate>) 
       if (!chosen.length) continue;
       const link = newLink();
       const [run] = await tx.insert(storm_run).values({
-        tenant_id: ctx.tenantId, storm_id: s!.id, route_id: routeId, crew_id: input.crewAssignments[routeId] ?? r.default_crew_id,
+        tenant_id: ctx.tenantId, storm_id: s!.id, route_id: routeId, crew_id: await activeCrew(tx, input.crewAssignments[routeId] ?? r.default_crew_id),
         link_token_hash: link.hash, link_token_enc: link.enc, link_expires_at: link.expires,
       }).returning();
       await tx.insert(run_stop).values(chosen.map((x, i) => ({ tenant_id: ctx.tenantId, storm_run_id: run!.id, site_id: x.site_id, seq: i + 1 })));
@@ -63,18 +65,33 @@ export async function createStorm(ctx: Ctx, input: z.infer<typeof stormCreate>) 
 }
 
 /** A second pass over the same routes. Visits on it count as re-plows. */
+/** A route's usual driver may have left since it was set: a run gets nobody rather than someone who's gone. */
+async function activeCrew(tx: Tx, crewId: string | null | undefined): Promise<string | null> {
+  if (!crewId) return null;
+  const [c] = await tx.select({ id: crew_member.id }).from(crew_member).where(and(eq(crew_member.id, crewId), eq(crew_member.active, true)));
+  return c?.id ?? null;
+}
+
 export async function addPass(ctx: Ctx, stormId: string) {
   return withUser(ctx.userId, async (tx) => {
+    // Locked, so a double tap on Plow again makes one new pass, not two copies of it.
+    const [st] = await tx.select({ status: storm.status }).from(storm).where(eq(storm.id, stormId)).for('update');
+    if (!st) throw new HttpError(404, 'Storm not found');
+    if (st.status !== 'active') throw new HttpError(409, 'This storm is closed.', 'closed');
     const runs = await tx.select().from(storm_run).where(eq(storm_run.storm_id, stormId));
     if (!runs.length) throw new HttpError(404, 'Storm not found');
-    const pass = Math.max(...runs.map((r) => r.pass)) + 1;
+    const latest = Math.max(...runs.map((r) => r.pass));
+    // A second tap moments later gets the pass the first one made, not another one on top.
+    const fresh = runs.filter((r) => r.pass === latest && latest > 1 && Date.now() - Date.parse(r.created_at ?? '') < 15_000);
+    if (fresh.length) return { pass: latest, runs: fresh };
+    const pass = latest + 1;
     const created = [];
     for (const old of runs.filter((r) => r.pass === pass - 1)) {
       const stops = await tx.select().from(run_stop).where(eq(run_stop.storm_run_id, old.id)).orderBy(asc(run_stop.seq));
       // Every stop may have been moved off this run, and then there is nothing to plow again.
       if (!stops.length) continue;
       const link = newLink();
-      const [run] = await tx.insert(storm_run).values({ tenant_id: ctx.tenantId, storm_id: stormId, route_id: old.route_id, crew_id: old.crew_id, pass, link_token_hash: link.hash, link_token_enc: link.enc, link_expires_at: link.expires }).returning();
+      const [run] = await tx.insert(storm_run).values({ tenant_id: ctx.tenantId, storm_id: stormId, route_id: old.route_id, crew_id: await activeCrew(tx, old.crew_id), pass, link_token_hash: link.hash, link_token_enc: link.enc, link_expires_at: link.expires }).returning();
       await tx.insert(run_stop).values(stops.map((x, i) => ({ tenant_id: ctx.tenantId, storm_run_id: run!.id, site_id: x.site_id, seq: i + 1 })));
       created.push(run!);
     }
@@ -256,8 +273,10 @@ export async function notifyCustomer(p: { tenantId: string; siteId: string; temp
 /** Closing is blocked while anyone is on site unless forced. Links stay alive for 24 h after close. */
 export async function closeStorm(ctx: Ctx, stormId: string, force: boolean) {
   return withUser(ctx.userId, async (tx) => {
-    const [s] = await tx.select().from(storm).where(eq(storm.id, stormId));
+    const [s] = await tx.select().from(storm).where(eq(storm.id, stormId)).for('update');
     if (!s) throw new HttpError(404, 'Storm not found');
+    // Closing twice (a double tap, or an old tab) must not reopen links or pull a billed storm back to closed.
+    if (s.status !== 'active') return s;
     const runs = await tx.select({ id: storm_run.id }).from(storm_run).where(eq(storm_run.storm_id, stormId));
     const ids = runs.map((r) => r.id);
     const onsite = ids.length ? await tx.select({ id: run_stop.id }).from(run_stop).where(and(inArray(run_stop.storm_run_id, ids), eq(run_stop.status, 'onsite'))) : [];
@@ -285,6 +304,7 @@ export async function revokeRunLink(ctx: Ctx, runId: string) {
 /** Assigns or swaps a run's driver. After publish, the new driver gets the link right away. */
 export async function assignRunDriver(ctx: Ctx, runId: string, crewId: string) {
   const run = await withUser(ctx.userId, async (tx) => {
+    if (!(await activeCrew(tx, crewId))) throw new HttpError(422, 'That person is no longer on your crew.', 'inactive_crew');
     const [r] = await tx.update(storm_run).set({ crew_id: crewId }).where(eq(storm_run.id, runId)).returning();
     if (!r) throw new HttpError(404, 'Run not found');
     return r;

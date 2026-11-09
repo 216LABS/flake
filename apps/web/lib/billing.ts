@@ -1,4 +1,4 @@
-import { and, asc, contract, customer, desc, eq, inArray, invoice_draft, isNotNull, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
+import { and, asc, contract, customer, desc, eq, inArray, invoice_draft, notInArray, isNotNull, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
 import { applyCorrections, draftInvoices, flagKey, isDraftClean, type BillingContract, type BillingFlag, type BillingVisit } from '@flake/core/billing';
 import { applicationFeeCents, feeRate, proFeaturesEnabled, type Plan } from '@flake/core/fees';
 import type { ContractService, SaltPricing, StormDepthContext } from '@flake/core/pricing';
@@ -224,7 +224,7 @@ export async function retryDraft(ctx: Ctx, draftId: string) {
 /** Failed or needs customer action: status failed, a hosted pay link goes out, and the dashboard shows why. */
 export async function failDraft(tenantId: string, draftId: string, reason: string) {
   const row = await loadDraft(tenantId, draftId);
-  if (!row || row.draft.status === 'paid') return;
+  if (!row || row.draft.status === 'paid' || row.draft.status === 'void') return;
   const { payments } = await getProviders();
   let link = row.draft.pay_link;
   if (!link && row.tenant.stripe_account_id) {
@@ -233,12 +233,24 @@ export async function failDraft(tenantId: string, draftId: string, reason: strin
     });
     link = created.url;
   }
-  await serviceDb().update(invoice_draft).set({ status: 'failed', status_detail: reason, pay_link: link }).where(eq(invoice_draft.id, draftId));
-  if (link) await sendPayLink(row, link, reason);
+  // A late failure event must not undo a payment or a void that landed meanwhile, nor text a pay link to someone who paid.
+  const took = await serviceDb().update(invoice_draft).set({ status: 'failed', status_detail: reason, pay_link: link })
+    .where(and(eq(invoice_draft.id, draftId), notInArray(invoice_draft.status, ['paid', 'void']))).returning({ id: invoice_draft.id });
+  if (took.length && link) await sendPayLink(row, link, reason);
 }
 
 /** billing.charge. Stripe's idempotency key is the draft id, so a retried job cannot double charge. */
 export async function chargeDraft(tenantId: string, draftId: string, attempt?: number) {
+  // One charge at a time per invoice. Two Retry presses queue two jobs with different Stripe keys; without this both
+  // could see "approved" and charge twice. A second job finds the lock taken and stops: the first one settles the status.
+  return serviceDb().transaction(async (tx) => {
+    const [got] = (await tx.execute(sql`select pg_try_advisory_xact_lock(hashtext(${`charge:${draftId}`})) as ok`)) as unknown as { ok: boolean }[];
+    if (!got?.ok) return;
+    return chargeDraftLocked(tenantId, draftId, attempt);
+  });
+}
+
+async function chargeDraftLocked(tenantId: string, draftId: string, attempt?: number) {
   const row = await loadDraft(tenantId, draftId);
   if (!row || row.draft.status !== 'approved') return;
   const db = serviceDb();

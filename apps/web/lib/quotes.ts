@@ -1,4 +1,4 @@
-import { and, contract, customer, eq, serviceDb, site, sms_consent, tenant, withUser } from '@flake/db';
+import { and, contract, customer, eq, notInArray, serviceDb, site, sms_consent, tenant, withUser } from '@flake/db';
 import { CUSTOMER_CONSENT_TEXT } from '@flake/core/messages';
 import { quoteAccept, quoteCreate } from '@flake/contracts';
 import { z } from 'zod';
@@ -64,9 +64,17 @@ export async function acceptQuote(token: string, input: z.infer<typeof quoteAcce
   const at = new Date().toISOString();
   const { renderContractPdf } = await import('@flake/providers/pdf');
   const pdf = await renderContractPdf({ company: r.tenant.name, customer: r.customer.name, site: `${r.site.label}, ${r.site.address}`, season: r.contract.season, services: r.contract.services, terms: r.contract.terms_md, acceptance: { name: input.name, at, ip } });
-  const pdfPath = `${r.tenant.id}/${r.contract.id}.pdf`;
+  // Its own file per acceptance, so a second tap that loses the race below can't overwrite the signed copy.
+  const pdfPath = `${r.tenant.id}/${r.contract.id}-${Date.parse(at)}.pdf`;
   await putBlob('contracts', pdfPath, pdf, 'application/pdf', { upsert: true });
-  await db.update(contract).set({ status: 'accepted', accepted_at: at, accepted_name: input.name, accepted_ip: ip && isIp(ip) ? ip : null, pdf_path: pdfPath }).where(and(eq(contract.id, r.contract.id), eq(contract.tenant_id, r.tenant.id)));
+  // Only the first acceptance counts, and a quote voided meanwhile stays void.
+  const took = await db.update(contract).set({ status: 'accepted', accepted_at: at, accepted_name: input.name, accepted_ip: ip && isIp(ip) ? ip : null, pdf_path: pdfPath })
+    .where(and(eq(contract.id, r.contract.id), eq(contract.tenant_id, r.tenant.id), notInArray(contract.status, ['accepted', 'void']))).returning({ id: contract.id });
+  if (!took.length) {
+    const [now] = await db.select({ status: contract.status }).from(contract).where(eq(contract.id, r.contract.id));
+    if (now?.status === 'void') throw new HttpError(404, 'This quote is no longer available', 'quote_dead');
+    return { already: true };
+  }
   const phone = input.phone_e164 ?? r.customer.phone_e164;
   await db.update(customer).set({ notify_sms: input.consentSms && Boolean(phone), notify_email: input.consentEmail, phone_e164: phone }).where(and(eq(customer.id, r.customer.id), eq(customer.tenant_id, r.tenant.id)));
   if (input.consentSms && phone) {

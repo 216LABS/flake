@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contractCreate, customerCreate, driverActions, pricingSchema, quoteAccept, toolContract } from '../src/index';
+import { contractCreate, customerCreate, driverActions, driverPosition, measureRequest, pricingSchema, quoteAccept, toolContract } from '../src/index';
 
 const U = '11111111-1111-4111-8111-111111111111';
 
@@ -40,5 +40,14 @@ describe('contracts', () => {
   });
   it('the public contract tool needs its required fields', () => {
     expect(toolContract.safeParse({ company: 'x' }).success).toBe(false);
+  });
+});
+
+describe('coordinates and sizes are real', () => {
+  it('rejects a latitude or longitude off the globe and absurd lot sizes', () => {
+    expect(driverPosition.safeParse({ lat: 999, lon: -81.8, at: '2026-01-20T10:00:00Z' }).success).toBe(false);
+    expect(driverPosition.safeParse({ lat: 41.48, lon: -181, at: '2026-01-20T10:00:00Z' }).success).toBe(false);
+    expect(driverPosition.safeParse({ lat: 41.48, lon: -81.8, at: '2026-01-20T10:00:00Z' }).success).toBe(true);
+    expect(measureRequest.safeParse({ lat: 91, lon: 0 }).success).toBe(false);
   });
 });

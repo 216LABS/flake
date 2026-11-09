@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { closeDb, eq, serviceDb, sql, storm_run, run_stop, visit, visit_correction, visit_photo, driver_action, problem_report, and } from '@flake/db';
+import { closeDb, crew_member, eq, serviceDb, sql, storm_run, run_stop, visit, visit_correction, visit_photo, driver_action, problem_report, and } from '@flake/db';
 import sharp from 'sharp';
 import { POST as actionsRoute } from '@/app/api/d/[token]/actions/route';
 import { POST as photosRoute } from '@/app/api/d/[token]/photos/route';
 import { GET as runRoute } from '@/app/api/d/[token]/run/route';
 import { getBlob } from '@/lib/blob';
-import { addStopToRun, closeStorm, createStorm, patchRunStop, publishStorm, revokeRunLink } from '@/lib/storms';
+import { addPass, addStopToRun, assignRunDriver, closeStorm, createStorm, patchRunStop, publishStorm, revokeRunLink } from '@/lib/storms';
 import { decryptToken, sha256Hex } from '@/lib/tokens';
 import { ctxOf, jsonReq, makeWorld, req, stopActions, type World } from './helpers';
 
@@ -263,6 +263,20 @@ describe('changing routes mid-storm', () => {
     expect(tries.filter((t) => t.status === 'fulfilled')).toHaveLength(1);
     expect(tries.find((t) => t.status === 'rejected')).toMatchObject({ reason: { status: 409 } });
     expect(await serviceDb().select().from(run_stop).where(and(eq(run_stop.storm_run_id, out.runs[0]!.id), eq(run_stop.site_id, extra)))).toHaveLength(1);
+  });
+});
+
+describe('someone who left the crew', () => {
+  it('is never put on a new storm, a new pass or a reassigned run', async () => {
+    const x = await makeWorld();
+    await serviceDb().update(crew_member).set({ active: false }).where(eq(crew_member.id, x.crewId));
+    const out = await createStorm(ctxOf(x), { name: 'Gone', routeIds: [x.routeId], crewAssignments: { [x.routeId]: x.crewId } });
+    expect(out.runs[0]!.crew_id).toBeNull();
+    await expect(assignRunDriver(ctxOf(x), out.runs[0]!.id, x.crewId)).rejects.toMatchObject({ status: 422 });
+    await assignRunDriver(ctxOf(x), out.runs[0]!.id, x.crew2Id);
+    await serviceDb().update(crew_member).set({ active: false }).where(eq(crew_member.id, x.crew2Id));
+    const next = await addPass(ctxOf(x), out.storm.id);
+    expect(next.runs.every((r) => r.crew_id === null)).toBe(true);
   });
 });
 

@@ -69,8 +69,8 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
           <thead><tr><Th>Name</Th><Th>Kind</Th><Th>Contact</Th><Th>Language</Th><Th>Joined</Th><Th><span className="sr-only">Actions</span></Th></tr></thead>
           <tbody>
             {crew.map((c) => (
-              <tr key={c.id} className={c.active ? '' : 'opacity-50'} data-testid="crew-row">
-                <Td>{c.name}</Td>
+              <tr key={c.id} className={c.active ? '' : 'bg-slate-50 text-slate-600'} data-testid="crew-row">
+                <Td>{c.name}{c.active ? null : <span className="ml-2 text-xs font-medium">(no longer on the crew)</span>}</Td>
                 <Td><Badge>{c.kind}</Badge></Td>
                 <Td><div className="whitespace-nowrap">{phone(c.phone_e164)}</div><div>{c.email ?? ''}</div></Td>
                 <Td>{c.language === 'es' ? 'Español' : 'English'}</Td>
