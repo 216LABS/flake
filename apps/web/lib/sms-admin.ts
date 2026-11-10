@@ -8,10 +8,13 @@ import { notifyOffice } from './messaging';
 import { getProviders } from './providers';
 import { encryptToken, sha256Hex } from './tokens';
 
+/** The short code in sample messages. It opens the Flake home page instead of a 404 when a reviewer taps it. */
+export const SAMPLE_CODE = 'sample';
+
 export const SAMPLE_MESSAGES = (company: string) => [
-  renderTemplate('crew_link', { company, route: 'West', n: 12, link: `${baseUrl()}/s/abc123` }),
+  renderTemplate('crew_link', { company, route: 'West', n: 12, link: `${baseUrl()}/s/${SAMPLE_CODE}` }),
   renderTemplate('on_the_way', { company, site: 'Main St Lot' }),
-  renderTemplate('done', { company, site: 'Main St Lot', time: '5:10 AM', link: `${baseUrl()}/s/abc123` }),
+  renderTemplate('done', { company, site: 'Main St Lot', time: '5:10 AM', link: `${baseUrl()}/s/${SAMPLE_CODE}` }),
 ];
 
 /** Checks everything toll-free verification requires, then queues the submission. */

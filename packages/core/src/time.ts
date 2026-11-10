@@ -20,20 +20,41 @@ export function localHm(at: number | Date, tz: string): { hm: string; date: stri
   return { hm: `${get('hour')}:${get('minute')}`, date: `${get('year')}-${get('month')}-${get('day')}` };
 }
 
+/**
+ * The UTC instant of a wall-clock time (HH:MM) on a YYYY-MM-DD date in a time zone. Correct on DST days: 8:00 is
+ * 8:00 local, not midnight plus eight hours, which is 7:00 or 9:00 on the two change days.
+ */
+export function zonedTime(ymd: string, hm: string, tz: string): Date {
+  const wanted = Date.parse(`${ymd}T${hm}:00Z`);
+  let t = wanted;
+  // Two rounds: the first uses the offset at a guess, the second the offset at the answer, which differ only near a change.
+  for (let i = 0; i < 2; i++) {
+    const shown = localHm(t, tz);
+    t -= Date.parse(`${shown.date}T${shown.hm}:00Z`) - wanted;
+  }
+  return new Date(t);
+}
+
 /** The UTC instant of local midnight on a YYYY-MM-DD date in a time zone. */
 export function zonedDayStart(ymd: string, tz: string): Date {
-  const guess = Date.parse(`${ymd}T00:00:00Z`);
-  const { hm, date } = localHm(guess, tz);
-  const shownAsUtc = Date.parse(`${date}T${hm}:00Z`);
-  return new Date(guess - (shownAsUtc - guess));
+  return zonedTime(ymd, '00:00', tz);
+}
+
+/** A calendar date some days later (or earlier), as YYYY-MM-DD. Noon UTC keeps it clear of every zone's midnight. */
+export function addDays(ymd: string, days: number): string {
+  return new Date(Date.parse(`${ymd}T12:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+}
+
+/** The last second of a local calendar date: the next day's midnight, less one second. */
+export function zonedDayEnd(ymd: string, tz: string): Date {
+  return new Date(zonedDayStart(addDays(ymd, 1), tz).getTime() - 1000);
 }
 
 /** Now if it is within 8 AM to 8 PM local, otherwise the next 8 AM. For invoice texts. */
 export function nextInvoiceWindow(now: Date, tz: string): Date {
   const { hm, date } = localHm(now, tz);
   if (hm >= '08:00' && hm < '20:00') return now;
-  const day = hm < '08:00' ? date : new Date(Date.parse(`${date}T12:00:00Z`) + 86400000).toISOString().slice(0, 10);
-  return new Date(zonedDayStart(day, tz).getTime() + 8 * 3600000);
+  return zonedTime(hm < '08:00' ? date : addDays(date, 1), '08:00', tz);
 }
 
 export interface ServiceWindow {
@@ -59,9 +80,14 @@ export function isLate(window: ServiceWindow | null | undefined, stormStartedAt:
   return true;
 }
 
-/** The snow season a date falls in, like "2026-27". From July on it is the winter ahead. */
-export function currentSeason(now = new Date()): string {
-  const start = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+/**
+ * The snow season a date falls in, like "2026-27". From July on it is the winter ahead. Decided in the company's time
+ * zone when given: 1 AM UTC on July 1 is still June 30 in Ohio. Without one it uses the device's own zone, which is
+ * right in a browser and wrong on a UTC server.
+ */
+export function currentSeason(now = new Date(), tz?: string): string {
+  const [year, month] = tz ? localHm(now, tz).date.split('-').map(Number) as [number, number] : [now.getFullYear(), now.getMonth() + 1];
+  const start = month >= 7 ? year : year - 1;
   return `${start}-${String(start + 1).slice(2)}`;
 }
 
@@ -70,8 +96,8 @@ export function currentSeason(now = new Date()): string {
  * A renewal already signed for a later season never prices or triggers today's work. Seasons written some other way
  * than "2026-27" can't be placed, so for those the newest stands.
  */
-export function liveContract<T extends { season: string }>(newestFirst: T[], at: Date | string | number = new Date()): T | undefined {
-  const now = currentSeason(new Date(at));
+export function liveContract<T extends { season: string }>(newestFirst: T[], at: Date | string | number = new Date(), tz?: string): T | undefined {
+  const now = currentSeason(new Date(at), tz);
   const exact = newestFirst.find((c) => c.season === now);
   if (exact) return exact;
   const later = (s: string) => /^\d{4}-\d{2}$/.test(s) && s > now;
@@ -79,11 +105,11 @@ export function liveContract<T extends { season: string }>(newestFirst: T[], at:
 }
 
 /** liveContract for each lot, from contracts listed newest first. */
-export function liveContracts<T extends { season: string; site_id: string }>(newestFirst: T[], at: Date | string | number = new Date()): T[] {
+export function liveContracts<T extends { season: string; site_id: string }>(newestFirst: T[], at: Date | string | number = new Date(), tz?: string): T[] {
   const bySite = new Map<string, T[]>();
   for (const c of newestFirst) bySite.set(c.site_id, [...(bySite.get(c.site_id) ?? []), c]);
   return [...bySite.values()].flatMap((list) => {
-    const c = liveContract(list, at);
+    const c = liveContract(list, at, tz);
     return c ? [c] : [];
   });
 }

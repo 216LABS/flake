@@ -348,12 +348,16 @@ export async function supplierUpdate(s: Supplier, orderId: string, change: { del
     if (o.status === 'delivered') return { ok: true };
     // A typo here lands on the contractor's salt count, so catch the obvious ones (50 for 5.0).
     if (change.delivered_tons > Math.max(o.tons * 2, o.tons + 5)) throw new HttpError(422, `That's a lot more than the ${round(o.tons)} tons ordered. Check the number.`);
-    // Only the first of two quick taps counts, so the delivery is added to the count once.
-    const done = await db.update(salt_order).set({ status: 'delivered', delivered_tons: change.delivered_tons, delivery_date: o.delivery_date ?? now.slice(0, 10), updated_at: now })
-      .where(and(eq(salt_order.id, o.id), inArray(salt_order.status, ['ordered', 'scheduled']))).returning({ id: salt_order.id });
-    if (!done.length) return { ok: true };
-    // The delivery goes straight onto the contractor's salt count on the Reports page.
-    await addStockEntry(o.tenant_id, { id: `salt-order-${o.id}`, kind: 'delivery', at: now, tons: change.delivered_tons, note: `Delivered by ${s.name}` });
+    // Only the first of two quick taps counts, so the delivery is added to the count once. The status and the salt
+    // count change together: if adding the tons fails, the order stays undelivered and the supplier's retry adds them.
+    const done = await db.transaction(async (tx) => {
+      const took = await tx.update(salt_order).set({ status: 'delivered', delivered_tons: change.delivered_tons, delivery_date: o.delivery_date ?? now.slice(0, 10), updated_at: now })
+        .where(and(eq(salt_order.id, o.id), inArray(salt_order.status, ['ordered', 'scheduled']))).returning({ id: salt_order.id });
+      // The delivery goes straight onto the contractor's salt count on the Reports page.
+      if (took.length) await addStockEntry(o.tenant_id, { id: `salt-order-${o.id}`, kind: 'delivery', at: now, tons: change.delivered_tons, note: `Delivered by ${s.name}` }, tx);
+      return took.length > 0;
+    });
+    if (!done) return { ok: true };
     await tellTenant(o.tenant_id, `${s.name} delivered ${round(change.delivered_tons)} tons of salt. It's added to your salt count.`, `salt_done:${o.id}`);
   }
   return { ok: true };

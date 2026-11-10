@@ -9,7 +9,7 @@ type ParamCtx = { params: Promise<{ id: string }> };
 type T = PgTable & { id: PgColumn; tenant_id: PgColumn };
 
 /** List and create for a tenant table. RLS is the guard; the tenant id comes from the session, never the body. */
-export function collectionRoutes<S extends z.ZodTypeAny>(table: T, schema: S, opts: { afterCreate?: (tx: Tx, row: any, body: z.infer<S>, tenantId: string) => Promise<void>; transform?: (body: z.infer<S>) => Record<string, unknown>; beforeCreate?: (tx: Tx, tenantId: string) => Promise<void> } = {}) {
+export function collectionRoutes<S extends z.ZodTypeAny>(table: T, schema: S, opts: { afterCreate?: (tx: Tx, row: any, body: z.infer<S>, tenantId: string) => Promise<void>; transform?: (body: z.infer<S>) => Record<string, unknown>; beforeCreate?: (tx: Tx, tenantId: string, body: z.infer<S>) => Promise<void> } = {}) {
   return {
     GET: route(async () => {
       const ctx = await requireApi('viewer');
@@ -19,7 +19,7 @@ export function collectionRoutes<S extends z.ZodTypeAny>(table: T, schema: S, op
       const ctx = await requireApi('dispatcher');
       const body = await parseJson(req, schema);
       const row = await withUser(ctx.userId, async (tx) => {
-        await opts.beforeCreate?.(tx, ctx.tenantId);
+        await opts.beforeCreate?.(tx, ctx.tenantId, body);
         const values = { ...(opts.transform ? opts.transform(body) : (body as Record<string, unknown>)), tenant_id: ctx.tenantId };
         const [created] = await tx.insert(table as any).values(values as any).returning();
         await opts.afterCreate?.(tx, created, body, ctx.tenantId);

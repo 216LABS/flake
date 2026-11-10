@@ -318,6 +318,7 @@ test('the board clears a resolved problem, and a skipped stop can be reopened', 
 
   const card = page.getByTestId('stop-card').filter({ hasText: run.stops[1]!.label });
   await card.getByTestId('skip-toggle').click();
+  await page.getByTestId('confirm-yes').click();
   await expect(card).toHaveAttribute('data-status', 'skipped');
   await card.getByTestId('skip-toggle').click();
   await expect(card).toHaveAttribute('data-status', 'open');

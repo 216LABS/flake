@@ -54,7 +54,10 @@ export interface InvoiceLine {
   needs_depth?: boolean;
 }
 
-/** per_inch_tier depth = max(driver depth, NOHRSC 24 h at site, NWS elapsed). null when all are unavailable. */
+/**
+ * per_inch_tier depth = max(driver depth, observed total, NWS elapsed). null when all are unavailable. The caller only
+ * passes an observed total whose window falls inside the storm, so snow from an earlier storm never sets the tier.
+ */
 export function stormDepthIn(driverDepths: (number | null)[], ctx: StormDepthContext): number | null {
   const known = [...driverDepths, ctx.nohrsc24hIn, ctx.nwsElapsedIn].filter((v): v is number => v !== null);
   return known.length ? Math.max(...known) : null;
@@ -126,7 +129,7 @@ export function priceVisit(svc: ContractService, visit: PricedVisit, depthIn: nu
   }
 }
 
-/** Salt lines use the contract unit. A quantity logged in another unit is left unbilled. */
+/** Salt lines use the contract unit. A quantity logged in another unit is left unbilled and flagged by the engine. */
 export function priceSalt(salt: SaltPricing | null | undefined, visit: PricedVisit): InvoiceLine[] {
   if (!salt || !visit.salt) return [];
   return visit.salt
@@ -162,8 +165,9 @@ export function priceSiteForStorm(
       lines.push(...priced);
     }
   }
+  // Only a visit where the driver turned Salt on bills salt. A quantity left on a visit with Salt off is not a sale.
   if (services.some((s) => s.service === 'salt')) {
-    lines.push(...visits.flatMap((v) => priceSalt(salt, v)));
+    lines.push(...visits.filter((v) => v.services.includes('salt')).flatMap((v) => priceSalt(salt, v)));
   }
   return lines;
 }

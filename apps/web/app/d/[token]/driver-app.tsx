@@ -215,7 +215,8 @@ export function DriverApp({ token }: { token: string }) {
     const list = (run?.stops ?? []).map((s) => ({ ...s, status: local.statuses[s.id] ?? s.status }));
     return list.sort((a, b) => a.seq - b.seq);
   }, [run, local.statuses]);
-  const doneCount = stops.filter((s) => s.status === 'done' || s.status === 'skipped').length;
+  const doneCount = stops.filter((s) => s.status === 'done').length;
+  const skippedCount = stops.filter((s) => s.status === 'skipped').length;
   const onsite = stops.find((s) => s.status === 'onsite' && local.visits[s.id]);
   const remaining = stops.filter((s) => !['done', 'skipped'].includes(s.status) && !(s.status === 'onsite' && local.visits[s.id]));
   const next = onsite ?? remaining.find((s) => s.id === local.nextStopId) ?? remaining[0] ?? null;
@@ -255,8 +256,14 @@ export function DriverApp({ token }: { token: string }) {
       void lock?.release().catch(() => {});
     };
   }, []);
+  // Location is asked for on the driver's first tap, not the moment the page opens. A phone that already allowed it
+  // starts right away, so the stop distance and arrive check work from the first screen.
+  const [geoOn, setGeoOn] = useState(false);
   useEffect(() => {
-    if (!('geolocation' in navigator)) return;
+    void navigator.permissions?.query({ name: 'geolocation' as PermissionName }).then((p) => p.state === 'granted' && setGeoOn(true)).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!geoOn || !('geolocation' in navigator)) return;
     let watch: number | null = null;
     let high = false;
     let lastSent = 0;
@@ -286,7 +293,7 @@ export function DriverApp({ token }: { token: string }) {
     return () => {
       if (watch !== null) navigator.geolocation.clearWatch(watch);
     };
-  }, [token]);
+  }, [token, geoOn]);
 
   // Taps run strictly in order. Each one commits to the phone before the screen changes.
   const chain = useRef<Promise<unknown>>(Promise.resolve());
@@ -311,6 +318,7 @@ export function DriverApp({ token }: { token: string }) {
   const gps = () => (position.current ? { lat: position.current.lat, lon: position.current.lon, acc: position.current.acc } : null);
 
   const navigate = (stop: Stop) => {
+    setGeoOn(true);
     window.open(navUrl(stop.site.lat, stop.site.lon), '_blank', 'noopener');
     if (stop.status !== 'open') return;
     const queued = action({ kind: 'enroute', run_stop_id: stop.id });
@@ -318,6 +326,7 @@ export function DriverApp({ token }: { token: string }) {
   };
 
   const arrive = (stop: Stop) => {
+    setGeoOn(true);
     const visit = uuid();
     const at = nowIso();
     const fix = gps();
@@ -378,7 +387,7 @@ export function DriverApp({ token }: { token: string }) {
     inOrder(async () => {
       const v = localRef.current.visits[stop.id];
       if (!v) return; // A double tap on Done records one departure.
-      const salt = v.salt > 0 && stop.salt_unit ? [{ unit: stop.salt_unit, qty: v.salt }] : null;
+      const salt = v.salt > 0 && stop.salt_unit && v.services.includes('salt') ? [{ unit: stop.salt_unit, qty: v.salt }] : null;
       const { [stop.id]: _finished, ...visits } = localRef.current.visits;
       await apply(
         { ...localRef.current, visits, statuses: { ...localRef.current.statuses, [stop.id]: 'done' }, last: { stopId: stop.id, visit: v.visit, at: Date.now() } },
@@ -398,9 +407,9 @@ export function DriverApp({ token }: { token: string }) {
     });
   };
 
-  const sendProblem = (stop: Stop, kind: string, voice: Blob | null) => {
+  const sendProblem = (stop: Stop, kind: string, voice: Blob | null, note: string) => {
     const client_uuid = uuid();
-    const queued = action({ client_uuid, kind: 'problem', run_stop_id: stop.id, problem: kind, note: null });
+    const queued = action({ client_uuid, kind: 'problem', run_stop_id: stop.id, problem: kind, note: note.trim() || null });
     inOrder(async () => {
       await apply(
         { ...localRef.current, statuses: { ...localRef.current.statuses, [stop.id]: kind === 'skip' ? 'skipped' : 'problem' } },
@@ -442,7 +451,7 @@ export function DriverApp({ token }: { token: string }) {
       <header className="sticky top-0 z-10 flex items-center justify-between gap-2 bg-slate-950 px-4 py-3">
         <div className="min-w-0">
           <div className="font-display truncate text-xl font-bold">{run.storm.name}</div>
-          <div className="text-base text-slate-200" data-testid="progress">{t('of_done', { d: doneCount, n: stops.length })}</div>
+          <div className="text-base text-slate-200" data-testid="progress">{skippedCount ? t('of_done_skipped', { d: doneCount, s: skippedCount, n: stops.length }) : t('of_done', { d: doneCount, n: stops.length })}</div>
         </div>
         <div className="flex items-center gap-2">
           <span data-testid="sync-badge" data-state={sync} className={cn('rounded-full px-3 py-2 text-sm font-bold', sync === 'synced' ? 'bg-emerald-400 text-black' : sync === 'sending' ? 'bg-sky-300 text-black' : 'bg-amber-300 text-black')}>{badge}</span>
@@ -464,7 +473,7 @@ export function DriverApp({ token }: { token: string }) {
           </div>
         ) : next.status === 'onsite' && local.visits[next.id] ? (
           showProblem ? (
-            <ProblemPanel t={t} onCancel={() => setShowProblem(false)} onSend={(k, v) => sendProblem(next, k, v)} />
+            <ProblemPanel t={t} onCancel={() => setShowProblem(false)} onSend={(k, v, note) => sendProblem(next, k, v, note)} />
           ) : (
             <OnSite
               t={t}
@@ -480,7 +489,7 @@ export function DriverApp({ token }: { token: string }) {
             />
           )
         ) : showProblem ? (
-          <ProblemPanel t={t} onCancel={() => setShowProblem(false)} onSend={(k, v) => sendProblem(next, k, v)} />
+          <ProblemPanel t={t} onCancel={() => setShowProblem(false)} onSend={(k, v, note) => sendProblem(next, k, v, note)} />
         ) : (
           <NextStop t={t} token={token} stop={next} awayM={awayM} index={stops.findIndex((x) => x.id === next.id) + 1} total={stops.length} onNavigate={() => navigate(next)} onArrive={() => arrive(next)} onProblem={() => setShowProblem(true)} />
         )}
@@ -523,7 +532,7 @@ function NextStop({ t, token, stop, awayM, index, total, onNavigate, onArrive, o
       <p className="mt-1 text-xl text-slate-100">{stop.site.address}</p>
       {away ? <p className="mt-1 text-lg font-bold text-sky-300" data-testid="away">{away}</p> : null}
       <div className="mt-3 flex flex-wrap gap-2 text-base">
-        <span className="rounded-lg bg-slate-700 px-3 py-2">{t('priority')} {stop.site.priority}</span>
+        <span className="rounded-lg bg-slate-700 px-3 py-2" data-testid="priority">{t('priority_of', { p: stop.site.priority })}</span>
         {stop.site.open_by ? <span className="rounded-lg bg-slate-700 px-3 py-2">{t('window')} {stop.site.open_by}</span> : null}
         {stop.pins.map((p) => <span key={p.id} className="rounded-lg bg-slate-700 px-3 py-2">{p.kind}{p.note ? `: ${p.note}` : ''}</span>)}
       </div>
@@ -560,6 +569,8 @@ function PhotoButton({ label, done, testId, onChange }: { label: string; done: b
 function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; onPhoto: (phase: 'before' | 'after', e: ChangeEvent<HTMLInputElement>) => void; onDepth: (d: number) => void; onServices: (s: string[]) => void; onSalt: (n: number) => void; onDone: () => void; onProblem: () => void }) {
   const { t, stop, visit } = p;
   const blocked = p.needDepth && visit.depth === null;
+  // Done with nothing ticked priced the visit at $0 with no reason given (issue 2).
+  const noService = stop.services.length > 0 && !visit.services.some((s) => stop.services.includes(s));
   return (
     <section className="space-y-4 rounded-lg bg-slate-800 p-4" data-testid="onsite">
       <h1 className="font-display text-3xl font-bold leading-tight">{stop.site.label}</h1>
@@ -568,7 +579,7 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; on
         <h2 className="mb-2 text-lg font-bold">{p.needDepth ? t('depth_required') : t('depth')}</h2>
         <div className="grid grid-cols-5 gap-2">
           {DEPTHS.map((d) => (
-            <BigButton key={d} tone={visit.depth === d ? 'on' : 'plain'} className="px-1" onClick={() => p.onDepth(d)} data-testid={`depth-${d}`}>{d === 12 ? '12+' : d}&quot;</BigButton>
+            <BigButton key={d} tone={visit.depth === d ? 'on' : 'plain'} aria-pressed={visit.depth === d} className={cn('px-1', visit.depth === d && 'ring-4 ring-white')} onClick={() => p.onDepth(d)} data-testid={`depth-${d}`}>{d === 12 ? '12+' : d}&quot;</BigButton>
           ))}
         </div>
       </div>
@@ -577,7 +588,8 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; on
         <div className="flex flex-wrap gap-2">
           {stop.services.map((s) => {
             const on = visit.services.includes(s);
-            return <BigButton key={s} tone={on ? 'on' : 'plain'} onClick={() => p.onServices(on ? visit.services.filter((x) => x !== s) : [...visit.services, s])} data-testid={`service-${s}`}>{({ plow: t('service_plow'), salt: t('service_salt'), walks: t('service_walks'), haul: t('service_haul') } as Record<string, string>)[s] ?? s}</BigButton>;
+            // Every service starts ticked. The check mark and pressed state show that, so a tap that un-ticks one is seen.
+            return <BigButton key={s} tone={on ? 'on' : 'plain'} aria-pressed={on} className={cn(on && 'ring-4 ring-white')} onClick={() => p.onServices(on ? visit.services.filter((x) => x !== s) : [...visit.services, s])} data-testid={`service-${s}`}>{on ? '✓ ' : ''}{({ plow: t('service_plow'), salt: t('service_salt'), walks: t('service_walks'), haul: t('service_haul') } as Record<string, string>)[s] ?? s}</BigButton>;
           })}
         </div>
       </div>
@@ -594,15 +606,19 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; on
       <div className="sticky bottom-0 -mx-4 space-y-3 bg-slate-800 px-4 pb-4 pt-3 shadow-[0_-10px_16px_rgba(0,0,0,0.4)]">
         <PhotoButton label={t('after_photo')} done={visit.after} testId="after-photo" onChange={(e) => p.onPhoto('after', e)} />
         {!visit.after ? <p className="text-center text-base font-medium text-amber-300" data-testid="no-photo-hint">{t('no_after_photo')}</p> : null}
-        <BigButton tone="done" height="tall" className="w-full" disabled={blocked} onClick={p.onDone} data-testid="done">{t('done')}</BigButton>
+        {noService ? <p className="text-center text-base font-bold text-amber-300" data-testid="no-service-hint">{t('no_service')}</p> : null}
+        <BigButton tone="done" height="tall" className="w-full" disabled={blocked || noService} onClick={p.onDone} data-testid="done">{t('done')}</BigButton>
       </div>
       <BigButton tone="warn" className="w-full" onClick={p.onProblem} data-testid="problem">{t('problem')}</BigButton>
     </section>
   );
 }
 
-function ProblemPanel({ t, onCancel, onSend }: { t: T; onCancel: () => void; onSend: (kind: string, voice: Blob | null) => void }) {
+function ProblemPanel({ t, onCancel, onSend }: { t: T; onCancel: () => void; onSend: (kind: string, voice: Blob | null, note: string) => void }) {
   const [voice, setVoice] = useState<Blob | null>(null);
+  // A kind is picked first, then sent with a typed note and the voice note, so one stray tap doesn't report damage.
+  const [kind, setKind] = useState<'blocked' | 'breakdown' | 'skip' | 'damage' | null>(null);
+  const [note, setNote] = useState('');
   const [recording, setRecording] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null);
   const canRecord = typeof MediaRecorder !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
@@ -633,11 +649,25 @@ function ProblemPanel({ t, onCancel, onSend }: { t: T; onCancel: () => void; onS
   return (
     <section className="space-y-3 rounded-lg bg-slate-800 p-4" data-testid="problem-panel">
       <h1 className="text-2xl font-bold">{t('problem')}</h1>
-      {canRecord ? <BigButton tone={recording ? 'warn' : voice ? 'on' : 'plain'} className="w-full" onClick={() => void toggle()}>{recording ? t('stop_recording') : voice ? `✓ ${t('voice_note')}` : t('voice_note')}</BigButton> : null}
-      {(['blocked', 'breakdown', 'skip', 'damage'] as const).map((k) => (
-        <BigButton key={k} tone="warn" height="tall" className="w-full" onClick={() => onSend(k, voice)} data-testid={`problem-${k}`}>{t(k)}</BigButton>
-      ))}
-      <BigButton className="w-full" onClick={onCancel}>{t('back')}</BigButton>
+      {kind ? (
+        <>
+          <p className="text-xl font-bold" data-testid="problem-kind">{t(kind)}</p>
+          <label className="block text-lg">
+            {t('problem_note')}
+            <textarea className="mt-1 block w-full rounded-lg bg-slate-900 p-3 text-lg text-white" rows={3} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} data-testid="problem-note" />
+          </label>
+          {canRecord ? <BigButton tone={recording ? 'warn' : voice ? 'on' : 'plain'} className="w-full" onClick={() => void toggle()}>{recording ? t('stop_recording') : voice ? `✓ ${t('voice_note')}` : t('voice_note')}</BigButton> : null}
+          <BigButton tone="warn" height="tall" className="w-full" disabled={recording} onClick={() => onSend(kind, voice, note)} data-testid="problem-send">{t('send_problem_kind', { k: t(kind) })}</BigButton>
+          <BigButton className="w-full" onClick={() => setKind(null)}>{t('back')}</BigButton>
+        </>
+      ) : (
+        <>
+          {(['blocked', 'breakdown', 'skip', 'damage'] as const).map((k) => (
+            <BigButton key={k} tone="warn" height="tall" className="w-full" onClick={() => setKind(k)} data-testid={`problem-${k}`}>{t(k)}</BigButton>
+          ))}
+          <BigButton className="w-full" onClick={onCancel}>{t('back')}</BigButton>
+        </>
+      )}
     </section>
   );
 }

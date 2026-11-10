@@ -23,6 +23,17 @@ export function canSeeUsage(email: string | null) {
   return Boolean(email && admins.includes(email.toLowerCase()));
 }
 
+/** What pg_net's errors mean, for an owner reading Settings, System (issue 39). Unknown ones pass through. */
+export function plainCallError(e: string | null): string | null {
+  if (!e) return null;
+  if (/HTTP2 framing layer|connection reset|Recv failure|Empty reply/i.test(e)) return 'The connection dropped before the app answered. The next call picks the work up.';
+  if (/timed out|Timeout was reached/i.test(e)) return 'The app took too long to answer. The work keeps running and the next call picks up the rest.';
+  if (/resolve host|Could not resolve/i.test(e)) return "The app's address couldn't be found. Check the Vault app_base_url.";
+  if (/^HTTP 401|^HTTP 403/.test(e)) return 'The app refused the call. Check the Vault cron_secret matches CRON_SECRET.';
+  if (/^HTTP 5\d\d/.test(e)) return `The app answered with an error (${e}). Check the server log.`;
+  return e;
+}
+
 export interface CronCalls { total: number; failed: number; last_error: string | null; last_failed_at: string | null }
 
 /**
@@ -41,7 +52,7 @@ export async function cronCalls(): Promise<CronCalls | null> {
                where error_msg is not null or status_code is null or status_code >= 400 order by created desc limit 1) as last_failed_at
       from net._http_response`)) as unknown as { total: number; failed: number; last_error: string | null; last_failed_at: string | Date | null }[];
     if (!row) return null;
-    return { total: row.total, failed: row.failed, last_error: row.last_error, last_failed_at: row.last_failed_at ? new Date(row.last_failed_at).toISOString() : null };
+    return { total: row.total, failed: row.failed, last_error: plainCallError(row.last_error), last_failed_at: row.last_failed_at ? new Date(row.last_failed_at).toISOString() : null };
   } catch {
     return null;
   }

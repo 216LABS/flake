@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { finishStops, login, sql, startStorm } from './helpers';
+import { closeRunningStorms, finishStops, login, sql, startStorm } from './helpers';
 
 /** Uses each office screen the way a person would, and fails on any page error or 5xx along the way. */
 test('walk every office screen and use its main control', async ({ page }) => {
@@ -7,8 +7,12 @@ test('walk every office screen and use its main control', async ({ page }) => {
   page.on('pageerror', (e) => problems.push(`pageerror ${page.url()}: ${e.message}`));
   page.on('response', (r) => {
     if (r.status() >= 500) problems.push(`${r.status()} ${r.url()}`);
+    // A missing icon or script shows as a console error on every office page (issue 39). API 404s are answers, not errors.
+    const url = new URL(r.url());
+    if (r.status() === 404 && url.origin === new URL(page.url()).origin && !url.pathname.startsWith('/api/')) problems.push(`404 ${url.pathname}`);
   });
   await login(page);
+  await closeRunningStorms();
 
   // An earlier device's run may have left a walk route with a driver-less default.
   await sql`update route set default_crew_id = (select id from crew_member where email = 'dale@flake.test') where name like 'Walk route%'`;

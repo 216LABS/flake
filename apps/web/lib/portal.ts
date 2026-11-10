@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { and, app_setting, contract, customer, desc, eq, gte, inArray, invoice_draft, proof_packet, serviceDb, site, sql, storm, tenant, visit, visit_correction, visit_photo, visitNotVoided } from '@flake/db';
 import { required } from './env';
+import { quoteUrl } from './quotes';
 import { isUuid } from './http';
 
 /**
@@ -76,9 +77,12 @@ export async function portalData(customerId: string, tenantId: string) {
     customer: { name: row.c.name },
     sites: sites.map((s) => {
       const k = contracts.find((x) => x.site_id === s.id);
+      // A quote waiting to be signed, with its link, even when a signed contract is also in force.
+      const waiting = contracts.find((x) => x.site_id === s.id && x.status === 'sent');
       return {
         id: s.id, label: s.label, address: s.address, active: s.active,
         contract: k ? { season: k.season, status: k.status } : null,
+        quote: waiting ? { season: waiting.season, url: quoteUrl(waiting) } : null,
         visits: visits.filter((x) => x.v.site_id === s.id).map(({ v, stormName, stormOn }) => ({
           id: v.id, storm: stormName, on_site_now: !v.departed_device_at && stormOn, arrived: v.arrived_device_at, departed: v.departed_device_at, services: v.services, depth: v.depth_in === null ? null : Number(v.depth_in), salt: saltOf(v.id, v.salt), replow: Boolean(v.is_replow),
           photos: photos.filter((p) => p.visit_id === v.id && p.phase !== 'issue').map((p) => ({ id: p.id, phase: p.phase })),

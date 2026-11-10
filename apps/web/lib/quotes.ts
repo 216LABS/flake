@@ -1,4 +1,4 @@
-import { and, contract, customer, eq, ne, notInArray, serviceDb, site, sms_consent, tenant, withUser } from '@flake/db';
+import { and, asService, contract, customer, eq, inArray, ne, notInArray, serviceDb, site, sms_consent, tenant, withUser } from '@flake/db';
 import { CUSTOMER_CONSENT_TEXT } from '@flake/core/messages';
 import { quoteAccept, quoteCreate } from '@flake/contracts';
 import { z } from 'zod';
@@ -8,10 +8,10 @@ import { queueNotify, shortLink } from './messaging';
 import { getProviders } from './providers';
 import { handleStripeEvent } from './billing';
 import { putBlob, signedUrl } from './blob';
-import { hashToken, newToken } from './tokens';
+import { decryptToken, encryptToken, hashToken, newToken } from './tokens';
 import type { Ctx } from './storms';
 
-export const DEFAULT_TERMS = `Service is triggered when snowfall reaches the trigger depth listed above, as measured on site or from the weather records kept for this property. The contractor keeps a dated record of each visit. The client will keep the property accessible and mark obstacles before the first snowfall. Either party may end this agreement with 14 days written notice. Payment terms: as stated on each invoice.`;
+export const DEFAULT_TERMS = `Service starts when snowfall reaches the trigger listed above for each service (with any measurable snow where it says so), as measured on site or from the weather records kept for this property. The contractor keeps a dated record of each visit. The client will keep the property accessible and mark obstacles before the first snowfall. Either party may end this agreement with 14 days written notice. Payment terms: as stated on each invoice.`;
 
 export async function createQuote(ctx: Ctx, input: z.infer<typeof quoteCreate>) {
   const token = newToken();
@@ -19,10 +19,11 @@ export async function createQuote(ctx: Ctx, input: z.infer<typeof quoteCreate>) 
     const [st] = await tx.select().from(site).where(eq(site.id, input.site_id));
     if (!st) throw new HttpError(404, 'Site not found');
     if (!st.active) throw new HttpError(409, 'This site was retired. Add it again to quote it.', 'site_retired');
-    const [c] = await tx.insert(contract).values({
+    // Only the server writes a quote's token hash and, later, its acceptance (issue 8).
+    const [c] = await asService(tx, ctx.tenantId, () => tx.insert(contract).values({
       tenant_id: ctx.tenantId, site_id: input.site_id, season: input.season, services: input.services, salt_pricing: input.salt_pricing ?? null,
-      terms_md: input.terms_md ?? DEFAULT_TERMS, status: input.send ? 'sent' : 'draft', quote_token_hash: hashToken(token),
-    }).returning();
+      terms_md: input.terms_md ?? DEFAULT_TERMS, status: input.send ? 'sent' : 'draft', quote_token_hash: hashToken(token), quote_token_enc: encryptToken(token),
+    }).returning());
     const [cust] = await tx.select().from(customer).where(eq(customer.id, st.customer_id));
     const [t] = await tx.select().from(tenant).where(eq(tenant.id, ctx.tenantId));
     return { contract: c!, customer: cust!, tenant: t! };
@@ -76,8 +77,12 @@ export async function acceptQuote(token: string, input: z.infer<typeof quoteAcce
     if (now?.status === 'void') throw new HttpError(404, 'This quote is no longer available', 'quote_dead');
     return { already: true };
   }
-  // A new signature for the same lot and season replaces the old agreement, so only one price is in force.
-  await db.update(contract).set({ status: 'void' }).where(and(eq(contract.tenant_id, r.tenant.id), eq(contract.site_id, r.contract.site_id), eq(contract.season, r.contract.season), eq(contract.status, 'accepted'), ne(contract.id, r.contract.id)));
+  // A new signature for the same lot and season replaces the old agreement, so only one price is in force. Seasonal
+  // installments already billed on it carry over, so a re-sign doesn't start the schedule again (issue 10). Invoices
+  // already sent on the old agreement stay owed.
+  const replaced = await db.update(contract).set({ status: 'void' }).where(and(eq(contract.tenant_id, r.tenant.id), eq(contract.site_id, r.contract.site_id), eq(contract.season, r.contract.season), eq(contract.status, 'accepted'), ne(contract.id, r.contract.id))).returning({ billed: contract.installments_billed });
+  const carried = Math.max(0, ...replaced.map((x) => x.billed));
+  if (carried) await db.update(contract).set({ installments_billed: carried }).where(eq(contract.id, r.contract.id));
   const phone = input.phone_e164 ?? r.customer.phone_e164;
   await db.update(customer).set({ notify_sms: input.consentSms && Boolean(phone), notify_email: input.consentEmail, phone_e164: phone }).where(and(eq(customer.id, r.customer.id), eq(customer.tenant_id, r.tenant.id)));
   if (input.consentSms && phone) {
@@ -85,6 +90,33 @@ export async function acceptQuote(token: string, input: z.infer<typeof quoteAcce
       .onConflictDoUpdate({ target: [sms_consent.tenant_id, sms_consent.phone_e164], set: { opted_in_at: at, opted_in_source: 'quote_page', opted_out_at: null } });
   }
   return { already: false };
+}
+
+/**
+ * A quote's link is stored only as a hash, so it can't be shown again. Resending makes a new link, sends it, and the
+ * old one stops working. A signed contract isn't resent; its PDF is on the site page.
+ */
+export async function resendQuote(ctx: Ctx, contractId: string) {
+  const token = newToken();
+  const row = await withUser(ctx.userId, async (tx) => {
+    const [c] = await tx.select().from(contract).where(eq(contract.id, contractId));
+    if (!c) throw new HttpError(404, 'Contract not found');
+    if (!['draft', 'sent'].includes(c.status)) throw new HttpError(409, c.status === 'accepted' ? 'This contract is already signed.' : 'This quote is void. Send a new one.', 'not_resendable');
+    const [st] = await tx.select().from(site).where(eq(site.id, c.site_id));
+    if (!st?.active) throw new HttpError(409, 'This site is retired. Restore it to quote it.', 'site_retired');
+    const [cust] = await tx.select().from(customer).where(eq(customer.id, st.customer_id));
+    const [t] = await tx.select().from(tenant).where(eq(tenant.id, ctx.tenantId));
+    await asService(tx, ctx.tenantId, () => tx.update(contract).set({ status: 'sent', quote_token_hash: hashToken(token), quote_token_enc: encryptToken(token) }).where(and(eq(contract.id, c.id), eq(contract.tenant_id, ctx.tenantId), inArray(contract.status, ['draft', 'sent']))));
+    return { contract: c, customer: cust!, tenant: t! };
+  });
+  const link = await shortLink(ctx.tenantId, `/q/${token}`);
+  await queueNotify(row.tenant.id, { phone: row.customer.phone_e164, email: row.customer.email }, { template: 'quote', vars: { link }, subject: `${row.tenant.name}: your snow service quote`, key: `quote:${row.contract.id}:${hashToken(token).slice(0, 12)}`, related: { contract_id: row.contract.id } });
+  return { url: `${baseUrl()}/q/${token}` };
+}
+
+/** The link to a quote still waiting for a signature, when it was made after links were kept. */
+export function quoteUrl(c: { status: string; quote_token_enc: string | null }) {
+  return c.status === 'sent' && c.quote_token_enc ? `${baseUrl()}/q/${decryptToken(c.quote_token_enc)}` : null;
 }
 
 const isIp = (s: string) => /^[0-9a-fA-F:.]+$/.test(s);

@@ -67,6 +67,7 @@ export const customer = pgTable('customer', {
   stripe_payment_method_id: text('stripe_payment_method_id'),
   notify_sms: boolean('notify_sms').default(false),
   notify_email: boolean('notify_email').default(true),
+  archived_at: ts('archived_at'),
   created_at: createdAt(),
 });
 
@@ -122,6 +123,7 @@ export const contract = pgTable('contract', {
   accepted_ip: inet('accepted_ip'),
   pdf_path: text('pdf_path'),
   quote_token_hash: text('quote_token_hash'),
+  quote_token_enc: text('quote_token_enc'),
   installments_billed: integer('installments_billed').notNull().default(0),
   created_at: createdAt(),
 });
@@ -131,6 +133,7 @@ export const route = pgTable('route', {
   tenant_id: tenantId(),
   name: text('name').notNull(),
   default_crew_id: uuid('default_crew_id'),
+  archived_at: ts('archived_at'),
   created_at: createdAt(),
 });
 
@@ -305,6 +308,8 @@ export const installment_invoice = pgTable('installment_invoice', {
   amount_cents: integer('amount_cents').notNull(),
   stripe_invoice_id: text('stripe_invoice_id'),
   status: text('status').notNull().default('sent'),
+  /** The month billed, like 2026-11. One installment per contract per month. */
+  period: text('period'),
   created_at: createdAt(),
 });
 

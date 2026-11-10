@@ -1,10 +1,10 @@
-import { and, asc, contract, customer, desc, eq, inArray, invoice_draft, notInArray, isNotNull, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
+import { and, asc, asService, contract, customer, desc, eq, gte, inArray, installment_invoice, invoice_draft, notInArray, isNotNull, lte, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
 import { applyCorrections, draftInvoices, flagKey, isDraftClean, type BillingContract, type BillingFlag, type BillingVisit } from '@flake/core/billing';
 import { applicationFeeCents, feeRate, proFeaturesEnabled, type Plan } from '@flake/core/fees';
-import type { ContractService, SaltPricing, StormDepthContext } from '@flake/core/pricing';
+import { seasonalInstallments, type ContractService, type Pricing, type SaltPricing, type StormDepthContext } from '@flake/core/pricing';
 import { qboCsv, type QboRow } from '@flake/core/qbo';
-import { fmtLocal, liveContracts } from '@flake/core/time';
-import { sumRange } from '@flake/core/trigger';
+import { fmtLocal, liveContracts, localHm } from '@flake/core/time';
+import { sumOverlap } from '@flake/core/trigger';
 import type { StripeEventLike } from '@flake/providers';
 import { z } from 'zod';
 import { flagFix } from '@flake/contracts';
@@ -21,19 +21,34 @@ const today = () => new Date().toISOString().slice(0, 10);
 export const tenantFeeRate = (t: { plan: Plan; free_season_until: string | null }) => feeRate(t.plan, t.free_season_until, today());
 export const tenantHasPro = (t: { plan: Plan; free_season_until: string | null }) => proFeaturesEnabled(t.plan, t.free_season_until, today());
 
-/** NOHRSC 24 h at the site and NWS elapsed over the storm. Unavailable stays null and is never guessed. */
-async function depthContext(tenantId: string, s: typeof storm.$inferSelect, sites: (typeof site.$inferSelect)[]): Promise<Record<string, StormDepthContext>> {
+const HOUR = 3_600_000;
+/** How far past the close an observed total may run and still count as this storm's snow. */
+const OBSERVED_SLACK_MS = 3 * HOUR;
+
+/**
+ * Observed snow at the site during the storm, and NWS elapsed over the storm. Unavailable stays null and is never
+ * guessed. An observed (NOHRSC) total counts only when its whole window falls inside the storm: the 24 h total fetched
+ * as the storm started is the day before, and a 2" storm after a 6" one would otherwise bill the 6" tier.
+ */
+async function depthContext(s: typeof storm.$inferSelect, sites: (typeof site.$inferSelect)[]): Promise<Record<string, StormDepthContext>> {
   const db = serviceDb();
   const start = Date.parse(s.started_at);
   const end = s.closed_at ? Date.parse(s.closed_at) : Date.now();
   const snaps = s.forecast_snapshot_ids?.length ? await db.select().from(weather_snapshot).where(inArray(weather_snapshot.id, s.forecast_snapshot_ids)).orderBy(desc(weather_snapshot.fetched_at)) : [];
+  const observed = (await db.select().from(weather_snapshot)
+    .where(and(eq(weather_snapshot.source, 'nohrsc'), gte(weather_snapshot.fetched_at, new Date(start).toISOString()), lte(weather_snapshot.fetched_at, new Date(end + OBSERVED_SLACK_MS + 6 * HOUR).toISOString()))))
+    .filter((x) => {
+      const validAt = Date.parse(x.summary.valid_at ?? x.fetched_at);
+      const hours = Number(x.summary.hours);
+      return Number.isFinite(validAt) && hours > 0 && validAt - hours * HOUR >= start - HOUR && validAt <= end + OBSERVED_SLACK_MS;
+    });
   const out: Record<string, StormDepthContext> = {};
   for (const st of sites) {
-    const nohrsc = snaps.find((x) => x.source === 'nohrsc' && x.summary.hours === 24 && x.summary.sites?.[st.id] !== undefined);
+    const totals = observed.map((x) => x.summary.sites?.[st.id]).filter((v): v is number => typeof v === 'number');
     const grid = snaps.find((x) => x.source === 'nws_grid' && x.office === st.nws_office && x.grid_x === st.nws_grid_x && x.grid_y === st.nws_grid_y);
     out[st.id] = {
-      nohrsc24hIn: nohrsc ? (nohrsc.summary.sites[st.id] as number | null) : null,
-      nwsElapsedIn: grid ? sumRange(seriesFromSummary(grid.summary).snowIn, start, end) : null,
+      nohrsc24hIn: totals.length ? Math.max(...totals) : null,
+      nwsElapsedIn: grid ? sumOverlap(seriesFromSummary(grid.summary).snowIn, start, end) : null,
     };
   }
   return out;
@@ -43,12 +58,13 @@ async function depthContext(tenantId: string, s: typeof storm.$inferSelect, site
 async function loadBillingInput(tx: Tx, stormId: string) {
   const [s] = await tx.select().from(storm).where(eq(storm.id, stormId));
   if (!s) throw new HttpError(404, 'Storm not found');
+  const [t] = await tx.select({ timezone: tenant.timezone }).from(tenant).where(eq(tenant.id, s.tenant_id));
   const stops = await tx.select({ site_id: run_stop.site_id, status: run_stop.status }).from(run_stop).innerJoin(storm_run, eq(storm_run.id, run_stop.storm_run_id)).where(eq(storm_run.storm_id, stormId));
   const visits = await tx.select().from(visit).where(eq(visit.storm_id, stormId));
   const siteIds = [...new Set([...stops.map((x) => x.site_id), ...visits.map((v) => v.site_id)])];
   const sites = siteIds.length ? await tx.select().from(site).where(inArray(site.id, siteIds)) : [];
   // The contract for the storm's season: a renewal signed for next winter doesn't price this storm.
-  const contracts = liveContracts(siteIds.length ? await tx.select().from(contract).where(and(inArray(contract.site_id, siteIds), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)) : [], s.started_at);
+  const contracts = liveContracts(siteIds.length ? await tx.select().from(contract).where(and(inArray(contract.site_id, siteIds), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)) : [], s.started_at, t?.timezone);
   const visitIds = visits.map((v) => v.id);
   const photos = visitIds.length ? await tx.select({ visit_id: visit_photo.visit_id, phase: visit_photo.phase }).from(visit_photo).where(inArray(visit_photo.visit_id, visitIds)) : [];
   const corrections = visitIds.length ? await tx.select().from(visit_correction).where(inArray(visit_correction.visit_id, visitIds)).orderBy(visit_correction.created_at) : [];
@@ -91,7 +107,7 @@ export async function generateDrafts(ctx: Ctx, stormId: string) {
     // Mid-storm, more visits and passes are still coming. Charging now would bill half the work and miss the rest.
     if (s.status === 'active') throw new HttpError(409, 'Close the storm first. Invoices are drafted once the work is done.', 'storm_active');
     const [t] = await tx.select().from(tenant).where(eq(tenant.id, ctx.tenantId));
-    const depth = await depthContext(ctx.tenantId, s, sites);
+    const depth = await depthContext(s, sites);
     const newestBySite = new Map<string, typeof contract.$inferSelect>();
     for (const c of contracts) if (!newestBySite.has(c.site_id)) newestBySite.set(c.site_id, c);
     const billingContracts: BillingContract[] = [...newestBySite.values()].map((c) => ({ site_id: c.site_id, services: c.services as ContractService[], salt_pricing: c.salt_pricing as SaltPricing | null }));
@@ -114,19 +130,22 @@ export async function generateDrafts(ctx: Ctx, stormId: string) {
         l.description = `${place}: ${l.description}, ${when}`;
       }
     }
-    for (const d of drafts) {
-      const fee = applicationFeeCents(d.subtotal_cents, rate);
-      await tx.insert(invoice_draft).values({ tenant_id: ctx.tenantId, storm_id: stormId, customer_id: d.customer_id, lines: d.lines, subtotal_cents: d.subtotal_cents, flags: d.flags, application_fee_cents: fee })
-        .onConflictDoUpdate({
-          target: [invoice_draft.storm_id, invoice_draft.customer_id],
-          set: { lines: d.lines, subtotal_cents: d.subtotal_cents, flags: d.flags, application_fee_cents: fee },
-          where: sql`${invoice_draft.status} = 'draft'`,
-        });
-    }
     const keep = new Set(drafts.map((d) => d.customer_id));
     const existing = await tx.select().from(invoice_draft).where(eq(invoice_draft.storm_id, stormId));
     const stale = existing.filter((d) => d.status === 'draft' && !keep.has(d.customer_id));
-    if (stale.length) await tx.delete(invoice_draft).where(inArray(invoice_draft.id, stale.map((d) => d.id)));
+    // Users can read drafts but not write their amounts (issue 8). The storm was read through RLS above, so it's theirs.
+    await asService(tx, ctx.tenantId, async () => {
+      for (const d of drafts) {
+        const fee = applicationFeeCents(d.subtotal_cents, rate);
+        await tx.insert(invoice_draft).values({ tenant_id: ctx.tenantId, storm_id: stormId, customer_id: d.customer_id, lines: d.lines, subtotal_cents: d.subtotal_cents, flags: d.flags, application_fee_cents: fee })
+          .onConflictDoUpdate({
+            target: [invoice_draft.storm_id, invoice_draft.customer_id],
+            set: { lines: d.lines, subtotal_cents: d.subtotal_cents, flags: d.flags, application_fee_cents: fee },
+            where: sql`${invoice_draft.status} = 'draft' and ${invoice_draft.tenant_id} = ${ctx.tenantId}`,
+          });
+      }
+      if (stale.length) await tx.delete(invoice_draft).where(and(inArray(invoice_draft.id, stale.map((d) => d.id)), eq(invoice_draft.tenant_id, ctx.tenantId), eq(invoice_draft.status, 'draft')));
+    });
     return tx.select({ draft: invoice_draft, customer }).from(invoice_draft).innerJoin(customer, eq(customer.id, invoice_draft.customer_id)).where(eq(invoice_draft.storm_id, stormId));
   });
 }
@@ -159,6 +178,13 @@ export async function applyFlagFix(ctx: Ctx, fix: z.infer<typeof flagFix>) {
         await tx.insert(visit_correction).values({ tenant_id: ctx.tenantId, visit_id: fix.visit_id, field: 'salt', old_value: v.salt, new_value: [{ unit: fix.unit, qty: fix.qty }], reason: 'Salt quantity added in billing review', by_user: ctx.userId });
         break;
       }
+      case 'services': {
+        const [v] = await tx.select().from(visit).where(eq(visit.id, fix.visit_id));
+        if (!v) throw new HttpError(404, 'Visit not found');
+        const services = [...new Set([...v.services, ...fix.services])];
+        await tx.insert(visit_correction).values({ tenant_id: ctx.tenantId, visit_id: fix.visit_id, field: 'services', old_value: v.services, new_value: services, reason: `Added ${fix.services.join(', ')} in billing review`, by_user: ctx.userId });
+        break;
+      }
       case 'depth': {
         // Per-inch lots need a depth. The storm's depth is the deepest on any visit, so one correction prices the lot.
         const [v] = await tx.select().from(visit).where(and(eq(visit.storm_id, fix.storm_id), eq(visit.site_id, fix.site_id), isNotNull(visit.departed_device_at))).orderBy(asc(visit.arrived_device_at)).limit(1);
@@ -171,12 +197,31 @@ export async function applyFlagFix(ctx: Ctx, fix: z.infer<typeof flagFix>) {
   return generateDrafts(ctx, fix.storm_id);
 }
 
-/** Moving draft to approved is the idempotency gate: a double click finds nothing left to approve. */
+/**
+ * Moving draft to approved is the idempotency gate: a double click finds nothing left to approve. A draft with flags
+ * nobody fixed or waived is refused, so a $0 or doubtful invoice can't go out on one click.
+ */
 export async function approveDrafts(ctx: Ctx, draftIds: string[]) {
-  const approved = await withUser(ctx.userId, (tx) =>
-    tx.update(invoice_draft).set({ status: 'approved' }).where(and(inArray(invoice_draft.id, draftIds), eq(invoice_draft.status, 'draft'), sql`${invoice_draft.storm_id} in (select id from storm where status <> 'active')`)).returning({ id: invoice_draft.id, storm_id: invoice_draft.storm_id }),
-  );
-  for (const d of approved) await enqueue('billing.charge', { tenantId: ctx.tenantId, draftId: d.id }, { dedupeKey: `charge:${d.id}` });
+  const approved = await withUser(ctx.userId, async (tx) => {
+    const rows = await tx.select({ id: invoice_draft.id, flags: invoice_draft.flags, status_detail: invoice_draft.status_detail }).from(invoice_draft).where(and(inArray(invoice_draft.id, draftIds), eq(invoice_draft.status, 'draft')));
+    const flagged = rows.filter((r) => !isDraftClean(r.flags as BillingFlag[]));
+    if (flagged.length) {
+      throw new HttpError(409, rows.length === 1 ? 'This invoice has flags to fix or waive before it can be approved.' : `${flagged.length} of these invoices have flags to fix or waive first.`, 'flagged');
+    }
+    if (!rows.length) return [];
+    const done = await asService(tx, ctx.tenantId, () =>
+      tx.update(invoice_draft).set({ status: 'approved', status_detail: null })
+        .where(and(inArray(invoice_draft.id, rows.map((r) => r.id)), eq(invoice_draft.tenant_id, ctx.tenantId), eq(invoice_draft.status, 'draft'), sql`${invoice_draft.storm_id} in (select id from storm where status <> 'active')`))
+        .returning({ id: invoice_draft.id, storm_id: invoice_draft.storm_id }),
+    );
+    // A draft taken back for review was approved before, maybe charged and declined. A fresh Stripe key keeps Stripe
+    // from replaying that old answer, and a fresh job key lets the charge run again.
+    return done.map((d) => ({ ...d, again: Boolean(rows.find((r) => r.id === d.id)?.status_detail) }));
+  });
+  for (const d of approved) {
+    const attempt = d.again ? Date.now() : undefined;
+    await enqueue('billing.charge', { tenantId: ctx.tenantId, draftId: d.id, ...(attempt ? { attempt } : {}) }, { dedupeKey: attempt ? `charge:${d.id}:${attempt}` : `charge:${d.id}` });
+  }
   const stormIds = [...new Set(approved.map((d) => d.storm_id))];
   if (stormIds.length) {
     await withUser(ctx.userId, async (tx) => {
@@ -215,13 +260,42 @@ async function sendPayLink(row: NonNullable<Awaited<ReturnType<typeof loadDraft>
  * failed attempt gets a fresh Stripe idempotency key, because Stripe would otherwise replay the same decline.
  */
 export async function retryDraft(ctx: Ctx, draftId: string) {
-  const [row] = await withUser(ctx.userId, (tx) =>
-    tx.update(invoice_draft).set({ status: 'approved', status_detail: null }).where(and(eq(invoice_draft.id, draftId), inArray(invoice_draft.status, ['failed', 'approved']))).returning({ id: invoice_draft.id }),
-  );
+  const [row] = await withUser(ctx.userId, async (tx) => {
+    const [mine] = await tx.select({ id: invoice_draft.id }).from(invoice_draft).where(eq(invoice_draft.id, draftId));
+    if (!mine) return [];
+    return asService(tx, ctx.tenantId, () => tx.update(invoice_draft).set({ status: 'approved', status_detail: null }).where(and(eq(invoice_draft.id, draftId), eq(invoice_draft.tenant_id, ctx.tenantId), inArray(invoice_draft.status, ['failed', 'approved']))).returning({ id: invoice_draft.id }));
+  });
   if (!row) throw new HttpError(409, 'This invoice can no longer be retried', 'not_retryable');
   const attempt = Date.now();
   await enqueue('billing.charge', { tenantId: ctx.tenantId, draftId, attempt }, { dedupeKey: `charge:${draftId}:${attempt}` });
   return { ok: true };
+}
+
+const NOT_REVISABLE: Record<string, string> = {
+  charged: 'This invoice was already charged. Refund it from your Stripe dashboard if needed.',
+  paid: 'This invoice is paid. Refund it from your Stripe dashboard if needed.',
+  sent: 'This invoice was sent through Stripe. Void it from your Stripe dashboard.',
+  void: 'This invoice is already void.',
+  draft: 'This invoice is still in review.',
+};
+
+/**
+ * Takes an approved or failed invoice back to review, or voids it. Waits for a charge already running on it, then
+ * decides from where that charge left it, so a void can't land on top of a payment that just went through.
+ */
+export async function reviseDraft(ctx: Ctx, draftId: string, to: 'draft' | 'void') {
+  return withUser(ctx.userId, async (tx) => {
+    const [mine] = await tx.select({ id: invoice_draft.id, storm_id: invoice_draft.storm_id }).from(invoice_draft).where(eq(invoice_draft.id, draftId));
+    if (!mine) throw new HttpError(404, 'Invoice not found');
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`charge:${draftId}`}))`);
+    const [now] = await tx.select({ status: invoice_draft.status }).from(invoice_draft).where(eq(invoice_draft.id, draftId));
+    const from = to === 'void' ? ['draft', 'approved', 'failed'] : ['approved', 'failed'];
+    if (!now || !from.includes(now.status!)) throw new HttpError(409, NOT_REVISABLE[now?.status ?? 'void'] ?? 'This invoice can no longer be changed.', 'not_revisable');
+    await asService(tx, ctx.tenantId, () => tx.update(invoice_draft).set({ status: to, status_detail: to === 'void' ? 'Voided by the office' : 'Taken back for review' }).where(and(eq(invoice_draft.id, draftId), eq(invoice_draft.tenant_id, ctx.tenantId))));
+    // A storm counts as billed once nothing is left in review, so taking one back reopens its billing.
+    if (to === 'draft') await tx.update(storm).set({ status: 'closed' }).where(and(eq(storm.id, mine.storm_id), eq(storm.status, 'billed')));
+    return { ok: true, status: to };
+  });
 }
 
 /** Failed or needs customer action: status failed, a hosted pay link goes out, and the dashboard shows why. */
@@ -304,7 +378,11 @@ const tenantIdFrom = (obj: any): string | null => obj?.metadata?.tenant_id ?? nu
 /** The single place Stripe events apply, for real webhooks and the mock alike. Dedupes on event id. */
 export async function handleStripeEvent(evt: StripeEventLike): Promise<'processed' | 'duplicate'> {
   const db = serviceDb();
-  const fresh = await db.insert(stripe_event).values({ id: evt.id, type: evt.type }).onConflictDoNothing({ target: stripe_event.id }).returning({ id: stripe_event.id });
+  // An event counts as seen only once it was applied. If applying it threw, Stripe's retry finds processed_at still
+  // empty and applies it again, instead of a paid invoice staying "charged" forever. Each change below is safe twice.
+  const fresh = await db.insert(stripe_event).values({ id: evt.id, type: evt.type })
+    .onConflictDoUpdate({ target: stripe_event.id, set: { type: evt.type }, where: sql`${stripe_event.processed_at} is null` })
+    .returning({ id: stripe_event.id });
   if (!fresh.length) return 'duplicate';
   const obj = evt.data.object;
   const draftId = draftIdFrom(obj);
@@ -355,40 +433,80 @@ export async function handleStripeEvent(evt: StripeEventLike): Promise<'processe
   return 'processed';
 }
 
-/** Monthly job: one Stripe invoice per seasonal installment, so fee logic matches every other payment. */
-export async function billInstallments(tenantId?: string) {
+type InstallmentRow = { contract: typeof contract.$inferSelect; site: typeof site.$inferSelect; customer: typeof customer.$inferSelect; tenant: typeof tenant.$inferSelect };
+
+/**
+ * Monthly job: one Stripe invoice per seasonal installment, so fee logic matches every other payment. Safe to run
+ * again in the same month: each installment is recorded with its month before Stripe is called, and a lot that
+ * already has this month's installment (on this contract or one it replaced) gets nothing more. One contract failing
+ * doesn't stop the rest; the job fails at the end so it retries, and the retry finishes only what's missing.
+ */
+export async function billInstallments(tenantId?: string, now = new Date()) {
   const db = serviceDb();
   const rows = await db.select({ contract, site, customer, tenant }).from(contract)
     .innerJoin(site, eq(site.id, contract.site_id)).innerJoin(customer, eq(customer.id, site.customer_id)).innerJoin(tenant, eq(tenant.id, contract.tenant_id))
     .where(and(eq(contract.status, 'accepted'), eq(site.active, true), tenantId ? eq(contract.tenant_id, tenantId) : undefined))
     .orderBy(desc(contract.created_at));
-  const { payments } = await getProviders();
-  // A re-quote for the same season leaves the old contract accepted too. Only the newest one for a lot and season bills;
-  // next season's renewal is a different season and doesn't stop this one.
+  // Only the newest accepted contract for a lot and season bills. Next season's renewal is a different season.
   const seen = new Set<string>();
-  const { seasonalInstallments } = await import('@flake/core/pricing');
-  const { installment_invoice } = await import('@flake/db');
   let created = 0;
+  const failed: unknown[] = [];
   for (const r of rows) {
     const key = `${r.site.id}:${r.contract.season}`;
     if (seen.has(key)) continue;
     seen.add(key);
     const pricing = (r.contract.services as ContractService[]).find((s) => s.pricing?.type === 'seasonal')?.pricing;
-    if (pricing?.type !== 'seasonal' || !r.tenant.stripe_account_id || !r.tenant.stripe_charges_enabled) continue;
+    if (pricing?.type !== 'seasonal') continue;
+    try {
+      if (await billInstallment(r, pricing, now)) created++;
+    } catch (err) {
+      failed.push(err);
+      log.error('installment failed', err, { contract_id: r.contract.id });
+    }
+  }
+  if (failed.length) throw new Error(`${failed.length} seasonal installment${failed.length === 1 ? '' : 's'} failed; the retry bills only those`, { cause: failed[0] });
+  return created;
+}
+
+async function billInstallment(r: InstallmentRow, pricing: Extract<Pricing, { type: 'seasonal' }>, now: Date) {
+  const db = serviceDb();
+  // Manual-billing customers stay off Stripe, the same as storm invoices. Their installment is still recorded.
+  const manual = r.customer.billing_mode === 'manual';
+  if (!manual && (!r.tenant.stripe_account_id || !r.tenant.stripe_charges_enabled)) return false;
+  const period = localHm(now, r.tenant.timezone).date.slice(0, 7);
+  const thisMonth = await db.select({ status: installment_invoice.status, contract_id: installment_invoice.contract_id }).from(installment_invoice)
+    .innerJoin(contract, eq(contract.id, installment_invoice.contract_id))
+    .where(and(eq(contract.site_id, r.site.id), eq(contract.season, r.contract.season), eq(installment_invoice.period, period)));
+  if (thisMonth.some((x) => x.status !== 'pending' || x.contract_id !== r.contract.id)) return false;
+  // A pending row is an installment whose Stripe invoice didn't finish. That one goes out before any later one.
+  const [pending] = await db.select().from(installment_invoice).where(and(eq(installment_invoice.contract_id, r.contract.id), eq(installment_invoice.status, 'pending'))).orderBy(asc(installment_invoice.seq)).limit(1);
+  let row = pending;
+  if (row) {
+    if (row.period !== period) [row] = await db.update(installment_invoice).set({ period }).where(eq(installment_invoice.id, row.id)).returning();
+  } else {
     const seq = r.contract.installments_billed + 1;
-    if (seq > pricing.installments) continue;
+    if (seq > pricing.installments) return false;
     const amount = seasonalInstallments(pricing.total_cents, pricing.installments)[seq - 1]!;
-    const { customerId } = await payments.ensureCustomer(r.tenant.stripe_account_id, { existingId: r.customer.stripe_customer_id, email: r.customer.email, name: r.customer.name, tenantId: r.tenant.id, customerId: r.customer.id });
-    const inv = await payments.createInvoice(r.tenant.stripe_account_id, {
+    [row] = await db.insert(installment_invoice).values({ tenant_id: r.tenant.id, contract_id: r.contract.id, seq, amount_cents: amount, status: 'pending', period }).onConflictDoNothing().returning();
+    if (!row) return false; // another run took this one
+  }
+  const { id, seq, amount_cents: amount } = row!;
+  let invoiceId: string | null = null;
+  if (!manual) {
+    const { payments } = await getProviders();
+    const { customerId } = await payments.ensureCustomer(r.tenant.stripe_account_id!, { existingId: r.customer.stripe_customer_id, email: r.customer.email, name: r.customer.name, tenantId: r.tenant.id, customerId: r.customer.id });
+    const inv = await payments.createInvoice(r.tenant.stripe_account_id!, {
       customerId, feeCents: applicationFeeCents(amount, tenantFeeRate(r.tenant)), daysUntilDue: 30, idempotencyKey: `installment:${r.contract.id}:${seq}`,
       description: `Seasonal snow service, installment ${seq} of ${pricing.installments}: ${r.site.label}`, lines: [{ description: `Installment ${seq} of ${pricing.installments}: ${r.site.label}`, amountCents: amount }],
       metadata: { tenant_id: r.tenant.id, contract_id: r.contract.id },
     });
-    await db.insert(installment_invoice).values({ tenant_id: r.tenant.id, contract_id: r.contract.id, seq, amount_cents: amount, stripe_invoice_id: inv.invoiceId }).onConflictDoNothing();
-    await db.update(contract).set({ installments_billed: seq }).where(eq(contract.id, r.contract.id));
-    created++;
+    invoiceId = inv.invoiceId;
   }
-  return created;
+  await db.transaction(async (tx) => {
+    await tx.update(installment_invoice).set({ status: manual ? 'manual' : 'sent', stripe_invoice_id: invoiceId }).where(eq(installment_invoice.id, id));
+    await tx.update(contract).set({ installments_billed: sql`greatest(${contract.installments_billed}, ${seq})` }).where(eq(contract.id, r.contract.id));
+  });
+  return true;
 }
 
 export async function exportQbo(ctx: Ctx & { timezone: string }, stormId: string) {

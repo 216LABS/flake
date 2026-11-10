@@ -46,6 +46,22 @@ export async function withUser<T>(userId: string, fn: (tx: Tx) => Promise<T>): P
 }
 
 /**
+ * Inside withUser, runs writes as the server connection instead of the signed-in user. For tables whose money or
+ * signature columns users may read but not write (invoice_draft, contract acceptance). RLS no longer guards those
+ * writes, so this first checks, as the user, that they are an owner or dispatcher of the tenant; viewers and other
+ * companies are refused with the same "not allowed" RLS would give. The caller scopes every write to that tenant. A
+ * throw aborts the whole transaction, so there is no role to restore on that path.
+ */
+export async function asService<T>(tx: Tx, tenantId: string, fn: () => Promise<T>): Promise<T> {
+  const [can] = (await tx.execute(sql`select ${tenantId}::uuid in (select private.auth_write_tenant_ids()) as ok`)) as unknown as { ok: boolean }[];
+  if (!can?.ok) throw Object.assign(new Error('Not allowed'), { code: '42501' });
+  await tx.execute(sql`set local role none`);
+  const out = await fn();
+  await tx.execute(sql`set local role authenticated`);
+  return out;
+}
+
+/**
  * Scoped queries for driver link tokens. Driver requests have no Supabase user, so they use the service
  * connection. Going through this helper keeps a tenant filter on every read (BUILD_SPEC section 2).
  */

@@ -6,8 +6,8 @@ import { queueNotify } from './messaging';
 
 export async function listTeam(tenantId: string) {
   return (await serviceDb().execute(sql`
-    select m.user_id, u.email, m.role from membership m join auth.users u on u.id = m.user_id
-    where m.tenant_id = ${tenantId} order by m.role, u.email`)) as unknown as { user_id: string; email: string | null; role: string }[];
+    select m.user_id, u.email, m.role, u.last_sign_in_at is null as pending from membership m join auth.users u on u.id = m.user_id
+    where m.tenant_id = ${tenantId} order by m.role, u.email`)) as unknown as { user_id: string; email: string | null; role: string; pending: boolean }[];
 }
 
 /** One company per person in v1, because the app has no company switcher. */
@@ -38,6 +38,34 @@ export async function addMember(tenantId: string, email: string, role: 'owner' |
   const [t] = await db.select().from(tenant).where(eq(tenant.id, tenantId));
   await queueNotify(tenantId, { email: address }, { template: 'team_invite', vars: { link: `${baseUrl()}/login` }, subject: `${t!.name} added you to Flake`, key: `team_invite:${userId}` });
   return { user_id: userId };
+}
+
+/** Sends the sign-in invite again, to someone who hasn't signed in yet. */
+export async function resendInvite(tenantId: string, userId: string) {
+  const db = serviceDb();
+  const [row] = (await db.execute(sql`
+    select u.email, u.last_sign_in_at from membership m join auth.users u on u.id = m.user_id
+    where m.tenant_id = ${tenantId} and m.user_id = ${userId}`)) as unknown as { email: string | null; last_sign_in_at: string | null }[];
+  if (!row?.email) throw new HttpError(404, 'Not found');
+  if (row.last_sign_in_at) throw new HttpError(409, 'They have already signed in. They can sign in any time at the sign-in page.', 'signed_in');
+  const [t] = await db.select().from(tenant).where(eq(tenant.id, tenantId));
+  // A fresh key per press, a minute apart, so a resend actually sends and a double tap doesn't send twice.
+  await queueNotify(tenantId, { email: row.email }, { template: 'team_invite', vars: { link: `${baseUrl()}/login` }, subject: `${t!.name} added you to Flake`, key: `team_invite:${userId}:${Math.floor(Date.now() / 60_000)}` });
+  return { ok: true };
+}
+
+/** Changes someone's role. The company always keeps an owner, and only a current owner can do it. */
+export async function changeRole(tenantId: string, userId: string, role: 'owner' | 'dispatcher' | 'viewer', by: string) {
+  await serviceDb().transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`team:${tenantId}`}))`);
+    const [me] = await tx.select().from(membership).where(and(eq(membership.tenant_id, tenantId), eq(membership.user_id, by), eq(membership.role, 'owner')));
+    if (!me) throw new HttpError(403, 'You are no longer an owner of this company.', 'not_owner');
+    const changed = await tx.update(membership).set({ role }).where(and(eq(membership.tenant_id, tenantId), eq(membership.user_id, userId))).returning();
+    if (!changed.length) throw new HttpError(404, 'Not found');
+    const [left] = await tx.select({ n: sql<number>`count(*)::int` }).from(membership).where(and(eq(membership.tenant_id, tenantId), eq(membership.role, 'owner')));
+    if (!left?.n) throw new HttpError(409, 'A company needs at least one owner.', 'last_owner');
+  });
+  return { ok: true };
 }
 
 export async function removeMember(tenantId: string, userId: string, by: string) {

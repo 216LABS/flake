@@ -4,6 +4,7 @@ import { flagKey, isDraftClean, type BillingFlag } from '@flake/core/billing';
 import { Badge, Button, Card, EmptyState, Input, Table, Td, Th, buttonVariants } from '@flake/ui';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useConfirm } from '@/components/confirm';
 import { api, money } from '@/lib/client';
 
 export interface DraftRow {
@@ -23,8 +24,11 @@ export interface DraftRow {
 
 const TONE: Record<string, 'gray' | 'blue' | 'green' | 'amber' | 'red'> = { draft: 'gray', approved: 'blue', charged: 'green', sent: 'blue', paid: 'green', failed: 'red', void: 'gray' };
 
-export function BillingReview({ stormId, initial, canExport, showFees, stormActive = false }: { stormId: string; initial: DraftRow[]; canExport: boolean; showFees: boolean; stormActive?: boolean }) {
+const SALT_UNIT: Record<string, string> = { bag50lb: 'bags', lb: 'lb', ton: 'tons', application: 'applications' };
+
+export function BillingReview({ stormId, initial, canExport, showFees, stormActive = false, stripeReady = true }: { stormId: string; initial: DraftRow[]; canExport: boolean; showFees: boolean; stormActive?: boolean; stripeReady?: boolean }) {
   const router = useRouter();
+  const [ask, dialog] = useConfirm();
   const [rows, setRows] = useState(initial);
   const [flaggedOnly, setFlaggedOnly] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,8 +64,20 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
 
   if (stormActive) return <EmptyState title="This storm is still going" body="Close it on the storm board when the work is done. Its invoices are drafted here after that, so nothing still coming in is missed." />;
 
+  const revise = async (r: DraftRow, to: 'draft' | 'void') => {
+    const ok = await ask(to === 'void'
+      ? { title: `Void ${r.customer}'s invoice?`, body: <>Nothing more is charged for it. {r.pay_link ? 'A pay link already went to the customer: deactivate it in your Stripe dashboard too.' : ''}</>, confirm: 'Void invoice', danger: true }
+      : { title: `Take ${r.customer}'s invoice back to review?`, body: 'Nothing is charged until you approve it again.', confirm: 'Back to review' });
+    if (ok) await run(() => api('/api/billing/revise', { body: { draftId: r.id, to } }));
+  };
   return (
     <div>
+      {dialog}
+      {!stripeReady && rows.length ? (
+        <p className="mb-4 rounded-md bg-sky-50 p-3 text-sm text-sky-950" data-testid="stripe-not-connected">
+          Stripe isn&apos;t connected, so approving doesn&apos;t charge anyone yet. Approved invoices wait here. Connect Stripe in <a className="underline" href="/settings?tab=payments">Settings, Payments</a>, then press Charge now on each, or bill them yourself from the QuickBooks CSV.
+        </p>
+      ) : null}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Button variant={rows.length ? 'outline' : 'accent'} disabled={busy} data-testid="generate" onClick={() => run(() => api(`/api/storms/${stormId}/billing/draft`, { method: 'POST' }))}>{rows.length ? 'Regenerate drafts' : 'Generate drafts'}</Button>
         <Button variant="accent" disabled={busy || !clean.length} data-testid="approve-clean" onClick={() => run(async () => {
@@ -87,7 +103,11 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
               </div>
             </div>
             {r.status_detail ? <p className="mt-1 text-sm text-amber-800" data-testid="status-detail">{r.status_detail}</p> : null}
-            {r.status === 'failed' || (r.status === 'approved' && r.status_detail && r.billing_mode !== 'manual') ? <Button size="sm" variant="outline" className="mt-1" disabled={busy} data-testid="retry" onClick={() => run(() => api('/api/billing/retry', { body: { draftId: r.id } }))}>Try again</Button> : null}
+            <div className="mt-1 flex flex-wrap gap-2">
+              {r.status === 'failed' || (r.status === 'approved' && r.status_detail && r.billing_mode !== 'manual') ? <Button size="sm" variant="outline" disabled={busy || (r.status === 'approved' && !stripeReady)} data-testid="retry" onClick={() => run(() => api('/api/billing/retry', { body: { draftId: r.id } }))}>{r.status === 'failed' ? 'Try again' : 'Charge now'}</Button> : null}
+              {r.status === 'approved' || r.status === 'failed' ? <Button size="sm" variant="ghost" disabled={busy} data-testid="unapprove" onClick={() => void revise(r, 'draft')}>Back to review</Button> : null}
+              {['draft', 'approved', 'failed'].includes(r.status) ? <Button size="sm" variant="ghost" disabled={busy} data-testid="void" onClick={() => void revise(r, 'void')}>Void</Button> : null}
+            </div>
             {r.pay_link ? <p className="mt-1 text-sm">Pay link sent: <a className="text-sky-800 underline" href={r.pay_link}>open</a></p> : null}
             {r.lines.length ? (
               <div className="mt-2"><Table>
@@ -102,7 +122,8 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
             ) : null}
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
               <span>{showFees ? `Only owners see this: Flake fee ${money(r.fee_cents)}. Estimated Stripe fee ${money(r.stripe_fee_cents)}. ` : ''}{r.billing_mode.replace(/_/g, ' ')}.</span>
-              {r.status === 'draft' ? <Button size="sm" variant="outline" disabled={busy} data-testid="approve-one" onClick={() => run(() => api('/api/billing/approve', { body: { draftIds: [r.id] } }))}>Approve</Button> : null}
+              {r.status === 'draft' && isDraftClean(r.flags) ? <Button size="sm" variant="outline" disabled={busy} data-testid="approve-one" onClick={() => run(() => api('/api/billing/approve', { body: { draftIds: [r.id] } }))}>Approve</Button> : null}
+              {r.status === 'draft' && !isDraftClean(r.flags) ? <span className="font-medium text-amber-900" data-testid="approve-blocked">Fix or waive the flags to approve.</span> : null}
             </div>
           </Card>
         ))}
@@ -120,11 +141,15 @@ function FlagRow({ flag, editable, busy, onFix }: { flag: BillingFlag; editable:
         <div className="mt-1 flex flex-wrap items-center gap-2">
           {flag.code === 'missing_visit' ? <Button size="sm" variant="outline" disabled={busy} data-testid="fix-skip" onClick={() => onFix({ action: 'skip', site_id: flag.site_id })}>Mark skipped</Button> : null}
           {flag.code === 'duplicate' && flag.visit_id ? <Button size="sm" variant="outline" disabled={busy} data-testid="fix-replow" onClick={() => onFix({ action: 'replow', visit_id: flag.visit_id })}>Mark re-plow</Button> : null}
-          {flag.code === 'missing_salt_qty' && flag.visit_id ? (
+          {(flag.code === 'missing_salt_qty' || flag.code === 'salt_unit') && flag.visit_id ? (
             <>
-              <Input aria-label="Bags of salt" className="h-8 w-20" type="number" min={1} value={qty} onChange={(e) => setQty(e.target.value)} data-testid="salt-qty" />
-              <Button size="sm" variant="outline" disabled={busy || !qty} data-testid="fix-salt" onClick={() => onFix({ action: 'salt', visit_id: flag.visit_id, unit: 'bag50lb', qty: Number(qty) })}>Add salt qty</Button>
+              <Input aria-label={`Salt, in ${SALT_UNIT[flag.unit ?? 'bag50lb'] ?? flag.unit}`} className="h-8 w-20" type="number" min={0.1} step="any" value={qty} onChange={(e) => setQty(e.target.value)} data-testid="salt-qty" />
+              <span className="text-xs">{SALT_UNIT[flag.unit ?? 'bag50lb'] ?? flag.unit}</span>
+              <Button size="sm" variant="outline" disabled={busy || !(Number(qty) > 0)} data-testid="fix-salt" onClick={() => onFix({ action: 'salt', visit_id: flag.visit_id, unit: flag.unit ?? 'bag50lb', qty: Number(qty) })}>Set salt</Button>
             </>
+          ) : null}
+          {flag.code === 'no_service' && flag.visit_id && flag.services?.length ? (
+            <Button size="sm" variant="outline" disabled={busy} data-testid="fix-services" onClick={() => onFix({ action: 'services', visit_id: flag.visit_id, services: flag.services })}>Bill {flag.services.join(' and ')} for it</Button>
           ) : null}
           {flag.code === 'missing_depth' ? (
             <>

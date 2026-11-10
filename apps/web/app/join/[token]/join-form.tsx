@@ -15,7 +15,12 @@ export function JoinForm({ token, company, name, hasPhone, consentText, email: k
     <main className="mx-auto max-w-md px-4 py-12">
       <Card>
         <h1 className="text-xl font-semibold">{name}, join {company}</h1>
-        {done ? <p className="mt-3 text-sm" data-testid="joined">You&apos;re set. Your route link will come when a storm starts. There is nothing to install.</p> : (
+        {done ? (
+          <div className="mt-4 rounded-md bg-emerald-50 p-4 text-emerald-950" role="status" data-testid="joined">
+            <p className="text-lg font-semibold">✓ You&apos;re on the crew</p>
+            <p className="mt-1 text-sm">Your route link comes {email.trim() ? `to ${email.trim()}` : 'by text'} when a storm starts. There is nothing to install, and you can close this page.</p>
+          </div>
+        ) : (
           <>
             <p className="mt-2 text-sm text-slate-600">Route links open in your phone&apos;s browser with no app and no login. While your route page is open and a storm is active, it uses your location to prompt you when you arrive and to record your arrival. It doesn&apos;t track you in the background.</p>
             <div className="mt-4">

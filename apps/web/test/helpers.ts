@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { contract, crew_member, customer, membership, route, route_stop, serviceDb, site, sms_consent, sql, tenant } from '@flake/db';
 import { runJobs } from '@/lib/handlers';
+import { createStorm as startStorm } from '@/lib/storms';
 import { hashToken } from '@/lib/tokens';
 
 export const iso = (d = new Date()) => d.toISOString();
@@ -103,3 +104,12 @@ export function stopActions(stopId: string, at: Date, opts: { depth?: number; sa
 }
 
 export const tokenHash = hashToken;
+
+/**
+ * Starts a storm the way an office does when one is still running on the same lots: that one is closed first. A lot
+ * can be live on one storm at a time (issue 24); tests that check the block itself call the real createStorm.
+ */
+export async function createStorm(...args: Parameters<typeof startStorm>) {
+  await serviceDb().execute(sql`update storm set status = 'closed', closed_at = now() where tenant_id = ${args[0].tenantId} and status = 'active'`);
+  return startStorm(...args);
+}

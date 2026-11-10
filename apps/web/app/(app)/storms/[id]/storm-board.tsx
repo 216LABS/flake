@@ -6,6 +6,7 @@ import { RunPlan } from './run-plan';
 import QRCode from 'qrcode';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/client';
+import { useConfirm } from '@/components/confirm';
 import { MapView, type MapPin, type TileLayers } from '@/components/map-view';
 
 const STATUS_WORD: Record<string, string> = { open: 'Open', enroute: 'On the way', onsite: 'On site', done: 'Done', skipped: 'Skipped', problem: 'Problem' };
@@ -31,6 +32,8 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
   const [linkFor, setLinkFor] = useState<{ runId: string; name: string; link: string; qr: string } | null>(null);
   const [calloutTime, setCalloutTime] = useState('');
   const [calloutSent, setCalloutSent] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [ask, dialog] = useConfirm();
 
   const load = async () => {
     try {
@@ -69,13 +72,18 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
   };
 
   const move = (stopId: string, runId: string) => act(() => api(`/api/run-stops/${stopId}`, { method: 'PATCH', body: { storm_run_id: runId } }));
-  /** One place earlier in its truck's order. The list on screen may sort late stops first, so this goes by seq. */
-  const moveUp = (run: any, stopId: string) => {
+  /** One place earlier or later in its truck's order. The list on screen may sort late stops first, so this goes by seq. */
+  const shift = (run: any, stopId: string, by: -1 | 1) => {
     const ids = [...run.stops].sort((a: any, b: any) => a.seq - b.seq).map((x: any) => x.id as string);
     const i = ids.indexOf(stopId);
-    if (i < 1) return;
-    [ids[i - 1], ids[i]] = [ids[i]!, ids[i - 1]!];
+    const j = i + by;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[j], ids[i]] = [ids[i]!, ids[j]!];
     return act(() => api(`/api/runs/${run.id}/order`, { body: { stop_ids: ids } }));
+  };
+  const skip = async (s: any) => {
+    if (s.status !== 'skipped' && !(await ask({ title: `Skip ${s.label}?`, body: 'It drops off the driver\'s route and isn\'t billed for this storm. You can reopen it while the storm is on.', confirm: 'Skip it' }))) return;
+    await act(() => api(`/api/run-stops/${s.id}`, { method: 'PATCH', body: { status: s.status === 'skipped' ? 'open' : 'skipped' } }));
   };
   const closed = live.storm.status !== 'active';
   const editable = !closed && canEdit;
@@ -94,7 +102,7 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
   };
   /** A lost or forwarded phone: the old link stops at once, and work already done on it still syncs. */
   const replaceLink = async () => {
-    if (!linkFor || !confirm(`Turn off ${linkFor.name}'s current link and make a new one? Send them the new link or show them this QR.`)) return;
+    if (!linkFor || !(await ask({ title: `New link for ${linkFor.name}?`, body: 'Their current link stops working now. Work already done on it still syncs. Send them the new link or show them this QR.', confirm: 'Make a new link' }))) return;
     setError(null);
     try {
       const out = await api<{ link: string }>(`/api/runs/${linkFor.runId}/revoke`, { method: 'POST' });
@@ -118,6 +126,7 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
           <Progress className="mb-2 bg-slate-700" value={live.counts.done + live.counts.skipped} max={live.counts.total} label="Stops finished" />
         <div className="tabular flex flex-wrap gap-x-3 text-sm" data-testid="counts">
           <span><b>{live.counts.done}</b> done</span>
+          {live.counts.skipped ? <span><b>{live.counts.skipped}</b> skipped</span> : null}
           <span><b>{live.counts.open}</b> open</span>
           <span><b>{live.counts.onsite}</b> on site</span>
           <span className={live.counts.late ? 'font-bold text-amber-300' : ''}><b>{live.counts.late}</b> late</span>
@@ -126,15 +135,22 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
         <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap lg:ml-auto lg:w-auto">
           {editable && unpublished ? <Button variant="accent" data-testid="publish" onClick={() => act(() => api(`/api/storms/${stormId}/publish`, { method: 'POST' }))}>Publish</Button> : null}
           {editable ? <Button variant="outline" data-testid="notify-open" onClick={() => setNotify(true)}>Notify customers</Button> : null}
-          {editable ? <Button variant="outline" data-testid="another-pass" onClick={() => {
-            if (!confirm('Start another pass? Every driver gets a new route link for it.')) return;
-            act(() => api(`/api/storms/${stormId}/pass`, { method: 'POST' }));
+          {editable ? <Button variant="outline" data-testid="another-pass" onClick={async () => {
+            if (!(await ask({ title: 'Start another pass?', body: 'Every driver gets a new route link for it.', confirm: 'Start pass' }))) return;
+            await act(() => api(`/api/storms/${stormId}/pass`, { method: 'POST' }));
           }}>Another pass</Button> : null}
           <Button variant="outline" onClick={() => setShowMap(!showMap)}>{showMap ? 'Hide map' : 'Map'}</Button>
           {editable ? (
             <Button variant="danger" data-testid="close-storm" onClick={async () => {
-              // A closed storm can't be changed or reopened, so a stray tap mid-storm must not do it.
-              if (!confirm('Close this storm? Routes and stops can no longer change. Drivers can still send finished work for 24 hours.')) return;
+              // A stray tap mid-storm must not close it, and the office should see what's still undone.
+              const left = live.counts.open + live.counts.onsite;
+              const ok = await ask({
+                title: 'Close this storm?',
+                body: <>{left ? <p className="mb-2 font-medium text-amber-900" data-testid="close-open-count">{left} of {live.counts.total} stops {left === 1 ? 'is' : 'are'} not done yet. {left === 1 ? 'It' : 'They'} won&apos;t be billed.</p> : null}<p>Routes and stops stop changing, and invoices are drafted. Drivers can still send finished work for 24 hours.</p></>,
+                confirm: 'Close storm',
+                danger: true,
+              });
+              if (!ok) return;
               setError(null);
               try {
                 await api(`/api/storms/${stormId}/close`, { body: { force: false } });
@@ -145,7 +161,16 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
                 else setError(err.message);
               }
             }}>Close storm</Button>
-          ) : closed ? <Badge tone="green" data-testid="storm-closed">{live.storm.status}</Badge> : null}
+          ) : closed ? (
+            <div className="flex items-center gap-2">
+              <Badge tone="green" data-testid="storm-closed">{live.storm.status}</Badge>
+              {canEdit && live.storm.status === 'closed' ? <Button variant="outline" data-testid="reopen-storm" onClick={async () => {
+                if (!(await ask({ title: 'Reopen this storm?', body: 'Route links work again and drivers can keep going. Invoice drafts still in review are dropped and made again when you close it.', confirm: 'Reopen' }))) return;
+                await act(() => api(`/api/storms/${stormId}/reopen`, { method: 'POST' }));
+                router.refresh();
+              }}>Reopen</Button> : null}
+            </div>
+          ) : null}
         </div>
         </div>
       </section>
@@ -163,6 +188,8 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
       ) : null}
 
       {error ? <p className="mb-3 rounded-md bg-red-50 p-3 text-sm text-red-800" role="alert">{error}</p> : null}
+      {notice ? <p className="mb-3 rounded-md bg-emerald-50 p-3 text-sm text-emerald-900" role="status" data-testid="board-notice">{notice}</p> : null}
+      {dialog}
       {closePrompt ? (
         <Card className="mb-3 border-beacon">
           <p className="text-sm">{closePrompt} Close anyway?</p>
@@ -183,8 +210,10 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
       ) : null}
 
       {notify ? <NotifyPanel stops={allStops} onClose={() => setNotify(false)} onSend={(siteIds, template, time) => act(async () => {
-        await api(`/api/storms/${stormId}/notify`, { body: { siteIds, template, time } });
+        setNotice(null);
+        const out = await api<{ queued: number }>(`/api/storms/${stormId}/notify`, { body: { siteIds, template, time } });
         setNotify(false);
+        setNotice(`Sending to ${out.queued} customer${out.queued === 1 ? '' : 's'}. Anyone already sent this message for this storm isn't sent it twice. Delivery shows in Settings, System, Recent messages.`);
       })} /> : null}
 
       {linkFor ? (
@@ -211,7 +240,7 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
           {live.runs.map((r: any) => (
             <section
               key={r.id}
-              className={cn('w-[86%] max-w-80 shrink-0 snap-start rounded-md bg-slate-200/70 p-2 md:w-72', dragging && 'ring-2 ring-slate-900')}
+              className={cn('w-[calc(100vw-3rem)] max-w-sm shrink-0 snap-start rounded-md bg-slate-200/70 p-2 md:w-72', dragging && 'ring-2 ring-slate-900')}
               data-testid="run-column"
               data-run={r.id}
               onDragOver={(e) => e.preventDefault()}
@@ -222,7 +251,7 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
               }}
             >
               <header className="mb-2 px-1">
-                <div className="flex items-baseline justify-between gap-2"><div className="font-display text-lg font-semibold leading-tight">{r.name}{r.pass > 1 ? ` (pass ${r.pass})` : ''}</div><div className="tabular shrink-0 text-xs font-medium text-slate-600">{r.stops.filter((x: any) => ['done', 'skipped'].includes(x.status)).length} of {r.stops.length}</div></div>
+                <div className="flex items-baseline justify-between gap-2"><div className="font-display text-lg font-semibold leading-tight">{r.name}{r.pass > 1 ? ` (pass ${r.pass})` : ''}</div><div className="tabular shrink-0 text-xs font-medium text-slate-600" data-testid="run-progress">{runProgress(r.stops)}</div></div>
                 <div className="text-sm text-slate-600">{r.crew?.name ?? 'No driver'}{r.crew?.kind === 'sub' ? ' (sub)' : ''}{r.crew?.callout_reply ? `, replied ${r.crew.callout_reply}` : ''}</div>
                 {editable ? (
                   <Select aria-label={`Driver for ${r.name}`} data-testid="assign-driver" className="mt-1 h-8 py-0 text-xs" value={r.crew?.id ?? ''} onChange={(e) => e.target.value && void act(() => api(`/api/runs/${r.id}`, { method: 'PATCH', body: { crew_id: e.target.value } }))}>
@@ -231,7 +260,7 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
                   </Select>
                 ) : null}
                 {r.link && r.crew && !r.crew.reachable ? <p className="mt-1 text-xs font-medium text-amber-800" data-testid="no-reach">We can&apos;t text or email {r.crew.name}, so they don&apos;t have this route. Show them the QR code.</p> : null}
-                {r.link ? <Button size="sm" variant="ghost" className="-ml-3" data-testid="show-link" onClick={() => showLink(r)}>QR / copy link</Button> : null}
+                {r.link && !closed ? <Button size="sm" variant="ghost" className="-ml-3" data-testid="show-link" onClick={() => showLink(r)}>QR / copy link</Button> : null}
                 {editable && r.stops.length > 1 ? <RunPlan runId={r.id} onDone={() => void load()} /> : null}
               </header>
               <ul className="space-y-2">
@@ -245,23 +274,28 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
                     {s.late ? <div className="text-xs font-bold text-red-700">Late</div> : null}
                     {s.arrived_at ? <div className="text-xs text-slate-600">On site {since(s.arrived_at, now)}</div> : null}
                     {editable && !['done', 'onsite'].includes(s.status) ? (
-                      <div className="mt-1 flex gap-1">
-                        <Select aria-label={`Move ${s.label}`} data-testid="move-to" className="h-8 py-0 text-xs" value="" onChange={(e) => e.target.value && void move(s.id, e.target.value)}>
-                          <option value="">Move to...</option>
-                          {live.runs.filter((x: any) => x.id !== r.id).map((x: any) => <option key={x.id} value={x.id}>{x.name} ({x.crew?.name ?? 'no driver'})</option>)}
-                        </Select>
-                        {Math.min(...r.stops.map((x: any) => x.seq)) < s.seq ? <Button size="sm" variant="ghost" aria-label={`Move ${s.label} earlier`} data-testid="move-up" onClick={() => void moveUp(r, s.id)}>Up</Button> : null}
-                        <Button size="sm" variant="ghost" data-testid="skip-toggle" onClick={() => act(() => api(`/api/run-stops/${s.id}`, { method: 'PATCH', body: { status: s.status === 'skipped' ? 'open' : 'skipped' } }))}>{s.status === 'skipped' ? 'Reopen' : 'Skip'}</Button>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {live.runs.length > 1 ? (
+                          <Select aria-label={`Move ${s.label}`} data-testid="move-to" className="h-10 py-0 text-xs md:h-8" value="" onChange={(e) => e.target.value && void move(s.id, e.target.value)}>
+                            <option value="">Move to...</option>
+                            {live.runs.filter((x: any) => x.id !== r.id).map((x: any) => <option key={x.id} value={x.id}>{x.name} ({x.crew?.name ?? 'no driver'})</option>)}
+                          </Select>
+                        ) : null}
+                        {Math.min(...r.stops.map((x: any) => x.seq)) < s.seq ? <Button size="sm" variant="ghost" className="h-10 min-w-11 md:h-8" aria-label={`Move ${s.label} earlier`} data-testid="move-up" onClick={() => void shift(r, s.id, -1)}>Up</Button> : null}
+                        {Math.max(...r.stops.map((x: any) => x.seq)) > s.seq ? <Button size="sm" variant="ghost" className="h-10 min-w-11 md:h-8" aria-label={`Move ${s.label} later`} data-testid="move-down" onClick={() => void shift(r, s.id, 1)}>Down</Button> : null}
+                        <Button size="sm" variant="ghost" className="h-10 min-w-11 md:h-8" data-testid="skip-toggle" onClick={() => void skip(s)}>{s.status === 'skipped' ? 'Reopen' : 'Skip'}</Button>
                       </div>
                     ) : null}
                   </li>
                 ))}
               </ul>
               {editable ? (
-                <Select aria-label={`Add a site to ${r.name}`} data-testid="add-stop" className="mt-2 h-8 py-0 text-xs" value="" onChange={(e) => e.target.value && void act(() => api(`/api/runs/${r.id}/stops`, { body: { site_id: e.target.value } }))}>
-                  <option value="">Add a site to this truck...</option>
-                  {sites.filter((x) => !inStorm.has(x.id)).map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
-                </Select>
+                sites.some((x) => !inStorm.has(x.id)) ? (
+                  <Select aria-label={`Add a site to ${r.name}`} data-testid="add-stop" className="mt-2 h-10 py-0 text-xs md:h-8" value="" onChange={(e) => e.target.value && void act(() => api(`/api/runs/${r.id}/stops`, { body: { site_id: e.target.value } }))}>
+                    <option value="">Add a site to this truck...</option>
+                    {sites.filter((x) => !inStorm.has(x.id)).map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+                  </Select>
+                ) : <p className="mt-2 px-1 text-xs text-slate-600" data-testid="add-stop-none">Every site you have is already on this storm.</p>
               ) : null}
             </section>
           ))}
@@ -284,6 +318,13 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
       </div>
     </div>
   );
+}
+
+/** "2 done, 1 skipped of 3": a skipped stop is finished with, but nobody plowed it. */
+function runProgress(stops: { status: string }[]) {
+  const done = stops.filter((x) => x.status === 'done').length;
+  const skipped = stops.filter((x) => x.status === 'skipped').length;
+  return `${done} done${skipped ? `, ${skipped} skipped` : ''} of ${stops.length}`;
 }
 
 function NotifyPanel({ stops, onSend, onClose }: { stops: any[]; onSend: (siteIds: string[], template: string, time: string) => void; onClose: () => void }) {

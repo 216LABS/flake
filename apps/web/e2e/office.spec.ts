@@ -84,8 +84,8 @@ test('board: reassigning updates both driver phones within 10 s; notify once; cl
   // Live board reflects a driver within 5 s, and closing is blocked while they are on site.
   await westPhone.getByTestId('arrive').click();
   await expect(page.getByTestId('stop-card').filter({ hasText: first.label })).toHaveAttribute('data-status', 'onsite', { timeout: 5000 });
-  page.once('dialog', (d) => void d.accept());
   await page.getByTestId('close-storm').click();
+  await page.getByTestId('confirm-yes').click();
   await expect(page.getByTestId('close-force')).toBeVisible();
   await page.getByTestId('close-force').click();
   await page.waitForURL(/\/billing\?storm=/);

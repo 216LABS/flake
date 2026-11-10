@@ -16,7 +16,13 @@ export async function routeByName(name: string) {
 
 export interface LiveRun { id: string; link: string; name: string; stops: { id: string; site_id: string; label: string; status: string }[] }
 
+/** A lot can be live on one storm at a time, so a test starting a storm first closes any the demo company left running. */
+export async function closeRunningStorms() {
+  await sql`update storm set status = 'closed', closed_at = now() where status = 'active' and tenant_id = (select id from tenant where slug = 'lakeshore-demo')`;
+}
+
 export async function startStorm(request: APIRequestContext, name: string, routes: string[]) {
+  await closeRunningStorms();
   const ids = await Promise.all(routes.map(routeByName));
   const made = await request.post('/api/storms', { data: { name, routeIds: ids.map((r) => r.id) } });
   expect(made.status(), await made.text()).toBe(201);

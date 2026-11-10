@@ -26,7 +26,9 @@ pnpm exec supabase link --project-ref <ref>
 pnpm exec supabase db push
 ```
 
-`db push` applies the schema, RLS, the advisor migration, push subscriptions and salt ordering. Leave the `private` schema out of the Data API exposed schemas. It holds the security-definer helpers that RLS and triggers call.
+`db push` applies the schema, RLS, the advisor migration, push subscriptions, salt ordering, and `20261110120000_billing_and_archive` (installment months, archived customers and routes, saved quote links, and column locks so office users can't write invoice amounts, payment methods or contract signatures through the Data API). Every migration is additive and safe to run on a live database. Leave the `private` schema out of the Data API exposed schemas. It holds the security-definer helpers that RLS and triggers call.
+
+On an existing project, run `db push` again after pulling new migrations. Deploy the app after the push: the app reads the new columns.
 
 In Auth, URL Configuration, set Site URL to the app URL and add `<app url>/**` to the redirect URLs.
 
@@ -40,6 +42,8 @@ In Auth, URL Configuration, set Site URL to the app URL and add `<app url>/**` t
 | Password | the Resend API key |
 | Sender email | a verified Resend address, the same one as `EMAIL_FROM` |
 | Sender name | `Flake` |
+
+**Sign-in email templates:** in Authentication, Emails, Templates, paste `packages/db/supabase/templates/magic_link.html` into **Magic Link** and `packages/db/supabase/templates/confirmation.html` into **Confirm signup**, both with the subject `Your Flake sign-in`. Both include `{{ .Token }}`, the code an iPhone Home Screen user types in. A first sign-in sends Confirm signup, so without it new drivers and office users get a link only.
 
 In the SQL editor, insert two Vault secrets. Do not commit either value. `app_base_url` is the public origin with no trailing slash. `cron_secret` is the same string as `CRON_SECRET` (`openssl rand -hex 32`).
 
@@ -223,5 +227,5 @@ A second Vercel deployment and Supabase project with `APP_ENV=staging`. Outside 
 - Move Vercel to Pro (Hobby is non-commercial) and Supabase to Pro for backups and storage.
 - Resolve the 216LABS tax ID with Stripe, then run one test-mode charge, one decline and one net-30 invoice. The Stripe code has unit tests against Stripe's signature scheme but has not yet run against Stripe itself.
 - Check the toll-free verification field names against Twilio's current docs on the first real submission.
-- Have a lawyer read the three legal pages. They are marked as drafts.
+- Have a lawyer read the three legal pages. They no longer say "draft", but nobody with a law degree has read them yet.
 - Confirm the OSM and Esri basemap terms.

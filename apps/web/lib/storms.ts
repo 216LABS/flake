@@ -1,4 +1,4 @@
-import { and, asc, crew_member, customer, desc, driver_position, eq, inArray, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, visitNotVoided, withUser, sms_consent, type Tx } from '@flake/db';
+import { and, asc, asService, crew_member, customer, desc, driver_position, eq, inArray, invoice_draft, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, visitNotVoided, withUser, sms_consent, type Tx } from '@flake/db';
 import { isLate, localHm } from '@flake/core/time';
 import { replanFrom } from '@flake/core/routing';
 import { z } from 'zod';
@@ -22,7 +22,8 @@ function newLink() {
 }
 
 /** Snapshots master routes into runs. "Publish, then move": the list is never rebuilt after this. */
-export async function createStorm(ctx: Ctx, input: z.infer<typeof stormCreate>) {
+export async function createStorm(ctx: Ctx, raw: z.input<typeof stormCreate>) {
+  const input = { ...raw, routeIds: [...new Set(raw.routeIds ?? [])], crewAssignments: raw.crewAssignments ?? {}, skipBusy: raw.skipBusy ?? false };
   const snapshotIds = await latestSnapshotIds(ctx.tenantId);
   return withUser(ctx.userId, async (tx) => {
     let alertSnapshotIds: string[] = [];
@@ -35,6 +36,34 @@ export async function createStorm(ctx: Ctx, input: z.infer<typeof stormCreate>) 
       const took = await tx.update(trigger_alert).set({ status: 'dispatched' }).where(and(eq(trigger_alert.id, a.id), eq(trigger_alert.status, 'open'))).returning({ id: trigger_alert.id });
       if (!took.length) throw new HttpError(409, 'This alert was already handled.', 'alert_handled');
     }
+    // One new storm at a time per company, so two people starting storms at once can't both miss each other's lots.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`new_storm:${ctx.tenantId}`}))`);
+    // A lot already live on another storm would get two route links and two trucks (issue 24).
+    const busy = await tx.select({ site_id: run_stop.site_id, label: site.label, storm: storm.name }).from(run_stop)
+      .innerJoin(storm_run, eq(storm_run.id, run_stop.storm_run_id)).innerJoin(storm, eq(storm.id, storm_run.storm_id)).innerJoin(site, eq(site.id, run_stop.site_id))
+      .where(eq(storm.status, 'active'));
+    const busyIds = new Set(busy.map((b) => b.site_id));
+    const plans: { r: typeof route.$inferSelect; chosen: { site_id: string }[] }[] = [];
+    const taken = new Set<string>();
+    const clash: typeof busy = [];
+    for (const routeId of input.routeIds) {
+      const [r] = await tx.select().from(route).where(eq(route.id, routeId));
+      if (!r) throw new HttpError(404, 'Route not found');
+      // Retired sites stay on old storms but don't join new ones.
+      const stops = await tx.select({ site_id: route_stop.site_id }).from(route_stop).innerJoin(site, eq(site.id, route_stop.site_id)).where(and(eq(route_stop.route_id, routeId), eq(site.active, true))).orderBy(asc(route_stop.seq));
+      // A lot on two of the chosen routes goes on the first one only, so it isn't plowed twice (issue 26).
+      const chosen = (input.siteIds ? stops.filter((x) => input.siteIds!.includes(x.site_id)) : stops).filter((x) => !taken.has(x.site_id));
+      for (const x of chosen) {
+        taken.add(x.site_id);
+        if (busyIds.has(x.site_id)) clash.push(busy.find((b) => b.site_id === x.site_id)!);
+      }
+      plans.push({ r, chosen });
+    }
+    // From an alert, lots already being plowed are simply left out: the running storm is handling them.
+    if (clash.length && !input.skipBusy && !input.triggerAlertId) {
+      const names = clash.slice(0, 3).map((c) => c.label).join(', ') + (clash.length > 3 ? ` and ${clash.length - 3} more` : '');
+      throw new HttpError(409, `${clash.length === 1 ? 'This lot is' : `${clash.length} lots are`} already on ${clash[0]!.storm}, which is still running: ${names}. Close that storm first, or start this one without ${clash.length === 1 ? 'it' : 'them'}.`, 'busy_sites');
+    }
     const [s] = await tx.insert(storm).values({
       tenant_id: ctx.tenantId,
       name: input.name,
@@ -43,24 +72,35 @@ export async function createStorm(ctx: Ctx, input: z.infer<typeof stormCreate>) 
       forecast_snapshot_ids: [...new Set([...alertSnapshotIds, ...snapshotIds])],
     }).returning();
     const runs = [];
-    for (const routeId of input.routeIds) {
-      const [r] = await tx.select().from(route).where(eq(route.id, routeId));
-      if (!r) throw new HttpError(404, 'Route not found');
-      // Retired sites stay on old storms but don't join new ones.
-      const stops = await tx.select({ site_id: route_stop.site_id }).from(route_stop).innerJoin(site, eq(site.id, route_stop.site_id)).where(and(eq(route_stop.route_id, routeId), eq(site.active, true))).orderBy(asc(route_stop.seq));
-      const chosen = input.siteIds ? stops.filter((x) => input.siteIds!.includes(x.site_id)) : stops;
+    for (const { r, chosen: all } of plans) {
+      const routeId = r.id;
+      const chosen = all.filter((x) => !busyIds.has(x.site_id));
       if (!chosen.length) continue;
       const link = newLink();
+      // A driver the office cleared stays cleared; only a route nobody touched falls back to its usual driver.
+      const crewId = routeId in input.crewAssignments ? input.crewAssignments[routeId] : r.default_crew_id;
       const [run] = await tx.insert(storm_run).values({
-        tenant_id: ctx.tenantId, storm_id: s!.id, route_id: routeId, crew_id: await activeCrew(tx, input.crewAssignments[routeId] ?? r.default_crew_id),
+        tenant_id: ctx.tenantId, storm_id: s!.id, route_id: routeId, crew_id: await activeCrew(tx, crewId),
         link_token_hash: link.hash, link_token_enc: link.enc, link_expires_at: link.expires,
       }).returning();
       await tx.insert(run_stop).values(chosen.map((x, i) => ({ tenant_id: ctx.tenantId, storm_run_id: run!.id, site_id: x.site_id, seq: i + 1 })));
       runs.push(run!);
     }
+    // An alert for lots this storm now covers has been acted on, so it leaves the dashboard (issue 5).
+    if (runs.length) await settleAlerts(tx, s!.id);
+    if (!runs.length && clash.length) throw new HttpError(409, `Every lot on these routes is already on ${clash[0]!.storm}, which is still running. Add to that storm from its board instead.`, 'all_busy');
     if (!runs.length) throw new HttpError(422, 'There is nothing to plow: none of these sites is on a route. Add them to a route first.', 'no_stops');
-    return { storm: s!, runs };
+    return { storm: s!, runs, left_out: clash.length };
   });
+}
+
+/** Open trigger alerts whose lots are all on this storm are marked dispatched. */
+async function settleAlerts(tx: Tx, stormId: string) {
+  await tx.execute(sql`
+    update trigger_alert set status = 'dispatched'
+    where status = 'open' and site_ids <@ (
+      select coalesce(array_agg(rs.site_id), '{}') from run_stop rs join storm_run r on r.id = rs.storm_run_id where r.storm_id = ${stormId}
+    )`);
 }
 
 /** Changing who drives what, or messaging about it, only makes sense while the storm is on. */
@@ -299,7 +339,35 @@ export async function closeStorm(ctx: Ctx, stormId: string, force: boolean) {
     const snapshotIds = await latestSnapshotIds(ctx.tenantId);
     const [closed] = await tx.update(storm).set({ status: 'closed', closed_at: now.toISOString(), forecast_snapshot_ids: [...new Set([...(s.forecast_snapshot_ids ?? []), ...snapshotIds])] }).where(eq(storm.id, stormId)).returning();
     if (ids.length) await tx.update(storm_run).set({ link_expires_at: new Date(now.getTime() + 24 * 3600000).toISOString() }).where(inArray(storm_run.id, ids));
+    // An alert that came in during the storm about its own lots was this storm. It doesn't stay up after the close.
+    await settleAlerts(tx, stormId);
     return closed!;
+  });
+}
+
+/**
+ * Closed by mistake, or more snow came: back to active, with route links live again. Only while nothing from it has
+ * been approved for billing, so new work can't land beside an invoice that already went out. Drafts still in review
+ * are dropped; they're made again after the next close.
+ */
+export async function reopenStorm(ctx: Ctx, stormId: string) {
+  return withUser(ctx.userId, async (tx) => {
+    const [s] = await tx.select().from(storm).where(eq(storm.id, stormId)).for('update');
+    if (!s) throw new HttpError(404, 'Storm not found');
+    if (s.status === 'active') return s;
+    if (s.status === 'billed') throw new HttpError(409, 'This storm is billed. Start a new storm for more work.', 'billed');
+    const drafts = await tx.select({ status: invoice_draft.status }).from(invoice_draft).where(eq(invoice_draft.storm_id, stormId));
+    if (drafts.some((d) => d.status !== 'draft' && d.status !== 'void')) throw new HttpError(409, 'Invoices from this storm were already approved. Start a new storm for more work.', 'approved');
+    const runs = await tx.select({ id: storm_run.id }).from(storm_run).where(eq(storm_run.storm_id, stormId));
+    const stops = runs.length ? await tx.select({ site_id: run_stop.site_id }).from(run_stop).where(inArray(run_stop.storm_run_id, runs.map((r) => r.id))) : [];
+    // The same rule as starting a storm: a lot can be live on one storm at a time.
+    const busy = stops.length ? await tx.select({ name: storm.name }).from(run_stop).innerJoin(storm_run, eq(storm_run.id, run_stop.storm_run_id)).innerJoin(storm, eq(storm.id, storm_run.storm_id))
+      .where(and(eq(storm.status, 'active'), inArray(run_stop.site_id, stops.map((x) => x.site_id)))).limit(1) : [];
+    if (busy.length) throw new HttpError(409, `Some of these lots are on ${busy[0]!.name}, which is running now. Close it first.`, 'busy_sites');
+    if (drafts.length) await asService(tx, ctx.tenantId, () => tx.delete(invoice_draft).where(and(eq(invoice_draft.storm_id, stormId), eq(invoice_draft.tenant_id, ctx.tenantId), inArray(invoice_draft.status, ['draft', 'void']))));
+    const [open] = await tx.update(storm).set({ status: 'active', closed_at: null }).where(eq(storm.id, stormId)).returning();
+    if (runs.length) await tx.update(storm_run).set({ link_expires_at: new Date(Date.now() + FAR_FUTURE_DAYS * 86400000).toISOString() }).where(inArray(storm_run.id, runs.map((r) => r.id)));
+    return open!;
   });
 }
 

@@ -5,6 +5,7 @@ import { Badge, Button, Card, Input, Label, Select, Table, Td, Th } from '@flake
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api, dollarsToCents, money, phone } from '@/lib/client';
+import { rateCardProblem } from '@/lib/limits';
 
 function useAction() {
   const [msg, setMsg] = useState<string | null>(null);
@@ -25,22 +26,29 @@ function useAction() {
 }
 
 export function RateCardForm({ card }: { card: RateCard }) {
-  const [c, setC] = useState(card);
+  // Kept as typed, so "-1" stays "-1" and is caught here instead of being turned into something else.
+  const [f, setF] = useState({ rate: String(card.per_sqft_cents_per_push), min: String(card.min_push_cents / 100), walk: String(card.walks_per_lf_cents), salt: String(card.salt_bag_cents / 100), pushes: String(card.season_pushes) });
   const { msg, busy, run } = useAction();
+  const [shown, setShown] = useState(false);
+  const problem = rateCardProblem(f);
+  const field = (key: keyof typeof f, label: string, attrs: { step?: string; min: number; max: number }, testId?: string) => (
+    <div><Label htmlFor={`rc-${key}`}>{label}</Label><Input id={`rc-${key}`} type="number" inputMode="decimal" {...attrs} value={f[key]} onChange={(e) => { setShown(false); setF({ ...f, [key]: e.target.value }); }} {...(testId ? { 'data-testid': testId } : {})} /></div>
+  );
   return (
     <Card className="max-w-xl">
       <h2 className="font-semibold">Rate card</h2>
       <p className="mt-1 text-sm text-slate-600">These are your numbers, and they set suggested prices on new quotes. The starting values are placeholders, not market data.</p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <div><Label htmlFor="rate">Cents per sq ft, per push</Label><Input id="rate" type="number" step="0.01" value={c.per_sqft_cents_per_push} onChange={(e) => setC({ ...c, per_sqft_cents_per_push: Number(e.target.value) })} data-testid="rate-sqft" /></div>
-        <div><Label htmlFor="min">Minimum push ($)</Label><Input id="min" type="number" value={c.min_push_cents / 100} onChange={(e) => setC({ ...c, min_push_cents: dollarsToCents(e.target.value) })} /></div>
-        <div><Label htmlFor="walk">Cents per foot of walk</Label><Input id="walk" type="number" value={c.walks_per_lf_cents} onChange={(e) => setC({ ...c, walks_per_lf_cents: Number(e.target.value) })} /></div>
-        <div><Label htmlFor="salt">Salt per 50 lb bag ($)</Label><Input id="salt" type="number" value={c.salt_bag_cents / 100} onChange={(e) => setC({ ...c, salt_bag_cents: dollarsToCents(e.target.value) })} /></div>
-        <div><Label htmlFor="pushes">Pushes per season</Label><Input id="pushes" type="number" value={c.season_pushes} onChange={(e) => setC({ ...c, season_pushes: Number(e.target.value) })} /></div>
+        {field('rate', 'Cents per sq ft, per push', { step: '0.01', min: 0, max: 100 }, 'rate-sqft')}
+        {field('min', 'Minimum push ($)', { step: '0.01', min: 0, max: 100000 })}
+        {field('walk', 'Cents per foot of walk', { step: '0.01', min: 0, max: 1000 })}
+        {field('salt', 'Salt per 50 lb bag ($)', { step: '0.01', min: 0, max: 100000 })}
+        {field('pushes', 'Pushes per season', { step: '1', min: 1, max: 100 })}
       </div>
+      {problem ? <p className="mt-3 text-sm text-red-700" role="alert" data-testid="rate-problem">{problem}</p> : null}
       <div className="mt-4 flex items-center gap-2">
-        <Button disabled={busy} data-testid="rate-save" onClick={() => run(() => api('/api/settings/rate-card', { method: 'PUT', body: c }))}>Save</Button>
-        {msg ? <span className="text-sm text-slate-600" data-testid="rate-msg">{msg}</span> : null}
+        <Button disabled={busy || Boolean(problem)} data-testid="rate-save" onClick={() => { setShown(true); void run(() => api('/api/settings/rate-card', { method: 'PUT', body: { ...card, per_sqft_cents_per_push: Number(f.rate), min_push_cents: dollarsToCents(f.min), walks_per_lf_cents: Number(f.walk), salt_bag_cents: dollarsToCents(f.salt), season_pushes: Number(f.pushes) } })); }}>Save</Button>
+        {msg && shown ? <span className={msg === 'Saved' ? 'text-sm font-medium text-emerald-800' : 'text-sm text-red-700'} role={msg === 'Saved' ? 'status' : 'alert'} data-testid="rate-msg">{msg}</span> : null}
       </div>
     </Card>
   );
@@ -134,7 +142,7 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
   );
 }
 
-export function TeamPanel({ members, me }: { members: { user_id: string; email: string | null; role: string }[]; me: string }) {
+export function TeamPanel({ members, me }: { members: { user_id: string; email: string | null; role: string; pending?: boolean }[]; me: string }) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('dispatcher');
@@ -147,12 +155,21 @@ export function TeamPanel({ members, me }: { members: { user_id: string; email: 
           <tbody>
             {members.map((m) => (
               <tr key={m.user_id} data-testid="team-row">
-                <Td>{m.email}</Td>
-                <Td><Badge>{m.role}</Badge></Td>
-                <Td>{m.user_id !== me ? <Button size="sm" variant="ghost" data-testid="team-remove" onClick={() => {
-                  if (!confirm(`Remove ${m.email ?? 'this person'} from your company? They lose access right away.`)) return;
-                  void run(async () => { await api(`/api/settings/team/${m.user_id}`, { method: 'DELETE' }); router.refresh(); }, 'Removed');
-                }}>Remove</Button> : <span className="text-xs text-slate-500">You</span>}</Td>
+                <Td>{m.email}{m.pending ? <Badge tone="amber" className="ml-2" data-testid="team-pending">invited, not signed in yet</Badge> : null}</Td>
+                <Td>{m.user_id !== me ? (
+                  <Select aria-label={`Role for ${m.email ?? 'this person'}`} className="h-8 w-32 py-0 text-xs" value={m.role} data-testid="team-role-change" disabled={busy} onChange={(e) => void run(async () => { await api(`/api/settings/team/${m.user_id}`, { method: 'PATCH', body: { role: e.target.value } }); router.refresh(); }, 'Role changed')}>
+                    <option value="owner">Owner</option><option value="dispatcher">Dispatcher</option><option value="viewer">Viewer</option>
+                  </Select>
+                ) : <Badge>{m.role}</Badge>}</Td>
+                <Td>{m.user_id !== me ? (
+                  <div className="flex flex-wrap gap-1">
+                    {m.pending ? <Button size="sm" variant="ghost" data-testid="team-resend" disabled={busy} onClick={() => void run(async () => { await api(`/api/settings/team/${m.user_id}`, { method: 'POST' }); }, `Sent the invite to ${m.email} again.`)}>Resend invite</Button> : null}
+                    <Button size="sm" variant="ghost" data-testid="team-remove" onClick={() => {
+                      if (!confirm(`Remove ${m.email ?? 'this person'} from your company? They lose access right away.`)) return;
+                      void run(async () => { await api(`/api/settings/team/${m.user_id}`, { method: 'DELETE' }); router.refresh(); }, 'Removed');
+                    }}>Remove</Button>
+                  </div>
+                ) : <span className="text-xs text-slate-500">You</span>}</Td>
               </tr>
             ))}
           </tbody>
@@ -203,7 +220,9 @@ export function SmsSubmit({ status }: { status: string }) {
 const ZONES = [
   ['America/New_York', 'Eastern'], ['America/Detroit', 'Eastern (Michigan)'], ['America/Indiana/Indianapolis', 'Eastern (Indiana)'], ['America/Chicago', 'Central'],
   ['America/Denver', 'Mountain'], ['America/Boise', 'Mountain (Idaho)'], ['America/Phoenix', 'Arizona'], ['America/Los_Angeles', 'Pacific'], ['America/Anchorage', 'Alaska'],
-  ['America/Toronto', 'Eastern (Canada)'], ['America/Winnipeg', 'Central (Canada)'], ['America/Edmonton', 'Mountain (Canada)'], ['America/Vancouver', 'Pacific (Canada)'], ['America/Halifax', 'Atlantic (Canada)'],
+  ['America/Juneau', 'Alaska (Juneau)'], ['America/Adak', 'Aleutian'], ['Pacific/Honolulu', 'Hawaii'], ['America/Kentucky/Louisville', 'Eastern (Kentucky)'], ['America/Menominee', 'Central (Michigan UP)'],
+  ['America/North_Dakota/Center', 'Central (North Dakota)'], ['America/Indiana/Knox', 'Central (Indiana)'], ['America/Puerto_Rico', 'Atlantic (Puerto Rico)'], ['Pacific/Guam', 'Chamorro (Guam)'],
+  ['America/Toronto', 'Eastern (Canada)'], ['America/Winnipeg', 'Central (Canada)'], ['America/Regina', 'Saskatchewan'], ['America/Edmonton', 'Mountain (Canada)'], ['America/Vancouver', 'Pacific (Canada)'], ['America/Halifax', 'Atlantic (Canada)'], ['America/St_Johns', 'Newfoundland'],
 ] as const;
 
 /** What customers and crew see: the name on every message, the office's reply address and phone, and the clock. */
@@ -217,7 +236,7 @@ export function CompanyForm({ tenant }: { tenant: any }) {
       <h2 className="font-semibold">Company</h2>
       <p className="mt-1 text-sm text-slate-600">Your name goes on every quote, invoice and text. Customer replies go to the email, and drivers see the phone on their route.</p>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        <div><Label htmlFor="co-name">Company name</Label><Input id="co-name" data-testid="co-name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
+        <div><Label htmlFor="co-name">Company name</Label><Input id="co-name" data-testid="co-name" maxLength={120} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />{f.name.trim().length < 2 ? <p className="mt-1 text-xs text-red-700" data-testid="co-name-needed">Enter your company name, at least 2 letters. It goes on every quote, invoice and text.</p> : null}</div>
         <div>
           <Label htmlFor="co-tz">Time zone</Label>
           <Select id="co-tz" data-testid="co-tz" value={f.timezone} onChange={(e) => setF({ ...f, timezone: e.target.value })}>

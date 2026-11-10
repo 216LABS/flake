@@ -40,6 +40,7 @@ test('storm board: every dialog can be backed out of, and closing with someone o
 
   const stop = page.getByTestId('stop-card').first();
   await stop.getByTestId('skip-toggle').click();
+  await page.getByTestId('confirm-yes').click();
   await expect(page.getByTestId('stop-card').first().getByTestId('skip-toggle')).toHaveText(/Unskip|Restore|Open/, { timeout: 10000 }).catch(() => {});
 
   // Someone on site: closing asks, and Keep open keeps it open.
@@ -50,18 +51,18 @@ test('storm board: every dialog can be backed out of, and closing with someone o
   expect(arrive.ok(), open.id).toBe(true);
   await page.reload();
   // Backing out of the first question leaves the storm on.
-  page.once('dialog', (d) => void d.dismiss());
   await page.getByTestId('close-storm').click();
+  await page.getByTestId('confirm-no').click();
   await expect(page.getByTestId('close-storm')).toBeVisible();
   await expect(page.getByTestId('close-force')).toHaveCount(0);
-  page.once('dialog', (d) => void d.accept());
   await page.getByTestId('close-storm').click();
+  await page.getByTestId('confirm-yes').click();
   await expect(page.getByTestId('close-force')).toBeVisible();
   await page.getByRole('button', { name: 'Keep open' }).click();
   await expect(page.getByTestId('close-force')).toHaveCount(0);
   await expect(page.getByTestId('close-storm')).toBeVisible();
-  page.once('dialog', (d) => void d.accept());
   await page.getByTestId('close-storm').click();
+  await page.getByTestId('confirm-yes').click();
   await page.getByTestId('close-force').click();
   await page.waitForURL(`**/billing?storm=${id}`);
   await page.goto(`/storms/${id}`);
@@ -109,10 +110,21 @@ test('billing: every fix on a flag, approving one bill, and the QuickBooks file'
   await dup.getByTestId('fix-replow').click();
   await expect(page.locator('[data-code="duplicate"]')).toHaveCount(dups - 1);
 
-  // Approving one bill, flagged or not, moves only that one.
+  // A flagged bill offers no Approve until its flags are fixed or waived (issue 7). Waiving one bill's flags makes it
+  // approvable, and approving it moves only that one.
+  await page.getByTestId('flagged-only').uncheck();
+  const flaggedCard = page.getByTestId('draft').filter({ has: page.getByTestId('approve-blocked') }).first();
+  await expect(flaggedCard.getByTestId('approve-one')).toHaveCount(0);
+  const name = (await flaggedCard.locator('.font-semibold').first().textContent())!;
+  const card = () => page.getByTestId('draft').filter({ hasText: name });
+  while (await card().getByTestId('fix-waive').count()) {
+    await card().getByTestId('fix-waive').first().click();
+    await page.waitForLoadState('networkidle');
+  }
   const before = await page.getByTestId('approve-one').count();
-  await page.getByTestId('approve-one').first().click();
+  await card().getByTestId('approve-one').click();
   await expect(page.getByTestId('approve-one')).toHaveCount(before - 1);
+  await page.getByTestId('flagged-only').check();
 
   await page.getByTestId('flagged-only').uncheck();
   await page.getByTestId('flagged-only').check();
@@ -208,8 +220,17 @@ test('driver: navigate, choose another stop, salt, services, undo, every problem
   await page.getByTestId('salt-minus').click();
   await expect(page.getByTestId('salt-qty')).toHaveText('1');
   const plow = page.getByTestId('service-plow');
+  await expect(plow).toHaveAttribute('aria-pressed', 'true');
   await plow.click();
+  await expect(plow).toHaveAttribute('aria-pressed', 'false');
+  // With every service unticked, Done waits and says why, instead of a $0 visit (issue 2).
+  const ticked = page.locator('[data-testid^="service-"][aria-pressed="true"]');
+  const others = await ticked.count();
+  for (let i = 0; i < others; i++) await ticked.first().click();
+  await expect(page.getByTestId('no-service-hint')).toBeVisible();
+  await expect(page.getByTestId('done')).toBeDisabled();
   await plow.click();
+  await expect(page.getByTestId('no-service-hint')).toHaveCount(0);
 
   await page.getByTestId('depth-3').click();
   await page.getByTestId('after-photo').setInputFiles(await photo());

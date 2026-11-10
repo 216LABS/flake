@@ -103,6 +103,7 @@ export function SaltOrder({ initial, defaultAddress, canOrder, truckloadHint = 2
           <div className="sm:col-span-2"><Label htmlFor="salt-address">Deliver to</Label><Input id="salt-address" value={address} onChange={(e) => { setAddress(e.target.value); setQ(null); }} placeholder="Your yard's street address" data-testid="salt-address" /></div>
           <div><Label htmlFor="salt-contact">Contact at the yard (optional)</Label><Input id="salt-contact" value={contact} onChange={(e) => setContact(e.target.value)} /></div>
           <div><Label htmlFor="salt-phone">Their phone (optional)</Label><Input id="salt-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
+          {!(Number(tons) > 0) || address.trim().length < 5 ? <p className="text-sm text-slate-600 sm:col-span-2" data-testid="salt-order-needs">{!(Number(tons) > 0) ? 'Enter how many tons, 1 or more.' : 'Enter the street address to deliver to.'}</p> : null}
           <div className="flex gap-2 sm:col-span-2">
             <Button variant="outline" disabled={busy || !Number(tons) || address.trim().length < 5} data-testid="salt-quote" onClick={() => run(async () => setQ(await api<Quote>('/api/salt/quote', { body: { address, tons: Number(tons) } })))}>Check price</Button>
             {q?.covered ? (

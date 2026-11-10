@@ -9,6 +9,13 @@ import type { MultiPolygon, Polygon } from 'geojson';
 import { api, dollarsToCents, money } from '@/lib/client';
 import { uploadPinPhoto } from '@/lib/shrink-image';
 import { MapView, type MapMode, type TileLayers } from '@/components/map-view';
+import { customerProblem, toE164 } from '../[id]/customer-editor';
+import { quoteProblem } from '../../sites/[id]/site-actions';
+
+const SUFFIX: Record<string, string> = { ave: 'avenue', av: 'avenue', rd: 'road', st: 'street', dr: 'drive', blvd: 'boulevard', ln: 'lane', ct: 'court', pl: 'place', pkwy: 'parkway', hwy: 'highway', cir: 'circle', ter: 'terrace', trl: 'trail', n: 'north', s: 'south', e: 'east', w: 'west' };
+const streetOf = (s: string) => (s.replace(/\(.*?\)/g, ' ').split(',')[0] ?? s).toLowerCase().replace(/[.#]/g, ' ').split(/\s+/).filter(Boolean).map((w) => SUFFIX[w] ?? w).join(' ');
+/** "14701 Detroit Ave" and "14701 DETROIT AVENUE" are the same street. "14701 DETROIT RD" is not (issue 3). */
+export const sameStreet = (typed: string, found: string) => streetOf(typed) === streetOf(found);
 
 const STEPS = ['Customer', 'Property', 'Pricing', 'Pins', 'Route', 'Quote'];
 const PIN_KINDS = ['stake', 'pile', 'ada', 'entrance', 'hazard', 'other'];
@@ -35,6 +42,9 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
   const [trigger, setTrigger] = useState(2);
   const [withSalt, setWithSalt] = useState(false);
   const [price, setPrice] = useState('');
+  // A price the office typed stays put when the lot size changes; picking another pricing type suggests again (issue 19).
+  const [priceTyped, setPriceTyped] = useState(false);
+  const [choices, setChoices] = useState<{ label: string; lat: number; lon: number }[]>([]);
   const [season, setSeason] = useState(() => currentSeason());
   const [pins, setPins] = useState<{ kind: string; lat: number; lon: number; note: string; file?: File }[]>([]);
   const [suggestions, setSuggestions] = useState<{ label: string; lat: number; lon: number }[]>([]);
@@ -49,8 +59,8 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
   const suggestion = useMemo(() => suggestPrice({ sqft: sqft ?? 0, walks_lf: walkLf }, rateCard), [sqft, walkLf, rateCard]);
   const suggested = pricingType === 'per_event' ? suggestion.per_event_cents : pricingType === 'seasonal' ? suggestion.seasonal_cents : pricingType === 'hourly' ? 12000 : suggestion.per_push_cents;
   useEffect(() => {
-    setPrice((suggested / 100).toFixed(2));
-  }, [suggested]);
+    if (!priceTyped) setPrice((suggested / 100).toFixed(2));
+  }, [suggested, priceTyped]);
 
   // Type-ahead, after a pause in typing. Stale answers are dropped, and a miss just leaves the Find button.
   const picked = useRef<string | null>(null);
@@ -86,7 +96,9 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
     try {
       const { hits } = await api<{ hits: { label: string; lat: number; lon: number }[] }>('/api/sites/geocode', { body: { q: address } });
       if (!hits[0]) throw new Error('We could not find that address. Check the street and city.');
-      await measure(hits[0], address);
+      // The lookup can land on a nearby street with the same name. Drivers go to what's saved, so the office picks.
+      if (hits.length === 1 && sameStreet(address, hits[0].label)) await measure(hits[0], address);
+      else setChoices(hits.slice(0, 5));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -96,6 +108,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
 
   const measure = async (place: { label: string; lat: number; lon: number }, text: string) => {
     setError(null);
+    setChoices([]);
     setBusy(true);
     try {
       setHit(place);
@@ -128,7 +141,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
     setError(null);
     try {
       // Each step remembers it finished, so pressing Send again after an error picks up where it stopped.
-      saved.current.customerId ??= (await api('/api/customers', { body: c })).id;
+      saved.current.customerId ??= (await api('/api/customers', { body: { ...c, name: c.name.trim(), phone_e164: toE164(c.phone_e164) } })).id;
       saved.current.siteId ??= (await api('/api/sites', {
         body: {
           customer_id: saved.current.customerId, label: label || address, address: hit!.label.replace(' (mock geocode)', ''), lat: hit!.lat, lon: hit!.lon,
@@ -176,7 +189,9 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
     );
   }
 
-  const canNext = [Boolean(c.name), Boolean(hit), Boolean(price), true, true][step] ?? true;
+  const customerIssue = customerProblem(c);
+  const priceIssue = pricingType === 'per_inch_tier' ? null : quoteProblem(price, trigger);
+  const canNext = [!customerIssue, Boolean(hit), !priceIssue, true, true][step] ?? true;
   return (
     <>
       <PageHeader title={existing ? `Add a site for ${existing.name}` : 'New customer'} subtitle={`Step ${step + 1} of ${STEPS.length}: ${STEPS[step]}`} />
@@ -194,20 +209,31 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
             <div><Label htmlFor="contact">Contact name</Label><Input id="contact" value={c.contact_name} onChange={(e) => setC({ ...c, contact_name: e.target.value })} /></div>
             <div><Label htmlFor="email">Email</Label><Input id="email" type="email" data-testid="c-email" value={c.email} onChange={(e) => setC({ ...c, email: e.target.value })} /></div>
             <div><Label htmlFor="phone">Mobile</Label><Input id="phone" type="tel" autoComplete="off" placeholder="216-555-0123" value={c.phone_e164} onChange={(e) => setC({ ...c, phone_e164: e.target.value })} /></div>
+            {customerIssue && (c.name || c.email || c.phone_e164) ? <p className="text-sm text-red-700 sm:col-span-2" data-testid="customer-problem">{customerIssue}</p> : null}
           </div>
         ) : null}
         {step === 1 ? (
           <div>
             <Label htmlFor="address">Address</Label>
-            <div className="flex gap-2"><Input id="address" data-testid="address" value={address} placeholder="14701 Detroit Ave, Lakewood, OH" onChange={(e) => setAddress(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void find()} autoComplete="off" /><Button disabled={busy || address.trim().length < 3} data-testid="find" onClick={() => void find()}>Find</Button></div>
+            <div className="flex gap-2"><Input id="address" data-testid="address" value={address} placeholder="14701 Detroit Ave, Lakewood, OH" onChange={(e) => { setAddress(e.target.value); setChoices([]); }} onKeyDown={(e) => e.key === 'Enter' && void find()} autoComplete="off" /><Button disabled={busy || address.trim().length < 3} data-testid="find" onClick={() => void find()}>Find</Button></div>
             {suggestions.length ? (
               <ul className="mt-1 rounded-md border border-slate-200 bg-white shadow-xs" aria-label="Address suggestions">
                 {suggestions.map((s) => <li key={s.label}><button type="button" className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-slate-50" data-testid="address-suggestion" onClick={() => choose(s)}>{s.label}</button></li>)}
                 <li className="px-3 py-1 text-xs text-slate-500">Suggestions © OpenStreetMap contributors</li>
               </ul>
             ) : null}
+            {choices.length ? (
+              <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm" data-testid="address-choices">
+                <p className="font-medium text-amber-950">{choices.length === 1 ? 'We found a different street than you typed. Is this the place?' : 'We found more than one match. Which is the place?'}</p>
+                <ul className="mt-2 space-y-1">
+                  {choices.map((s) => <li key={s.label}><button type="button" className="block min-h-11 w-full rounded-sm bg-white px-3 py-2 text-left hover:bg-slate-50" data-testid="address-choice" onClick={() => void measure(s, address)}>{s.label}</button></li>)}
+                </ul>
+                <p className="mt-2 text-xs text-slate-600">None of these? Fix the street name or add the city and ZIP, then Find again.</p>
+              </div>
+            ) : null}
             {hit ? (
               <div className="mt-3">
+                <p className="mb-2 text-sm" data-testid="address-saved">Address on file: <b>{hit.label.replace(' (mock geocode)', '')}</b>{sameStreet(address, hit.label) ? null : <span className="ml-1 text-amber-800">(not the street you typed)</span>}</p>
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <Badge tone="amber" data-testid="estimate-label">Estimate, drag to adjust</Badge>
                   <span data-testid="sqft">{sqft === null ? 'Area unavailable. Draw it or type it.' : `${sqft.toLocaleString()} sq ft`}</span>
@@ -235,7 +261,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
         {step === 2 ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <div><Label htmlFor="ptype">Pricing</Label>
-              <Select id="ptype" data-testid="pricing-type" value={pricingType} onChange={(e) => setPricingType(e.target.value as PricingType)}>
+              <Select id="ptype" data-testid="pricing-type" value={pricingType} onChange={(e) => { setPricingType(e.target.value as PricingType); setPriceTyped(false); }}>
                 <option value="per_push">Per push</option><option value="per_inch_tier">Per inch tiers</option><option value="per_event">Per event</option><option value="seasonal">Seasonal (5 installments)</option><option value="hourly">Hourly</option>
               </Select>
             </div>
@@ -244,15 +270,16 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
                 <ul className="text-sm">{suggestion.tiers.map((t) => <li key={String(t.up_to_in)}>{t.up_to_in ? `Up to ${t.up_to_in}"` : 'Over that'}: {money(t.amount_cents)}</li>)}</ul>
               </div>
             ) : (
-              <div><Label htmlFor="price">Price ($). Suggested from your rate card, editable.</Label><Input id="price" data-testid="price" type="number" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} /></div>
+              <div><Label htmlFor="price">Price ($). Suggested from your rate card, editable.</Label><Input id="price" data-testid="price" type="number" step="0.01" min="0.01" max="100000" value={price} onChange={(e) => { setPriceTyped(true); setPrice(e.target.value); }} /></div>
             )}
             <div>
               <Label htmlFor="trigger">Trigger depth (in)</Label>
-              <Input id="trigger" type="number" min={0} step="0.5" value={trigger} onChange={(e) => setTrigger(Math.max(0, Number(e.target.value)))} aria-describedby="trigger-hint" />
-              <p id="trigger-hint" className="mt-1 text-xs text-slate-600">{trigger === 0 ? 'Zero tolerance: you get an alert for any measurable snow.' : 'Set 0 for zero tolerance, any measurable snow.'}</p>
+              <Input id="trigger" type="number" min={0} max={48} step="0.5" value={trigger} onChange={(e) => setTrigger(Math.min(48, Math.max(0, Number(e.target.value))))} aria-describedby="trigger-hint" />
+              <p id="trigger-hint" className={trigger === 0 ? 'mt-1 text-xs text-amber-900' : 'mt-1 text-xs text-slate-600'} data-testid="trigger-hint">{trigger === 0 ? `Zero tolerance: any measurable snow starts service${pricingType === 'seasonal' ? '' : ', so every dusting is billable'}.` : 'Set 0 for zero tolerance, any measurable snow.'}</p>
             </div>
             <div><Label htmlFor="season">Season</Label><Input id="season" value={season} onChange={(e) => setSeason(e.target.value)} /></div>
             <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" checked={withSalt} onChange={(e) => setWithSalt(e.target.checked)} /> Salt, {money(suggestion.salt_bag_cents)} per 50 lb bag</label>
+            {priceIssue ? <p className="text-sm text-red-700 sm:col-span-2" data-testid="price-problem">{priceIssue}</p> : null}
           </div>
         ) : null}
         {step === 3 ? (

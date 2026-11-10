@@ -175,6 +175,7 @@ test('a new plow company runs a whole storm from sign up to paid invoices', asyn
       if (problemFirst && i === 0) {
         await d.getByTestId('problem').click();
         await d.getByTestId('problem-blocked').click();
+        await d.getByTestId('problem-send').click();
         // The car gets moved; the driver comes back to the same lot and starts again.
         await d.getByTestId('arrive').click();
         await expect(d.getByTestId('onsite')).toBeVisible();
@@ -207,8 +208,8 @@ test('a new plow company runs a whole storm from sign up to paid invoices', asyn
   await expect.poll(async () => (await sql`select count(*)::int as n from message_log m where m.tenant_id = ${tenantId} and m.template = 'done'`)[0]!.n, { timeout: 60000 }).toBe(4);
 
   // 9. Close the storm and bill it.
-  page.once('dialog', (d) => void d.accept());
   await page.getByTestId('close-storm').click();
+  await page.getByTestId('confirm-yes').click();
   // Closing takes the office straight to billing for this storm.
   await page.waitForURL(/\/billing/);
   expect((await sql`select status from storm where id = ${stormId}`)[0]!.status).not.toBe('active');

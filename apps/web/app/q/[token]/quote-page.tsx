@@ -5,18 +5,7 @@ import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-
 import { loadStripe } from '@stripe/stripe-js';
 import { useState } from 'react';
 import { api, money } from '@/lib/client';
-
-function priceText(p: any): string {
-  if (!p) return 'priced per unit';
-  switch (p.type) {
-    case 'per_push': return `${money(p.amount_cents)} per push`;
-    case 'per_event': return `${money(p.amount_cents)} per storm`;
-    case 'hourly': return `${money(p.rate_cents)} per hour, rounded up to 15 minutes`;
-    case 'seasonal': return `${money(p.total_cents)} for the season, in ${p.installments} installments`;
-    case 'per_inch_tier': return p.tiers.map((t: any) => `${t.up_to_in ? `up to ${t.up_to_in}"` : 'above that'}: ${money(t.amount_cents)}`).join('; ');
-    default: return '';
-  }
-}
+import { priceText } from '@/lib/scope';
 
 export function QuotePage({ token, quote }: { token: string; quote: any }) {
   const [name, setName] = useState('');

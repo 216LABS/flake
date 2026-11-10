@@ -61,7 +61,7 @@ const customerBase = z.object({
 });
 export const customerCreate = customerBase.extend({ billing_mode: billingMode.default('card_on_file') });
 // Update schemas come from the base: zod 4 applies defaults even through .partial(), which would reset fields.
-export const customerUpdate = customerBase.partial();
+export const customerUpdate = customerBase.partial().extend({ archived: z.boolean().optional() });
 
 const geoJsonGeom = z.object({ type: z.enum(['Polygon', 'MultiPolygon']), coordinates: z.array(z.any()) });
 
@@ -82,7 +82,7 @@ const siteBase = z.object({
   notes: emptyToNull(z.string().max(4000)),
 });
 export const siteCreate = siteBase.extend({ priority: z.number().int().min(1).max(5).default(3) });
-export const siteUpdate = siteBase.partial();
+export const siteUpdate = siteBase.partial().extend({ active: z.literal(true).optional() });
 
 export const pinCreate = z.object({
   site_id: uuid,
@@ -109,7 +109,7 @@ const routeBase = z.object({
   site_ids: siteList,
 });
 export const routeCreate = routeBase.extend({ site_ids: siteList.default([]) });
-export const routeUpdate = routeBase.partial();
+export const routeUpdate = routeBase.partial().extend({ archived: z.boolean().optional() });
 
 export const subRateCard = z.object({
   per_visit_cents: cents.optional(),
@@ -136,8 +136,11 @@ export const quoteCreate = contractCreate.extend({ send: z.boolean().default(tru
 export const stormCreate = z.object({
   name: z.string().trim().min(1).max(120),
   routeIds: z.array(uuid).max(200).transform((ids) => [...new Set(ids)]).default([]),
-  crewAssignments: z.record(z.string(), uuid).default({}),
+  /** Route id to driver. null means the office cleared the driver on purpose; a missing route uses its usual driver. */
+  crewAssignments: z.record(z.string(), uuid.nullable()).default({}),
   triggerAlertId: uuid.optional(),
+  /** Leave out lots already on another active storm, after the office was told which ones. */
+  skipBusy: z.boolean().default(false),
   /** Only snapshot these sites from the routes; used when starting from an alert. */
   siteIds: z.array(uuid).optional(),
 });
@@ -154,6 +157,7 @@ export const stormClose = z.object({ force: z.boolean().default(false) });
 export const stormCallOut = z.object({ time: z.string().max(40) });
 
 export const billingRetry = z.object({ draftId: uuid });
+export const billingRevise = z.object({ draftId: uuid, to: z.enum(['draft', 'void']) });
 export const billingApprove = z.object({ draftIds: z.array(uuid).min(1).max(500) });
 export const flagFix = z.discriminatedUnion('action', [
   z.object({ action: z.literal('waive'), storm_id: uuid, flag_key: z.string().max(200) }),
@@ -161,6 +165,7 @@ export const flagFix = z.discriminatedUnion('action', [
   z.object({ action: z.literal('replow'), storm_id: uuid, visit_id: uuid }),
   z.object({ action: z.literal('salt'), storm_id: uuid, visit_id: uuid, unit: saltUnit, qty: z.number().positive().max(10000) }),
   z.object({ action: z.literal('depth'), storm_id: uuid, site_id: uuid, depth_in: z.number().min(0).max(120) }),
+  z.object({ action: z.literal('services'), storm_id: uuid, visit_id: uuid, services: z.array(serviceKind).min(1).max(4) }),
 ]);
 
 /** One packet covers up to two seasons. A wider range is a mistake, and its photos would not fit in one PDF. */
@@ -245,12 +250,21 @@ export const toolContract = z.object({
   services: z.array(serviceKind).min(1),
   trigger_in: z.number().min(0).max(48),
   pricing_type: z.enum(['per_push', 'per_inch_tier', 'per_event', 'seasonal', 'hourly']),
-  price_text: z.string().trim().min(1).max(500),
-  salt_text: z.string().max(500).default(''),
+  // Free text, like "$65 per push". A minus sign in front of an amount is a typo, never a price (issue 36).
+  price_text: z.string().trim().min(1).max(500).refine((s) => !NEGATIVE_AMOUNT.test(s), "The price can't be negative."),
+  salt_text: z.string().max(500).default('').refine((s) => !NEGATIVE_AMOUNT.test(s), "The salt price can't be negative."),
   insurance_text: z.string().max(2000).default(''),
   payment_terms: z.string().max(500).default('Net 30'),
   email: emptyToNull(email),
 });
+
+/** "-5", "$-5", "- $5": an amount with a minus sign in front. Hyphens between words ("per-push") don't count. */
+export const NEGATIVE_AMOUNT = /(^|[^\w])-\s*\$?\s*\d|\$\s*-\s*\d/;
+/** A bare amount ("65" or "$65") reads as dollars on the contract: "$65.00". Anything with words stays as typed. */
+export const moneyText = (s: string) => {
+  const m = /^\s*\$?\s*(\d{1,7}(?:\.\d{1,2})?)\s*$/.exec(s);
+  return m ? `$${Number(m[1]).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : s.trim();
+};
 
 export const toolPrice = z.object({
   sqft: z.number().positive().max(10_000_000).optional(),

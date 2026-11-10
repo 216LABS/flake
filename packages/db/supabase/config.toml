@@ -56,6 +56,11 @@ max_frequency = "1s"
 subject = "Your Flake sign-in"
 content_path = "./supabase/templates/magic_link.html"
 
+# A first sign-in sends this one instead of the magic link. It needs the code too (issue 1).
+[auth.email.template.confirmation]
+subject = "Your Flake sign-in"
+content_path = "./supabase/templates/confirmation.html"
+
 [auth.rate_limit]
 email_sent = 1000
 sign_in_sign_ups = 1000

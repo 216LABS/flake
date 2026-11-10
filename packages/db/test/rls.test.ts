@@ -168,6 +168,31 @@ describe('roles', () => {
       await rejectsWith(withUser(A.owner, (tx) => tx.execute(sql`update tenant set ${change} where id = ${A.tenant}`)), /permission denied/);
     }
   });
+  it('owners cannot write invoice amounts or statuses directly, only read them (issue 8)', async () => {
+    for (const change of [sql`status = 'paid'`, sql`subtotal_cents = 1`, sql`lines = '[]'::jsonb`, sql`application_fee_cents = 0`, sql`status_detail = 'x'`]) {
+      await rejectsWith(withUser(A.owner, (tx) => tx.execute(sql`update invoice_draft set ${change} where id = ${ids.aDraft}`)), /permission denied/);
+    }
+    await rejectsWith(withUser(A.owner, (tx) => tx.execute(sql`delete from invoice_draft where id = ${ids.aDraft}`)), /permission denied/);
+    await rejectsWith(withUser(A.owner, (tx) => tx.insert(s.invoice_draft).values({ tenant_id: A.tenant, storm_id: ids.aStorm, customer_id: randomUUID(), lines: [], subtotal_cents: 100, status: 'approved' })), /permission denied/);
+    const seen = await withUser(A.owner, (tx) => tx.select({ id: s.invoice_draft.id }).from(s.invoice_draft));
+    expect(seen.map((r) => r.id)).toContain(ids.aDraft);
+  });
+  it('owners cannot forge a signature or installment progress on a contract (issue 8)', async () => {
+    await rejectsWith(withUser(A.owner, (tx) => tx.execute(sql`update contract set installments_billed = 0 where id = ${ids.aContract}`)), /permission denied/);
+    await rejectsWith(withUser(A.owner, (tx) => tx.execute(sql`update contract set accepted_name = 'Forged' where id = ${ids.aContract}`)), /permission denied/);
+    await rejectsWith(withUser(A.owner, (tx) => tx.execute(sql`update contract set status = 'accepted' where id = ${ids.aContract}`)), /Only the customer/);
+    await rejectsWith(withUser(A.owner, (tx) => tx.insert(s.contract).values({ tenant_id: A.tenant, site_id: ids.aSite, season: '2026-27', services: [], status: 'accepted' })), /Only the customer/);
+    // Writing an offer and voiding it are still the office's to do.
+    const offer = await withUser(A.owner, (tx) => tx.insert(s.contract).values({ tenant_id: A.tenant, site_id: ids.aSite, season: '2026-27', services: [], status: 'sent' }).returning({ id: s.contract.id }));
+    await withUser(A.owner, (tx) => tx.execute(sql`update contract set status = 'void' where id = ${offer[0]!.id}`));
+  });
+  it("owners cannot set a customer's payment method or consent (issue 8)", async () => {
+    for (const change of [sql`stripe_payment_method_id = 'pm_x'`, sql`stripe_customer_id = 'cus_x'`, sql`notify_sms = true`]) {
+      await rejectsWith(withUser(A.owner, (tx) => tx.execute(sql`update customer set ${change} where id = ${ids.aCustomer}`)), /permission denied/);
+    }
+    const ok = await withUser(A.owner, (tx) => tx.execute(sql`update customer set name = 'Renamed', archived_at = null where id = ${ids.aCustomer} returning 1`));
+    expect(ok.length).toBe(1);
+  });
   it('nobody in the office can write SMS consent directly', async () => {
     await rejectsWith(withUser(A.owner, (tx) => tx.insert(s.sms_consent).values({ tenant_id: A.tenant, phone_e164: '+12165550000', party: 'crew', opted_in_at: '2026-01-01T00:00:00Z' })), /permission denied/);
   });

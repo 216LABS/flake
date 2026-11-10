@@ -2,9 +2,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { closeDb, eq, job, message_log, run_stop, serviceDb, sql, storm } from '@flake/db';
 import { lateCheck } from '@/lib/handlers';
 import { processActions, resolveToken } from '@/lib/driver';
-import { createStorm, publishStorm } from '@/lib/storms';
+import { publishStorm } from '@/lib/storms';
 import { decryptToken } from '@/lib/tokens';
-import { ctxOf, drain, makeWorld, stopActions, type World } from './helpers';
+import { ctxOf, drain, makeWorld, stopActions, type World, createStorm } from './helpers';
 
 // Noon in Cleveland on a storm day; the storm started at 3 AM. Site 2 must be open by 6 AM.
 const NOON = Date.parse('2026-01-20T17:00:00Z');

@@ -26,6 +26,8 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
   const day = (iso: string) => fmtLocal(iso, tz, { weekday: 'short', month: 'short', day: 'numeric' });
   const time = (iso: string) => fmtLocal(iso, tz, { hour: 'numeric', minute: '2-digit' });
   const due = data.invoices.filter((i) => i.pay_link);
+  // "10:32 AM to 10:58 AM", or one time when both fall in the same minute, instead of a window that reads as zero.
+  const span = (from: string, to: string | null) => (to && time(to) !== time(from) ? `${time(from)} to ${time(to)}` : to ? `at ${time(from)}` : time(from));
   const photo = (id: string, thumb = false) => `/api/c/${token}/photo/${id}${thumb ? '?thumb=1' : ''}`;
   return (
     <div className="min-h-screen bg-slate-50">
@@ -54,7 +56,12 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
             <section key={s.id} aria-labelledby={`site-${s.id}`} data-testid="portal-site">
               <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
                 <h2 id={`site-${s.id}`} className="font-display text-2xl font-semibold">{s.label}</h2>
-                {s.contract ? <Badge tone={s.contract.status === 'accepted' ? 'green' : 'amber'}>{s.contract.status === 'accepted' ? `Season ${s.contract.season}` : 'Quote waiting'}</Badge> : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  {s.contract?.status === 'accepted' ? <Badge tone="green">Season {s.contract.season}</Badge> : null}
+                  {s.quote ? (s.quote.url
+                    ? <a href={s.quote.url} className="rounded-sm bg-amber-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-900 underline" data-testid="portal-quote-link">Quote waiting: review and sign</a>
+                    : <Badge tone="amber" title="The quote link is in the email it came in.">Quote waiting, see your email</Badge>) : null}
+                </div>
               </div>
               <p className="mb-3 text-sm text-slate-600">{s.address}</p>
               <div className="mb-3 grid grid-cols-2 gap-3">
@@ -67,14 +74,15 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
                     const row = (
                       <li key={v.id} className="rounded-md border border-slate-200 bg-white p-3" data-testid="portal-visit">
                         <div>
-                          <p className="font-semibold">{day(v.arrived)}, {time(v.arrived)}{v.departed ? ` to ${time(v.departed)}` : ''}</p>
+                          <p className="font-semibold">{day(v.arrived)}, {span(v.arrived, v.departed)}</p>
                           <p className="text-xs text-slate-600">{v.storm}</p>
                         </div>
                         <p className="mt-0.5 text-sm text-slate-700">
-                          {v.departed ? v.services.map((x) => SERVICE[x] ?? x).join(', ') : v.on_site_now ? 'Crew on site now' : 'Crew arrived. No finish time was recorded.'}
-                          {v.replow ? ' (second pass)' : ''}
-                          {v.depth !== null ? `. ${v.depth}" of snow` : ''}
-                          {v.salt?.length ? `. Salt: ${v.salt.map((e) => `${e.qty} ${UNIT[e.unit] ?? e.unit}`).join(', ')}` : ''}
+                          {[
+                            (v.departed ? (v.services.length ? v.services.map((x) => SERVICE[x] ?? x).join(', ') : 'Visit') : v.on_site_now ? 'Crew on site now' : 'Crew arrived. No finish time was recorded') + (v.replow ? ' (second pass)' : ''),
+                            v.depth !== null ? `${v.depth}" of snow` : null,
+                            v.salt?.length ? `Salt: ${v.salt.map((e) => `${e.qty} ${UNIT[e.unit] ?? e.unit}`).join(', ')}` : null,
+                          ].filter(Boolean).join('. ')}
                         </p>
                         {v.photos.length ? (
                           <div className="mt-2 flex flex-wrap gap-2">
@@ -99,7 +107,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
                     <thead><tr><Th>Date</Th><Th>Time</Th><Th>Done</Th><Th>Photos</Th></tr></thead>
                     <tbody>
                       {s.visits.slice(10).map((v) => (
-                        <tr key={v.id}><Td>{day(v.arrived)}</Td><Td className="tabular">{time(v.arrived)}{v.departed ? `-${time(v.departed)}` : ''}</Td><Td>{v.services.map((x) => SERVICE[x] ?? x).join(', ')}</Td><Td>{v.photos.map((p, i) => <a key={p.id} className="mr-2 text-sky-800 underline" href={photo(p.id)} target="_blank" rel="noopener">{i + 1}</a>)}</Td></tr>
+                        <tr key={v.id}><Td>{day(v.arrived)}</Td><Td className="tabular">{span(v.arrived, v.departed)}</Td><Td>{v.services.map((x) => SERVICE[x] ?? x).join(', ')}</Td><Td>{v.photos.map((p, i) => <a key={p.id} className="mr-2 text-sky-800 underline" href={photo(p.id)} target="_blank" rel="noopener">{i + 1}</a>)}</Td></tr>
                       ))}
                     </tbody>
                   </Table>

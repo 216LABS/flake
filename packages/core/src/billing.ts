@@ -13,7 +13,9 @@ export type FlagCode =
   | 'seasonal_info'
   | 'missing_depth'
   | 'no_contract'
-  | 'odd_duration';
+  | 'odd_duration'
+  | 'no_service'
+  | 'salt_unit';
 
 export interface BillingFlag {
   code: FlagCode;
@@ -22,6 +24,10 @@ export interface BillingFlag {
   message: string;
   severity: 'review' | 'info';
   waived?: boolean;
+  /** For salt flags: the unit the contract prices salt in, so a fix is entered in that unit. */
+  unit?: string;
+  /** For no_service: the contract's priced services, which a fix can add to the visit. */
+  services?: string[];
 }
 
 export interface BillingSite {
@@ -89,8 +95,9 @@ const LONG_VISIT_MINUTES = 4 * 60;
 
 function flagsForSite(site: BillingSite, contract: BillingContract | undefined, statuses: string[], visits: BillingVisit[]): BillingFlag[] {
   const flags: BillingFlag[] = [];
-  const add = (code: FlagCode, message: string, visit_id?: string, severity: BillingFlag['severity'] = 'review') =>
-    flags.push({ code, site_id: site.id, message, severity, ...(visit_id ? { visit_id } : {}) });
+  const add = (code: FlagCode, message: string, visit_id?: string, severity: BillingFlag['severity'] = 'review', extra: Pick<BillingFlag, 'unit' | 'services'> = {}) =>
+    flags.push({ code, site_id: site.id, message, severity, ...(visit_id ? { visit_id } : {}), ...extra });
+  const saltUnit = contract?.salt_pricing?.unit;
 
   if (!visits.length && statuses.some((s) => s !== 'skipped')) {
     add('missing_visit', `${site.label} was in this storm's runs but has no completed visit.`);
@@ -114,7 +121,17 @@ function flagsForSite(site: BillingSite, contract: BillingContract | undefined, 
     }
     if (v.after_photos === 0) add('no_after_photo', `${site.label}: no after photo on this visit.`, v.id);
     if (v.services.includes('salt') && !v.salt?.some((e) => e.qty > 0)) {
-      add('missing_salt_qty', `${site.label}: salt service logged with no quantity.`, v.id);
+      add('missing_salt_qty', `${site.label}: salt service logged with no quantity.`, v.id, 'review', saltUnit ? { unit: saltUnit } : {});
+    }
+    // Salt logged in bags on a per-ton contract (or the other way) can't be priced, so it would go out free.
+    const odd = v.services.includes('salt') && saltUnit ? (v.salt ?? []).filter((e) => e.qty > 0 && e.unit !== saltUnit) : [];
+    if (odd.length) {
+      add('salt_unit', `${site.label}: salt logged as ${odd.map((e) => `${e.qty} ${e.unit}`).join(', ')}, but the contract prices salt per ${saltUnit}. Enter the quantity in ${saltUnit} to bill it.`, v.id, 'review', { unit: saltUnit });
+    }
+    // A finished visit with none of the contract's services on it prices at $0. Say so instead of a silent zero.
+    const priced = (contract?.services ?? []).filter((s) => s.pricing && s.pricing.type !== 'seasonal').map((s) => s.service as string);
+    if (priced.length && !v.services.some((x) => priced.includes(x)) && !(v.services.includes('salt') && contract?.services.some((s) => s.service === 'salt'))) {
+      add('no_service', `${site.label}: the driver finished this visit with no service ticked (${priced.join(', ')} on the contract), so nothing was billed for it.`, v.id, 'review', { services: priced });
     }
   });
   if (!contract) {

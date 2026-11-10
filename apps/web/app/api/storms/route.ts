@@ -13,5 +13,5 @@ export const GET = route(async () => {
 export const POST = route(async (req) => {
   const ctx = await requireApi('dispatcher');
   const out = await createStorm(ctx, await parseJson(req, stormCreate));
-  return NextResponse.json({ id: out.storm.id, runs: out.runs.length }, { status: 201 });
+  return NextResponse.json({ id: out.storm.id, runs: out.runs.length, left_out: out.left_out }, { status: 201 });
 });

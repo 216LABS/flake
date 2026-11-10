@@ -28,7 +28,8 @@ export const POST = route<{ params: Promise<{ token: string }> }>(async (req, { 
     headline: `${row.customer.name} asked for a visit at ${row.site.label}.${said}`,
     link: `${baseUrl()}/customers/${row.customer.id}`,
     key: `visit_request:${row.site.id}:${hour}`,
-    related: { site_id: row.site.id, customer_id: row.customer.id },
+    // Kept with the messages, so the dashboard can list requests for anyone who missed the push or email.
+    related: { site_id: row.site.id, customer_id: row.customer.id, kind: 'visit_request', note: note ?? null },
   });
   return { ok: true };
 });

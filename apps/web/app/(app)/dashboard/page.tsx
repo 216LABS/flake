@@ -21,6 +21,13 @@ export default async function Dashboard() {
     progress: await tx.select({ storm_id: storm_run.storm_id, finished: sql<number>`count(*) filter (where ${run_stop.status} in ('done', 'skipped'))::int`, total: sql<number>`count(*)::int` }).from(run_stop).innerJoin(storm_run, eq(storm_run.id, run_stop.storm_run_id)).innerJoin(storm, eq(storm.id, storm_run.storm_id)).where(eq(storm.status, 'active')).groupBy(storm_run.storm_id),
     pendingQuotes: await tx.select({ n: sql<number>`count(*)::int` }).from(contract).where(and(eq(contract.status, 'sent'))),
   }));
+  // Customers' "come back" requests from their records page, one per lot and hour, for a week (issue 5).
+  const requests = (await serviceDb().execute(sql`
+    select distinct on (m.related->>'site_id', date_trunc('hour', m.created_at)) m.related->>'site_id' as site_id, m.related->>'customer_id' as customer_id, m.related->>'note' as note, m.created_at, s.label, c.name
+    from message_log m join site s on s.id = (m.related->>'site_id')::uuid join customer c on c.id = s.customer_id
+    where m.tenant_id = ${ctx.tenantId} and m.related->>'kind' = 'visit_request' and m.created_at > now() - interval '7 days'
+    order by m.related->>'site_id', date_trunc('hour', m.created_at), m.created_at`)) as unknown as { site_id: string; customer_id: string; note: string | null; created_at: string; label: string; name: string }[];
+  requests.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const w = await tenantWeatherHeader(ctx.tenantId);
   const [{ failedMessages } = { failedMessages: 0 }] = await serviceDb().select({ failedMessages: sql<number>`count(*)::int` }).from(message_log).where(and(eq(message_log.tenant_id, ctx.tenantId), eq(message_log.status, 'failed'), sql`${message_log.created_at} > now() - interval '24 hours'`));
   const usage = canSeeUsage(ctx.email) ? await deploymentUsage() : null;
@@ -61,6 +68,19 @@ export default async function Dashboard() {
               </ul>
             ) : <p className="rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-600">No open alerts.</p>}
           </section>
+          {requests.length ? (
+            <section data-testid="visit-requests">
+              <Eyebrow className="mb-2">Customers asking for a visit</Eyebrow>
+              <ul className="divide-y divide-slate-200 rounded-md border border-slate-200 bg-white">
+                {requests.slice(0, 8).map((r) => (
+                  <li key={`${r.site_id}:${r.created_at}`} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
+                    <span className="min-w-0"><Link className="font-medium text-slate-950 underline" href={`/customers/${r.customer_id}`}>{r.name}</Link>, {r.label}{r.note ? `: "${r.note}"` : ''}</span>
+                    <span className="text-xs text-slate-600">{fmtLocal(r.created_at, tz)}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
           <section>
             <Eyebrow className="mb-2">Active storms</Eyebrow>
             {data.active.length ? (

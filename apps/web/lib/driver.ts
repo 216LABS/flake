@@ -39,6 +39,14 @@ const CLOCK_SLACK_MS = 10 * 60 * 1000;
  * A dead link can't start new work or see the route. With forUpload, it can still deliver what the driver did before
  * it died: revoking a link must not throw away a plowed lot's only record.
  */
+/** True for any route link that was ever handed out, live or not. Unknown strings are a 404, not a route. */
+export async function linkEverIssued(token: string) {
+  if (!token || token.length > 200) return false;
+  const hash = hashToken(token);
+  const [row] = await serviceDb().select({ id: storm_run.id }).from(storm_run).where(eq(storm_run.link_token_hash, hash)).limit(1);
+  return Boolean(row) || Boolean(await getSetting(retiredLinkKey(hash)));
+}
+
 export async function resolveToken(token: string, opts: { forUpload?: boolean } = {}): Promise<RunScope> {
   const db = serviceDb();
   const hash = hashToken(token);
@@ -68,7 +76,7 @@ export async function loadRun(rs: RunScope) {
   const { tenantId, runId, stormId } = rs.scope;
   const rows = await db.select({ stop: run_stop, site }).from(run_stop).innerJoin(site, eq(site.id, run_stop.site_id)).where(and(eq(run_stop.tenant_id, tenantId), eq(run_stop.storm_run_id, runId))).orderBy(asc(run_stop.seq));
   const siteIds = rows.map((r) => r.site.id);
-  const contracts = liveContracts(siteIds.length ? await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), inArray(contract.site_id, siteIds), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)) : [], rs.storm.started_at);
+  const contracts = liveContracts(siteIds.length ? await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), inArray(contract.site_id, siteIds), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)) : [], rs.storm.started_at, rs.tenant.timezone);
   const pins = siteIds.length ? await db.select().from(site_pin).where(and(eq(site_pin.tenant_id, tenantId), inArray(site_pin.site_id, siteIds))) : [];
   const stormVisits = await db.select({ id: visit.id }).from(visit).where(and(eq(visit.tenant_id, tenantId), eq(visit.storm_id, stormId), eq(visit.crew_id, rs.run.crew_id ?? '00000000-0000-0000-0000-000000000000')));
   return {

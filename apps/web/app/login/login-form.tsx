@@ -30,7 +30,10 @@ export function LoginForm({ demo }: { demo: boolean }) {
   const verify = async () => {
     setError(null);
     setBusy(true);
-    const { error: err } = await supabase().auth.verifyOtp({ email, token: code.trim(), type: 'email' });
+    const token = code.replace(/\s/g, '');
+    let { error: err } = await supabase().auth.verifyOtp({ email, token, type: 'email' });
+    // A first sign-in's code comes from the Confirm signup email, which some Supabase versions only accept as a signup code.
+    if (err && /expired|invalid/i.test(err.message)) ({ error: err } = await supabase().auth.verifyOtp({ email, token, type: 'signup' }));
     setBusy(false);
     if (err) return setError(/expired|invalid/i.test(err.message) ? 'That code is wrong or has expired. Check the newest email, or send a new one.' : err.message);
     router.push('/dashboard');

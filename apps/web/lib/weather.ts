@@ -170,7 +170,7 @@ export async function evaluateTenant(tenantId: string): Promise<string[]> {
   if (!sites.length) return [];
   // Triggers come from the contract in force today, not a renewal signed for next winter. Today on the wall clock:
   // the demo's weather clock replays an old storm, and contracts are signed in real time.
-  const contracts = liveContracts(await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)), new Date());
+  const contracts = liveContracts(await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)), new Date(), t.timezone);
   const cellKey = (s: { nws_office: string | null; nws_grid_x: number | null; nws_grid_y: number | null }) => `${s.nws_office}/${s.nws_grid_x}/${s.nws_grid_y}`;
   const latest = new Map<string, typeof weather_snapshot.$inferSelect>();
   for (const s of sites) {

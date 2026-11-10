@@ -18,11 +18,11 @@ import { setSetting } from '@/lib/providers';
 import { createQuote, acceptQuote, getQuote, mockConfirmSetup } from '@/lib/quotes';
 import { MockEmail } from '@flake/providers';
 import { requestTollFree, submitTollFree } from '@/lib/sms-admin';
-import { createStorm } from '@/lib/storms';
+
 import { decryptToken, sha256Hex } from '@/lib/tokens';
 import { buildManifest } from '@flake/core/proof';
 import { breakerOpen, breakerState, evaluateTenant, fetchAlerts, fetchCell, fetchNohrsc, latestSnapshotIds, mapSites, parseGridpoint, tenantWeatherHeader } from '@/lib/weather';
-import { ctxOf, consent, drain, jsonReq, makeWorld, req, stopActions, type World } from './helpers';
+import { ctxOf, consent, drain, jsonReq, makeWorld, req, stopActions, type World, createStorm } from './helpers';
 
 afterAll(() => closeDb());
 
@@ -142,7 +142,7 @@ describe('weather and triggers', () => {
     expect(rows[0]!.summary.sites[stranger.siteIds[0]!]).toBe(3.2);
   });
 
-  it('a storm keeps the NOHRSC 24 h total when a newer 6 h file exists, and tier billing uses it', async () => {
+  it('an observed 24 h total prices the tier only when its whole window falls inside the storm (issue 13)', async () => {
     const x = await makeWorld();
     await setSetting('dev.clock', '2025-12-13T13:00:00Z');
     await mapSites(x.tenantId);
@@ -156,12 +156,19 @@ describe('weather and triggers', () => {
     const rs = await resolveToken(decryptToken(out.runs[0]!.link_token_enc!));
     const [s] = await serviceDb().select().from(run_stop).where(and(eq(run_stop.storm_run_id, out.runs[0]!.id), eq(run_stop.seq, 2)));
     // The driver saw 1", the 24 h analysis says 3.2": both fall in the first tier here, so raise the tier edge to tell them apart.
-    await serviceDb().execute(sql`update contract set services = '[{"service":"plow","pricing":{"type":"per_inch_tier","tiers":[{"up_to_in":2,"amount_cents":10000},{"up_to_in":null,"amount_cents":20000}]}}]'::jsonb where site_id = ${x.siteIds[1]!}`);
+    // The replayed storm is from December 2025, so its contract is that season's.
+    await serviceDb().execute(sql`update contract set season = '2025-26', services = '[{"service":"plow","pricing":{"type":"per_inch_tier","tiers":[{"up_to_in":2,"amount_cents":10000},{"up_to_in":null,"amount_cents":20000}]}}]'::jsonb where site_id = ${x.siteIds[1]!}`);
     await processActions(rs, stopActions(s!.id, new Date('2025-12-13T12:00:00Z'), { depth: 1 }).actions as never);
-    // Closed directly, so the storm keeps exactly the two files set above. Invoices are drafted only after close.
-    await serviceDb().update(storm).set({ status: 'closed', closed_at: '2025-12-13T14:00:00Z' }).where(eq(storm.id, out.storm.id));
+    // A storm that ran the whole day the 24 h file covers: its 3.2" is this storm's snow and sets the tier.
+    const windowStart = new Date(Date.parse(day!.summary.valid_at) - 24 * 3600_000).toISOString();
+    await serviceDb().update(storm).set({ status: 'closed', started_at: windowStart, closed_at: '2025-12-13T14:00:00Z' }).where(eq(storm.id, out.storm.id));
     const drafts = await generateDrafts(ctxOf(x), out.storm.id);
     expect(drafts.find((d) => d.draft.customer_id === x.customerIds[1])!.draft.subtotal_cents).toBe(20000);
+    // A storm that started an hour before close: most of that 24 h total fell before it, maybe in another storm, so
+    // only the driver's 1" counts.
+    await serviceDb().update(storm).set({ started_at: '2025-12-13T13:00:00Z' }).where(eq(storm.id, out.storm.id));
+    const later = await generateDrafts(ctxOf(x), out.storm.id);
+    expect(later.find((d) => d.draft.customer_id === x.customerIds[1])!.draft.subtotal_cents).toBe(10000);
   });
 
   it('missing weather reads as unavailable, never zero', async () => {

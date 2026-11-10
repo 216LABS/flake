@@ -4,13 +4,13 @@ import { closeDb, and, customer, eq, invoice_draft, job, message_log, run_stop, 
 import { MockEmail, signMockWebhook } from '@flake/providers';
 import { POST as webhook } from '@/app/api/webhooks/stripe/route';
 import { GET as cronJobs } from '@/app/api/cron/jobs/route';
-import { applyFlagFix, approveDrafts, chargeDraft, exportQbo, failDraft, generateDrafts, handleStripeEvent, billInstallments, retryDraft, visitsMissedByDrafts } from '@/lib/billing';
+import { applyFlagFix, approveDrafts as approve, chargeDraft, exportQbo, failDraft, generateDrafts, handleStripeEvent, billInstallments, retryDraft, visitsMissedByDrafts } from '@/lib/billing';
 import { runJobs } from '@/lib/handlers';
 import { notifyParty } from '@/lib/messaging';
 import { processActions, resolveToken } from '@/lib/driver';
-import { closeStorm, createStorm, notifyCustomers, publishStorm, stormLive, patchRunStop, addPass } from '@/lib/storms';
+import { closeStorm, notifyCustomers, publishStorm, stormLive, patchRunStop, addPass } from '@/lib/storms';
 import { decryptToken } from '@/lib/tokens';
-import { consent, ctxOf, drain, makeWorld, req, stopActions, type World } from './helpers';
+import { consent, ctxOf, drain, makeWorld, req, stopActions, type World, createStorm } from './helpers';
 
 async function completeStorm(w: World, opts: { skipLast?: boolean } = {}) {
   const ctx = ctxOf(w);
@@ -30,6 +30,15 @@ async function completeStorm(w: World, opts: { skipLast?: boolean } = {}) {
 }
 
 const drafts = (stormId: string) => serviceDb().select().from(invoice_draft).where(eq(invoice_draft.storm_id, stormId));
+
+/**
+ * These storms' visits are flagged (test GPS, no photos), and a flagged draft can't be approved (issue 7). The office
+ * would waive the flags first; this does the same, then approves.
+ */
+async function approveDrafts(ctx: Parameters<typeof approve>[0], ids: string[]) {
+  for (const id of ids) await serviceDb().execute(sql`update invoice_draft set flags = coalesce((select jsonb_agg(f || '{"waived": true}'::jsonb) from jsonb_array_elements(flags) f), '[]'::jsonb) where id = ${id} and status = 'draft'`);
+  return approve(ctx, ids);
+}
 
 afterAll(() => closeDb());
 
@@ -213,7 +222,8 @@ describe('billing', () => {
   it('a viewer cannot approve, and another tenant cannot touch these drafts', async () => {
     const rows = await drafts(stormId);
     const id = rows.find((r) => r.customer_id === w.customerIds[1])!.id;
-    await expect(approveDrafts({ userId: w.viewerId, tenantId: w.tenantId }, [id])).resolves.toEqual({ approved: 0 });
+    // Refused outright, which the API answers with 403. A viewer can read drafts but never write them.
+    await expect(approveDrafts({ userId: w.viewerId, tenantId: w.tenantId }, [id])).rejects.toMatchObject({ code: '42501' });
     const stranger = await makeWorld();
     expect((await approveDrafts(ctxOf(stranger), [id])).approved).toBe(0);
     const [d] = await serviceDb().select().from(invoice_draft).where(eq(invoice_draft.id, id));
@@ -330,8 +340,11 @@ describe('billing', () => {
 
   it('creates seasonal installment invoices once per month run', async () => {
     const x = await makeWorld();
-    expect(await billInstallments(x.tenantId)).toBe(1);
-    expect(await billInstallments(x.tenantId)).toBe(1);
+    const nov = new Date('2026-11-15T15:00:00Z');
+    expect(await billInstallments(x.tenantId, nov)).toBe(1);
+    // A second run in the same month, a retry say, bills nothing more (issue 6).
+    expect(await billInstallments(x.tenantId, nov)).toBe(0);
+    expect(await billInstallments(x.tenantId, new Date('2026-12-15T15:00:00Z'))).toBe(1);
     const rows = await serviceDb().execute(sql`select seq, amount_cents from installment_invoice where tenant_id = ${x.tenantId} order by seq`);
     expect(rows.map((r: any) => r.seq)).toEqual([1, 2]);
     expect(rows[0]!.amount_cents).toBe(60000);

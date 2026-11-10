@@ -103,10 +103,10 @@ test('another pass and closing a storm both ask first', async ({ page }) => {
   await login(page);
   const { id } = await startStorm(page.request, `Ask first ${Date.now()}`, ['Rocky River']);
   await page.goto(`/storms/${id}`);
-  page.once('dialog', (d) => void d.dismiss());
   await page.getByTestId('another-pass').click();
-  page.once('dialog', (d) => void d.dismiss());
+  await page.getByTestId('confirm-no').click();
   await page.getByTestId('close-storm').click();
+  await page.getByTestId('confirm-no').click();
   await expect(page.getByTestId('close-storm')).toBeVisible();
   const runs = await sql`select max(pass)::int as pass from storm_run where storm_id = ${id}`;
   expect(runs[0]!.pass).toBe(1);
@@ -139,8 +139,8 @@ test('the board can replace a route link, and the old one stops at once', async 
   const oldToken = new URL(runs[0]!.link).pathname.split('/')[2]!;
   await page.goto(`/storms/${id}`);
   await page.getByTestId('show-link').first().click();
-  page.once('dialog', (d) => void d.accept());
   await page.getByTestId('replace-link').click();
+  await page.getByTestId('confirm-yes').click();
   await expect(page.getByTestId('run-link')).not.toHaveValue(runs[0]!.link);
   const fresh = new URL(await page.getByTestId('run-link').inputValue()).pathname.split('/')[2]!;
   expect((await page.request.get(`/api/d/${oldToken}/run`)).status()).toBe(410);
@@ -153,8 +153,8 @@ test('a misplaced pin can be removed from the site page', async ({ page }) => {
   const [s] = await sql`select s.id, s.tenant_id from site s join tenant t on t.id = s.tenant_id where t.slug = 'lakeshore-demo' and s.active limit 1`;
   const [p] = await sql`insert into site_pin (tenant_id, site_id, kind, lat, lon, note) values (${s!.tenant_id}, ${s!.id}, 'hazard', 41.48, -81.8, 'wrong spot') returning id`;
   await page.goto(`/sites/${s!.id}`);
-  page.once('dialog', (d) => void d.accept());
   await page.getByTestId(`pin-remove-${p!.id}`).click();
+  await page.getByTestId('confirm-yes').click();
   await expect(page.getByTestId(`pin-remove-${p!.id}`)).toHaveCount(0);
   expect(await sql`select id from site_pin where id = ${p!.id}`).toHaveLength(0);
 });

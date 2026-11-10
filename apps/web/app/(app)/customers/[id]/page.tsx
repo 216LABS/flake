@@ -1,6 +1,6 @@
 import { contract, customer, desc, eq, inArray, site } from '@flake/db';
 import { Badge, buttonVariants, Card, PageHeader, Table, Td, Th } from '@flake/ui';
-import { CustomerEditor } from './customer-editor';
+import { ArchiveCustomer, CustomerEditor } from './customer-editor';
 import { PortalCard } from './portal-card';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -24,7 +24,10 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
   const { c, sites, contracts } = data;
   return (
     <>
-      <PageHeader title={c.name} subtitle={c.kind === 'hoa' ? 'HOA' : `${c.kind[0]!.toUpperCase()}${c.kind.slice(1)}`} actions={<Link href={`/customers/new?customer=${c.id}`} className={buttonVariants({ variant: 'accent' })} data-testid="add-site">Add a site</Link>} />
+      <PageHeader title={<>{c.name}{c.archived_at ? <Badge className="ml-2 align-middle" data-testid="archived-badge">archived</Badge> : null}</>} subtitle={c.kind === 'hoa' ? 'HOA' : `${c.kind[0]!.toUpperCase()}${c.kind.slice(1)}`} actions={ctx.role === 'viewer' ? null : <>
+        {c.archived_at ? null : <Link href={`/customers/new?customer=${c.id}`} className={buttonVariants({ variant: 'accent' })} data-testid="add-site">Add a site</Link>}
+        <ArchiveCustomer id={c.id} name={c.name} archived={Boolean(c.archived_at)} />
+      </>} />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <CustomerEditor customer={c} />
         <Card>
@@ -39,14 +42,15 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
       <Table>
         <thead><tr><Th>Site</Th><Th>Address</Th><Th>Area</Th><Th>Contract</Th></tr></thead>
         <tbody>
-          {sites.map((s) => {
-            const k = contracts.find((x) => x.site_id === s.id);
+          {[...sites].sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active))).map((s) => {
+            // The newest contract that's still in force or on offer; a void one says nothing about today.
+            const k = contracts.find((x) => x.site_id === s.id && x.status !== 'void');
             return (
-              <tr key={s.id}>
-                <Td><Link className="text-sky-800 underline" href={`/sites/${s.id}`}>{s.label}</Link></Td>
+              <tr key={s.id} className={s.active ? '' : 'text-slate-500'} data-testid="site-row" data-active={String(Boolean(s.active))}>
+                <Td><Link className="text-sky-800 underline" href={`/sites/${s.id}`}>{s.label}</Link>{s.active ? null : <Badge className="ml-2">retired</Badge>}</Td>
                 <Td>{s.address}</Td>
                 <Td>{s.area_confirmed_sqft ? `${Number(s.area_confirmed_sqft).toLocaleString()} sq ft` : s.area_estimate_sqft ? `~${Number(s.area_estimate_sqft).toLocaleString()} sq ft` : 'unavailable'}</Td>
-                <Td><Badge tone={k?.status === 'accepted' ? 'green' : 'amber'}>{k?.status ?? 'none'}</Badge></Td>
+                <Td><Badge tone={k?.status === 'accepted' ? 'green' : 'amber'}>{k?.status === 'sent' ? 'quote sent' : k?.status ?? 'none'}</Badge></Td>
               </tr>
             );
           })}

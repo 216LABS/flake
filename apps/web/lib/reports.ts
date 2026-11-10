@@ -1,4 +1,4 @@
-import { app_setting, eq, serviceDb, sql, type Tx } from '@flake/db';
+import { app_setting, eq, serviceDb, sql, type Conn, type Tx } from '@flake/db';
 import { hoursOf, saltOnHand, saltTons, shiftsFrom, type HoursRow, type StockEntry } from '@flake/core/reports';
 import { fmtLocal, localHm, zonedDayStart } from '@flake/core/time';
 
@@ -90,13 +90,17 @@ export async function stockEntries(tenantId: string): Promise<StockEntry[]> {
   return (row?.value?.entries ?? []) as StockEntry[];
 }
 
-/** Appends in one statement, so two people logging a delivery at once both count. */
-export async function addStockEntry(tenantId: string, entry: StockEntry) {
+/**
+ * Appends in one statement, so two people logging a delivery at once both count. An entry whose id is already there
+ * is not added again, so a retried delivery counts once. Pass a transaction to make it part of a bigger change.
+ */
+export async function addStockEntry(tenantId: string, entry: StockEntry, db: Conn = serviceDb()) {
   const key = stockKey(tenantId);
   const first = { entries: [entry] };
-  await serviceDb().execute(sql`
+  await db.execute(sql`
     insert into app_setting (key, value) values (${key}, ${JSON.stringify(first)}::jsonb)
-    on conflict (key) do update set value = jsonb_build_object('entries', coalesce(app_setting.value->'entries', '[]'::jsonb) || ${JSON.stringify([entry])}::jsonb)`);
+    on conflict (key) do update set value = jsonb_build_object('entries', coalesce(app_setting.value->'entries', '[]'::jsonb) || ${JSON.stringify([entry])}::jsonb)
+    where not coalesce(app_setting.value->'entries', '[]'::jsonb) @> ${JSON.stringify([{ id: entry.id }])}::jsonb`);
 }
 
 export async function removeStockEntry(tenantId: string, id: string) {

@@ -58,6 +58,23 @@ export function sumRange(buckets: HourBucket[], from: number, to: number): numbe
   return known.length ? round1(known.reduce((s, b) => s + b.v!, 0)) : null;
 }
 
+/**
+ * Sum over [from, to), with each hourly bucket counted for the part of its hour inside the range. A storm that starts
+ * at 9:40 gets a third of the 9:00 hour and none of the hour after it closes.
+ */
+export function sumOverlap(buckets: HourBucket[], from: number, to: number): number | null {
+  let total = 0;
+  let any = false;
+  for (const b of buckets) {
+    if (b.v === null) continue;
+    const inside = Math.min(b.t + HOUR, to) - Math.max(b.t, from);
+    if (inside <= 0) continue;
+    any = true;
+    total += (b.v * inside) / HOUR;
+  }
+  return any ? round1(total) : null;
+}
+
 /** First hour with snow in the event active at `at`; the event ends after 6 h of zero. Null hours don't count. */
 export function findOnset(buckets: HourBucket[], at: number): number | null {
   let onset: number | null = null;

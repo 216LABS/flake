@@ -3,7 +3,8 @@ export type Lang = 'en' | 'es';
 const en = {
   next_stop: 'Next stop', navigate: 'Navigate', arrive: 'Arrive', done: 'Done', problem: 'Problem', undo_last: 'Undo last',
   before_photo: 'Before photo', after_photo: 'After photo', photo_saved: 'Photo saved', depth: 'Snow depth', depth_required: 'Snow depth (needed on your first stop)',
-  services: 'Services', salt: 'Salt', of_done: '{d} of {n} done', saved: 'Saved on phone', sending: 'Sending', synced: 'Synced',
+  services: 'Services', salt: 'Salt', of_done: '{d} of {n} done', of_done_skipped: '{d} done, {s} skipped, of {n}', saved: 'Saved on phone', sending: 'Sending', synced: 'Synced',
+  no_service: 'Tick what you did here first. With nothing ticked, this visit can\'t be billed.', problem_note: 'What happened? (optional)', send_problem_kind: 'Send: {k}', priority_of: 'Priority {p} of 5 (1 goes first)',
   remaining: 'Remaining stops', here_arrive: "You're here. Arrive?", all_done: 'All stops done. Thanks.', blocked: 'Blocked', breakdown: 'Breakdown',
   skip: 'Skip', damage: 'Damage', other: 'Other', voice_note: 'Voice note', stop_recording: 'Stop recording', back: 'Back', send_problem: 'Send',
   link_dead_title: 'This link is no longer active', link_dead_body: 'Ask your dispatcher for a new link.', link_dead_sending: 'Your finished work is still being sent. Keep this page open until it says Synced.', service_plow: 'Plow', service_salt: 'Salt', service_walks: 'Walks', service_haul: 'Haul', no_after_photo: 'No after photo yet. This bill will be flagged for review.', window: 'Open by', priority: 'Priority', notes: 'Notes',
@@ -17,7 +18,8 @@ const en = {
 const es: typeof en = {
   next_stop: 'Siguiente parada', navigate: 'Navegar', arrive: 'Llegué', done: 'Terminado', problem: 'Problema', undo_last: 'Deshacer',
   before_photo: 'Foto antes', after_photo: 'Foto después', photo_saved: 'Foto guardada', depth: 'Profundidad de nieve', depth_required: 'Profundidad de nieve (requerida en la primera parada)',
-  services: 'Servicios', salt: 'Sal', of_done: '{d} de {n} listas', saved: 'Guardado en el teléfono', sending: 'Enviando', synced: 'Sincronizado',
+  services: 'Servicios', salt: 'Sal', of_done: '{d} de {n} listas', of_done_skipped: '{d} listas, {s} omitidas, de {n}', saved: 'Guardado en el teléfono', sending: 'Enviando', synced: 'Sincronizado',
+  no_service: 'Marca lo que hiciste aquí primero. Sin nada marcado, esta visita no se puede cobrar.', problem_note: '¿Qué pasó? (opcional)', send_problem_kind: 'Enviar: {k}', priority_of: 'Prioridad {p} de 5 (1 va primero)',
   remaining: 'Paradas restantes', here_arrive: 'Ya llegaste. ¿Marcar llegada?', all_done: 'Todas las paradas listas. Gracias.', blocked: 'Bloqueado', breakdown: 'Avería',
   skip: 'Omitir', damage: 'Daño', other: 'Otro', voice_note: 'Nota de voz', stop_recording: 'Detener', back: 'Atrás', send_problem: 'Enviar',
   link_dead_title: 'Este enlace ya no está activo', link_dead_body: 'Pide un enlace nuevo a tu despachador.', link_dead_sending: 'Tu trabajo terminado aún se está enviando. Mantén esta página abierta hasta que diga Sincronizado.', service_plow: 'Arado', service_salt: 'Sal', service_walks: 'Aceras', service_haul: 'Acarreo', no_after_photo: 'Aún no hay foto después. Esta factura se marcará para revisión.', window: 'Abrir antes de', priority: 'Prioridad', notes: 'Notas',

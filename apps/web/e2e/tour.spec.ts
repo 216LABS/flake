@@ -195,6 +195,9 @@ test('a real day', async ({ browser }) => {
   await l.getByTestId('problem').click();
   await shot(l, 'phone-driver-problem');
   await l.getByTestId('problem-blocked').click();
+  await l.getByTestId('problem-note').fill('Car parked across the entrance');
+  await shot(l, 'phone-driver-problem-note');
+  await l.getByTestId('problem-send').click();
 
   await page.reload();
   await shot(page, 'storm-board-midstorm', true);
@@ -227,8 +230,8 @@ test('a real day', async ({ browser }) => {
   await shot(page, 'messages-sent', true);
   await page.goto(`/storms/${stormId}`);
   if (await page.getByTestId('resolve-problem').count()) await page.getByTestId('resolve-problem').first().click();
-  page.once('dialog', (d) => void d.accept());
   await page.getByTestId('close-storm').click();
+  await page.getByTestId('confirm-yes').click();
   await page.waitForURL(/\/billing/);
   await page.goto(`/billing?storm=${stormId}`);
   await page.getByTestId('generate').click();

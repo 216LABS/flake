@@ -19,6 +19,7 @@ Use test data on production, or a staging deployment. Tick each box on both phon
 - [ ] **iPhone:** in the email, use the **code**, not the link. Type it in **Code from the email** and tap **Sign in**. You land on the dashboard inside the Home Screen app. (The link would open Safari, which keeps its own sign-in.)
 - [ ] **Android:** tap the link in the email. It opens the app signed in. Also try the code once.
 - [ ] A wrong code says "That code is wrong or has expired". An old code after a new email is sent says the same.
+- [ ] **A brand-new email** (never signed in before) also gets a code in its email, and the code works. That email is Supabase's Confirm signup template.
 
 ## 2. Turn on notifications
 
@@ -39,11 +40,15 @@ On the driver's phone (it can be the same phone):
 - [ ] Tap **Navigate**, then come back. Tap **Arrive** at the first stop.
 - [ ] Turn on **Airplane Mode**.
 - [ ] Take a **Before photo**, enter a snow depth, take an **After photo**, tap **Done**. The bar says **Saved on phone**.
-- [ ] Do the next stop the same way, still offline. Also report a **Problem** with a short voice note.
+- [ ] The services start ticked, with a check mark. Untick Plow: Done waits and says to tick what you did. Tick it again.
+- [ ] Do the next stop the same way, still offline. Also report a **Problem**: pick Blocked, type a short note, add a voice note, tap **Send**.
+- [ ] The location prompt appears on your first Navigate or Arrive, not when the page opens.
 - [ ] Close the app completely (swipe it away) and open it again from the Home Screen, still offline. The route and your finished stops are all still there.
 - [ ] Turn Airplane Mode off. The bar goes **Sending**, then **Synced**, without tapping anything.
 - [ ] On the office storm board, both stops show done with times from when you tapped, not when it synced. Each visit has both photos, once each. The problem shows with the voice note.
 - [ ] **Undo last** right after a Done reopens that stop, on the phone and on the board.
+- [ ] Skip a stop from the board. It asks first. The phone shows "2 done, 1 skipped, of 3", and so does the board.
+- [ ] Close the storm: the question says how many stops aren't done. Then **Reopen** it from the board: links work again.
 
 ## 4. A pin with a photo
 
@@ -57,7 +62,8 @@ On the driver's phone (it can be the same phone):
 
 - [ ] Customers, the customer, Records page: **Email it** or **Copy**. Open the link on a phone that isn't signed in.
 - [ ] It shows each visit from step 3 with times, services, depth and photos. Tap a photo: it opens full size.
-- [ ] **Ask for a visit** on a lot sends the office a notification (from step 2) and an email.
+- [ ] Send the customer a new quote from the site page. The records page shows **Quote waiting: review and sign**, and the link opens it.
+- [ ] **Ask for a visit** on a lot sends the office a notification (from step 2) and an email, and shows on the office dashboard under Customers asking for a visit.
 - [ ] Back in the office, **Make a new link**. The old link now says it's no longer active.
 
 ## 6. Salt order

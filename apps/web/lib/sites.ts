@@ -1,0 +1,14 @@
+import { and, eq, inArray, route_stop, run_stop, storm, storm_run, type Tx } from '@flake/db';
+
+/**
+ * A retired lot leaves its routes, and its unfinished stops on a running storm are skipped, so no truck is sent
+ * there. Visits already done stay on file.
+ */
+export async function takeSitesOffWork(tx: Tx, siteIds: string[]) {
+  if (!siteIds.length) return;
+  await tx.delete(route_stop).where(inArray(route_stop.site_id, siteIds));
+  const live = await tx.select({ id: storm_run.id }).from(storm_run).innerJoin(storm, eq(storm.id, storm_run.storm_id)).where(eq(storm.status, 'active'));
+  if (!live.length) return;
+  await tx.update(run_stop).set({ status: 'skipped', updated_at: new Date().toISOString() })
+    .where(and(inArray(run_stop.site_id, siteIds), inArray(run_stop.storm_run_id, live.map((r) => r.id)), inArray(run_stop.status, ['open', 'enroute', 'problem'])));
+}

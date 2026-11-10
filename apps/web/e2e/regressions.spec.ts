@@ -46,6 +46,7 @@ test('after reporting a Problem on site, the driver can get back in and finish',
   await page.getByTestId('depth-3').click();
   await page.getByTestId('problem').click();
   await page.getByTestId('problem-blocked').click();
+  await page.getByTestId('problem-send').click();
   await expect(page.getByTestId('stop-label')).toHaveText(label!);
   await page.getByTestId('arrive').click();
   await expect(page.getByTestId('onsite')).toBeVisible();

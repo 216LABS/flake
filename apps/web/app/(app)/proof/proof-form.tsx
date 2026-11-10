@@ -1,11 +1,10 @@
 'use client';
 
-import { fmtLocal, zonedDayStart } from '@flake/core/time';
+import { addDays, fmtLocal, zonedDayEnd, zonedDayStart } from '@flake/core/time';
 import { Button, Card, Input, Label, Select, Table, Td, Th } from '@flake/ui';
 import { useState } from 'react';
 import { api } from '@/lib/client';
 
-const DAY = 86400000;
 
 export function ProofForm({ sites, packets, preselect, tz }: { sites: { id: string; label: string; customer: string }[]; packets: any[]; preselect?: string; tz: string }) {
   const [siteId, setSiteId] = useState(preselect ?? sites[0]?.id ?? '');
@@ -42,8 +41,9 @@ export function ProofForm({ sites, packets, preselect, tz }: { sites: { id: stri
     setState('working');
     try {
       // These are the operator's calendar days. A 9 PM visit on the last day belongs in the range.
-      const start = new Date(zonedDayStart(mode === 'claim' ? claim : from, tz).getTime() - (mode === 'claim' ? 2 * DAY : 0));
-      const end = new Date(zonedDayStart(mode === 'claim' ? claim : to, tz).getTime() + (mode === 'claim' ? 3 * DAY : DAY) - 1000);
+      // Whole local days on both ends, so a DST day ends at 11:59:59 PM, not an hour early or late (issue 16).
+      const start = zonedDayStart(mode === 'claim' ? addDays(claim, -2) : from, tz);
+      const end = zonedDayEnd(mode === 'claim' ? addDays(claim, 2) : to, tz);
       const { id } = await api<{ id: string }>('/api/proof', { body: { siteId, from: start.toISOString(), to: end.toISOString() } });
       for (let i = 0; i < 90; i++) {
         const r = await api(`/api/proof/${id}`);

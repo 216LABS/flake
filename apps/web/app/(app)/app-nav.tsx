@@ -16,13 +16,13 @@ const NAV = [
   ['/settings', 'Settings', Settings],
 ] as const;
 
-const item = 'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors';
+const item = 'flex flex-col items-center gap-0.5 rounded-md px-1 py-1.5 text-[11px] font-medium transition-colors md:flex-row md:gap-2.5 md:px-2.5 md:py-2 md:text-sm';
 
-/** A sidebar on a desk, and one line that scrolls sideways on a phone. */
+/** A sidebar on a desk. On a phone, every page in two rows of four, so nothing hides off the edge (issue 39). */
 export function AppNav({ showDev }: { showDev: boolean }) {
   const path = usePathname();
   return (
-    <nav aria-label="Main" className="order-last flex w-full gap-1 overflow-x-auto whitespace-nowrap md:order-none md:flex-col md:overflow-visible">
+    <nav aria-label="Main" className="order-last grid w-full grid-cols-4 gap-1 whitespace-nowrap md:order-none md:flex md:flex-col">
       {NAV.map(([href, label, Icon]) => {
         const here = path === href || path.startsWith(`${href}/`);
         return (

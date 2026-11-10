@@ -6,7 +6,7 @@ export default function Privacy() {
   return (
     <article className="mx-auto max-w-3xl space-y-4 px-4 py-12 text-slate-800">
       <h1 className="text-3xl font-bold text-slate-900">Privacy Policy</h1>
-      <p className="text-sm text-slate-600">Draft for early testing.</p>
+      <p className="text-sm text-slate-600">Last updated November 10, 2026.</p>
       <h2 className="text-xl font-semibold">What we collect</h2>
       <p>Account details for plow company staff; customer and site details that plow companies enter; visit records including times, photos, salt and location; messages sent through Flake; and payment references from Stripe. Card and bank numbers go directly to Stripe, and Flake never stores them.</p>
       <h2 className="text-xl font-semibold">Driver location</h2>
