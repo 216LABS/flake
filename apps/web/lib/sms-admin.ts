@@ -112,3 +112,22 @@ export async function handleInboundSms(to: string, from: string, body: string): 
   const reply = kind === 'help' ? renderTemplate('help', { company: t.name, phone: t.contact_phone ?? 'your dispatcher' }) : null;
   return { kind, reply };
 }
+
+/**
+ * Asks Twilio where each pending toll-free verification stands, so texting turns on even if Twilio's status webhook
+ * never arrives. Runs with the 15 minute reports cron; a missed or doubled run changes nothing.
+ */
+export async function checkTollFreeStatuses() {
+  const { sms } = await getProviders();
+  if (!sms.tollFreeStatus) return { checked: 0 };
+  const pending = await serviceDb().select({ id: tenant.id, v: tenant.sms_verification }).from(tenant).where(eq(tenant.sms_status, 'pending'));
+  let checked = 0;
+  for (const t of pending) {
+    const id = (t.v as { twilio_verification_id?: string } | null)?.twilio_verification_id;
+    if (!id) continue;
+    const now = await sms.tollFreeStatus(id).catch(() => null);
+    checked++;
+    if (now && now.status !== 'pending') await setTollFreeStatus({ tenantId: t.id }, now.status, now.reason);
+  }
+  return { checked };
+}

@@ -6,8 +6,11 @@ import { getSetting } from '@/lib/providers';
 
 export const dynamic = 'force-dynamic';
 
-/** The background worker runs every minute in production. Five missed runs means texts and bills are stuck. */
-const WORKER_LATE_MIN = 5;
+/**
+ * pg_cron calls the worker every 2 minutes in production, and a few calls fail in transit (see docs/DEPLOY.md). Two
+ * misses in a row are normal enough; three means something is really stuck.
+ */
+const WORKER_LATE_MIN = 7;
 /** A job that could have run this long ago and still hasn't means the queue is backed up. */
 const QUEUE_LATE_MIN = 15;
 

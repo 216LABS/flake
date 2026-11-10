@@ -10,7 +10,7 @@ export async function POST(req: Request) {
   const params = Object.fromEntries((await req.formData()).entries()) as Record<string, string>;
   const { sms } = await getProviders();
   const url = `${process.env.TWILIO_WEBHOOK_BASE_URL ?? baseUrl()}/api/webhooks/twilio/inbound`;
-  if (!sms.verifyWebhook(url, params, req.headers.get('x-twilio-signature'))) return xml('', 403);
+  if (!(await sms.verifyWebhook(url, params, req.headers.get('x-twilio-signature')))) return xml('', 403);
   const { reply } = await handleInboundSms(params.To ?? '', params.From ?? '', params.Body ?? '');
   return xml(reply ? `<Message>${esc(reply)}</Message>` : '');
 }

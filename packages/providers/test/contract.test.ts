@@ -5,6 +5,8 @@ import { expandSeries, sumRange, toInches } from '@flake/core/trigger';
 import { buildManifest } from '@flake/core/proof';
 import { LiveEmail, LiveGeocoder, LivePush, LiveSms, LiveWeather, MockEmail, MockFootprints, MockGeocoder, MockOsm, MockParcels, MockPayments, MockSms, MockTiles, MockWeather, countyParcels, createProviders, nearestValidCell, nohrscCellToInches, nohrscUrl, signMockWebhook, signTwilio, MOCK_TWILIO_TOKEN, type EmailProvider, type Geocoder, type PaymentsProvider, type SmsProvider, type WeatherProvider } from '../src/index';
 import { pdfSafe, renderContractPdf, renderProofPdf } from '../src/pdf';
+import { LivePayments } from '../src/live/payments';
+import Stripe from 'stripe';
 
 const live = process.env.LIVE_PROVIDER_TESTS === '1';
 const POINT = { lat: 41.4819, lon: -81.7982 };
@@ -413,4 +415,57 @@ describe('pdf', () => {
     const pdf = await renderContractPdf({ company: 'A', customer: 'B', site: 'C', season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 100 } }], terms: 'T', disclaimer: 'Not legal advice.' });
     expect(pdf.subarray(0, 4).toString()).toBe('%PDF');
   }, 30000);
+});
+
+describe('go-live wiring for Twilio and Stripe', () => {
+  const MAIN = `AC${'a'.repeat(32)}`;
+  const SUB = `AC${'b'.repeat(32)}`;
+  const fakeTwilio = (routes: Record<string, unknown>) => (async (u: any) => {
+    const url = String(u);
+    const hit = Object.keys(routes).find((k) => url.includes(k));
+    return hit ? new Response(JSON.stringify(routes[hit])) : new Response(JSON.stringify({ message: 'not found' }), { status: 404 });
+  }) as typeof fetch;
+
+  it('a company number signs with its subaccount token, and that verifies', async () => {
+    const sms = new LiveSms(MAIN, 'main-token', fakeTwilio({ [`/Accounts/${SUB}.json`]: { auth_token: 'sub-token', owner_account_sid: MAIN } }));
+    const params = { AccountSid: SUB, Body: 'STOP', From: '+12165550100', To: '+18335550100' };
+    expect(await sms.verifyWebhook('https://app/api/webhooks/twilio/inbound', params, signTwilio('sub-token', 'https://app/api/webhooks/twilio/inbound', params))).toBe(true);
+    expect(await sms.verifyWebhook('https://app/api/webhooks/twilio/inbound', params, signTwilio('guess', 'https://app/api/webhooks/twilio/inbound', params))).toBe(false);
+    expect(await sms.verifyWebhook('https://app/x', { Body: 'hi' }, signTwilio('main-token', 'https://app/x', { Body: 'hi' }))).toBe(true);
+  });
+
+  it('a made-up account id finds no token', async () => {
+    const sms = new LiveSms(MAIN, 'main-token', fakeTwilio({}));
+    const params = { AccountSid: `AC${'c'.repeat(32)}`, Body: 'STOP' };
+    expect(await sms.verifyWebhook('https://app/x', params, signTwilio('anything', 'https://app/x', params))).toBe(false);
+  });
+
+  it('toll-free verification gets the number SID, and its status can be read back', async () => {
+    let sent: URLSearchParams | null = null;
+    const fetchImpl = (async (u: any, init: any) => {
+      const url = String(u);
+      if (url.includes('IncomingPhoneNumbers.json?PhoneNumber=')) return new Response(JSON.stringify({ incoming_phone_numbers: [{ sid: 'PN123' }] }));
+      if (url.endsWith('/Tollfree/Verifications') && init?.method === 'POST') {
+        sent = new URLSearchParams(init.body);
+        return new Response(JSON.stringify({ sid: 'HH1' }));
+      }
+      if (url.includes('/Tollfree/Verifications/HH1')) return new Response(JSON.stringify({ status: 'TWILIO_REJECTED', rejection_reason: 'Opt-in unclear' }));
+      return new Response('{}', { status: 404 });
+    }) as typeof fetch;
+    const sms = new LiveSms(MAIN, 'main-token', fetchImpl);
+    const payload = { legal_name: 'Plow LLC', ein: '12-3456789', address: { line1: '1 Main', city: 'Lakewood', state: 'OH', zip: '44107' }, website: 'https://x', contact_name: 'Pat Doe', contact_email: 'p@x.test', contact_phone: '+12165550100', use_case: 'u', expected_monthly_volume: 1000, opt_in_description: 'o', opt_in_screenshot_url: 'https://x/sms', sample_messages: ['a'] };
+    await sms.submitTollFreeVerification(SUB, '+18335550100', payload, 'https://app');
+    expect(sent!.get('TollfreePhoneNumberSid')).toBe('PN123');
+    expect(await sms.tollFreeStatus('HH1')).toEqual({ status: 'rejected', reason: 'Opt-in unclear' });
+  });
+
+  it('Stripe events verify with either the platform or the Connect endpoint secret', () => {
+    const p = new LivePayments('sk_test_x', 'pk_test_x', ['whsec_platform', 'whsec_connect'], {});
+    const body = JSON.stringify({ id: 'evt_1', type: 'account.updated', data: { object: {} } });
+    const header = (secret: string) => Stripe.webhooks.generateTestHeaderString({ payload: body, secret });
+    expect(p.verifyWebhook(body, header('whsec_platform')).id).toBe('evt_1');
+    expect(p.verifyWebhook(body, header('whsec_connect')).id).toBe('evt_1');
+    expect(() => p.verifyWebhook(body, header('whsec_other'))).toThrow();
+    expect(() => new LivePayments('sk_test_x', null, ['', ''], {}).verifyWebhook(body, header('whsec_platform'))).toThrow(/not set/);
+  });
 });

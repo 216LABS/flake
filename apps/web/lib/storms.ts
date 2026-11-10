@@ -305,9 +305,12 @@ export async function closeStorm(ctx: Ctx, stormId: string, force: boolean) {
 
 export async function revokeRunLink(ctx: Ctx, runId: string) {
   const link = newLink();
-  const [old] = await withUser(ctx.userId, (tx) => tx.select({ hash: storm_run.link_token_hash }).from(storm_run).where(eq(storm_run.id, runId)));
+  const [old] = await withUser(ctx.userId, (tx) => tx.select({ hash: storm_run.link_token_hash, crewId: storm_run.crew_id }).from(storm_run).where(eq(storm_run.id, runId)));
+  if (!old) throw new HttpError(404, 'Run not found');
+  // A new link is live again. For someone who left the crew, that would undo taking their access away.
+  if (old.crewId && !(await withUser(ctx.userId, (tx) => activeCrew(tx, old.crewId)))) throw new HttpError(422, 'That driver is no longer on your crew. Assign someone else first.', 'inactive_crew');
   // The phone holding the old link may have finished work it hasn't sent yet. See resolveToken.
-  if (old) await setSetting(retiredLinkKey(old.hash), { runId, at: new Date().toISOString() });
+  await setSetting(retiredLinkKey(old.hash), { runId, at: new Date().toISOString() });
   return withUser(ctx.userId, async (tx) => {
     const [r] = await tx.update(storm_run).set({ link_token_hash: link.hash, link_token_enc: link.enc, link_revoked_at: null }).where(eq(storm_run.id, runId)).returning();
     if (!r) throw new HttpError(404, 'Run not found');

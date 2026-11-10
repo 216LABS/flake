@@ -28,7 +28,7 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
   const [closePrompt, setClosePrompt] = useState<string | null>(null);
   const [showMap, setShowMap] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
-  const [linkFor, setLinkFor] = useState<{ name: string; link: string; qr: string } | null>(null);
+  const [linkFor, setLinkFor] = useState<{ runId: string; name: string; link: string; qr: string } | null>(null);
   const [calloutTime, setCalloutTime] = useState('');
   const [calloutSent, setCalloutSent] = useState<string | null>(null);
 
@@ -90,7 +90,18 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
   const elapsed = since(live.storm.started_at, live.storm.closed_at ? Date.parse(live.storm.closed_at) : now);
 
   const showLink = async (r: any) => {
-    setLinkFor({ name: r.crew?.name ?? r.name, link: r.link, qr: await QRCode.toDataURL(r.link, { margin: 1, width: 240 }) });
+    setLinkFor({ runId: r.id, name: r.crew?.name ?? r.name, link: r.link, qr: await QRCode.toDataURL(r.link, { margin: 1, width: 240 }) });
+  };
+  /** A lost or forwarded phone: the old link stops at once, and work already done on it still syncs. */
+  const replaceLink = async () => {
+    if (!linkFor || !confirm(`Turn off ${linkFor.name}'s current link and make a new one? Send them the new link or show them this QR.`)) return;
+    setError(null);
+    try {
+      const out = await api<{ link: string }>(`/api/runs/${linkFor.runId}/revoke`, { method: 'POST' });
+      setLinkFor({ ...linkFor, link: out.link, qr: await QRCode.toDataURL(out.link, { margin: 1, width: 240 }) });
+    } catch (e) {
+      setError((e as Error).message);
+    }
   };
 
   return (
@@ -183,8 +194,9 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
             <div className="min-w-0 flex-1">
               <p className="font-medium">{linkFor.name}&apos;s route link</p>
               <Input readOnly value={linkFor.link} data-testid="run-link" className="mt-1" />
-              <div className="mt-2 flex gap-2">
+              <div className="mt-2 flex flex-wrap gap-2">
                 <Button size="sm" onClick={() => navigator.clipboard.writeText(linkFor.link)}>Copy link</Button>
+                {editable ? <Button size="sm" variant="outline" data-testid="replace-link" onClick={() => void replaceLink()}>New link</Button> : null}
                 <Button size="sm" variant="ghost" onClick={() => setLinkFor(null)}>Close</Button>
               </div>
             </div>

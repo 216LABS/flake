@@ -1,4 +1,4 @@
-import { and, crew_member, desc, eq, job, message_log, serviceDb, sql } from '@flake/db';
+import { and, crew_member, desc, eq, job, message_log, serviceDb, sql, tenant } from '@flake/db';
 import { fmtLocal } from '@flake/core/time';
 import { inFreeSeason } from '@flake/core/fees';
 import { DEFAULT_RATE_CARD, type RateCard } from '@flake/core/quote';
@@ -13,7 +13,7 @@ import { breakerOpen, breakerState } from '@/lib/weather';
 import { getProviders, getSetting } from '@/lib/providers';
 import { listTeam } from '@/lib/team';
 import { PushPanel } from './push-panel';
-import { canSeeUsage, deploymentUsage } from '@/lib/usage';
+import { canSeeUsage, cronCalls, deploymentUsage } from '@/lib/usage';
 import { BusinessForm, CompanyForm, CrewPanel, PaymentsPanel, PlanPanel, RateCardForm, RetryJob, SmsSubmit, TeamPanel } from './panels';
 
 export const metadata = { title: 'Settings' };
@@ -46,7 +46,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       {tab === 'crew' ? <fieldset disabled={readOnly} className="contents"><CrewPanel canText={canTextFrom(ctx.tenant)} crew={JSON.parse(JSON.stringify(await asUser(ctx, (tx) => tx.select().from(crew_member).orderBy(crew_member.name))))} /></fieldset> : null}
       {tab === 'alerts' ? <PushPanel publicKey={(await getProviders()).push.publicKey} /> : null}
       {allowed && tab === 'team' ? <TeamPanel members={await listTeam(ctx.tenantId)} me={ctx.userId} /> : null}
-      {allowed && tab === 'payments' ? <PaymentsPanel connected={Boolean(t.stripe_account_id)} enabled={Boolean(t.stripe_charges_enabled)} /> : null}
+      {allowed && tab === 'payments' ? <PaymentsPanel connected={Boolean(t.stripe_account_id)} enabled={await chargesEnabled(t)} /> : null}
       {allowed && tab === 'sms' ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card>
@@ -76,6 +76,18 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   );
 }
 
+/**
+ * Coming back from Stripe onboarding, the webhook that says charges are on can lag or be missing. Ask Stripe directly
+ * while it still says off, and save what it says, so the owner isn't left looking at a stale "not enabled".
+ */
+async function chargesEnabled(t: { id: string; stripe_account_id: string | null; stripe_charges_enabled: boolean | null }) {
+  if (t.stripe_charges_enabled || !t.stripe_account_id) return Boolean(t.stripe_charges_enabled);
+  const { payments } = await getProviders();
+  const on = await payments.chargesEnabled?.(t.stripe_account_id).catch(() => false);
+  if (on) await serviceDb().update(tenant).set({ stripe_charges_enabled: true }).where(eq(tenant.id, t.id));
+  return Boolean(on);
+}
+
 /** Dead letters and weather poller health. The job table is server-only, so this filters by tenant explicitly. */
 async function SystemTab(tenantId: string, tz: string, email: string | null, canRetry: boolean) {
   const db = serviceDb();
@@ -86,6 +98,7 @@ async function SystemTab(tenantId: string, tz: string, email: string | null, can
   const runs = (await getSetting<string[]>('worker.runs')) ?? [];
   const gaps = runs.slice(1).map((at, i) => Math.round((Date.parse(at) - Date.parse(runs[i]!)) / 1000));
   const usage = canSeeUsage(email) ? await deploymentUsage() : null;
+  const calls = canSeeUsage(email) ? await cronCalls() : null;
   const messages = await db.select().from(message_log).where(eq(message_log.tenant_id, tenantId)).orderBy(desc(message_log.created_at)).limit(30);
   return (
     <div className="space-y-4">
@@ -102,6 +115,18 @@ async function SystemTab(tenantId: string, tz: string, email: string | null, can
         <p className="mt-1 text-sm">Jobs queued for your company: {queued}</p>
         <p className="mt-1 text-sm" data-testid="worker-runs">{runs.length ? `Background worker last ran ${fmtLocal(runs[runs.length - 1]!, tz)}.${gaps.length ? ` Seconds between recent runs: ${gaps.join(', ')}.` : ''}` : 'Background worker: no scheduled runs recorded yet.'}</p>
       </Card>
+      {canSeeUsage(email) ? (
+        <Card className="max-w-2xl" data-testid="cron-calls">
+          <h2 className="font-semibold">Scheduled calls</h2>
+          {calls ? (
+            <>
+              <p className="mt-1 text-sm">{calls.failed ? `${calls.failed} of ${calls.total}` : `None of ${calls.total}`} calls from the database scheduler failed in about the last 6 hours.{calls.total && calls.failed / calls.total > 0.2 ? ' That is high: check the app is up and the Vault app_base_url is right.' : ''}</p>
+              {calls.last_error ? <p className="mt-1 text-xs text-slate-600">Last failure{calls.last_failed_at ? ` ${fmtLocal(calls.last_failed_at, tz)}` : ''}: {calls.last_error}</p> : null}
+              <p className="mt-1 text-xs text-slate-600">Every scheduled task is safe to miss once: the next call picks up the work.</p>
+            </>
+          ) : <p className="mt-1 text-sm text-slate-600">Not available here: the scheduler&apos;s log can&apos;t be read from this deployment.</p>}
+        </Card>
+      ) : null}
       {isPlatformAdmin(email) && (await saltOrderingReady()) ? (
         <Card className="max-w-2xl">
           <h2 className="font-semibold">216LABS</h2>

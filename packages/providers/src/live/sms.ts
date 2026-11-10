@@ -1,8 +1,13 @@
+import { timingSafeEqual } from 'node:crypto';
 import { signTwilio } from '../mock/sms';
+
+const safeEqual = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 import type { SmsProvider, SmsSend, TollFreePayload } from '../types';
 
 /** Twilio REST over fetch, one subaccount per tenant (ADDENDUM_SMS section 1). */
 export class LiveSms implements SmsProvider {
+  /** Subaccount auth tokens, looked up once each. A company's number belongs to its subaccount. */
+  private subTokens = new Map<string, string | null>();
   constructor(private sid: string, private token: string, private fetchImpl: typeof fetch = fetch) {}
 
   private auth(sid = this.sid, token = this.token) {
@@ -39,8 +44,19 @@ export class LiveSms implements SmsProvider {
     return { subaccountSid: sub.sid as string, sender: number };
   }
 
+  /** The number's PN... SID, which is what toll-free verification asks for, not the number itself. */
+  private async numberSid(subaccountSid: string, number: string) {
+    if (number.startsWith('PN')) return number;
+    const res = await this.fetchImpl(`https://api.twilio.com/2010-04-01/Accounts/${subaccountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(number)}`, { headers: { Authorization: this.auth() } });
+    const body = (await res.json()) as { incoming_phone_numbers?: { sid: string }[]; message?: string };
+    const sid = body.incoming_phone_numbers?.[0]?.sid;
+    if (!res.ok || !sid) throw new Error(`Twilio ${res.status}: could not find ${number} on this company's account`);
+    return sid;
+  }
+
   /** [T] Field names follow Twilio's Toll-Free Verification API; confirm against current docs at go-live. */
-  async submitTollFreeVerification(_subaccountSid: string, sender: string, p: TollFreePayload, webhookBase: string) {
+  async submitTollFreeVerification(subaccountSid: string, sender: string, p: TollFreePayload, webhookBase: string) {
+    const numberSid = await this.numberSid(subaccountSid, sender);
     const body = await this.post('https://messaging.twilio.com/v1/Tollfree/Verifications', {
       BusinessName: p.legal_name,
       BusinessRegistrationNumber: p.ein,
@@ -62,13 +78,37 @@ export class LiveSms implements SmsProvider {
       OptInImageUrls: p.opt_in_screenshot_url,
       OptInType: 'WEB_FORM',
       MessageVolume: String(p.expected_monthly_volume),
-      TollfreePhoneNumberSid: sender,
+      TollfreePhoneNumberSid: numberSid,
       ExternalReferenceId: webhookBase,
     });
     return { id: body.sid as string, status: 'pending' as const };
   }
 
-  verifyWebhook(url: string, params: Record<string, string>, signature: string | null) {
-    return signature === signTwilio(this.token, url, params);
+  /**
+   * Twilio signs with the auth token of the account that owns the number. Each company's number lives on its own
+   * subaccount, so its STOP replies and delivery reports carry that subaccount's signature, not the main one.
+   */
+  async verifyWebhook(url: string, params: Record<string, string>, signature: string | null) {
+    if (!signature) return false;
+    if (safeEqual(signature, signTwilio(this.token, url, params))) return true;
+    const sub = params.AccountSid;
+    if (!sub || sub === this.sid || !/^AC[0-9a-f]{32}$/.test(sub)) return false;
+    if (!this.subTokens.has(sub)) {
+      // Only subaccounts of this main account answer to its credentials, so a made-up AccountSid finds nothing.
+      const res = await this.fetchImpl(`https://api.twilio.com/2010-04-01/Accounts/${sub}.json`, { headers: { Authorization: this.auth() } });
+      const body = res.ok ? ((await res.json()) as { auth_token?: string; owner_account_sid?: string }) : null;
+      this.subTokens.set(sub, body?.auth_token && (!body.owner_account_sid || body.owner_account_sid === this.sid) ? body.auth_token : null);
+    }
+    const token = this.subTokens.get(sub);
+    return Boolean(token && safeEqual(signature, signTwilio(token, url, params)));
+  }
+
+  async tollFreeStatus(verificationId: string) {
+    const res = await this.fetchImpl(`https://messaging.twilio.com/v1/Tollfree/Verifications/${encodeURIComponent(verificationId)}`, { headers: { Authorization: this.auth() } });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { status?: string; rejection_reason?: string | null };
+    if (body.status === 'TWILIO_APPROVED') return { status: 'approved' as const, reason: null };
+    if (body.status === 'TWILIO_REJECTED') return { status: 'rejected' as const, reason: body.rejection_reason ?? 'Rejected by Twilio' };
+    return { status: 'pending' as const, reason: null };
   }
 }

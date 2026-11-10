@@ -69,6 +69,16 @@ export function SiteEditor({ site, pins, layers }: { site: any; pins: any[]; lay
                   }
                 }} />
               </label>
+              <Button size="sm" variant="ghost" className="px-2" data-testid={`pin-remove-${p.id}`} onClick={async () => {
+                // Drivers see every pin on their route, so a misplaced one has to be removable.
+                if (!confirm(`Remove this ${p.kind} pin? Drivers stop seeing it.`)) return;
+                try {
+                  await api(`/api/pins/${p.id}`, { method: 'DELETE' });
+                  router.refresh();
+                } catch (err) {
+                  setMsg((err as Error).message);
+                }
+              }}>Remove</Button>
             </li>
           ))}
         </ul>

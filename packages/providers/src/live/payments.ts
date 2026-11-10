@@ -9,7 +9,14 @@ import type { ChargeResult, PaymentsProvider, StripeEventLike } from '../types';
 export class LivePayments implements PaymentsProvider {
   isMock = false;
   private stripe: Stripe;
-  constructor(key: string, private publishableKey: string | null, private webhookSecret: string, private prices: { monthly?: string; yearly?: string }) {
+  /**
+   * Stripe signs each webhook endpoint with its own secret, and Connect needs two endpoints: one for this platform's own
+   * events (Pro subscriptions) and one for events on the plow companies' accounts (their charges, invoices and
+   * onboarding). A delivery is genuine if any one of the secrets verifies it.
+   */
+  private webhookSecrets: string[];
+  constructor(key: string, private publishableKey: string | null, webhookSecrets: string | string[], private prices: { monthly?: string; yearly?: string }) {
+    this.webhookSecrets = (Array.isArray(webhookSecrets) ? webhookSecrets : [webhookSecrets]).flatMap((x) => x.split(',')).map((x) => x.trim()).filter(Boolean);
     this.stripe = new Stripe(key);
   }
 
@@ -26,6 +33,10 @@ export class LivePayments implements PaymentsProvider {
   async createAccountLink(accountId: string, returnUrl: string, refreshUrl: string) {
     const link = await this.stripe.accountLinks.create({ account: accountId, return_url: returnUrl, refresh_url: refreshUrl, type: 'account_onboarding' });
     return { url: link.url };
+  }
+
+  async chargesEnabled(accountId: string) {
+    return Boolean((await this.stripe.accounts.retrieve(accountId)).charges_enabled);
   }
 
   async ensureCustomer(accountId: string, input: { existingId?: string | null; email?: string | null; name: string; tenantId: string; customerId: string }) {
@@ -125,6 +136,15 @@ export class LivePayments implements PaymentsProvider {
   }
 
   verifyWebhook(rawBody: string, signature: string | null): StripeEventLike {
-    return this.stripe.webhooks.constructEvent(rawBody, signature ?? '', this.webhookSecret) as unknown as StripeEventLike;
+    if (!this.webhookSecrets.length) throw new Error('STRIPE_WEBHOOK_SECRET is not set');
+    let last: unknown;
+    for (const secret of this.webhookSecrets) {
+      try {
+        return this.stripe.webhooks.constructEvent(rawBody, signature ?? '', secret) as unknown as StripeEventLike;
+      } catch (err) {
+        last = err;
+      }
+    }
+    throw last;
   }
 }

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
-import { and, closeDb, contract, eq, run_stop, serviceDb, site, storm } from '@flake/db';
+import { and, closeDb, contract, crew_member, eq, run_stop, serviceDb, site, storm } from '@flake/db';
 import { proofRequest } from '@flake/contracts';
 import { currentSeason } from '@flake/core/time';
 import { billInstallments, generateDrafts } from '@/lib/billing';
@@ -9,7 +9,7 @@ import { appEnv } from '@/lib/env';
 import { portalData } from '@/lib/portal';
 import { acceptQuote, createQuote } from '@/lib/quotes';
 import { period } from '@/lib/reports';
-import { closeStorm, createStorm, publishStorm } from '@/lib/storms';
+import { closeStorm, createStorm, publishStorm, revokeRunLink } from '@/lib/storms';
 import { decryptToken } from '@/lib/tokens';
 import { ctxOf, makeWorld } from './helpers';
 
@@ -132,5 +132,15 @@ describe('a renewal signed for next winter', () => {
     await closeStorm(ctx, out.storm.id, true);
     const drafts = await generateDrafts(ctx, out.storm.id);
     expect(drafts.find((d) => d.draft.customer_id === x.customerIds[0])!.draft.subtotal_cents).toBe(6500);
+  });
+});
+
+describe('replacing a route link', () => {
+  it('is refused for a driver who left the crew, so it cannot give them access back', async () => {
+    const x = await makeWorld();
+    const ctx = ctxOf(x);
+    const out = await createStorm(ctx, { name: 'Left', routeIds: [x.routeId], crewAssignments: {} });
+    await serviceDb().update(crew_member).set({ active: false }).where(eq(crew_member.id, x.crewId));
+    await expect(revokeRunLink(ctx, out.runs[0]!.id)).rejects.toMatchObject({ status: 422 });
   });
 });

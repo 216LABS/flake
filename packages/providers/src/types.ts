@@ -97,7 +97,9 @@ export interface SmsProvider {
   provisionTenant(friendlyName: string, webhookBase: string): Promise<{ subaccountSid: string; sender: string }>;
   submitTollFreeVerification(subaccountSid: string, sender: string, payload: TollFreePayload, webhookBase: string): Promise<{ id: string; status: 'pending' | 'approved' | 'rejected' }>;
   /** Validates X-Twilio-Signature against the full URL and form params. */
-  verifyWebhook(url: string, params: Record<string, string>, signature: string | null): boolean;
+  verifyWebhook(url: string, params: Record<string, string>, signature: string | null): boolean | Promise<boolean>;
+  /** Where a toll-free verification stands now, or null when this provider can't say. */
+  tollFreeStatus?(verificationId: string): Promise<{ status: 'pending' | 'approved' | 'rejected'; reason: string | null } | null>;
 }
 
 export interface EmailSend {
@@ -131,6 +133,8 @@ export interface ChargeResult {
 export interface PaymentsProvider {
   createConnectedAccount(input: { email: string | null; businessName: string; tenantId: string }): Promise<{ accountId: string }>;
   createAccountLink(accountId: string, returnUrl: string, refreshUrl: string): Promise<{ url: string }>;
+  /** Whether a connected account can take charges yet, straight from Stripe. Optional: the mock learns it by event. */
+  chargesEnabled?(accountId: string): Promise<boolean>;
   ensureCustomer(accountId: string, input: { existingId?: string | null; email?: string | null; name: string; tenantId: string; customerId: string }): Promise<{ customerId: string }>;
   createSetupIntent(accountId: string, customerId: string, metadata: Record<string, string>): Promise<{ id: string; clientSecret: string; publishableKey: string | null; mock: boolean }>;
   chargeOffSession(accountId: string, input: { customerId: string; paymentMethodId: string; amountCents: number; feeCents: number; idempotencyKey: string; description: string; metadata: Record<string, string> }): Promise<ChargeResult>;

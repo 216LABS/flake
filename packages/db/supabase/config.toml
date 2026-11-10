@@ -51,6 +51,11 @@ double_confirm_changes = false
 enable_confirmations = false
 max_frequency = "1s"
 
+# The code matters on iPhone: a Home Screen app doesn't share sign-in with Safari, where the link opens.
+[auth.email.template.magic_link]
+subject = "Your Flake sign-in"
+content_path = "./supabase/templates/magic_link.html"
+
 [auth.rate_limit]
 email_sent = 1000
 sign_in_sign_ups = 1000

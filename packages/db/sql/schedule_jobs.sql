@@ -13,7 +13,8 @@ begin
     create extension pg_cron with schema pg_catalog;
   end if;
   if not exists (select 1 from pg_extension where extname = 'pg_net') then
-    create extension pg_net;
+    -- In extensions, not public (Supabase advisor 0014). Its functions live in the net schema either way.
+    create extension pg_net schema extensions;
   end if;
 end
 $ext$;
@@ -57,7 +58,7 @@ begin
   for spec in
     select *
     from (values
-      ('flake-jobs'::text, '* * * * *'::text, '/api/cron/jobs'::text, 60000),
+      ('flake-jobs'::text, '*/2 * * * *'::text, '/api/cron/jobs'::text, 15000),
       ('flake-late-check', '*/5 * * * *', '/api/cron/late-check', 30000),
       ('flake-weather', '*/15 * * * *', '/api/cron/weather', 30000),
       ('flake-reports', '*/15 * * * *', '/api/cron/reports', 30000),

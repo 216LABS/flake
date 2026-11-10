@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   const bodyHash = new URL(req.url).searchParams.get('bodySHA256');
   if (contentJson && (!bodyHash || bodyHash !== createHash('sha256').update(raw).digest('hex'))) return new Response('Forbidden', { status: 403 });
   const signedUrl = contentJson ? `${url}?bodySHA256=${bodyHash}` : url;
-  if (!sms.verifyWebhook(signedUrl, contentJson ? {} : params, req.headers.get('x-twilio-signature'))) return new Response('Forbidden', { status: 403 });
+  if (!(await sms.verifyWebhook(signedUrl, contentJson ? {} : params, req.headers.get('x-twilio-signature')))) return new Response('Forbidden', { status: 403 });
   const id = params.VerificationSid ?? params.sid;
   const status = params.Status ?? params.status;
   if (id && status === 'TWILIO_APPROVED') await setTollFreeStatus({ verificationId: id }, 'approved', null);

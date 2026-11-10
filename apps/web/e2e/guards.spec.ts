@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { createClient } from '@supabase/supabase-js';
 import { login, sql, startStorm } from './helpers';
 
 test('a signed contract can be voided but never edited or pulled back to draft', async ({ page }) => {
@@ -112,4 +113,48 @@ test('another pass and closing a storm both ask first', async ({ page }) => {
   const [s] = await sql`select status from storm where id = ${id}`;
   expect(s!.status).toBe('active');
   await page.request.post(`/api/storms/${id}/close`, { data: { force: true } });
+});
+
+test('signing in with the code from the email works, for a Home Screen app that the link would miss', async ({ page }) => {
+  const email = `code-${Date.now()}@flake.test`;
+  const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
+  await admin.auth.admin.createUser({ email, email_confirm: true });
+  await page.goto('/login');
+  await page.getByTestId('email').fill(email);
+  await page.getByTestId('send-link').click();
+  await expect(page.getByTestId('link-sent')).toBeVisible();
+  await page.getByTestId('otp-code').fill('000000');
+  await page.getByTestId('otp-verify').click();
+  await expect(page.getByTestId('login-error')).toContainText('wrong or has expired');
+  // The code the email would carry. Making it replaces the one just sent, as a second email would.
+  const { data } = await admin.auth.admin.generateLink({ type: 'magiclink', email });
+  await page.getByTestId('otp-code').fill(data.properties!.email_otp);
+  await page.getByTestId('otp-verify').click();
+  await page.waitForURL('**/onboarding');
+});
+
+test('the board can replace a route link, and the old one stops at once', async ({ page }) => {
+  await login(page);
+  const { id, runs } = await startStorm(page.request, `Lost phone ${Date.now()}`, ['Rocky River']);
+  const oldToken = new URL(runs[0]!.link).pathname.split('/')[2]!;
+  await page.goto(`/storms/${id}`);
+  await page.getByTestId('show-link').first().click();
+  page.once('dialog', (d) => void d.accept());
+  await page.getByTestId('replace-link').click();
+  await expect(page.getByTestId('run-link')).not.toHaveValue(runs[0]!.link);
+  const fresh = new URL(await page.getByTestId('run-link').inputValue()).pathname.split('/')[2]!;
+  expect((await page.request.get(`/api/d/${oldToken}/run`)).status()).toBe(410);
+  expect((await page.request.get(`/api/d/${fresh}/run`)).status()).toBe(200);
+  await page.request.post(`/api/storms/${id}/close`, { data: { force: true } });
+});
+
+test('a misplaced pin can be removed from the site page', async ({ page }) => {
+  await login(page);
+  const [s] = await sql`select s.id, s.tenant_id from site s join tenant t on t.id = s.tenant_id where t.slug = 'lakeshore-demo' and s.active limit 1`;
+  const [p] = await sql`insert into site_pin (tenant_id, site_id, kind, lat, lon, note) values (${s!.tenant_id}, ${s!.id}, 'hazard', 41.48, -81.8, 'wrong spot') returning id`;
+  await page.goto(`/sites/${s!.id}`);
+  page.once('dialog', (d) => void d.accept());
+  await page.getByTestId(`pin-remove-${p!.id}`).click();
+  await expect(page.getByTestId(`pin-remove-${p!.id}`)).toHaveCount(0);
+  expect(await sql`select id from site_pin where id = ${p!.id}`).toHaveLength(0);
 });

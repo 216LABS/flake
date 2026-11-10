@@ -22,3 +22,27 @@ export function canSeeUsage(email: string | null) {
   const admins = (process.env.ADMIN_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
   return Boolean(email && admins.includes(email.toLowerCase()));
 }
+
+export interface CronCalls { total: number; failed: number; last_error: string | null; last_failed_at: string | null }
+
+/**
+ * The scheduler's calls into the app, from pg_net's response log (pg_net keeps about 6 hours of it). pg_cron marks a run
+ * succeeded as soon as the request is queued, so a call that died in transit only shows up here. Null when pg_net isn't
+ * installed or this role can't read it, as on a laptop.
+ */
+export async function cronCalls(): Promise<CronCalls | null> {
+  try {
+    const [row] = (await serviceDb().execute(sql`
+      select count(*)::int as total,
+             count(*) filter (where error_msg is not null or status_code is null or status_code >= 400)::int as failed,
+             (select coalesce(error_msg, 'HTTP ' || status_code) from net._http_response
+               where error_msg is not null or status_code is null or status_code >= 400 order by created desc limit 1) as last_error,
+             (select created from net._http_response
+               where error_msg is not null or status_code is null or status_code >= 400 order by created desc limit 1) as last_failed_at
+      from net._http_response`)) as unknown as { total: number; failed: number; last_error: string | null; last_failed_at: string | Date | null }[];
+    if (!row) return null;
+    return { total: row.total, failed: row.failed, last_error: row.last_error, last_failed_at: row.last_failed_at ? new Date(row.last_failed_at).toISOString() : null };
+  } catch {
+    return null;
+  }
+}

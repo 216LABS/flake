@@ -18,7 +18,7 @@ describe('free-plan schedules', () => {
 
   it('schedules each route from Vault, and can be run again', () => {
     for (const [name, cadence, path] of [
-      ['flake-jobs', '* * * * *', '/api/cron/jobs'],
+      ['flake-jobs', '*/2 * * * *', '/api/cron/jobs'],
       ['flake-late-check', '*/5 * * * *', '/api/cron/late-check'],
       ['flake-weather', '*/15 * * * *', '/api/cron/weather'],
       ['flake-reports', '*/15 * * * *', '/api/cron/reports'],
