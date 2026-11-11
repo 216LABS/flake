@@ -5,6 +5,8 @@ const latN = z.number().min(-90).max(90);
 const lonN = z.number().min(-180).max(180);
 
 const cents = z.number().int().min(0).max(100_000_00);
+/** A contract price: more than $0, the same rule as the site's quote form (issue 62). A free lot isn't a quote. */
+const price = z.number().int().positive().max(100_000_00);
 /** Every date on the company's pages is shown in this zone, so a made-up one would break them all. */
 const isTimeZone = (tz: string) => {
   try {
@@ -29,14 +31,14 @@ const emptyToNull = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((v) => (v === '' ? null : v), schema.nullable().optional());
 
 export const pricingSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('per_push'), amount_cents: cents }),
+  z.object({ type: z.literal('per_push'), amount_cents: price }),
   z.object({
     type: z.literal('per_inch_tier'),
-    tiers: z.array(z.object({ up_to_in: z.number().positive().max(120).nullable(), amount_cents: cents })).min(1).max(20),
+    tiers: z.array(z.object({ up_to_in: z.number().positive().max(120).nullable(), amount_cents: price })).min(1).max(20),
   }),
-  z.object({ type: z.literal('per_event'), amount_cents: cents }),
-  z.object({ type: z.literal('seasonal'), total_cents: cents, installments: z.number().int().min(1).max(12) }),
-  z.object({ type: z.literal('hourly'), rate_cents: cents }),
+  z.object({ type: z.literal('per_event'), amount_cents: price }),
+  z.object({ type: z.literal('seasonal'), total_cents: price, installments: z.number().int().min(1).max(12) }),
+  z.object({ type: z.literal('hourly'), rate_cents: price }),
 ]);
 
 export const serviceKind = z.enum(['plow', 'salt', 'walks', 'haul']);
@@ -48,7 +50,7 @@ export const contractServiceSchema = z.object({
   pricing: pricingSchema.nullable().optional(),
 });
 
-export const saltPricingSchema = z.object({ unit: saltUnit, amount_cents: cents });
+export const saltPricingSchema = z.object({ unit: saltUnit, amount_cents: price });
 
 const billingMode = z.enum(['card_on_file', 'ach_on_file', 'invoice_net30', 'manual']);
 const customerBase = z.object({
@@ -239,6 +241,8 @@ export const quoteAccept = z.object({
   consentEmail: z.boolean().default(true),
   phone_e164: emptyToNull(e164),
 });
+/** The customer says no on the quote page (issue 59). A reason is optional and goes to the office as written. */
+export const quoteDecline = z.object({ reason: z.string().trim().max(500).nullish() });
 export const mockConfirm = z.object({ card: z.string().regex(/^\d{4,19}$/).optional(), bank: z.boolean().optional() });
 
 export const toolContract = z.object({

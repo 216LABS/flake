@@ -336,10 +336,16 @@ describe('live clients', () => {
       await email.send({ fromName, to: 'a@b.c', subject: 's', text: 't', idempotencyKey: 'abc' });
       return sent;
     };
-    expect(await from('Smith & Sons, LLC')).toBe('Smith & Sons LLC <n@flake.test>');
-    expect(await from('Test Co (delete me)')).toBe('Test Co delete me <n@flake.test>');
-    expect(await from("Peña's <Plowing>")).toBe("Peña's Plowing <n@flake.test>");
-    expect(await from('()')).toBe('n@flake.test');
+    // The name as typed: plain names go as they are, others quoted (a pass found brackets dropped from names).
+    expect(await from("Flip's Plowing")).toBe("Flip's Plowing <n@flake.test>");
+    expect(await from('Flip’s Plowing')).toBe('Flip’s Plowing <n@flake.test>');
+    expect(await from("Flip's Plowing (Demo)")).toBe(`"Flip's Plowing (Demo)" <n@flake.test>`);
+    expect(await from('Smith & Sons, LLC')).toBe('"Smith & Sons, LLC" <n@flake.test>');
+    expect(await from('Peña "Big" Plowing')).toBe('"Peña \\"Big\\" Plowing" <n@flake.test>');
+    expect(await from("Peña's <Plowing>")).toBe(`"Peña's <Plowing>" <n@flake.test>`);
+    // A line break can't add a header.
+    expect(await from('Evil\r\nBcc: x@y.z')).toBe('"Evil Bcc: x@y.z" <n@flake.test>');
+    expect(await from('  ')).toBe('n@flake.test');
   });
   it('reports a rate limit as wait and retry, and a daily quota as a longer wait', async () => {
     const limited = (status: number, body: object, headers = {}) => new LiveEmail('k', 'n@flake.test', (async () => new Response(JSON.stringify(body), { status, headers })) as typeof fetch);

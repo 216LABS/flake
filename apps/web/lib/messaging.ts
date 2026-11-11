@@ -1,5 +1,5 @@
 import { and, eq, inArray, membership, push_subscription, serviceDb, short_link, sms_consent, sql, tenant } from '@flake/db';
-import { inInvoiceHours, renderTemplate, type TemplateKey } from '@flake/core/messages';
+import { emailFooter, inInvoiceHours, renderTemplate, type TemplateKey } from '@flake/core/messages';
 import { localHm, nextInvoiceWindow } from '@flake/core/time';
 import { baseUrl } from './env';
 import { enqueue } from './jobs';
@@ -74,11 +74,15 @@ async function failed(id: string, err: unknown): Promise<false> {
 }
 
 export async function sendEmail(t: TenantRow, opts: { to: string; template: string; subject: string; text: string; key: string; related?: Record<string, unknown>; attachments?: { filename: string; content: Uint8Array }[]; fromName?: string; replyTo?: string | null }): Promise<boolean> {
-  const id = await reserve(t, 'email', opts.to, opts.template, opts.text, `email:${opts.key}`, opts.related ?? null);
+  // Every email ends with who sent it, how to reach them, and how to stop (a pass found them bare).
+  const a = t.address as { line1?: string; city?: string; state?: string; zip?: string } | null;
+  const address = a?.line1 ? [a.line1, [a.city, [a.state, a.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join(', ') : null;
+  const text = `${opts.text}${emailFooter(opts.template, { name: t.name, phone: t.contact_phone, email: t.contact_email, address })}`;
+  const id = await reserve(t, 'email', opts.to, opts.template, text, `email:${opts.key}`, opts.related ?? null);
   if (!id) return false;
   try {
     const { email } = await getProviders();
-    const res = await email.send({ fromName: opts.fromName ?? t.name, replyTo: opts.replyTo === undefined ? t.contact_email : opts.replyTo, to: opts.to, subject: opts.subject, text: opts.text, idempotencyKey: opts.key, attachments: opts.attachments });
+    const res = await email.send({ fromName: opts.fromName ?? t.name, replyTo: opts.replyTo === undefined ? t.contact_email : opts.replyTo, to: opts.to, subject: opts.subject, text, idempotencyKey: opts.key, attachments: opts.attachments });
     await finish(id, res.status, res.id);
     return true;
   } catch (err) {

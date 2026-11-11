@@ -15,6 +15,23 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   const ctx = await requirePage();
   const tz = ctx.tenant.timezone;
   const p = period(q.from, q.to, tz);
+  // A backward range is shown as typed, with what's wrong and a one-tap swap, and no results (issue 63).
+  if (p.backward) {
+    return (
+      <>
+        <PageHeader title="Reports" subtitle="Crew hours for payroll, and salt used and on hand." />
+        <form method="get" className="mb-4 grid grid-cols-1 items-end gap-3 sm:flex sm:flex-wrap" data-testid="period">
+          <div className="min-w-0"><Label htmlFor="from">From</Label><Input id="from" name="from" type="date" defaultValue={p.backward.from} aria-invalid="true" /></div>
+          <div className="min-w-0"><Label htmlFor="to">To</Label><Input id="to" name="to" type="date" defaultValue={p.backward.to} /></div>
+          <button type="submit" className={buttonVariants({ variant: 'outline', className: 'h-11 sm:h-10' })} data-testid="period-show">Show</button>
+        </form>
+        <p className="rounded-md bg-red-50 p-3 text-sm text-red-800" role="alert" data-testid="period-backward">
+          The From date ({fmtLocal(`${p.backward.from}T12:00:00Z`, 'UTC', { month: 'short', day: 'numeric', year: 'numeric' })}) is after the To date ({fmtLocal(`${p.backward.to}T12:00:00Z`, 'UTC', { month: 'short', day: 'numeric', year: 'numeric' })}). Fix one of them, or{' '}
+          <a className="font-semibold underline" href={`/reports?from=${p.backward.to}&to=${p.backward.from}`} data-testid="period-swap">show {p.backward.to} to {p.backward.from}</a>.
+        </p>
+      </>
+    );
+  }
   const { hours, salt } = await asUser(ctx, async (tx) => ({ hours: await crewHours(tx, p, tz), salt: await saltReport(tx, ctx.tenantId, p) }));
   const people = [...new Set(hours.map((h) => h.crewId))].map((id) => {
     const rows = hours.filter((h) => h.crewId === id);

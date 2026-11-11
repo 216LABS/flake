@@ -21,6 +21,15 @@ const nextConfig = {
   transpilePackages: ['@flake/core', '@flake/contracts', '@flake/db', '@flake/providers', '@flake/ui'],
   serverExternalPackages: ['@react-pdf/renderer', 'sharp', 'postgres', 'geotiff', 'exifr', 'web-push'],
   poweredByHeader: false,
+  // Paths people type or guess, sent to the page they mean (issue 39 follow-up). Not permanent, so they can change.
+  async redirects() {
+    return [
+      { source: '/terms', destination: '/legal/terms', permanent: false },
+      { source: '/privacy', destination: '/legal/privacy', permanent: false },
+      { source: '/sites', destination: '/customers', permanent: false },
+      { source: '/alerts', destination: '/dashboard', permanent: false },
+    ];
+  },
   async headers() {
     return [
       {

@@ -51,3 +51,14 @@ describe('coordinates and sizes are real', () => {
     expect(measureRequest.safeParse({ lat: 91, lon: 0 }).success).toBe(false);
   });
 });
+
+describe('issue 62: a contract price is more than $0, as the form says', () => {
+  it("refuses $0 for every price type and takes a cent", () => {
+    for (const p of [{ type: 'per_push', amount_cents: 0 }, { type: 'per_event', amount_cents: 0 }, { type: 'hourly', rate_cents: 0 }, { type: 'seasonal', total_cents: 0, installments: 5 }, { type: 'per_inch_tier', tiers: [{ up_to_in: null, amount_cents: 0 }] }]) {
+      const r = pricingSchema.safeParse(p);
+      expect(r.success).toBe(false);
+      expect(r.error!.issues[0]!.code).toBe('too_small');
+    }
+    expect(pricingSchema.safeParse({ type: 'per_push', amount_cents: 1 }).success).toBe(true);
+  });
+});

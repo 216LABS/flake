@@ -1,7 +1,20 @@
 import type { EmailProvider, EmailSend } from '../types';
 
-/** A company name can hold anything. Commas and brackets would make the From header invalid, so only plain words go in it. */
-export const senderName = (name: string) => name.replace(/[^\p{L}\p{N}&' .-]+/gu, ' ').replace(/\s+/g, ' ').trim();
+/**
+ * The company's name as typed, apostrophes and brackets included. Only line breaks and control characters, which could
+ * add a header, are taken out; the From line quotes it, so commas and parentheses are safe.
+ */
+export const senderName = (name: string) => name.replace(/[\p{Cc}\p{Cf}\u2028\u2029]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
+
+/**
+ * `Flip's Plowing <flake@...>` when the name is plain words, and `"Flip's Plowing (Demo)" <flake@...>`, quoted with quotes
+ * and backslashes escaped, when it has commas, brackets or the like. Either way the name reads as the company typed it.
+ */
+export const fromHeader = (name: string, address: string) => {
+  const n = senderName(name);
+  if (!n) return address;
+  return /^[\p{L}\p{N}\p{M} !#$%&'*+/=?^_`{|}~.’-]+$/u.test(n) ? `${n} <${address}>` : `"${n.replace(/["\\]/g, '\\$&')}" <${address}>`;
+};
 
 /** Just the address, however EMAIL_FROM was written: bare, quoted, padded, or already `Name <address>`. */
 export const senderAddress = (from: string) => (/<([^<>]+)>/.exec(from)?.[1] ?? from).trim().replace(/^["']|["']$/g, '').trim();
@@ -18,7 +31,7 @@ export class LiveEmail implements EmailProvider {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.key}`, 'Content-Type': 'application/json', 'Idempotency-Key': msg.idempotencyKey.slice(0, 256) },
       body: JSON.stringify({
-        from: senderName(msg.fromName) ? `${senderName(msg.fromName)} <${this.from}>` : this.from,
+        from: fromHeader(msg.fromName, this.from),
         to: [msg.to],
         reply_to: msg.replyTo ?? undefined,
         subject: msg.subject,

@@ -85,7 +85,8 @@ for (const size of SIZES) {
       const made = await page.request.post('/api/proof', { data: { siteId: site, from: new Date(Date.now() - 30 * 86400000).toISOString(), to: new Date().toISOString() } });
       expect(made.status()).toBe(202);
       const { id } = await made.json();
-      await expect.poll(async () => (await (await page.request.get(`/api/proof/${id}`)).json()).status, { timeout: 90000 }).toBe('ready');
+      // The render is a background job; a busy test server can drop a poll, which only means "not yet".
+      await expect.poll(async () => (await page.request.get(`/api/proof/${id}`).then((r) => r.json(), () => ({ status: 'retry' }))).status, { timeout: 90000, intervals: [1000] }).toBe('ready');
       await page.reload();
       const open = page.getByTestId('packet-open').first();
       await open.scrollIntoViewIfNeeded();

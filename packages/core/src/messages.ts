@@ -1,4 +1,30 @@
 /** SMS templates from ADDENDUM_SMS section 4: company name first, two segments at most. */
+/** Who an email is for decides why the footer says they got it. */
+const AUDIENCE: Record<string, 'customer' | 'crew' | 'office' | 'flake'> = {
+  on_the_way: 'customer', done: 'customer', late: 'customer', invoice: 'customer', receipt: 'customer', quote: 'customer', portal: 'customer', completion_report: 'customer', help: 'customer',
+  crew_link: 'crew', route_changed: 'crew', crew_invite: 'crew', call_out: 'crew',
+  owner_alert: 'office', team_invite: 'office',
+  salt_supplier: 'flake',
+};
+
+/**
+ * The bottom of every email: who it's from, how to reach them, their mailing address when the company has entered one,
+ * why the reader is getting it, and how to stop. Plain text, like the rest of the email.
+ */
+export function emailFooter(template: string, c: { name: string; phone?: string | null; email?: string | null; address?: string | null }) {
+  const who = AUDIENCE[template] ?? 'customer';
+  if (who === 'flake') return '\n\n--\nSent by Flake (216LABS) for salt orders placed through it. Reply to this email with any question.';
+  const phone = c.phone && /^\+1\d{10}$/.test(c.phone) ? `(${c.phone.slice(2, 5)}) ${c.phone.slice(5, 8)}-${c.phone.slice(8)}` : c.phone;
+  const contact = [phone, c.email].filter(Boolean).join(' | ');
+  const why = {
+    customer: `You get these because ${c.name} provides snow service at your property. To stop these emails, reply and ask ${c.name} to turn them off.`,
+    crew: `You get these because you're on ${c.name}'s crew. To stop them, ask ${c.name} to take you off.`,
+    office: `You get these because you're on ${c.name}'s team in Flake. An owner can change who gets them in Settings.`,
+  }[who];
+  const lines = [c.name, c.address, contact, why, 'Sent with Flake: https://flake.216labs.dev'].filter((x): x is string => Boolean(x));
+  return `\n\n--\n${lines.join('\n')}`;
+}
+
 export type TemplateKey = 'team_invite' | 'receipt' | 'crew_link' | 'call_out' | 'on_the_way' | 'done' | 'late' | 'invoice' | 'help' | 'route_changed' | 'quote' | 'owner_alert' | 'crew_invite' | 'portal';
 
 const TEMPLATES: Record<TemplateKey, string> = {

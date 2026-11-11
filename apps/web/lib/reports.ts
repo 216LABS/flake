@@ -7,13 +7,18 @@ const YMD = /^\d{4}-\d{2}-\d{2}$/;
 const ymd = { test: (v: string) => { const d = new Date(`${v}T12:00:00Z`); return YMD.test(v) && !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v; } };
 const DAY = 86_400_000;
 
-/** A pay period in the company's time zone. Defaults to the last 14 days, today included. */
+/**
+ * A pay period in the company's time zone. Defaults to the last 14 days, today included. A From after To is reported
+ * as backward, with the dates as typed, rather than quietly swapped for another range (issue 63).
+ */
 export function period(from: string | undefined, to: string | undefined, tz: string) {
   const today = localHm(Date.now(), tz).date;
   const end = to && ymd.test(to) ? to : today;
-  const start = from && ymd.test(from) && from <= end ? from : localHm(zonedDayStart(end, tz).getTime() - 13 * DAY, tz).date;
+  const typedFrom = from && ymd.test(from) ? from : null;
+  const backward = Boolean(typedFrom && typedFrom > end);
+  const start = typedFrom && !backward ? typedFrom : localHm(zonedDayStart(end, tz).getTime() - 13 * DAY, tz).date;
   const next = localHm(zonedDayStart(end, tz).getTime() + DAY + 3 * 3_600_000, tz).date;
-  return { from: start, to: end, startAt: zonedDayStart(start, tz).toISOString(), endAt: zonedDayStart(next, tz).toISOString() };
+  return { from: start, to: end, startAt: zonedDayStart(start, tz).toISOString(), endAt: zonedDayStart(next, tz).toISOString(), backward: backward ? { from: typedFrom!, to: end } : null };
 }
 
 type Period = ReturnType<typeof period>;
