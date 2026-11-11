@@ -104,8 +104,11 @@ describe('salt ordering', () => {
       const cs = [await ctx(a), await ctx(b)];
       const results = await Promise.all(Array.from({ length: 12 }, (_, i) => placeOrder(cs[i % 2]!, { tons: 3 + (i % 4) * 2, address: `${i + 10} Main St, Lakewood, OH` })));
       expect(results).toHaveLength(12);
-      for (const p of await loads()) expect(sum(p.orders)).toBeLessThanOrEqual(22 * 1.1);
-      expect((await loads()).filter((p) => p.status === 'open')).toHaveLength(1);
+      // This has failed twice in about 20 full runs and never alone; the messages say what the loads looked like.
+      const all = await loads();
+      const state = JSON.stringify(all.map((p) => ({ status: p.status, tons: sum(p.orders) })));
+      for (const p of all) expect(sum(p.orders), state).toBeLessThanOrEqual(22 * 1.1);
+      expect(all.filter((p) => p.status === 'open'), state).toHaveLength(1);
     });
 
     it('a cancel racing the load filling never leaves a cancelled order on a sent load', async () => {
@@ -117,7 +120,7 @@ describe('salt ordering', () => {
         await Promise.allSettled([cancelOrder(ca, mine.order!.id), placeOrder(cb, { tons: 21, address: '2 Main St, Lakewood, OH' })]);
         const [o] = await serviceDb().select().from(salt_order).where(eq(salt_order.id, mine.order!.id));
         const [p] = await serviceDb().select().from(salt_pool).where(eq(salt_pool.id, o!.pool_id!));
-        expect([o!.status, p!.status]).toEqual(o!.status === 'cancelled' ? ['cancelled', 'open'] : ['ordered', 'sent']);
+        expect([o!.status, p!.status], `round ${i}: order ${o!.status}, load ${p!.status}`).toEqual(o!.status === 'cancelled' ? ['cancelled', 'open'] : ['ordered', 'sent']);
       }
     });
 

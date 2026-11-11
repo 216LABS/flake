@@ -81,9 +81,9 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [] 
   );
 }
 
-export interface ContractRow { id: string; status: string; season: string; services: any[]; salt_pricing: any; accepted_name: string | null; accepted_at: string | null; created_at: string | null; installments_billed: number; quote_url?: string | null }
+export interface ContractRow { id: string; status: string; season: string; services: any[]; salt_pricing: any; accepted_name: string | null; accepted_at: string | null; created_at: string | null; installments_billed: number; quote_url?: string | null; decline_reason?: string | null }
 
-const TONE: Record<string, 'green' | 'amber' | 'gray' | 'blue'> = { accepted: 'green', sent: 'blue', draft: 'amber', void: 'gray' };
+const TONE: Record<string, 'green' | 'amber' | 'gray' | 'blue' | 'red'> = { accepted: 'green', sent: 'blue', draft: 'amber', void: 'gray', declined: 'red' };
 
 /** What each contract says, and what the office can still do with it: resend a quote, or void it. */
 export function ContractList({ contracts, canEdit, pdf }: { contracts: ContractRow[]; canEdit: boolean; pdf: string | null }) {
@@ -113,6 +113,7 @@ export function ContractList({ contracts, canEdit, pdf }: { contracts: ContractR
           <li key={k.id} data-testid="contract-row" data-status={k.status} className={k.status === 'void' ? 'text-slate-500' : ''}>
             <div className="flex flex-wrap items-center gap-2"><Badge tone={TONE[k.status] ?? 'gray'}>{k.status === 'sent' ? 'quote sent' : k.status}</Badge><span className="font-medium">{k.season}</span></div>
             <ul className="mt-1 text-slate-700">{k.services.map((s, i) => <li key={i}>{scopeLine(s, k.salt_pricing)}</li>)}</ul>
+            {k.status === 'declined' ? <div className="text-slate-700" data-testid="declined-note">Declined by the customer{k.decline_reason ? `: "${k.decline_reason}"` : '.'} Send a new quote to try again.</div> : null}
             {k.accepted_name ? <div className="text-slate-600">Signed by {k.accepted_name}{k.installments_billed ? `. ${k.installments_billed} installment${k.installments_billed === 1 ? '' : 's'} billed.` : '.'}</div> : null}
             {links[k.id] ? <Input readOnly value={links[k.id]} className="mt-1" data-testid="resent-url" aria-label="New quote link" />
               : k.quote_url ? <Input readOnly value={k.quote_url} className="mt-1" data-testid="quote-link" aria-label="Quote link" onFocus={(e) => e.target.select()} /> : null}

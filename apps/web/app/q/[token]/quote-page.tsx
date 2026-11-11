@@ -17,6 +17,9 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
   const [error, setError] = useState<string | null>(null);
   const [paid, setPaid] = useState(quote.has_payment_method);
   const [sending, setSending] = useState(false);
+  const [declined, setDeclined] = useState(quote.contract.status === 'declined');
+  const [declining, setDeclining] = useState(false);
+  const [reason, setReason] = useState('');
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <p className="font-display text-lg font-semibold text-slate-900">{quote.company}</p>
@@ -31,6 +34,12 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
         </ul>
         {quote.contract.terms_md ? <><h3 className="mt-3 text-sm font-semibold">Terms</h3><p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{quote.contract.terms_md}</p></> : null}
       </Card>
+      {declined && !accepted ? (
+        <Card className="mt-4 border-slate-300 bg-slate-50" data-testid="declined">
+          <p className="font-medium">You declined this quote. {quote.company} has been told.</p>
+          <p className="mt-1 text-sm text-slate-700">Changed your mind? You can still accept it below while the link works.</p>
+        </Card>
+      ) : null}
       {accepted ? (
         <Card className="mt-4 border-emerald-300 bg-emerald-50" data-testid="accepted"><p className="font-medium">Accepted{quote.contract.accepted_name ? ` by ${quote.contract.accepted_name}` : ''}. Thank you.</p></Card>
       ) : (
@@ -56,6 +65,31 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
               setSending(false);
             }
           }}>{sending ? 'Saving your signature...' : 'Accept quote'}</Button>
+          {/* Saying no is a real answer, so the office isn't left waiting (issue 59). */}
+          {!declined ? (
+            declining ? (
+              <div className="mt-6 border-t border-slate-200 pt-4">
+                <Label htmlFor="decline-reason">Anything you&apos;d like {quote.company} to know? (optional)</Label>
+                <textarea id="decline-reason" maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} className="mt-1 block w-full rounded-md border border-slate-300 p-2 text-base" rows={3} data-testid="decline-reason" />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button variant="outline" disabled={sending} data-testid="decline-send" onClick={async () => {
+                    setError(null);
+                    setSending(true);
+                    try {
+                      await api(`/api/q/${token}/decline`, { body: { reason: reason.trim() || null } });
+                      setDeclined(true);
+                      setDeclining(false);
+                    } catch (e) {
+                      setError((e as Error).message);
+                    } finally {
+                      setSending(false);
+                    }
+                  }}>Decline quote</Button>
+                  <Button variant="ghost" onClick={() => setDeclining(false)}>Keep it open</Button>
+                </div>
+              </div>
+            ) : <Button variant="ghost" className="mt-3 w-full" data-testid="decline" onClick={() => setDeclining(true)}>No thanks, decline this quote</Button>
+          ) : null}
         </Card>
       )}
       {accepted && quote.payments_ready && quote.customer.billing_mode !== 'manual' ? (

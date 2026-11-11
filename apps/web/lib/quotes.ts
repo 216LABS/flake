@@ -1,10 +1,10 @@
 import { and, asService, contract, customer, eq, inArray, ne, notInArray, serviceDb, site, sms_consent, tenant, withUser } from '@flake/db';
 import { CUSTOMER_CONSENT_TEXT } from '@flake/core/messages';
-import { quoteAccept, quoteCreate } from '@flake/contracts';
+import { quoteAccept, quoteCreate, quoteDecline } from '@flake/contracts';
 import { z } from 'zod';
 import { baseUrl } from './env';
 import { HttpError } from './http';
-import { queueNotify, shortLink } from './messaging';
+import { notifyOffice, queueNotify, shortLink } from './messaging';
 import { getProviders } from './providers';
 import { handleStripeEvent } from './billing';
 import { putBlob, signedUrl } from './blob';
@@ -51,7 +51,7 @@ export async function getQuote(token: string) {
     company: r.tenant.name,
     customer: { name: r.customer.name, email: r.customer.email, phone: r.customer.phone_e164, billing_mode: r.customer.billing_mode },
     site: { label: r.site.label, address: r.site.address, area_sqft: r.site.area_confirmed_sqft ?? r.site.area_estimate_sqft },
-    contract: { id: r.contract.id, season: r.contract.season, services: r.contract.services, salt_pricing: r.contract.salt_pricing, terms_md: r.contract.terms_md, status: r.contract.status, accepted_at: r.contract.accepted_at, accepted_name: r.contract.accepted_name },
+    contract: { id: r.contract.id, season: r.contract.season, services: r.contract.services, salt_pricing: r.contract.salt_pricing, terms_md: r.contract.terms_md, status: r.contract.status, accepted_at: r.contract.accepted_at, accepted_name: r.contract.accepted_name, declined_at: r.contract.declined_at },
     consent_text: CUSTOMER_CONSENT_TEXT(r.tenant.name),
     payments_ready: Boolean(r.tenant.stripe_account_id && r.tenant.stripe_charges_enabled),
     has_payment_method: Boolean(r.customer.stripe_payment_method_id),
@@ -93,6 +93,27 @@ export async function acceptQuote(token: string, input: z.infer<typeof quoteAcce
 }
 
 /**
+ * The customer turns the quote down (issue 59). The office hears about it at once, and the quote shows as declined on
+ * the site page instead of waiting forever. The customer can still accept later from the same link if they change their
+ * mind; a signed or voided quote can't be declined.
+ */
+export async function declineQuote(token: string, input: z.infer<typeof quoteDecline>) {
+  const r = await byToken(token);
+  if (r.contract.status === 'accepted') throw new HttpError(409, 'This quote is already accepted. Call the company to change it.', 'already_accepted');
+  if (r.contract.status === 'declined') return { already: true };
+  const took = await serviceDb().update(contract).set({ status: 'declined', declined_at: new Date().toISOString(), decline_reason: input.reason || null })
+    .where(and(eq(contract.id, r.contract.id), eq(contract.tenant_id, r.tenant.id), inArray(contract.status, ['draft', 'sent']))).returning({ id: contract.id });
+  if (!took.length) return { already: true };
+  await notifyOffice(r.tenant, {
+    headline: `${r.customer.name} declined the ${r.contract.season} quote for ${r.site.label}${input.reason ? `: "${input.reason.slice(0, 200)}"` : '.'}`,
+    link: `${baseUrl()}/sites/${r.site.id}`,
+    key: `quote_declined:${r.contract.id}`,
+    related: { site_id: r.site.id },
+  });
+  return { already: false };
+}
+
+/**
  * A quote's link is stored only as a hash, so it can't be shown again. Resending makes a new link, sends it, and the
  * old one stops working. A signed contract isn't resent; its PDF is on the site page.
  */
@@ -101,7 +122,7 @@ export async function resendQuote(ctx: Ctx, contractId: string) {
   const row = await withUser(ctx.userId, async (tx) => {
     const [c] = await tx.select().from(contract).where(eq(contract.id, contractId));
     if (!c) throw new HttpError(404, 'Contract not found');
-    if (!['draft', 'sent'].includes(c.status)) throw new HttpError(409, c.status === 'accepted' ? 'This contract is already signed.' : 'This quote is void. Send a new one.', 'not_resendable');
+    if (!['draft', 'sent'].includes(c.status)) throw new HttpError(409, c.status === 'accepted' ? 'This contract is already signed.' : c.status === 'declined' ? 'The customer declined this quote. Send a new one.' : 'This quote is void. Send a new one.', 'not_resendable');
     const [st] = await tx.select().from(site).where(eq(site.id, c.site_id));
     if (!st?.active) throw new HttpError(409, 'This site is retired. Restore it to quote it.', 'site_retired');
     const [cust] = await tx.select().from(customer).where(eq(customer.id, st.customer_id));

@@ -114,7 +114,7 @@ export const contract = pgTable('contract', {
   tenant_id: tenantId(),
   site_id: uuid('site_id').notNull(),
   season: text('season').notNull(),
-  status: text('status').$type<'draft' | 'sent' | 'accepted' | 'void'>().notNull().default('draft'),
+  status: text('status').$type<'draft' | 'sent' | 'accepted' | 'void' | 'declined'>().notNull().default('draft'),
   services: jsonb('services').notNull(),
   salt_pricing: jsonb('salt_pricing'),
   terms_md: text('terms_md'),
@@ -125,6 +125,8 @@ export const contract = pgTable('contract', {
   quote_token_hash: text('quote_token_hash'),
   quote_token_enc: text('quote_token_enc'),
   installments_billed: integer('installments_billed').notNull().default(0),
+  declined_at: ts('declined_at'),
+  decline_reason: text('decline_reason'),
   created_at: createdAt(),
 });
 
