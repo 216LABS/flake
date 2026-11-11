@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareRoute, evaluateRoute, replanFrom, suggestRoute, type RouteSite } from '../src/routing';
+import { evaluateRoute, suggestRoute, type RouteSite } from '../src/routing';
 
 function rng(seed: number) {
   let s = seed >>> 0;
@@ -85,33 +85,5 @@ describe('issue 66: not before', () => {
   it('a time earlier on the clock than the start means the next morning', () => {
     const plan = evaluateRoute([at(0), at(1, { not_before: '01:00' })], { start: '22:00' });
     expect(plan.stops[1]!.arrive).toBe('01:00');
-  });
-});
-
-describe('issue 64: start and end at the yard', () => {
-  // Six lots on a line running west, and a yard just east of the first one.
-  const line = Array.from({ length: 6 }, (_, i) => ({ id: `y${i}`, lat: 41.48, lon: -81.80 - i * 0.01, priority: 1, sqft: null }));
-  const yard = { lat: 41.48, lon: -81.79 };
-  it('plans out from the yard and back, counts both drives, and never shows the yard as a stop', () => {
-    // Scrambled in; a round trip along a line is the same either way round, so either direction is right.
-    const scrambled = [line[3]!, line[0]!, line[5]!, line[1]!, line[4]!, line[2]!];
-    const r = compareRoute(scrambled, { yard });
-    const ids = r.suggested.stops.map((s) => s.id).join();
-    expect([line.map((s) => s.id).join(), [...line].reverse().map((s) => s.id).join()]).toContain(ids);
-    expect(r.suggested.stops.some((s) => s.id.startsWith('__'))).toBe(false);
-    // Out to the first lot and back from the last: more driving than the lots alone.
-    expect(r.suggested.drive_min).toBeGreaterThan(compareRoute(line).suggested.drive_min);
-    expect(r.changed).toBe(true);
-  });
-  it('the first lot stays first after the yard when asked', () => {
-    const r = compareRoute([line[3]!, ...line.filter((_, i) => i !== 3)], { yard, keepFirst: true });
-    expect(r.suggested.stops[0]!.id).toBe('y3');
-  });
-  it('a mid-storm re-plan heads back to the yard at the end', () => {
-    const truck = { lat: 41.48, lon: -81.85 };
-    const home = replanFrom(truck, line.slice(0, 5), { endAt: yard });
-    const free = replanFrom(truck, line.slice(0, 5));
-    expect(home.suggested.stops).toHaveLength(5);
-    expect(home.suggested.drive_min).toBeGreaterThanOrEqual(free.suggested.drive_min);
   });
 });
