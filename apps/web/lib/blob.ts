@@ -29,6 +29,10 @@ export async function getBlob(bucket: Bucket, path: string): Promise<Uint8Array 
   return new Uint8Array(await data.arrayBuffer());
 }
 
+export async function removeBlob(bucket: Bucket, path: string) {
+  await adminClient().storage.from(bucket).remove([path]);
+}
+
 export async function signedUrl(bucket: Bucket, path: string, downloadName?: string): Promise<string | null> {
   const { data } = await adminClient().storage.from(bucket).createSignedUrl(path, SIGNED_URL_TTL_S, downloadName ? { download: downloadName } : undefined);
   return data?.signedUrl ?? null;

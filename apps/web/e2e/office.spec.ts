@@ -216,7 +216,7 @@ test('a brand new user can set up a company, connect mock Stripe and sees the fr
   await page.getByTestId('mock-finish').click();
   await expect(page.getByTestId('stripe-status')).toHaveText('Charges enabled');
   await page.goto('/settings?tab=plan');
-  await expect(page.getByText('Free first season through 2027-04-30')).toBeVisible();
+  await expect(page.getByTestId('free-season')).toContainText('Free first season through April 30, 2027');
   await page.goto('/storms');
   await expect(page.getByText('No storms yet')).toBeVisible();
 });

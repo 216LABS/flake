@@ -84,7 +84,7 @@ async function sendPhoto(token: string, p: StoredPhoto): Promise<Response> {
 
 export type FlushResult = 'idle' | 'synced' | 'offline' | 'dead' | 'partial';
 
-export async function flush(token: string, onStart?: () => void): Promise<FlushResult> {
+export async function flush(token: string, onStart?: () => void, onRejected?: (action: StoredAction['action'], reason: string | undefined) => void): Promise<FlushResult> {
   if (flushing) return 'idle';
   flushing = true;
   try {
@@ -104,7 +104,10 @@ export async function flush(token: string, onStart?: () => void): Promise<FlushR
         const ack = acks.find((x) => x.client_uuid === a.action.client_uuid);
         if (!ack) continue;
         // A rejected action is kept aside, never silently dropped.
-        if (ack.status === 'rejected') await d.put('rejected', { client_uuid: ack.client_uuid, reason: ack.reason, action: a.action });
+        if (ack.status === 'rejected') {
+          await d.put('rejected', { client_uuid: ack.client_uuid, reason: ack.reason, action: a.action });
+          onRejected?.(a.action, ack.reason);
+        }
         await d.delete('actions', a.seq!);
       }
     }

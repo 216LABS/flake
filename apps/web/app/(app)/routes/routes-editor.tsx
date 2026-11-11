@@ -85,7 +85,7 @@ export function RoutesEditor({ routes, sites, crew }: { routes: R[]; sites: { id
               })}
             </Select>
             <Button size="sm" variant="ghost" className="mt-2" data-testid="route-archive" onClick={async () => {
-              if (!(await ask({ title: `Archive ${r.name}?`, body: 'It leaves the routes list and the storm form. Storms already run on it keep their records.', confirm: 'Archive route', danger: true }))) return;
+              if (!(await ask({ title: `Archive ${r.name}?`, body: 'It leaves the routes list and the storm form. Storms already run on it keep their records. You can restore it from Archived routes at the bottom of this page.', confirm: 'Archive route', danger: true }))) return;
               setError(null);
               try {
                 await api(`/api/routes/${r.id}`, { method: 'PATCH', body: { archived: true } });

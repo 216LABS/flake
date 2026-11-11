@@ -1,8 +1,7 @@
 import { driverPhotoMeta } from '@flake/contracts';
-import { resolveToken, savePhoto } from '@/lib/driver';
+import { MAX_PHOTO_BYTES, resolveToken, savePhoto } from '@/lib/driver';
 import {driverRateLimit, HttpError, route } from '@/lib/http';
 
-const MAX_BYTES = 30 * 1024 * 1024;
 
 export const POST = route<{ params: Promise<{ token: string }> }>(async (req, { params }) => {
   const { token } = await params;
@@ -11,7 +10,7 @@ export const POST = route<{ params: Promise<{ token: string }> }>(async (req, { 
   const form = await req.formData();
   const file = form.get('file');
   if (!(file instanceof Blob)) throw new HttpError(422, 'file is required');
-  if (file.size > MAX_BYTES) throw new HttpError(413, 'File too large');
+  if (file.size > MAX_PHOTO_BYTES) throw new HttpError(413, 'File too large');
   const type = file.type || 'image/jpeg';
   if (!/^(image|audio|video\/webm)/.test(type)) throw new HttpError(415, 'Unsupported file type');
   const parsed = driverPhotoMeta.safeParse(Object.fromEntries(['client_uuid', 'visit_client_uuid', 'phase', 'taken_at', 'problem_client_uuid'].flatMap((k) => (form.get(k) ? [[k, form.get(k)]] : []))));

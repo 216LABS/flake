@@ -25,7 +25,9 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
   const tz = data.company.timezone;
   const day = (iso: string) => fmtLocal(iso, tz, { weekday: 'short', month: 'short', day: 'numeric' });
   const time = (iso: string) => fmtLocal(iso, tz, { hour: 'numeric', minute: '2-digit' });
-  const due = data.invoices.filter((i) => i.pay_link);
+  // Every invoice still owed, with or without an online pay link (issue 60).
+  const due = data.invoices.filter((i) => i.due);
+  const contact = `${data.company.name}${data.company.phone ? ` at ${phone(data.company.phone)}` : ''}`;
   // "10:32 AM to 10:58 AM", or one time when both fall in the same minute, instead of a window that reads as zero.
   const span = (from: string, to: string | null) => (to && time(to) !== time(from) ? `${time(from)} to ${time(to)}` : to ? `at ${time(from)}` : time(from));
   const photo = (id: string, thumb = false) => `/api/c/${token}/photo/${id}${thumb ? '?thumb=1' : ''}`;
@@ -44,8 +46,9 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
           <Card className="border-amber-300 bg-amber-50" data-testid="portal-due">
             <h2 className="font-semibold">{due.length === 1 ? 'An invoice is waiting' : `${due.length} invoices are waiting`}</h2>
             <ul className="mt-2 space-y-1 text-sm">
-              {due.map((i) => <li key={i.id}>{i.storm}: <b className="tabular">{money(i.total_cents)}</b>. <a className="font-semibold text-sky-800 underline" href={i.pay_link!}>View and pay</a></li>)}
+              {due.map((i) => <li key={i.id}>{i.storm}: <b className="tabular">{money(i.total_cents)}</b>{i.status === 'failed' ? ' (the last payment did not go through)' : ''}. {i.pay_link ? <a className="font-semibold text-sky-800 underline" href={i.pay_link}>View and pay</a> : <a className="font-semibold text-sky-800 underline" href={`#invoice-${i.id}`}>See what it&apos;s for</a>}</li>)}
             </ul>
+            {due.some((i) => !i.pay_link) ? <p className="mt-2 text-sm text-slate-700" data-testid="portal-pay-offline">Online payment isn&apos;t set up for {due.every((i) => !i.pay_link) ? 'these' : 'some of these'}. Pay {contact} the way you usually do, by check or over the phone.</p> : null}
           </Card>
         ) : null}
 
@@ -126,18 +129,27 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
         {data.invoices.length ? (
           <section aria-labelledby="invoices">
             <Eyebrow id="invoices" className="mb-2">Invoices</Eyebrow>
-            <Table data-testid="portal-invoices">
-              <thead><tr><Th>Storm</Th><Th className="text-right">Amount</Th><Th>Status</Th></tr></thead>
-              <tbody>
-                {data.invoices.map((i) => (
-                  <tr key={i.id}>
-                    <Td>{i.storm}</Td>
-                    <Td className="tabular text-right">{money(i.total_cents)}</Td>
-                    <Td><Badge tone={STATUS[i.status ?? '']?.tone ?? 'blue'}>{STATUS[i.status ?? '']?.label ?? i.status}</Badge>{i.pay_link ? <a className="ml-2 text-sm text-sky-800 underline" href={i.pay_link}>Pay</a> : null}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
+            <ul className="space-y-2" data-testid="portal-invoices">
+              {data.invoices.map((i) => (
+                <li key={i.id} id={`invoice-${i.id}`} className="scroll-mt-4">
+                  <details className="rounded-md border border-slate-200 bg-white" open={i.due} data-testid="portal-invoice">
+                    <summary className="flex min-h-12 cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
+                      <span className="font-medium">{i.storm}</span>
+                      <Badge tone={STATUS[i.status ?? '']?.tone ?? 'blue'}>{STATUS[i.status ?? '']?.label ?? i.status}</Badge>
+                      <b className="tabular ml-auto">{money(i.total_cents)}</b>
+                    </summary>
+                    <div className="border-t border-slate-100 px-3 py-2">
+                      <ul className="divide-y divide-slate-100 text-sm" data-testid="portal-invoice-lines">
+                        {i.lines.map((l, n) => <li key={n} className="flex justify-between gap-3 py-1.5"><span>{l.description}{l.quantity > 1 ? ` (${l.quantity})` : ''}</span><span className="tabular shrink-0">{money(l.amount_cents)}</span></li>)}
+                      </ul>
+                      <p className="mt-2 flex justify-between text-sm font-semibold"><span>Total</span><span className="tabular">{money(i.total_cents)}</span></p>
+                      {i.pay_link ? <a className="mt-2 inline-block font-semibold text-sky-800 underline" href={i.pay_link}>View and pay</a>
+                        : i.due ? <p className="mt-2 text-sm text-slate-700">Pay {contact} by check or over the phone. Online payment isn&apos;t set up for this invoice.</p> : null}
+                    </div>
+                  </details>
+                </li>
+              ))}
+            </ul>
           </section>
         ) : null}
 

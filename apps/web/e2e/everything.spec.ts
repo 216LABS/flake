@@ -83,15 +83,11 @@ test('billing: every fix on a flag, approving one bill, and the QuickBooks file'
     { client_uuid: randomUUID(), at: at.toISOString(), kind: 'arrive', run_stop_id: first.id, visit_client_uuid: visit, gps: { lat: loc!.lat, lon: loc!.lon, acc: 5 } },
     { client_uuid: randomUUID(), at: new Date(at.getTime() + 600000).toISOString(), kind: 'done', run_stop_id: first.id, visit_client_uuid: visit, services: ['plow', 'salt'], depth_in: 3, salt: null, gps: null },
   ] } });
-  // The same stop done again soon after, on the same pass, is a possible duplicate.
-  const again = first;
-  const token2 = token;
-  const visit2 = randomUUID();
-  const at2 = new Date(at.getTime() + 1200000);
-  await page.request.post(`/api/d/${token2}/actions`, { data: { actions: [
-    { client_uuid: randomUUID(), at: at2.toISOString(), kind: 'arrive', run_stop_id: again.id, visit_client_uuid: visit2, gps: { lat: loc!.lat, lon: loc!.lon, acc: 5 } },
-    { client_uuid: randomUUID(), at: new Date(at2.getTime() + 600000).toISOString(), kind: 'done', run_stop_id: again.id, visit_client_uuid: visit2, services: ['plow'], depth_in: 3, salt: null, gps: null },
-  ] } });
+  // The same lot done again soon after is a possible duplicate. A phone can no longer finish one stop twice (issue 54),
+  // so the second visit here is one with no stop on it, as older or imported records can be; billing still flags it.
+  await sql`insert into visit (tenant_id, client_uuid, storm_id, run_stop_id, site_id, crew_id, services, arrived_device_at, departed_device_at, departed_received_at, arrive_lat, arrive_lon, arrive_acc_m, depth_in)
+    select tenant_id, gen_random_uuid(), storm_id, null, site_id, crew_id, array['plow'], arrived_device_at + interval '20 minutes', arrived_device_at + interval '30 minutes', now(), arrive_lat, arrive_lon, arrive_acc_m, depth_in
+    from visit where client_uuid = ${visit}`;
   await finishStops(page.request, run, run.stops.slice(1));
   expect((await page.request.post(`/api/storms/${id}/close`, { data: { force: true } })).ok()).toBe(true);
 
@@ -113,13 +109,16 @@ test('billing: every fix on a flag, approving one bill, and the QuickBooks file'
   // A flagged bill offers no Approve until its flags are fixed or waived (issue 7). Waiving one bill's flags makes it
   // approvable, and approving it moves only that one.
   await page.getByTestId('flagged-only').uncheck();
-  const flaggedCard = page.getByTestId('draft').filter({ has: page.getByTestId('approve-blocked') }).first();
+  // One with real work on it: waiving a $0 card's only "missing visit" flag rightly leaves nothing to bill, and the card goes.
+  const flaggedCard = page.getByTestId('draft').filter({ has: page.getByTestId('approve-blocked') }).filter({ hasNot: page.locator('[data-code="missing_visit"]') }).first();
   await expect(flaggedCard.getByTestId('approve-one')).toHaveCount(0);
-  const name = (await flaggedCard.locator('.font-semibold').first().textContent())!;
-  const card = () => page.getByTestId('draft').filter({ hasText: name });
-  while (await card().getByTestId('fix-waive').count()) {
+  // Followed by its id: cards reorder as their flags clear (flagged first, issue 50).
+  const draftId = (await flaggedCard.getAttribute('data-draft-id'))!;
+  const card = () => page.locator(`[data-draft-id="${draftId}"]`);
+  // Each waive re-renders the card; wait for the count to drop before looking again, so a stale button isn't clicked.
+  for (let left = await card().getByTestId('fix-waive').count(); left; left = await card().getByTestId('fix-waive').count()) {
     await card().getByTestId('fix-waive').first().click();
-    await page.waitForLoadState('networkidle');
+    await expect(card().getByTestId('fix-waive')).toHaveCount(left - 1);
   }
   const before = await page.getByTestId('approve-one').count();
   await card().getByTestId('approve-one').click();

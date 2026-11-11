@@ -301,8 +301,8 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
                     {live.crew.map((c: any) => <option key={c.id} value={c.id}>{c.name}{c.kind === 'sub' ? ' (sub)' : ''}</option>)}
                   </Select>
                 ) : null}
-                {r.link && r.crew && !r.crew.reachable ? <p className="mt-1 text-xs font-medium text-amber-800" data-testid="no-reach">We can&apos;t text or email {r.crew.name}, so they don&apos;t have this route. Show them the QR code.</p> : null}
-                {r.link && !closed ? <Button size="sm" variant="ghost" className="-ml-3" data-testid="show-link" onClick={() => showLink(r)}>QR / copy link</Button> : null}
+                {r.published_at && r.link && r.crew && !r.crew.reachable ? <p className="mt-1 text-xs font-medium text-amber-800" data-testid="no-reach">We can&apos;t text or email {r.crew.name}, so they don&apos;t have this route. Show them the QR code.</p> : null}
+                {r.link && !closed ? <Button size="sm" variant="ghost" className="-ml-3" data-testid="show-link" onClick={() => showLink(r)}>{r.published_at ? 'QR / copy link' : 'QR / copy link (no message sent)'}</Button> : null}
                 {editable && r.stops.length > 1 ? <RunPlan runId={r.id} onDone={() => void load()} /> : null}
               </header>
               <ul className="space-y-2">

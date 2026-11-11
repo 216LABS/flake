@@ -12,7 +12,7 @@ export default function Pricing() {
     <section className="mx-auto max-w-4xl px-4 py-14">
       <h1 className="text-3xl font-bold text-slate-900">Pricing</h1>
       <p className="mt-2 text-slate-700">Stripe&apos;s own processing fees go to Stripe and are separate: card 2.9% + 30¢, bank (ACH) 0.8% capped at $5.</p>
-      <Card className="mt-4 border-sky-300 bg-sky-50"><b>Free first season.</b> Early testers pay no Pro charge through April 30, 2027, and Pro features are on. The 1% payment fee still applies. It&apos;s how Flake makes money.</Card>
+      <Card className="mt-4 border-sky-300 bg-sky-50"><b>Free first season.</b> Early testers pay no Pro charge through April 30, 2027, and Pro features are on, including unlimited sites. After that the free plan covers 25 sites. The 1% payment fee still applies. It&apos;s how Flake makes money.</Card>
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         <Card>
           <h2 className="text-xl font-semibold">Free</h2>

@@ -23,7 +23,7 @@ interface RunData {
   has_reported_depth: boolean;
   stops: Stop[];
 }
-interface LocalVisit { visit: string; arrived_at: string; depth: number | null; services: string[]; salt: number; before: boolean; after: boolean }
+interface LocalVisit { visit: string; arrived_at: string; depth: number | null; services: string[]; salt: number; before: boolean; after: boolean; beforeN?: number; afterN?: number }
 interface LocalState {
   visits: Record<string, LocalVisit>;
   statuses: Record<string, string>;
@@ -34,6 +34,8 @@ interface LocalState {
 const EMPTY: LocalState = { visits: {}, statuses: {}, nextStopId: null, depthGiven: false, last: null };
 const DEPTHS = [0.5, 1, 2, 3, 4, 5, 6, 8, 10, 12];
 const UNDO_MS = 2 * 60 * 1000;
+/** The server's cap on every upload path (MAX_PHOTO_BYTES in lib/driver). */
+const MAX_PHOTO_BYTES = 30 * 1024 * 1024;
 const POSITION_EVERY_MS = 60 * 1000;
 const GEOFENCE_M = 75;
 const NEAR_M = 800;
@@ -122,12 +124,27 @@ export function DriverApp({ token }: { token: string }) {
     }
   }, [token, applyRun]);
 
+  /**
+   * The server said no to starting work: another phone on this link has the stop (issue 54), or the storm closed
+   * (issue 53). The phone lets go of its own visit there, so it shows the server's view, and says why.
+   */
+  const onRejected = useCallback((a: Record<string, unknown>, reason: string | undefined) => {
+    if (reason !== 'stop_taken' && reason !== 'storm_closed') return;
+    const stopId = typeof a.run_stop_id === 'string' ? a.run_stop_id : null;
+    if (a.kind === 'arrive' && stopId) {
+      const { [stopId]: _visit, ...visits } = localRef.current.visits;
+      const { [stopId]: _status, ...statuses } = localRef.current.statuses;
+      saveLocal({ ...localRef.current, visits, statuses, last: localRef.current.last?.stopId === stopId ? null : localRef.current.last });
+    }
+    flashToast(translate(langRef.current, reason === 'stop_taken' ? 'stop_taken' : 'storm_closed_title'));
+  }, [saveLocal, flashToast]);
+
   const syncNow = useCallback(async () => {
-    let result = await flush(token, () => setSync('sending'));
+    let result = await flush(token, () => setSync('sending'), onRejected);
     // Another send is running. Wait for it rather than leave this tap's report until the next timer.
     for (let i = 0; result === 'idle' && i < 60; i++) {
       await new Promise((done) => setTimeout(done, 500));
-      result = await flush(token, () => setSync('sending'));
+      result = await flush(token, () => setSync('sending'), onRejected);
     }
     generation.current++;
     if (result === 'dead') {
@@ -138,7 +155,7 @@ export function DriverApp({ token }: { token: string }) {
     const clear = p.actions === 0 && p.photos === 0;
     setSync(clear ? 'synced' : 'saved');
     if (clear && result === 'synced') await refresh();
-  }, [token, refresh]);
+  }, [token, refresh, onRejected]);
 
   // Startup: load from the phone first so it opens instantly and with no signal.
   useEffect(() => {
@@ -221,7 +238,9 @@ export function DriverApp({ token }: { token: string }) {
   // A lot with a problem reported goes to the back, so the app moves on to the next one it can do (issue 46). It stays
   // in the list, marked, for when the car is moved or the gate opens.
   const left = stops.filter((s) => !['done', 'skipped'].includes(s.status) && !(s.status === 'onsite' && local.visits[s.id]));
-  const remaining = [...left.filter((s) => s.status !== 'problem'), ...left.filter((s) => s.status === 'problem')];
+  // A lot someone else on this link is on right now (issue 54) waits at the back the same way.
+  const later = (s: (typeof left)[number]) => s.status === 'problem' || s.status === 'onsite';
+  const remaining = [...left.filter((s) => !later(s)), ...left.filter(later)];
   const next = onsite ?? remaining.find((s) => s.id === local.nextStopId) ?? remaining[0] ?? null;
 
   // Geofence: a foreground prompt only. It never records anything by itself. High accuracy only near the stop.
@@ -363,14 +382,19 @@ export function DriverApp({ token }: { token: string }) {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    // Checked before the photo counts as taken: the server would refuse these, and only after the driver had left (issue 56).
+    if (file.type && !file.type.startsWith('image/')) return flashToast(t('photo_not_image'));
+    if (file.size > MAX_PHOTO_BYTES) return flashToast(t('photo_too_big'));
     const takenAt = nowIso();
     inOrder(async () => {
       const v = localRef.current.visits[stop.id];
       if (!v) return;
       // Stored as the original bytes: no compression, so full resolution and EXIF reach the server.
       const meta = { client_uuid: uuid(), visit_client_uuid: v.visit, phase, taken_at: takenAt };
-      await apply({ ...localRef.current, visits: { ...localRef.current.visits, [stop.id]: { ...v, ...(phase === 'before' ? { before: true } : { after: true }) } } }, [], { blob: file, meta });
-      flashToast(t('photo_saved'));
+      // A retake is kept too, as more evidence, and the button says how many there are.
+      const n = (phase === 'before' ? v.beforeN ?? (v.before ? 1 : 0) : v.afterN ?? (v.after ? 1 : 0)) + 1;
+      await apply({ ...localRef.current, visits: { ...localRef.current.visits, [stop.id]: { ...v, ...(phase === 'before' ? { before: true, beforeN: n } : { after: true, afterN: n }) } } }, [], { blob: file, meta });
+      flashToast(n > 1 ? t('photo_again', { n }) : t('photo_saved'));
     });
   };
 
@@ -466,7 +490,7 @@ export function DriverApp({ token }: { token: string }) {
 
       {toast ? <div role="status" className="mx-4 mb-2 rounded-lg bg-sky-300 p-3 text-center text-lg font-bold text-black">{toast}</div> : null}
 
-      {here && next && next.status !== 'onsite' ? (
+      {here && next && next.status !== 'onsite' && run.storm.status === 'active' ? (
         <button type="button" onClick={() => arrive(next)} className={cn(bigButtonClass('go', 'tall'), 'mx-4 mb-3 w-[calc(100%-2rem)]')} data-testid="geofence-banner">{t('here_arrive')}</button>
       ) : null}
 
@@ -493,6 +517,16 @@ export function DriverApp({ token }: { token: string }) {
               onProblem={() => setShowProblem(true)}
             />
           )
+        ) : run.storm.status !== 'active' ? (
+          // Closed: work already started above can still be finished, but nothing new starts (issue 53).
+          <div className="rounded-lg bg-slate-800 p-6 text-center" data-testid="storm-closed">
+            <h1 className="text-2xl font-bold">{t('storm_closed_title')}</h1>
+            <p className="mt-3 text-lg text-slate-200">{t('storm_closed_body')}</p>
+            {sync !== 'synced' ? <p className="mt-3 text-lg font-medium text-amber-300">{t('keep_open')}</p> : null}
+          </div>
+        ) : next.status === 'onsite' ? (
+          // Another phone on this link is on site here (issue 54).
+          <div className="rounded-lg bg-slate-800 p-6 text-center text-xl font-bold" data-testid="stop-taken">{t('stop_taken')}</div>
         ) : showProblem ? (
           <ProblemPanel t={t} onCancel={() => setShowProblem(false)} onSend={(k, v, note) => sendProblem(next, k, v, note)} />
         ) : (
@@ -501,7 +535,7 @@ export function DriverApp({ token }: { token: string }) {
 
         {canUndo ? <BigButton className="w-full" onClick={undo} data-testid="undo">{t('undo_last')}</BigButton> : null}
 
-        {next && next.status !== 'onsite' && remaining.length > 1 ? (
+        {next && next.status !== 'onsite' && run.storm.status === 'active' && remaining.length > 1 ? (
           <section>
             <h2 className="mb-2 text-lg font-bold">{t('remaining')}</h2>
             <ul className="space-y-2">
@@ -511,6 +545,7 @@ export function DriverApp({ token }: { token: string }) {
                     <div className="font-bold">{s.site.label}</div>
                     <div className="text-base text-slate-200">{s.site.address}</div>
                     {s.status === 'problem' ? <div className="text-base font-semibold text-amber-300" data-testid="other-stop-problem">{t('problem_reported')}</div> : null}
+                    {s.status === 'onsite' ? <div className="text-base font-semibold text-sky-300" data-testid="other-stop-taken">{t('stop_taken')}</div> : null}
                   </button>
                 </li>
               ))}
@@ -563,10 +598,10 @@ function NextStop({ t, token, stop, awayM, index, total, onNavigate, onArrive, o
   );
 }
 
-function PhotoButton({ label, done, testId, onChange }: { label: string; done: boolean; testId: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void }) {
+function PhotoButton({ label, done, count = done ? 1 : 0, testId, onChange }: { label: string; done: boolean; count?: number; testId: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void }) {
   return (
     <label className={cn(bigButtonClass(done ? 'on' : 'plain', 'tall'), 'w-full cursor-pointer')}>
-      {done ? `✓ ${label}` : label}
+      {done ? `✓ ${label}${count > 1 ? ` (${count})` : ''}` : label}
       <input type="file" accept="image/*" capture="environment" className="sr-only" data-testid={testId} onChange={onChange} />
     </label>
   );
@@ -580,7 +615,7 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; on
   return (
     <section className="space-y-4 rounded-lg bg-slate-800 p-4" data-testid="onsite">
       <h1 className="font-display text-3xl font-bold leading-tight">{stop.site.label}</h1>
-      <PhotoButton label={t('before_photo')} done={visit.before} testId="before-photo" onChange={(e) => p.onPhoto('before', e)} />
+      <PhotoButton label={t('before_photo')} done={visit.before} count={visit.beforeN} testId="before-photo" onChange={(e) => p.onPhoto('before', e)} />
       <div>
         <h2 className="mb-2 text-lg font-bold">{p.needDepth ? t('depth_required') : t('depth')}</h2>
         <div className="grid grid-cols-5 gap-2">
@@ -610,7 +645,7 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; on
         </div>
       ) : null}
       <div className="sticky bottom-0 -mx-4 space-y-3 bg-slate-800 px-4 pb-4 pt-3 shadow-[0_-10px_16px_rgba(0,0,0,0.4)]">
-        <PhotoButton label={t('after_photo')} done={visit.after} testId="after-photo" onChange={(e) => p.onPhoto('after', e)} />
+        <PhotoButton label={t('after_photo')} done={visit.after} count={visit.afterN} testId="after-photo" onChange={(e) => p.onPhoto('after', e)} />
         {!visit.after ? <p className="text-center text-base font-medium text-amber-300" data-testid="no-photo-hint">{t('no_after_photo')}</p> : null}
         {noService ? <p className="text-center text-base font-bold text-amber-300" data-testid="no-service-hint">{t('no_service')}</p> : null}
         <BigButton tone="done" height="tall" className="w-full" disabled={blocked || noService} onClick={p.onDone} data-testid="done">{t('done')}</BigButton>
@@ -626,6 +661,9 @@ function ProblemPanel({ t, onCancel, onSend }: { t: T; onCancel: () => void; onS
   const [kind, setKind] = useState<'blocked' | 'breakdown' | 'skip' | 'damage' | null>(null);
   const [note, setNote] = useState('');
   const [recording, setRecording] = useState(false);
+  // One report per tap, however fast the second tap comes (issue 55). A ref, because two taps can land before a re-render.
+  const sent = useRef(false);
+  const [sending, setSending] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null);
   const canRecord = typeof MediaRecorder !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
 
@@ -663,7 +701,12 @@ function ProblemPanel({ t, onCancel, onSend }: { t: T; onCancel: () => void; onS
             <textarea className="mt-1 block w-full rounded-lg bg-slate-900 p-3 text-lg text-white" rows={3} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} data-testid="problem-note" />
           </label>
           {canRecord ? <BigButton tone={recording ? 'warn' : voice ? 'on' : 'plain'} className="w-full" onClick={() => void toggle()}>{recording ? t('stop_recording') : voice ? `✓ ${t('voice_note')}` : t('voice_note')}</BigButton> : null}
-          <BigButton tone="warn" height="tall" className="w-full" disabled={recording} onClick={() => onSend(kind, voice, note)} data-testid="problem-send">{t('send_problem_kind', { k: t(kind) })}</BigButton>
+          <BigButton tone="warn" height="tall" className="w-full" disabled={recording || sending} onClick={() => {
+            if (sent.current) return;
+            sent.current = true;
+            setSending(true);
+            onSend(kind, voice, note);
+          }} data-testid="problem-send">{t('send_problem_kind', { k: t(kind) })}</BigButton>
           <BigButton className="w-full" onClick={() => setKind(null)}>{t('back')}</BigButton>
         </>
       ) : (

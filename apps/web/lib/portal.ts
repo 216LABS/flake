@@ -90,7 +90,13 @@ export async function portalData(customerId: string, tenantId: string) {
         packets: packets.filter((p) => p.site_id === s.id),
       };
     }),
-    invoices: invoices.map(({ d, stormName }) => ({ id: d.id, storm: stormName, total_cents: d.subtotal_cents, status: d.status, pay_link: d.status === 'sent' || d.status === 'failed' ? d.pay_link : null, created_at: d.created_at })),
+    // What each invoice is for, line by line, so a Due invoice is readable without a payment link (issue 60).
+    invoices: invoices.map(({ d, stormName }) => ({
+      id: d.id, storm: stormName, total_cents: d.subtotal_cents, status: d.status, created_at: d.created_at,
+      due: d.status === 'sent' || d.status === 'failed',
+      pay_link: d.status === 'sent' || d.status === 'failed' ? d.pay_link : null,
+      lines: (d.lines as { description: string; quantity: number; amount_cents: number }[]).map((l) => ({ description: l.description, quantity: l.quantity, amount_cents: l.amount_cents })),
+    })),
   };
 }
 

@@ -1,10 +1,10 @@
-import { and, asc, contract, crew_member, desc, driver_action, driver_position, driverScope, eq, inArray, problem_report, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, visit, visit_correction, visit_photo, type DriverScope, type Tx } from '@flake/db';
+import { and, asc, contract, crew_member, desc, driver_action, driver_position, driverScope, eq, inArray, problem_report, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, visit, visit_correction, visit_photo, visitNotVoided, type DriverScope, type Tx } from '@flake/db';
 import { driverAction, type DriverAction } from '@flake/contracts';
 import { gpsMatches } from '@flake/core/geo';
 import { liveContracts } from '@flake/core/time';
 import type { ContractService } from '@flake/core/pricing';
 import type { MultiPolygon, Polygon } from 'geojson';
-import { getBlob, putBlob, signedUploadUrl } from './blob';
+import { getBlob, putBlob, removeBlob, signedUploadUrl } from './blob';
 import { log } from './log';
 import { notifyOffice, queuePush } from './messaging';
 import { HttpError } from './http';
@@ -14,6 +14,25 @@ import { getSetting } from './providers';
 import { hashToken, sha256Hex } from './tokens';
 
 export const UNDO_WINDOW_MS = 2 * 60 * 1000;
+/** The same cap on every upload path, direct or through signed storage (issue 56). */
+export const MAX_PHOTO_BYTES = 30 * 1024 * 1024;
+
+/**
+ * True when the bytes start like a photo format a phone makes: JPEG, PNG, GIF, WebP, or HEIC/HEIF/AVIF. A text file
+ * renamed .jpg is not proof of anything. HEIC passes even when the server can't read its size, so an iPhone photo is
+ * never thrown away.
+ */
+export function looksLikeImage(b: Uint8Array) {
+  const at = (i: number, s: string) => [...s].every((c, k) => b[i + k] === c.charCodeAt(0));
+  return (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) || (b[0] === 0x89 && at(1, 'PNG')) || at(0, 'GIF8') || (at(0, 'RIFF') && at(8, 'WEBP')) || at(4, 'ftyp');
+}
+/** Actions that begin work at a stop. A closed storm refuses these when they were tapped after the close. */
+const STARTS_WORK = new Set(['enroute', 'arrive', 'problem']);
+/**
+ * A little clock drift, not the 10 minutes a dead link gets: once the phone hears of the close it shows the closed
+ * screen, so anything later than this was tapped after the office ended the storm.
+ */
+const CLOSE_SLACK_MS = 60 * 1000;
 const ON_THE_WAY_FRESH_MS = 15 * 60 * 1000;
 
 export interface RunScope {
@@ -120,6 +139,11 @@ export async function processAction(rs: RunScope, a: DriverAction): Promise<Ack>
   const { tenantId, runId, crewId, stormId } = rs.scope;
   if (!crewId) return { client_uuid: a.client_uuid, status: 'rejected', reason: 'no_crew' };
   if (rs.deadAt && Date.parse(a.at) > Date.parse(rs.deadAt) + CLOCK_SLACK_MS) return { client_uuid: a.client_uuid, status: 'rejected', reason: 'link_dead' };
+  // A closed storm takes work the driver did before the close, not new work (issue 53). Done, depth, salt and photos
+  // finish a visit that was already started, so they still go through.
+  if (rs.storm.status !== 'active' && STARTS_WORK.has(a.kind) && Date.parse(a.at) > Date.parse(rs.storm.closed_at ?? rs.storm.started_at) + CLOSE_SLACK_MS) {
+    return { client_uuid: a.client_uuid, status: 'rejected', reason: 'storm_closed' };
+  }
   const stop = a.run_stop_id ? await rs.scope.stop(a.run_stop_id) : null;
   if (a.run_stop_id && !stop) return { client_uuid: a.client_uuid, status: 'rejected', reason: 'out_of_scope' };
   const [st] = stop ? await serviceDb().select().from(site).where(and(eq(site.tenant_id, tenantId), eq(site.id, stop.site_id))) : [];
@@ -146,6 +170,12 @@ export async function processAction(rs: RunScope, a: DriverAction): Promise<Ack>
         if (stop!.status === 'open' && Date.now() - Date.parse(a.at) < ON_THE_WAY_FRESH_MS) after.push(() => enqueue('notify.customer', { tenantId, siteId: st!.id, stormId, template: 'on_the_way', key: `on_the_way:${stormId}:${st!.id}` }, { dedupeKey: `notify:on_the_way:${stormId}:${st!.id}` }));
         break;
       case 'arrive': {
+        // Two phones on one link (issue 54): the stop is locked, and a second live visit on it is refused, so one lot
+        // can't be finished, and billed, twice. The same phone's retry has the same visit id and passes.
+        await tx.select({ id: run_stop.id }).from(run_stop).where(eq(run_stop.id, stop!.id)).for('update');
+        const [other] = await tx.select({ id: visit.id }).from(visit)
+          .where(and(eq(visit.tenant_id, tenantId), eq(visit.run_stop_id, stop!.id), sql`${visit.client_uuid} <> ${a.visit_client_uuid}`, visitNotVoided));
+        if (other) throw new HttpError(409, 'stop_taken');
         const polygons = st!.polygons as Polygon | MultiPolygon | null;
         await tx.insert(visit).values({
           tenant_id: tenantId, client_uuid: a.visit_client_uuid, storm_id: stormId, run_stop_id: stop!.id, site_id: st!.id, crew_id: crewId, services: [],
@@ -178,6 +208,11 @@ export async function processAction(rs: RunScope, a: DriverAction): Promise<Ack>
         break;
       }
       case 'problem': {
+        // Skipping a lot the driver had arrived at closes out that visit, so no half-open visit is left to bill (issue 57).
+        if (a.problem === 'skip') {
+          const open = await tx.select({ id: visit.id }).from(visit).where(and(eq(visit.tenant_id, tenantId), eq(visit.run_stop_id, stop!.id), eq(visit.crew_id, crewId), sql`${visit.departed_device_at} is null`, visitNotVoided));
+          for (const v of open) await tx.insert(visit_correction).values({ tenant_id: tenantId, visit_id: v.id, field: 'voided', old_value: false, new_value: true, reason: 'Driver skipped the stop after arriving', by_crew: crewId });
+        }
         await tx.insert(problem_report).values({ tenant_id: tenantId, client_uuid: a.client_uuid, storm_run_id: runId, site_id: st?.id ?? null, crew_id: crewId, kind: a.problem, note: a.note ?? null }).onConflictDoNothing({ target: problem_report.client_uuid });
         await setStop(tx, rs, stop!.id, a.problem === 'skip' ? 'skipped' : 'problem', ['open', 'enroute', 'onsite', 'problem']);
         after.push(() => queuePush(tenantId, { title: 'Driver problem', body: `${a.problem} at ${st?.label ?? 'a site'}`, url: `/storms/${stormId}`, key: `problem:${a.client_uuid}`, related: { storm_id: stormId } }));
@@ -274,6 +309,10 @@ export async function savePhoto(rs: RunScope, input: PhotoInput): Promise<{ stat
 
 async function recordPhoto(rs: RunScope, visitId: string, path: string, input: { client_uuid: string; phase: string; taken_at?: string; bytes: Uint8Array }): Promise<{ status: 'ok' | 'duplicate'; id?: string }> {
   const { tenantId } = rs.scope;
+  if (!looksLikeImage(input.bytes)) {
+    await removeBlob('photos', path);
+    throw new HttpError(415, 'That file is not a photo', 'not_an_image');
+  }
   const meta = await readImageMeta(input.bytes);
   const rows = await serviceDb().insert(visit_photo).values({
     tenant_id: tenantId, visit_id: visitId, client_uuid: input.client_uuid, phase: input.phase as 'before' | 'after' | 'issue', storage_path: path, sha256: sha256Hex(input.bytes),
@@ -312,6 +351,11 @@ export async function finishPhotoUpload(rs: RunScope, input: PhotoUpload) {
   const { visitId, path } = await uploadTarget(rs, input);
   const bytes = await getBlob('photos', path);
   if (!bytes) throw new HttpError(409, 'upload_missing', 'upload_missing');
+  // Signed uploads go straight to storage, so the size cap is checked here, after the fact (issue 56).
+  if (bytes.byteLength > MAX_PHOTO_BYTES) {
+    await removeBlob('photos', path);
+    throw new HttpError(413, 'File too large', 'too_large');
+  }
   return recordPhoto(rs, visitId, path, { ...input, bytes });
 }
 

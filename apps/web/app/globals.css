@@ -144,3 +144,14 @@ input::-webkit-date-and-time-value {
   text-align: left;
   min-height: 1.25em;
 }
+
+/*
+ * On a phone the office has a sticky header and a fixed tab bar. Anything the browser scrolls to (a focused field, a
+ * jump link, the next button) stops clear of both instead of under them.
+ */
+@media (max-width: 767.98px) {
+  html:has([data-testid='tab-bar']) {
+    scroll-padding-top: 4.5rem;
+    scroll-padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+}

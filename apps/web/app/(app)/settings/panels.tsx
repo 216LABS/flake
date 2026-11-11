@@ -1,5 +1,6 @@
 'use client';
 
+import { FREE_SITE_LIMIT } from '@flake/core/fees';
 import type { RateCard } from '@flake/core/quote';
 import { Badge, Button, Card, Input, Label, Select, Table, Td, Th } from '@flake/ui';
 import { useRouter } from 'next/navigation';
@@ -299,9 +300,10 @@ export function PlanPanel({ plan, freeUntil, inSeason }: { plan: string; freeUnt
     <Card className="max-w-xl">
       <h2 className="font-semibold">Plan</h2>
       <p className="mt-1 text-sm">Current: <Badge tone={plan === 'pro' ? 'green' : 'gray'} data-testid="plan">{plan}</Badge></p>
-      {inSeason ? <p className="mt-2 text-sm text-slate-600">Free first season through {freeUntil}. Pro features are on and there is no Pro charge. The 1% payment fee still applies.</p> : null}
+      {/* The free first season lifts the site cap with the other Pro features, so the copy says so (issue 51). */}
+      {inSeason && plan !== 'pro' ? <p className="mt-2 text-sm text-slate-700" data-testid="free-season">Free first season through {freeUntil ? new Date(`${freeUntil}T12:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : 'the end of the season'}: <b>unlimited sites</b> and every Pro feature, with no Pro charge. The 1% payment fee still applies. After that, the free plan covers {FREE_SITE_LIMIT} sites; sites you already have stay, and adding more needs Pro.</p> : null}
       <ul className="mt-3 list-disc pl-5 text-sm text-slate-700">
-        <li>Free: up to 25 sites, all core features, 1% fee on payments (min {money(50)}, max {money(2500)})</li>
+        <li>Free{inSeason ? ', after the first season' : ''}: up to {FREE_SITE_LIMIT} sites, all core features, 1% fee on payments (min {money(50)}, max {money(2500)})</li>
         <li>Pro: {money(7900)}/mo or {money(79000)}/yr, unlimited sites, sub pay statements, QuickBooks export, 0.5% fee</li>
       </ul>
       {plan !== 'pro' ? (

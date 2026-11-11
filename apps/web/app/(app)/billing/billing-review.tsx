@@ -95,7 +95,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
       {flaggedOnly && rows.length && !shown.length ? <EmptyState title="Nothing is flagged" body="Everything here is clean. Approve it, or turn off the filter to see it." /> : null}
       <div className="space-y-3">
         {shown.map((r) => (
-          <Card key={r.id} data-testid="draft" data-status={r.status}>
+          <Card key={r.id} data-testid="draft" data-status={r.status} data-draft-id={r.id}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="font-semibold">{r.customer}</div>
               <div className="flex items-center gap-2">

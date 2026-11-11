@@ -45,6 +45,17 @@ beforeAll(async () => {
 });
 afterAll(() => closeDb());
 
+
+/**
+ * Several tests here use one stop as scratch space. A stop takes one live visit at a time (issue 54), so the last
+ * test's visit is voided first, the way Undo does it.
+ */
+async function clearStop(stopId: string) {
+  await serviceDb().execute(sql`insert into visit_correction (tenant_id, visit_id, field, old_value, new_value, reason, by_crew)
+    select v.tenant_id, v.id, 'voided', 'false'::jsonb, 'true'::jsonb, 'test reset', v.crew_id from visit v where v.run_stop_id = ${stopId}
+    and not exists (select 1 from visit_correction c where c.visit_id = v.id and c.field = 'voided' and c.new_value = 'true'::jsonb)`);
+}
+
 describe('driver API', () => {
   it('returns the run without a login, with no secrets in it', async () => {
     const res = await runRoute(req(`/api/d/${token}/run`), params(token));
@@ -105,6 +116,7 @@ describe('driver API', () => {
   it('a server error stops the batch unacknowledged, so the phone retries in order and loses nothing', async () => {
     const { processActions, resolveToken } = await import('@/lib/driver');
     const rs = await resolveToken(token);
+    await clearStop(stops[3]!.id);
     const a = stopActions(stops[3]!.id, new Date());
     const broken = { ...a.actions[0]!, at: '2026-13-45T99:99:99.000Z' };
     const acks = await processActions(rs, [{ ...broken, client_uuid: randomUUID() }, a.actions[1]]);
@@ -141,6 +153,7 @@ describe('driver API', () => {
   it('full-size photos can go straight to storage and are recorded once, with the server hashing the stored bytes', async () => {
     const { finishPhotoUpload, resolveToken, signPhotoUpload } = await import('@/lib/driver');
     const rs = await resolveToken(token);
+    await clearStop(stops[3]!.id);
     const a = stopActions(stops[3]!.id, new Date());
     await post(token, [a.actions[0]]);
     const input = { client_uuid: randomUUID(), visit_client_uuid: a.visit, phase: 'after' as const, content_type: 'image/jpeg' };
@@ -160,6 +173,7 @@ describe('driver API', () => {
 
   it('another run cannot get an upload URL for this visit', async () => {
     const { resolveToken, signPhotoUpload } = await import('@/lib/driver');
+    await clearStop(stops[3]!.id);
     const a = stopActions(stops[3]!.id, new Date());
     await post(token, [a.actions[0]]);
     const other = await resolveToken(otherTenantToken);
@@ -167,6 +181,7 @@ describe('driver API', () => {
   });
 
   it('keeps photos byte-identical with EXIF and resolution, once', async () => {
+    await clearStop(stops[3]!.id);
     const a = stopActions(stops[3]!.id, new Date());
     await post(token, [a.actions[0]]);
     const bytes = await jpeg();

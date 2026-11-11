@@ -10,7 +10,12 @@ import { plainJobError } from '@/lib/usage';
 import { stormWeather } from '@/lib/weather';
 import { createStorm, ctxOf, drain, makeWorld, stopActions } from './helpers';
 
-afterAll(() => closeDb());
+// Stops finished here queue notices that run a minute later. Clear them so they can't land in another file's job tests.
+afterAll(async () => {
+  await drain();
+  await serviceDb().execute(sql`update job set done_at = now() where done_at is null and dead_at is null`);
+  await closeDb();
+});
 
 /** A storm on Route A with the first stop done (with a photo when asked), still open. */
 async function stormWithVisit(opts: { photo?: boolean } = {}) {

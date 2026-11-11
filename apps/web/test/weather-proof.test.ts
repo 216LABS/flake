@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { and, closeDb, eq, inArray, job, message_log, proof_packet, run_stop, serviceDb, site, sql, sms_consent, storm, tenant, trigger_alert, visit, visit_correction, weather_snapshot, withUser, desc } from '@flake/db';
 import { signTwilio, MOCK_TWILIO_TOKEN } from '@flake/providers';
 import { POST as inbound } from '@/app/api/webhooks/twilio/inbound/route';
@@ -423,6 +423,11 @@ describe('free plan housekeeping', () => {
 });
 
 describe('job queue', () => {
+  // Earlier files finish stops, and their delayed notices (or one waiting for photos) can come due mid-test. These
+  // tests count and order jobs, so each starts from an empty queue.
+  beforeEach(async () => {
+    await serviceDb().execute(sql`update job set done_at = now() where done_at is null and dead_at is null`);
+  });
   it('companies take turns, so a huge storm cannot hold up a small one', async () => {
     await drain();
     const marker = randomUUID();

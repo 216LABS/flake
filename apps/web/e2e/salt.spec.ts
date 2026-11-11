@@ -3,6 +3,8 @@ import { login, sql } from './helpers';
 
 test('salt ordering: add a supplier, two orders fill a shared truck, the supplier delivers, fees show', async ({ page, browser, baseURL }) => {
   await login(page);
+  // Only this run's messages count; the database isn't always reset between runs.
+  const started = new Date();
   // Suppliers are shared by every company. Earlier runs' suppliers are switched off so this one is the pick.
   await sql`update salt_supplier set active = false`;
   const name = `Lakeshore Salt ${Date.now()}`;
@@ -43,7 +45,7 @@ test('salt ordering: add a supplier, two orders fill a shared truck, the supplie
   await expect(card.getByTestId('salt-quote-result')).toContainText('fills the shared load');
   await card.getByTestId('salt-place').click();
   await expect(card.getByTestId('salt-msg')).toContainText('filled the truck');
-  await expect.poll(async () => (await sql`select count(*)::int as n from message_log where template = 'salt_supplier' and to_addr = 'orders@lakeshoresalt.test' and body like '%2 stops%'`)[0]!.n, { timeout: 30000 }).toBe(1);
+  await expect.poll(async () => (await sql`select count(*)::int as n from message_log where template = 'salt_supplier' and to_addr = 'orders@lakeshoresalt.test' and body like '%2 stops%' and created_at >= ${started}`)[0]!.n, { timeout: 30000 }).toBe(1);
 
   // The supplier opens their link: one full load with both stops. They set a date, then mark the first delivered.
   const guest = await browser.newContext({ baseURL });
