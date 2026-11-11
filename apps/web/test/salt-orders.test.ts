@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, eq, job, salt_order, salt_pool, salt_supplier, serviceDb, sql, tenant } from '@flake/db';
 import { cancelOrder, createSupplier, placeOrder, quote, resolveSupplier, supplierUpdate, updateSupplier } from '@/lib/salt-orders';
+import { OVERFILL, SHIP_AS_IS } from '@flake/core/salt';
 import { makeWorld, type World } from './helpers';
 
 afterAll(() => closeDb());
@@ -108,6 +109,24 @@ describe('salt ordering', () => {
       const all = await loads();
       const state = JSON.stringify(all.map((p) => ({ status: p.status, tons: sum(p.orders) })));
       for (const p of all) expect(sum(p.orders), state).toBeLessThanOrEqual(22 * 1.1);
+      expect(all.filter((p) => p.status === 'open'), state).toHaveLength(1);
+    });
+
+    it('a bigger rush with cancels mixed in: every order lands, no truck goes out short or over (CI caught both)', async () => {
+      const cs = [await ctx(a), await ctx(b)];
+      await serviceDb().update(salt_order).set({ status: 'cancelled' }).where(sql`${salt_order.supplier_id} = ${sid} and ${salt_order.status} = 'pooling'`);
+      const placed = await Promise.all(Array.from({ length: 30 }, (_, i) => placeOrder(cs[i % 2]!, { tons: 1 + (i % 5), address: `${i + 100} Main St, Lakewood, OH` })));
+      // Cancel a third of them while more orders arrive.
+      const cancels = placed.filter((_, i) => i % 3 === 0).map((r, i) => cancelOrder(cs[(i * 3) % 2]!, r.order!.id).catch((e: { code?: string }) => e.code));
+      const more = Array.from({ length: 10 }, (_, i) => placeOrder(cs[i % 2]!, { tons: 2 + (i % 3), address: `${i + 200} Main St, Lakewood, OH` }));
+      const settled = await Promise.allSettled([...cancels, ...more]);
+      expect(settled.filter((x) => x.status === 'rejected').map((x) => String((x as PromiseRejectedResult).reason))).toEqual([]);
+      const all = await loads();
+      const state = JSON.stringify(all.map((p) => ({ status: p.status, tons: sum(p.orders) })));
+      // A load only goes out full, or at least SHIP_AS_IS of a truck when the next order won't fit: never short because
+      // a cancel slipped in after it was counted, and never over the overfill allowance.
+      for (const p of all.filter((x) => x.status === 'sent')) expect(sum(p.orders), state).toBeGreaterThanOrEqual(22 * SHIP_AS_IS - 0.01);
+      for (const p of all) expect(sum(p.orders), state).toBeLessThanOrEqual(22 * (1 + OVERFILL) + 0.01);
       expect(all.filter((p) => p.status === 'open'), state).toHaveLength(1);
     });
 

@@ -40,3 +40,22 @@ test('paths people guess go to the page they mean', async ({ page }) => {
   await page.goto('/alerts');
   expect(new URL(page.url()).pathname).toBe('/dashboard');
 });
+
+test('the failed-messages banner says "still retrying" only while a retry is pending', async ({ page }) => {
+  await login(page);
+  const [t] = await sql`select tenant_id from route where name = 'Rocky River' limit 1`;
+  const key = `e2e-failed-${Date.now()}`;
+  // Earlier tests may have left retries pending; this one starts from none.
+  await sql`update job set done_at = now() where done_at is null and dead_at is null and payload->>'tenantId' = ${t!.tenant_id}`;
+  await sql`insert into message_log (tenant_id, channel, to_addr, template, body, status, idempotency_key) values (${t!.tenant_id}, 'email', 'gone@example.com', 'crew_link', 'test', 'failed', ${key})`;
+  try {
+    await page.goto('/dashboard');
+    await expect(page.getByTestId('messages-failed')).toContainText('Flake has stopped retrying');
+    await sql`insert into job (kind, payload, dedupe_key, run_at, attempts, last_error) values ('notify.party', ${sql.json({ tenantId: t!.tenant_id })}, ${key}, now() + interval '1 hour', 1, 'Resend 503: down')`;
+    await page.reload();
+    await expect(page.getByTestId('messages-failed')).toContainText('Flake is still retrying');
+  } finally {
+    await sql`delete from message_log where idempotency_key = ${key}`;
+    await sql`delete from job where dedupe_key = ${key}`;
+  }
+});

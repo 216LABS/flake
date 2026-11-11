@@ -30,6 +30,9 @@ export default async function Dashboard() {
   requests.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const w = await tenantWeatherHeader(ctx.tenantId);
   // Failures retry; rejected addresses don't, and need someone to fix the address (issue 49).
+  // "Still retrying" only while a send for this company is actually waiting for another try (issue 69).
+  const [{ retrying } = { retrying: false }] = (await serviceDb().execute(sql`select exists (select 1 from job where done_at is null and dead_at is null and attempts > 0 and last_error is not null
+    and payload->>'tenantId' = ${ctx.tenantId}) as retrying`)) as unknown as { retrying: boolean }[];
   const [{ failedMessages, rejectedMessages } = { failedMessages: 0, rejectedMessages: 0 }] = await serviceDb()
     .select({ failedMessages: sql<number>`(count(*) filter (where ${message_log.status} = 'failed'))::int`, rejectedMessages: sql<number>`(count(*) filter (where ${message_log.status} = 'rejected'))::int` })
     .from(message_log).where(and(eq(message_log.tenant_id, ctx.tenantId), sql`${message_log.created_at} > now() - interval '24 hours'`));
@@ -47,7 +50,7 @@ export default async function Dashboard() {
     <>
       <PageHeader title="Dashboard" subtitle={ctx.tenant.name} actions={canEdit ? <Link href="/storms" className={buttonVariants({ variant: 'accent' })}>Start a storm</Link> : null} />
       {usage?.near_limit ? <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-800" data-testid="usage-warning">Storage is nearly full ({usage.files_mb} of {usage.files_limit_mb} MB of files, {usage.db_mb} of {usage.db_limit_mb} MB of database). <Link className="underline" href="/settings?tab=system">See details</Link></p> : null}
-      {failedMessages ? <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-800" data-testid="messages-failed">{failedMessages === 1 ? '1 message' : `${failedMessages} messages`} could not be sent in the last 24 hours. Flake keeps retrying. <Link className="underline" href="/settings?tab=system">See why</Link></p> : null}
+      {failedMessages ? <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-800" data-testid="messages-failed">{failedMessages === 1 ? '1 message' : `${failedMessages} messages`} could not be sent in the last 24 hours. {retrying ? 'Flake is still retrying.' : 'Flake has stopped retrying. Check the address, then send again from the driver or customer.'} <Link className="underline" href="/settings?tab=system">See why</Link></p> : null}
       {rejectedMessages ? <p className="mb-4 rounded-md bg-amber-50 p-3 text-sm text-amber-950" data-testid="messages-rejected">{rejectedMessages === 1 ? '1 message was' : `${rejectedMessages} messages were`} not delivered because the email address or phone number was rejected. Fix it on the driver or customer, and route links go out again. <Link className="underline" href="/settings?tab=system">See which</Link></p> : null}
       <section className="overflow-hidden rounded-md bg-slate-950 text-white" data-testid="conditions">
         <div className="flex flex-wrap items-end gap-x-10 gap-y-4 p-5">

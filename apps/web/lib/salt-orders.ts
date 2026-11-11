@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { and, desc, eq, inArray, salt_order, salt_pool, salt_supplier, serviceDb, sql, tenant, type SaltOrderStatus } from '@flake/db';
+import { and, desc, eq, inArray, salt_order, salt_pool, salt_supplier, serviceDb, sql, tenant, type SaltOrderStatus, type Tx } from '@flake/db';
 import { orderCostCents, orderPath, pickSupplier, referralFeeCents, reorderAdvice, stopsFor, type OrderPath } from '@flake/core/salt';
 import { baseUrl, isTestEnv, required } from './env';
 import { HttpError, isUuid } from './http';
@@ -85,10 +85,19 @@ export async function updateSupplier(id: string, patch: Partial<Pick<Supplier, '
   return { ...s, link: supplierLink(s), sent };
 }
 
+/**
+ * One change at a time to a supplier's open load: placing an order, cancelling one, sending the load early, or taking
+ * the supplier off. Row locks alone let a rush of orders keep losing the race for a load that just filled (they gave
+ * up with "busy"), and let a cancel land between an order counting the load as full and sending it, so a truck went out
+ * short. CI caught both; this queue fixes both.
+ */
+const lockSupplier = (tx: Tx, supplierId: string) => tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`salt_supplier:${supplierId}`}))`);
+
 /** Ship the open load as it is, short of a full truck, when it isn't filling and someone needs their salt. Tons sent, or null. */
 async function sendOpenLoad(s: Supplier): Promise<number | null> {
   const db = serviceDb();
   const out = await db.transaction(async (tx) => {
+    await lockSupplier(tx, s.id);
     const [pool] = (await tx.execute(sql`select id from salt_pool where supplier_id = ${s.id} and status = 'open' for update`)) as unknown as { id: string }[];
     if (!pool) return null;
     const now = new Date().toISOString();
@@ -107,6 +116,7 @@ async function sendOpenLoad(s: Supplier): Promise<number | null> {
 async function releaseOpenLoad(s: Supplier) {
   const db = serviceDb();
   const waiting = await db.transaction(async (tx) => {
+    await lockSupplier(tx, s.id);
     const pools = await tx.update(salt_pool).set({ status: 'cancelled' }).where(and(eq(salt_pool.supplier_id, s.id), eq(salt_pool.status, 'open'))).returning({ id: salt_pool.id });
     if (!pools.length) return [];
     return tx.update(salt_order).set({ status: 'cancelled', updated_at: new Date().toISOString() })
@@ -202,6 +212,7 @@ export async function placeOrder(ctx: OfficeContext, input: OrderInput) {
   };
 
   const out = await db.transaction(async (tx) => {
+    await lockSupplier(tx, s.id);
     if (input.tons >= s.truckload_tons) {
       const [o] = await tx.insert(salt_order).values({ ...base, status: 'ordered', stop_fee_cents: 0 }).returning();
       await enqueue('salt.supplier_email', { kind: 'order', id: o!.id, tenantId: ctx.tenantId }, { dedupeKey: `salt_order:${o!.id}`, db: tx });
@@ -279,8 +290,12 @@ export async function cancelOrder(ctx: OfficeContext, orderId: string) {
   const [o] = await db.select().from(salt_order).where(and(eq(salt_order.id, orderId), eq(salt_order.tenant_id, ctx.tenantId)));
   if (!o) throw new HttpError(404, 'Order not found');
   if (o.status === 'pooling' || (o.status === 'ordered' && !o.pool_id)) {
-    // Only if nothing moved it on meanwhile (the load filling, or the supplier setting a date).
-    const done = await db.update(salt_order).set({ status: 'cancelled', updated_at: new Date().toISOString() }).where(and(eq(salt_order.id, o.id), eq(salt_order.status, o.status))).returning({ id: salt_order.id });
+    // Only if nothing moved it on meanwhile (the load filling, or the supplier setting a date). In the supplier's queue,
+    // so an order filling the load can't count this one and then send the truck without it.
+    const done = await db.transaction(async (tx) => {
+      await lockSupplier(tx, o.supplier_id);
+      return tx.update(salt_order).set({ status: 'cancelled', updated_at: new Date().toISOString() }).where(and(eq(salt_order.id, o.id), eq(salt_order.status, o.status))).returning({ id: salt_order.id });
+    });
     if (!done.length) throw new HttpError(409, 'The supplier already has this load. Call them to change it.', 'with_supplier');
     if (o.status === 'ordered') await enqueue('salt.supplier_email', { kind: 'cancel', id: o.id, tenantId: ctx.tenantId }, { dedupeKey: `salt_cancel:${o.id}` });
     return { ok: true };
