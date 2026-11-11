@@ -145,14 +145,30 @@ export async function sendOfficePush(tenantId: string, msg: OfficePush) {
 }
 
 /** Tells owners and dispatchers something needs a look: push, email, and a text to the company phone. */
-export async function notifyOffice(t: TenantRow, n: { headline: string; link: string; key: string; related?: Record<string, unknown> }) {
+/**
+ * Text someone outside the office typed (a customer's decline note, an inbound text, a driver's problem note), made safe
+ * to put in an alert: tags and control characters out, spaces collapsed. An email carrying a <script> tag in its text
+ * was accepted by the provider and then never delivered (issue 70).
+ */
+export const plainText = (s: string, max = 300) => {
+  const t = s.replace(/<[^>]*>?/g, ' ').replace(/[\p{Cc}\p{Cf}]+/gu, ' ').replace(/\s+/g, ' ').trim();
+  return t.length > max ? `${t.slice(0, max - 3).trimEnd()}...` : t;
+};
+
+/**
+ * Tells owners and dispatchers something needs a look. The subject is short and Flake's own words, when one is given; the
+ * headline, which can quote what someone typed, goes in the body only.
+ */
+export async function notifyOffice(t: TenantRow, n: { headline: string; subject?: string; link: string; key: string; related?: Record<string, unknown> }) {
   const staff = (await serviceDb().execute(sql`
     select u.email from membership m join auth.users u on u.id = m.user_id
     where m.tenant_id = ${t.id} and m.role in ('owner','dispatcher') and u.email is not null`)) as unknown as { email: string }[];
-  const vars = { headline: n.headline, link: n.link };
-  await queuePush(t.id, { title: 'Flake', body: n.headline, url: new URL(n.link).pathname, key: n.key, related: n.related });
-  for (const s of staff) await queueNotify(t.id, { email: s.email }, { template: 'owner_alert', vars, subject: n.headline, key: `${n.key}:${s.email}`, related: n.related });
-  if (t.contact_phone) await queueNotify(t.id, { phone: t.contact_phone }, { template: 'owner_alert', vars, subject: n.headline, key: `${n.key}:phone`, related: n.related });
+  const headline = plainText(n.headline, 600);
+  const subject = plainText(n.subject ?? n.headline, 120);
+  const vars = { headline, link: n.link };
+  await queuePush(t.id, { title: 'Flake', body: subject, url: new URL(n.link).pathname, key: n.key, related: n.related });
+  for (const s of staff) await queueNotify(t.id, { email: s.email }, { template: 'owner_alert', vars, subject, key: `${n.key}:${s.email}`, related: n.related });
+  if (t.contact_phone) await queueNotify(t.id, { phone: t.contact_phone }, { template: 'owner_alert', vars, subject, key: `${n.key}:phone`, related: n.related });
 }
 
 /** Sends over each channel the recipient can get. Email is the always-available fallback. */

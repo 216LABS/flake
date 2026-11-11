@@ -241,7 +241,11 @@ export function DriverApp({ token }: { token: string }) {
   // A lot someone else on this link is on right now (issue 54) waits at the back the same way.
   const later = (s: (typeof left)[number]) => s.status === 'problem' || s.status === 'onsite';
   const remaining = [...left.filter((s) => !later(s)), ...left.filter(later)];
-  const next = onsite ?? remaining.find((s) => s.id === local.nextStopId) ?? remaining[0] ?? null;
+  // After the close, a lot the driver started and left unfinished comes back up, so its Done can still be sent within the
+  // 24 hours the office was promised (issue 71). Nothing new starts.
+  const stormClosed = Boolean(run && run.storm.status !== 'active');
+  const unfinished = stops.filter((s) => local.visits[s.id] && !['done', 'skipped'].includes(s.status));
+  const next = (stormClosed ? (unfinished.find((s) => s.id === local.nextStopId) ?? unfinished[0]) : null) ?? onsite ?? remaining.find((s) => s.id === local.nextStopId) ?? remaining[0] ?? null;
 
   // Geofence: a foreground prompt only. It never records anything by itself. High accuracy only near the stop.
   const nextRef = useRef(next);
@@ -500,7 +504,7 @@ export function DriverApp({ token }: { token: string }) {
             {t('all_done')}
             {sync !== 'synced' ? <p className="mt-3 text-lg font-medium text-amber-300" data-testid="keep-open">{t('keep_open')}</p> : null}
           </div>
-        ) : next.status === 'onsite' && local.visits[next.id] ? (
+        ) : (next.status === 'onsite' || stormClosed) && local.visits[next.id] ? (
           showProblem ? (
             <ProblemPanel t={t} onCancel={() => setShowProblem(false)} onSend={(k, v, note) => sendProblem(next, k, v, note)} />
           ) : (

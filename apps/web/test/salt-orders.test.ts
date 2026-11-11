@@ -127,7 +127,11 @@ describe('salt ordering', () => {
       // a cancel slipped in after it was counted, and never over the overfill allowance.
       for (const p of all.filter((x) => x.status === 'sent')) expect(sum(p.orders), state).toBeGreaterThanOrEqual(22 * SHIP_AS_IS - 0.01);
       for (const p of all) expect(sum(p.orders), state).toBeLessThanOrEqual(22 * (1 + OVERFILL) + 0.01);
-      expect(all.filter((p) => p.status === 'open'), state).toHaveLength(1);
+      // At most one load open; none at all when the last order filled the truck exactly.
+      expect(all.filter((p) => p.status === 'open').length, state).toBeLessThanOrEqual(1);
+      const waiting = await serviceDb().select().from(salt_order).where(sql`${salt_order.supplier_id} = ${sid} and ${salt_order.status} = 'pooling'`);
+      const open = all.find((p) => p.status === 'open');
+      expect(waiting.every((o) => o.pool_id === open?.id), state).toBe(true);
     });
 
     it('a cancel racing the load filling never leaves a cancelled order on a sent load', async () => {

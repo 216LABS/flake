@@ -4,7 +4,7 @@ import { quoteAccept, quoteCreate, quoteDecline } from '@flake/contracts';
 import { z } from 'zod';
 import { baseUrl } from './env';
 import { HttpError } from './http';
-import { notifyOffice, queueNotify, shortLink } from './messaging';
+import { notifyOffice, plainText, queueNotify, shortLink } from './messaging';
 import { getProviders } from './providers';
 import { handleStripeEvent } from './billing';
 import { putBlob, signedUrl } from './blob';
@@ -105,7 +105,9 @@ export async function declineQuote(token: string, input: z.infer<typeof quoteDec
     .where(and(eq(contract.id, r.contract.id), eq(contract.tenant_id, r.tenant.id), inArray(contract.status, ['draft', 'sent']))).returning({ id: contract.id });
   if (!took.length) return { already: true };
   await notifyOffice(r.tenant, {
-    headline: `${r.customer.name} declined the ${r.contract.season} quote for ${r.site.label}${input.reason ? `: "${input.reason.slice(0, 200)}"` : '.'}`,
+    // A short subject of Flake's own; the customer's note, as plain text, only in the body (issue 70).
+    subject: `${r.customer.name} declined a quote`,
+    headline: `${r.customer.name} declined the ${r.contract.season} quote for ${r.site.label}.${input.reason ? ` Their note: "${plainText(input.reason)}"` : ''}`,
     link: `${baseUrl()}/sites/${r.site.id}`,
     key: `quote_declined:${r.contract.id}`,
     related: { site_id: r.site.id },

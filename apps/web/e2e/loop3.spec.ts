@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { login, sql } from './helpers';
+import { login, sql, startStorm } from './helpers';
 
 /** Issues 62 and 63, and the paths people guess (issue 39 follow-up), at iPhone size. */
 test.use({ viewport: { width: 390, height: 844 } });
@@ -58,4 +58,33 @@ test('the failed-messages banner says "still retrying" only while a retry is pen
     await sql`delete from message_log where idempotency_key = ${key}`;
     await sql`delete from job where dedupe_key = ${key}`;
   }
+});
+
+test('a lot started, left for another, and still open at the close can be finished on the closed link', async ({ page }) => {
+  await login(page);
+  const { id, runs } = await startStorm(page.request, `Left open ${Date.now()}`, ['Rocky River']);
+  const d = await page.context().newPage();
+  await d.goto(runs[0]!.link);
+  const first = (await d.getByTestId('stop-label').textContent())!;
+  await d.getByTestId('arrive').click();
+  await d.getByTestId('depth-3').click();
+  // Pulled away: a Problem, and on to the next lot, which gets done.
+  await d.getByTestId('problem').click();
+  await d.getByTestId('problem-blocked').click();
+  await d.getByTestId('problem-send').click();
+  // The lot stays current after a problem on site; the driver picks another from the list below it.
+  await d.getByTestId('other-stop').first().click();
+  await expect(d.getByTestId('stop-label')).not.toHaveText(first);
+  await d.getByTestId('arrive').click();
+  await d.getByTestId('done').click();
+  await expect.poll(async () => (await sql`select count(*)::int as n from visit where storm_id = ${id} and departed_device_at is not null`)[0]!.n, { timeout: 30000 }).toBe(1);
+  expect((await page.request.post(`/api/storms/${id}/close`, { data: { force: true } })).ok()).toBe(true);
+  await d.reload();
+  // The started lot is back up to finish; nothing new is offered.
+  await expect(d.getByTestId('onsite')).toBeVisible();
+  await expect(d.getByTestId('arrive')).toHaveCount(0);
+  await d.getByTestId('done').click();
+  await expect(d.getByTestId('storm-closed')).toBeVisible({ timeout: 30000 });
+  await expect.poll(async () => (await sql`select count(*)::int as n from visit where storm_id = ${id} and departed_device_at is not null`)[0]!.n, { timeout: 30000 }).toBe(2);
+  expect((await sql`select count(*)::int as n from run_stop rs join storm_run r on r.id = rs.storm_run_id where r.storm_id = ${id} and rs.status = 'onsite'`)[0]!.n).toBe(0);
 });

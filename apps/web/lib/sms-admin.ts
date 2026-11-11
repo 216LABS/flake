@@ -110,7 +110,7 @@ export async function handleInboundSms(to: string, from: string, body: string): 
     const [c] = await db.select({ name: crew_member.name }).from(crew_member).where(and(eq(crew_member.tenant_id, t.id), eq(crew_member.phone_e164, from)));
     const [k] = c ? [] : await db.select({ name: customer.name }).from(customer).where(and(eq(customer.tenant_id, t.id), eq(customer.phone_e164, from)));
     const name = c?.name ?? k?.name;
-    if (name) await notifyOffice(t, { headline: `Text from ${name}: ${body.replace(/\s+/g, ' ').trim().slice(0, 200)}`, link: `${baseUrl()}/dashboard`, key: `inbound:${from}:${sha256Hex(`${body}:${now.slice(0, 16)}`)}` });
+    if (name) await notifyOffice(t, { subject: `Text from ${name}`, headline: `Text from ${name}: ${body.replace(/\s+/g, ' ').trim().slice(0, 200)}`, link: `${baseUrl()}/dashboard`, key: `inbound:${from}:${sha256Hex(`${body}:${now.slice(0, 16)}`)}` });
   }
   const reply = kind === 'help' ? renderTemplate('help', { company: t.name, phone: t.contact_phone ?? 'your dispatcher' }) : null;
   return { kind, reply };

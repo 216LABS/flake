@@ -141,7 +141,9 @@ export async function processAction(rs: RunScope, a: DriverAction): Promise<Ack>
   if (rs.deadAt && Date.parse(a.at) > Date.parse(rs.deadAt) + CLOCK_SLACK_MS) return { client_uuid: a.client_uuid, status: 'rejected', reason: 'link_dead' };
   // A closed storm takes work the driver did before the close, not new work (issue 53). Done, depth, salt and photos
   // finish a visit that was already started, so they still go through.
-  if (rs.storm.status !== 'active' && STARTS_WORK.has(a.kind) && Date.parse(a.at) > Date.parse(rs.storm.closed_at ?? rs.storm.started_at) + CLOSE_SLACK_MS) {
+  if (rs.storm.status !== 'active' && STARTS_WORK.has(a.kind) && Date.parse(a.at) > Date.parse(rs.storm.closed_at ?? rs.storm.started_at) + CLOSE_SLACK_MS
+    // Going back to a lot already started (after a Problem, say) resumes that visit: it isn't new work (issue 71).
+    && !(a.kind === 'arrive' && (await rs.scope.visit(a.visit_client_uuid)))) {
     return { client_uuid: a.client_uuid, status: 'rejected', reason: 'storm_closed' };
   }
   const stop = a.run_stop_id ? await rs.scope.stop(a.run_stop_id) : null;
