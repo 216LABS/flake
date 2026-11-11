@@ -80,7 +80,7 @@ const siteBase = z.object({
   polygons: geoJsonGeom.nullable().optional(),
   walk_lf: z.number().min(0).max(1_000_000).nullable().optional(),
   priority: z.number().int().min(1).max(5),
-  service_window: z.object({ open_by: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), days: z.array(z.string().max(10)).max(7).optional() }).nullable().optional(),
+  service_window: z.object({ open_by: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), not_before: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), days: z.array(z.string().max(10)).max(7).optional() }).nullable().optional(),
   notes: emptyToNull(z.string().max(4000)),
 });
 export const siteCreate = siteBase.extend({ priority: z.number().int().min(1).max(5).default(3) });

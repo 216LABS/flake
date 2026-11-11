@@ -121,7 +121,15 @@ Missed windows don't change, because these instances have deadlines that no orde
 2. **Yard location and depot start/end.** Company setting plus geocoding, and the Suggest order checkboxes. No migration (`tenant.address` / settings JSON). About 1 day.
 3. **Road-time matrix through OpenRouteService.** `ORS_API_KEY` env (free tier), a provider behind a `matrix()` interface with a mock for tests, the matrix cache, quota handling, and the straight-line fallback. Not a pilot blocker.
 4. **`not_before` windows.** Site editor field and engine waits. About half a day.
-5. **Randomized restarts for 30 to 80 stops.** Measure, then keep only if they help. Small.
+5. **Randomized restarts for 30 to 80 stops.** Done (issue 67). Measured with `scripts/measure-restarts.ts` (8 seeded routes per size):
+
+   | Stops | Restarts | Mean drive min | Mean wait | Routes improved |
+   |---|---|---|---|---|
+   | 30 | 0 / 5 / 10 | 116.6 / 116.4 / 114.8 | 21 / 94 / 160 ms | - / 1 of 8 / 2 of 8 |
+   | 50 | 0 / 5 / 10 | 167.0 / 166.1 / 166.0 | 0.1 / 0.5 / 0.8 s | - / 2 of 8 / 2 of 8 |
+   | 80 | 0 / 5 / 10 | 225.6 / 222.9 / 223.5 | 0.5 / 2.3 / 3.8 s | - / 5 of 8 / 4 of 8 |
+
+   1 to 1.5% less driving, never worse, no change in late stops. On by default (5 restarts) up to 50 stops, where it adds under half a second; off above 50, where the wait isn't worth about 1%.
 6. **Plan all routes (multi-truck).** Sweep or insertion plus inter-route moves, with a preview screen. About 3 to 4 days.
 
 ## Decisions

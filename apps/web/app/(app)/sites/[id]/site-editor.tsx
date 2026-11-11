@@ -16,6 +16,7 @@ export function SiteEditor({ site, pins, layers }: { site: any; pins: any[]; lay
   const [notes, setNotes] = useState(site.notes ?? '');
   const [priority, setPriority] = useState(site.priority);
   const [openBy, setOpenBy] = useState(site.service_window?.open_by ?? '');
+  const [notBefore, setNotBefore] = useState(site.service_window?.not_before ?? '');
   const [pinKind, setPinKind] = useState('stake');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -31,7 +32,7 @@ export function SiteEditor({ site, pins, layers }: { site: any; pins: any[]; lay
     setBusy(true);
     setMsg(null);
     try {
-      await api(`/api/sites/${site.id}`, { method: 'PATCH', body: { polygons: polygon, area_confirmed_sqft: sqft, notes, priority: Number(priority), service_window: openBy ? { open_by: openBy } : null } });
+      await api(`/api/sites/${site.id}`, { method: 'PATCH', body: { polygons: polygon, area_confirmed_sqft: sqft, notes, priority: Number(priority), service_window: openBy || notBefore || site.service_window?.days?.length ? { ...(site.service_window?.days?.length ? { days: site.service_window.days } : {}), ...(openBy ? { open_by: openBy } : {}), ...(notBefore ? { not_before: notBefore } : {}) } : null } });
       setMsg({ ok: true, text: 'Saved' });
       router.refresh();
     } catch (e) {
@@ -57,6 +58,7 @@ export function SiteEditor({ site, pins, layers }: { site: any; pins: any[]; lay
         <div><Label htmlFor="sqft">Confirmed area (sq ft)</Label><Input id="sqft" type="number" min={0} max={50000000} value={sqft ?? ''} onChange={(e) => { setMsg(null); setSqft(e.target.value ? Number(e.target.value) : null); }} /></div>
         <div><Label htmlFor="prio">Priority (1 is first)</Label><Input id="prio" type="number" min={1} max={5} step={1} value={priority} onChange={(e) => { setMsg(null); setPriority(e.target.value); }} /></div>
         <div><Label htmlFor="open">Open by</Label><Input id="open" type="time" value={openBy} onChange={(e) => setOpenBy(e.target.value)} /></div>
+        <div><Label htmlFor="notbefore">Not before (optional)</Label><Input id="notbefore" type="time" value={notBefore} onChange={(e) => setNotBefore(e.target.value)} data-testid="not-before" /><p className="mt-1 text-xs text-slate-600">Suggest order won&apos;t plan this lot earlier. For a lot in use until a set time.</p></div>
         <div className="sm:col-span-3"><Label htmlFor="n">Notes for the driver</Label><Input id="n" maxLength={4000} value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">

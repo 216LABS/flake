@@ -113,7 +113,7 @@ export async function loadRun(rs: RunScope) {
         id: stop.id,
         seq: stop.seq,
         status: stop.status,
-        site: { id: st.id, label: st.label, address: st.address, lat: st.lat, lon: st.lon, priority: st.priority, open_by: st.service_window?.open_by ?? null, notes: st.notes },
+        site: { id: st.id, label: st.label, address: st.address, lat: st.lat, lon: st.lon, priority: st.priority, open_by: st.service_window?.open_by ?? null, not_before: st.service_window?.not_before ?? null, notes: st.notes },
         pins: pins.filter((p) => p.site_id === st.id).map((p) => ({ id: p.id, kind: p.kind, note: p.note, has_photo: Boolean(p.photo_path) })),
         services,
         salt_unit: salt?.unit ?? (services.includes('salt') ? 'bag50lb' : null),

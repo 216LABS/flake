@@ -88,3 +88,25 @@ test('a lot started, left for another, and still open at the close can be finish
   await expect.poll(async () => (await sql`select count(*)::int as n from visit where storm_id = ${id} and departed_device_at is not null`)[0]!.n, { timeout: 30000 }).toBe(2);
   expect((await sql`select count(*)::int as n from run_stop rs join storm_run r on r.id = rs.storm_run_id where r.storm_id = ${id} and rs.status = 'onsite'`)[0]!.n).toBe(0);
 });
+
+test('a "not before" time saves on the site, keeps its open-by time, and the driver sees it', async ({ page }) => {
+  await login(page);
+  const { id, runs } = await startStorm(page.request, `Not before ${Date.now()}`, ['Rocky River']);
+  const siteId = runs[0]!.stops[0]!.site_id;
+  const [before] = await sql`select service_window from site where id = ${siteId}`;
+  try {
+    await page.goto(`/sites/${siteId}`);
+    await page.locator('#open').fill('07:00');
+    await page.getByTestId('not-before').fill('05:30');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+    const [after] = await sql`select service_window from site where id = ${siteId}`;
+    expect(after!.service_window).toMatchObject({ open_by: '07:00', not_before: '05:30' });
+    const d = await page.context().newPage();
+    await d.goto(runs[0]!.link);
+    await expect(d.getByTestId('not-before-tag')).toContainText('05:30');
+  } finally {
+    await sql`update site set service_window = ${before!.service_window ? sql.json(before!.service_window) : null} where id = ${siteId}`;
+    await sql`update storm set status = 'closed', closed_at = now() where id = ${id}`;
+  }
+});

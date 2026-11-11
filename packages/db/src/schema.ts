@@ -91,7 +91,7 @@ export const site = pgTable('site', {
   polygons: jsonb('polygons'),
   walk_lf: numeric('walk_lf', { mode: 'number' }),
   priority: integer('priority').notNull().default(3),
-  service_window: jsonb('service_window').$type<{ open_by?: string; days?: string[] } | null>(),
+  service_window: jsonb('service_window').$type<{ open_by?: string; not_before?: string; days?: string[] } | null>(),
   notes: text('notes'),
   active: boolean('active').default(true),
   created_at: createdAt(),

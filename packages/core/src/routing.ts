@@ -14,6 +14,8 @@ export interface RouteSite {
   lon: number;
   priority: number;
   open_by?: string | null;
+  /** Don't arrive before this clock time: the truck waits (issue 66). A church lot during evening service, say. */
+  not_before?: string | null;
   sqft?: number | null;
   /** Minutes on site, when known better than the size estimate. 0 for a starting point that isn't a lot. */
   service_min?: number;
@@ -28,10 +30,12 @@ export interface RouteOptions {
   search?: 'basic' | 'full';
   /** Stop improving after this long. The best order so far is returned. */
   budgetMs?: number;
+  /** Extra searches from kicked copies of the best order (issue 67). Default: 5 up to 50 stops, none above. */
+  restarts?: number;
 }
 
-export interface PlannedStop { id: string; arrive: string; finish: string; drive_min: number; service_min: number; late: boolean }
-export interface RoutePlan { stops: PlannedStop[]; drive_min: number; total_min: number; late: number }
+export interface PlannedStop { id: string; arrive: string; finish: string; drive_min: number; service_min: number; late: boolean; wait_min: number }
+export interface RoutePlan { stops: PlannedStop[]; drive_min: number; total_min: number; late: number; wait_min: number }
 
 export const ROAD_FACTOR = 1.3;
 export const STORM_MPH = 25;
@@ -69,21 +73,28 @@ function score(order: RouteSite[], start: number) {
   let drive = 0;
   let lateMin = 0;
   let late = 0;
+  let waitMin = 0;
   const stops: PlannedStop[] = [];
   for (let i = 0; i < order.length; i++) {
     const s = order[i]!;
     const leg = i === 0 ? 0 : driveMinutes(order[i - 1]!, s);
     drive += leg;
     clock += leg;
+    // Too early for a lot that mustn't be plowed yet: the truck waits there. Waiting costs like driving, so the search
+    // would rather do something else first.
+    const opens = deadline(s.not_before, start);
+    const wait = opens !== null && clock < opens ? opens - clock : 0;
+    waitMin += wait;
+    clock += wait;
     const arrive = clock;
     const service = s.service_min ?? serviceMinutes(s.sqft);
     clock += service;
     const due = deadline(s.open_by, start);
     const over = due === null ? 0 : clock - due;
     if (over > 0) { late++; lateMin += over; }
-    stops.push({ id: s.id, arrive: toHm(arrive), finish: toHm(clock), drive_min: Math.round(leg), service_min: service, late: over > 0 });
+    stops.push({ id: s.id, arrive: toHm(arrive), finish: toHm(clock), drive_min: Math.round(leg), service_min: service, late: over > 0, wait_min: Math.round(wait) });
   }
-  return { plan: { stops, drive_min: Math.round(drive), total_min: Math.round(clock - start), late }, cost: drive + LATE_WEIGHT * lateMin };
+  return { plan: { stops, drive_min: Math.round(drive), total_min: Math.round(clock - start), late, wait_min: Math.round(waitMin) }, cost: drive + waitMin + LATE_WEIGHT * lateMin };
 }
 
 export function evaluateRoute(order: RouteSite[], opts: RouteOptions = {}): RoutePlan {
@@ -140,9 +151,29 @@ export function suggestRoute(sites: RouteSite[], opts: RouteOptions = {}): Route
   let at = fixed ? 1 : 0;
   for (const t of tiers) { bounds.push([at, at + t.length]); at += t.length; }
 
-  let cost = score(order, start).cost;
   const full = (opts.search ?? 'full') === 'full';
   const until = Date.now() + (opts.budgetMs ?? 4000);
+  order = improve(order, bounds, start, full, until);
+  // Restarts (issue 67): kick the best order with a double bridge inside one tier and search again, keeping a better
+  // result. Seeded, so asking twice gives the same answer.
+  const rand = seeded(sites.length * 7919 + 17);
+  let bestCost = score(order, start).cost;
+  // Measured (scripts/measure-restarts.ts): 1 to 1.5% less driving on 30 to 80 stops, at 4 to 8 times the wait. Worth
+  // it up to 50 stops (under half a second); above that the dispatcher would wait seconds for about 1%.
+  const restarts = opts.restarts ?? (rest.length <= 50 ? 5 : 0);
+  for (let r = 0; r < restarts && Date.now() < until; r++) {
+    const kicked = doubleBridge(order, bounds, rand);
+    if (!kicked) break;
+    const tried = improve(kicked, bounds, start, full, until);
+    const c = score(tried, start).cost;
+    if (c < bestCost - 1e-9) { order = tried; bestCost = c; }
+  }
+  return order;
+}
+
+/** 2-opt, single-stop moves, then Or-opt once those stall, inside each tier, until nothing improves or time runs out. */
+function improve(order: RouteSite[], bounds: [number, number][], start: number, full: boolean, until: number): RouteSite[] {
+  let cost = score(order, start).cost;
   for (let pass = 0, better = true; better && pass < 50 && Date.now() < until; pass++) {
     better = false;
     for (const [lo, hi] of bounds) {
@@ -187,6 +218,30 @@ export function suggestRoute(sites: RouteSite[], opts: RouteOptions = {}): Route
     }
   }
   return order;
+}
+
+/** A small seeded random source, so restarts are repeatable. */
+function seeded(seed: number) {
+  let x = seed >>> 0;
+  return () => ((x = (x * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+}
+
+/**
+ * The classic double-bridge kick: cut one tier's run into four pieces A B C D and rejoin them A C B D. Local search
+ * can't undo it in one move, so it reaches orders the search alone would not. Null when no tier is long enough.
+ */
+function doubleBridge(order: RouteSite[], bounds: [number, number][], rand: () => number): RouteSite[] | null {
+  const long = bounds.filter(([lo, hi]) => hi - lo >= 8);
+  if (!long.length) return null;
+  const [lo, hi] = long[Math.floor(rand() * long.length)]!;
+  const n = hi - lo;
+  const cuts = [1 + Math.floor(rand() * (n - 3)), 0, 0];
+  cuts[1] = cuts[0]! + 1 + Math.floor(rand() * (n - cuts[0]! - 2));
+  cuts[2] = cuts[1]! + 1 + Math.floor(rand() * (n - cuts[1]! - 1));
+  const run = order.slice(lo, hi);
+  const [i, j, k] = cuts as [number, number, number];
+  const kicked = [...run.slice(0, i), ...run.slice(j, k), ...run.slice(i, j), ...run.slice(k)];
+  return [...order.slice(0, lo), ...kicked, ...order.slice(hi)];
 }
 
 /**

@@ -27,7 +27,7 @@ export const POST = route<Ctx>(async (req, { params }) => {
   const byId = new Map(rows.map((s) => [s.id, s]));
   const sites: RouteSite[] = site_ids.flatMap((sid) => {
     const s = byId.get(sid);
-    return s ? [{ id: s.id, lat: s.lat, lon: s.lon, priority: s.priority, open_by: s.service_window?.open_by ?? null, sqft: s.confirmed ?? s.estimate }] : [];
+    return s ? [{ id: s.id, lat: s.lat, lon: s.lon, priority: s.priority, open_by: s.service_window?.open_by ?? null, not_before: s.service_window?.not_before ?? null, sqft: s.confirmed ?? s.estimate }] : [];
   });
   return { ...compareRoute(sites, { start, keepFirst: keep_first }), skipped: site_ids.length - sites.length };
 });

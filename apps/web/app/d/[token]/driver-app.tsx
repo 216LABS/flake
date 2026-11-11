@@ -9,7 +9,7 @@ interface Stop {
   id: string;
   seq: number;
   status: string;
-  site: { id: string; label: string; address: string; lat: number; lon: number; priority: number; open_by: string | null; notes: string | null };
+  site: { id: string; label: string; address: string; lat: number; lon: number; priority: number; open_by: string | null; not_before?: string | null; notes: string | null };
   pins: { id: string; kind: string | null; note: string | null; has_photo: boolean }[];
   services: string[];
   salt_unit: string | null;
@@ -578,6 +578,7 @@ function NextStop({ t, token, stop, awayM, index, total, onNavigate, onArrive, o
       {away ? <p className="mt-1 text-lg font-bold text-sky-300" data-testid="away">{away}</p> : null}
       <div className="mt-3 flex flex-wrap gap-2 text-base">
         <span className="rounded-lg bg-slate-700 px-3 py-2" data-testid="priority">{t('priority_of', { p: stop.site.priority })}</span>
+        {stop.site.not_before ? <span className="rounded-lg bg-slate-700 px-3 py-2" data-testid="not-before-tag">{t('not_before')} {stop.site.not_before}</span> : null}
         {stop.site.open_by ? <span className="rounded-lg bg-slate-700 px-3 py-2">{t('window')} {stop.site.open_by}</span> : null}
         {stop.pins.map((p) => <span key={p.id} className="rounded-lg bg-slate-700 px-3 py-2">{p.kind}{p.note ? `: ${p.note}` : ''}</span>)}
       </div>

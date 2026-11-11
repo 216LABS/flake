@@ -4,7 +4,7 @@ import { Button, Input, Label } from '@flake/ui';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/client';
 
-interface Stop { id: string; arrive: string; finish: string; drive_min: number; late: boolean }
+interface Stop { id: string; arrive: string; finish: string; drive_min: number; late: boolean; wait_min?: number }
 interface Plan { stops: Stop[]; drive_min: number; total_min: number; late: number }
 interface Result { current: Plan; suggested: Plan; changed: boolean; skipped: number }
 
@@ -66,6 +66,7 @@ export function SuggestOrder({ routeId, siteIds, label, onAccept }: { routeId: s
                 <span className="w-6 text-right text-slate-500">{i + 1}.</span>
                 <span className="flex-1">{label(x.id)}</span>
                 <span className="tabular-nums text-slate-600">{clock(x.arrive)}</span>
+                {x.wait_min ? <span className="rounded-sm bg-sky-100 px-1 text-xs font-medium text-sky-900" data-testid="suggest-wait">Waits {x.wait_min} min</span> : null}
                 {x.late ? <span className="rounded-sm bg-red-100 px-1 text-xs font-medium text-red-800">Late</span> : null}
               </li>
             ))}

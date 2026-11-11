@@ -52,3 +52,37 @@ describe('issue 42: Or-opt in Suggest order', () => {
     expect(cost(out)).toBeLessThan(cost(sites));
   });
 });
+
+describe('issue 67: restarts', () => {
+  it('are never worse than none, and the same route gives the same answer twice', () => {
+    for (let seed = 1; seed <= 6; seed++) {
+      const sites = route(35, seed * 977);
+      const none = suggestRoute(sites, { restarts: 0 });
+      const some = suggestRoute(sites, { restarts: 5 });
+      expect(cost(some)).toBeLessThanOrEqual(cost(none));
+      expect(suggestRoute(sites, { restarts: 5 }).map((s) => s.id)).toEqual(some.map((s) => s.id));
+      expect(some.every((s, i) => i === 0 || some[i - 1]!.priority <= s.priority)).toBe(true);
+    }
+  });
+});
+
+describe('issue 66: not before', () => {
+  const at = (i: number, extra: Partial<RouteSite> = {}): RouteSite => ({ id: `n${i}`, lat: 41.48, lon: -81.80 - i * 0.01, priority: 1, sqft: null, ...extra });
+  it('the truck waits for a lot that is not open yet, and the plan says how long', () => {
+    const plan = evaluateRoute([at(0), at(1, { not_before: '05:00' })], { start: '04:00' });
+    expect(plan.stops[1]).toMatchObject({ arrive: '05:00', wait_min: expect.any(Number) });
+    expect(plan.stops[1]!.wait_min).toBeGreaterThan(30);
+    expect(plan.wait_min).toBe(plan.stops[1]!.wait_min);
+  });
+  it('Suggest order does the other lots first instead of waiting', () => {
+    // Nearest-first would do the church lot (n1) second and wait; it goes last instead.
+    const sites = [at(0), at(1, { not_before: '06:00' }), at(2), at(3), at(4)];
+    const out = suggestRoute(sites, { start: '04:00', keepFirst: true }).map((s) => s.id);
+    expect(out.at(-1)).toBe('n1');
+    expect(evaluateRoute(suggestRoute(sites, { start: '04:00', keepFirst: true }), { start: '04:00' }).wait_min).toBeLessThan(evaluateRoute(sites, { start: '04:00' }).wait_min);
+  });
+  it('a time earlier on the clock than the start means the next morning', () => {
+    const plan = evaluateRoute([at(0), at(1, { not_before: '01:00' })], { start: '22:00' });
+    expect(plan.stops[1]!.arrive).toBe('01:00');
+  });
+});

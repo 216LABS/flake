@@ -280,7 +280,7 @@ export async function planRun(ctx: Ctx & { timezone: string }, runId: string) {
   const open = data.stops.filter((x) => ['open', 'enroute', 'problem'].includes(x.stop.status));
   const from = onsite ? { lat: onsite.site.lat, lon: onsite.site.lon, kind: 'lot' as const } : data.pos ? { lat: data.pos.lat, lon: data.pos.lon, kind: 'truck' as const } : null;
   if (!from || open.length < 2) return { from: from?.kind ?? null, changed: false, order: data.stops.map((x) => x.stop.id), suggested: null, current: null };
-  const plan = replanFrom(from, open.map((x) => ({ id: x.stop.id, lat: x.site.lat, lon: x.site.lon, priority: x.site.priority, open_by: x.site.service_window?.open_by ?? null, sqft: x.site.area_confirmed_sqft ?? x.site.area_estimate_sqft })), { start: localHm(Date.now(), ctx.timezone).hm });
+  const plan = replanFrom(from, open.map((x) => ({ id: x.stop.id, lat: x.site.lat, lon: x.site.lon, priority: x.site.priority, open_by: x.site.service_window?.open_by ?? null, not_before: x.site.service_window?.not_before ?? null, sqft: x.site.area_confirmed_sqft ?? x.site.area_estimate_sqft })), { start: localHm(Date.now(), ctx.timezone).hm });
   // Done, skipped and on-site stops keep their places at the front; the re-planned open ones follow.
   const fixed = data.stops.filter((x) => !open.includes(x)).map((x) => x.stop.id);
   const label = new Map(data.stops.map((x) => [x.stop.id, x.site.label]));
