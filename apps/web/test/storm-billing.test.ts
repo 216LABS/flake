@@ -139,8 +139,9 @@ describe('storm lifecycle', () => {
     const { stormId } = await completeStorm(w, { skipLast: true });
     const live = await stormLive({ ...ctxOf(w), timezone: 'America/New_York', role: 'owner' }, stormId);
     expect(live.counts).toMatchObject({ done: 4, open: 1, total: 5 });
-    expect(live.weather.forecast_in).toBeNull();
-    expect(live.weather.source).toBe('unavailable');
+    // A closed storm with nothing captured says so, instead of today's forecast or 0 (issue 45).
+    expect(live.weather).toBeNull();
+    expect(live.storm_weather).toMatchObject({ forecast_in: null, observed_in: null, note: 'No weather was captured for this storm.' });
     const stranger = await makeWorld();
     await expect(stormLive({ ...ctxOf(stranger), timezone: 'UTC', role: 'owner' }, stormId)).rejects.toThrow(/not found/i);
   });

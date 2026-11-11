@@ -4,7 +4,8 @@ import { Badge, Button, Card, Input, Select, cn, Progress } from '@flake/ui';
 import { useRouter } from 'next/navigation';
 import { RunPlan } from './run-plan';
 import QRCode from 'qrcode';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { StopSheet } from './stop-sheet';
 import { api } from '@/lib/client';
 import { useConfirm } from '@/components/confirm';
 import { MapView, type MapPin, type TileLayers } from '@/components/map-view';
@@ -13,14 +14,32 @@ const STATUS_WORD: Record<string, string> = { open: 'Open', enroute: 'On the way
 const STATUS_TONE: Record<string, 'gray' | 'blue' | 'green' | 'amber' | 'red'> = { open: 'gray', enroute: 'blue', onsite: 'amber', done: 'green', skipped: 'gray', problem: 'red' };
 const PIN_COLOR: Record<string, string> = { open: '#475569', enroute: '#0284c7', onsite: '#d97706', done: '#059669', skipped: '#94a3b8', problem: '#dc2626' };
 
+/** 12:47 AM in the company's zone, so the server and the phone print the same time. */
+export const clock = (iso: string, tz: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz });
+
 function since(iso: string | null, now: number) {
   if (!iso) return null;
   const m = Math.max(0, Math.floor((now - Date.parse(iso)) / 60000));
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`;
 }
-const dash = (v: number | null, u = '"') => (v === null ? 'unavailable' : `${v}${u}`);
 
-export function StormBoard({ stormId, initial, layers, canEdit, canText, sites = [] }: { stormId: string; initial: any; layers: TileLayers; canEdit: boolean; canText: boolean; sites?: { id: string; label: string }[] }) {
+/** That storm's own snow, not tonight's forecast (issue 45). */
+function StormSnow({ w, closed }: { w: { forecast_in: number | null; observed_in: number | null; synthetic: boolean; note: string | null }; closed: boolean }) {
+  const has = w.forecast_in !== null || w.observed_in !== null;
+  return (
+    <div className="max-w-64" data-testid="storm-snow">
+      <div className="font-display text-xs font-semibold uppercase tracking-wider text-slate-300">{closed ? 'Snow this storm' : 'Snow so far'}</div>
+      <div className="font-display tabular text-2xl font-semibold md:text-3xl">{has ? `${w.observed_in ?? w.forecast_in}"` : 'No data'}</div>
+      <div className={cn('text-xs', w.synthetic ? 'text-amber-300' : 'text-slate-300')}>
+        {!has ? w.note : w.observed_in !== null
+          ? `Observed (NOHRSC)${w.forecast_in !== null ? `. NWS forecast for the storm's hours: ${w.forecast_in}"` : ''}`
+          : `NWS forecast for the storm's hours${w.synthetic ? ' (synthetic demo data)' : ''}`}
+      </div>
+    </div>
+  );
+}
+
+export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sites = [] }: { stormId: string; tz: string; initial: any; layers: TileLayers; canEdit: boolean; canText: boolean; sites?: { id: string; label: string }[] }) {
   const router = useRouter();
   const [live, setLive] = useState<any>(initial);
   const [now, setNow] = useState(Date.parse(initial.storm.started_at));
@@ -34,16 +53,22 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
   const [calloutSent, setCalloutSent] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [ask, dialog] = useConfirm();
+  const [openStop, setOpenStop] = useState<string | null>(null);
+  const [lastOk, setLastOk] = useState(() => Date.now());
+  const columns = useRef<Record<string, HTMLElement | null>>({});
 
   const load = async () => {
     try {
       setLive(await api(`/api/storms/${stormId}/live`));
+      setLastOk(Date.now());
     } catch {
-      // Keep the last good board on a blip.
+      // Keep the last good board on a blip. The stale notice below says so if it lasts.
     }
   };
   useEffect(() => {
     setNow(Date.now());
+    // On a desk the map is worth its space from the start (issue 46). On a phone it's one tap away.
+    if (window.matchMedia('(min-width: 1024px)').matches) setShowMap(true);
     const stopCount = (initial.runs as { stops: unknown[] }[]).reduce((n, r) => n + r.stops.length, 0);
     const everyMs = stopCount > 300 ? 10000 : stopCount > 100 ? 5000 : 3000;
     const poll = setInterval(() => {
@@ -117,11 +142,14 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
       <section className="mb-4 overflow-hidden rounded-md bg-slate-950 text-white">
         <div className="flex flex-wrap items-end gap-x-8 gap-y-3 p-4">
         <div><div className="font-display text-xs font-semibold uppercase tracking-wider text-slate-300">Storm time</div><div className="font-display tabular text-2xl font-semibold md:text-3xl" data-testid="storm-timer">{elapsed}</div></div>
-        <div>
-          <div className="font-display text-xs font-semibold uppercase tracking-wider text-slate-300">Forecast next 12 h / elapsed</div>
-          <div className="font-display tabular text-2xl font-semibold md:text-3xl">{dash(live.weather.forecast_in)} / {dash(live.weather.elapsed_in)}</div>
-          <div className={cn('text-xs', live.weather.synthetic ? 'text-amber-300' : 'text-slate-300')}>{live.weather.breaker_open ? 'Weather unavailable' : live.weather.source}</div>
-        </div>
+        <StormSnow w={live.storm_weather} closed={closed} />
+        {live.weather ? (
+          <div className="max-w-64" data-testid="weather-now">
+            <div className="font-display text-xs font-semibold uppercase tracking-wider text-slate-300">Now: next 12 h</div>
+            <div className="font-display tabular text-2xl font-semibold md:text-3xl">{live.weather.forecast_in === null ? 'No data' : `${live.weather.forecast_in}"`}{live.weather.temp_f !== null ? <span className="ml-2 text-base font-normal text-slate-300">{live.weather.temp_f} F</span> : null}</div>
+            <div className={cn('text-xs', live.weather.synthetic ? 'text-amber-300' : 'text-slate-300')}>{live.weather.reason ?? `Live ${live.weather.source}`}</div>
+          </div>
+        ) : null}
         <div className="w-full min-w-48 flex-1">
           <Progress className="mb-2 bg-slate-700" value={live.counts.done + live.counts.skipped} max={live.counts.total} label="Stops finished" />
         <div className="tabular flex flex-wrap gap-x-3 text-sm" data-testid="counts">
@@ -146,7 +174,7 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
               const left = live.counts.open + live.counts.onsite;
               const ok = await ask({
                 title: 'Close this storm?',
-                body: <>{left ? <p className="mb-2 font-medium text-amber-900" data-testid="close-open-count">{left} of {live.counts.total} stops {left === 1 ? 'is' : 'are'} not done yet. {left === 1 ? 'It' : 'They'} won&apos;t be billed.</p> : null}<p>Routes and stops stop changing, and invoices are drafted. Drivers can still send finished work for 24 hours.</p></>,
+                body: <>{left ? <p className="mb-2 font-medium text-amber-900" data-testid="close-open-count">{left} of {live.counts.total} stops {left === 1 ? 'is' : 'are'} not done yet. {left === 1 ? 'It' : 'They'} won&apos;t be billed.</p> : null}<p>Routes and stops stop changing, and invoice drafts are made for you to review. Nothing is charged until you approve. Drivers can still send finished work for 24 hours.</p></>,
                 confirm: 'Close storm',
                 danger: true,
               });
@@ -165,7 +193,7 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
             <div className="flex items-center gap-2">
               <Badge tone="green" data-testid="storm-closed">{live.storm.status}</Badge>
               {canEdit && live.storm.status === 'closed' ? <Button variant="outline" data-testid="reopen-storm" onClick={async () => {
-                if (!(await ask({ title: 'Reopen this storm?', body: 'Route links work again and drivers can keep going. Invoice drafts still in review are dropped and made again when you close it.', confirm: 'Reopen' }))) return;
+                if (!(await ask({ title: 'Reopen this storm?', body: 'Route links work again and drivers can keep going. Invoice drafts still in review are dropped, and made again when you close it.', confirm: 'Reopen' }))) return;
                 await act(() => api(`/api/storms/${stormId}/reopen`, { method: 'POST' }));
                 router.refresh();
               }}>Reopen</Button> : null}
@@ -188,6 +216,8 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
       ) : null}
 
       {error ? <p className="mb-3 rounded-md bg-red-50 p-3 text-sm text-red-800" role="alert">{error}</p> : null}
+      {!closed && now - lastOk > 60_000 ? <p className="mb-3 rounded-md bg-amber-50 p-3 text-sm text-amber-950" role="status" data-testid="board-stale">This board hasn&apos;t updated for {since(new Date(lastOk).toISOString(), now)}. Check your connection; it catches up on its own.</p> : null}
+      {openStop ? <StopSheet stopId={openStop} tz={tz} onClose={() => setOpenStop(null)} /> : null}
       {notice ? <p className="mb-3 rounded-md bg-emerald-50 p-3 text-sm text-emerald-900" role="status" data-testid="board-notice">{notice}</p> : null}
       {dialog}
       {closePrompt ? (
@@ -235,12 +265,24 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
 
       {showMap ? <div className="mb-4"><MapView layers={layers} center={{ lat: allStops[0]?.lat ?? 41.48, lon: allStops[0]?.lon ?? -81.8 }} zoom={12} pins={pins} className="h-80" /></div> : null}
 
+      {live.runs.length > 1 ? (
+        <nav aria-label="Trucks" className="-mx-1 mb-3 flex gap-2 overflow-x-auto px-1 pb-1 md:hidden" data-testid="truck-switcher">
+          {live.runs.map((r: any) => (
+            <button key={r.id} type="button" className="min-h-10 shrink-0 rounded-full border border-slate-300 bg-white px-3 text-sm font-medium" onClick={() => columns.current[r.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+              {r.name}{r.pass > 1 ? ` ${r.pass}` : ''} <span className="tabular text-slate-600">{r.stops.filter((x: any) => x.status === 'done' || x.status === 'skipped').length}/{r.stops.length}</span>
+            </button>
+          ))}
+        </nav>
+      ) : null}
+
       <div className="flex flex-col gap-4 lg:flex-row">
-        <div className="flex min-w-0 flex-1 snap-x gap-3 overflow-x-auto pb-2">
+        {/* On a phone every truck is stacked, full width, so none hides off to the side (issue 46). */}
+        <div className="flex min-w-0 flex-1 flex-col gap-3 pb-2 md:snap-x md:flex-row md:overflow-x-auto">
           {live.runs.map((r: any) => (
             <section
               key={r.id}
-              className={cn('w-[calc(100vw-3rem)] max-w-sm shrink-0 snap-start rounded-md bg-slate-200/70 p-2 md:w-72', dragging && 'ring-2 ring-slate-900')}
+              ref={(el) => { columns.current[r.id] = el; }}
+              className={cn('w-full scroll-mt-20 rounded-md bg-slate-200/70 p-2 md:w-72 md:shrink-0 md:snap-start', dragging && 'ring-2 ring-slate-900')}
               data-testid="run-column"
               data-run={r.id}
               onDragOver={(e) => e.preventDefault()}
@@ -266,11 +308,16 @@ export function StormBoard({ stormId, initial, layers, canEdit, canText, sites =
               <ul className="space-y-2">
                 {r.stops.map((s: any) => (
                   <li key={s.id} draggable={editable && s.status !== 'onsite' && s.status !== 'done'} onDragStart={(e) => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragging(s.id); }} onDragEnd={() => setDragging(null)} data-testid="stop-card" data-status={s.status} className={cn('rounded-md border border-slate-200 bg-white p-2 text-sm', s.status === 'done' && 'opacity-70', s.status === 'onsite' && 'border-beacon ring-1 ring-beacon', s.late && 'border-red-600 bg-red-50')}>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="font-medium">{s.seq}. {s.label}</div>
-                      <Badge className="shrink-0" tone={STATUS_TONE[s.status]}>{STATUS_WORD[s.status] ?? s.status}</Badge>
-                    </div>
-                    <div className="text-xs text-slate-600">{s.customer}</div>
+                    {/* The name opens the stop's visits and photos (issue 41); the buttons below stay their own targets. */}
+                    <button type="button" className="-m-1 block w-[calc(100%+0.5rem)] rounded p-1 text-left hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-slate-900" data-testid="stop-open" aria-label={`${s.label}: details and photos`} onClick={() => setOpenStop(s.id)}>
+                      <span className="flex items-start justify-between gap-2">
+                        <span className="font-medium">{s.seq}. {s.label}</span>
+                        <Badge className="shrink-0" tone={STATUS_TONE[s.status]}>{STATUS_WORD[s.status] ?? s.status}</Badge>
+                      </span>
+                      <span className="block text-xs text-slate-600">{s.customer}</span>
+                      {s.done_at ? <span className="block text-xs text-slate-700" data-testid="stop-summary">Finished {clock(s.done_at, tz)}{s.depth_in !== null ? `, ${s.depth_in}"` : ''}, {s.photos === 1 ? '1 photo' : `${s.photos} photos`}</span> : null}
+                      {s.problem ? <span className="block text-xs font-medium text-red-800">{s.problem.kind}{s.problem.note ? `: ${s.problem.note}` : ''}</span> : null}
+                    </button>
                     {s.late ? <div className="text-xs font-bold text-red-700">Late</div> : null}
                     {s.arrived_at ? <div className="text-xs text-slate-600">On site {since(s.arrived_at, now)}</div> : null}
                     {editable && !['done', 'onsite'].includes(s.status) ? (

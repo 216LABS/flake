@@ -218,7 +218,10 @@ export function DriverApp({ token }: { token: string }) {
   const doneCount = stops.filter((s) => s.status === 'done').length;
   const skippedCount = stops.filter((s) => s.status === 'skipped').length;
   const onsite = stops.find((s) => s.status === 'onsite' && local.visits[s.id]);
-  const remaining = stops.filter((s) => !['done', 'skipped'].includes(s.status) && !(s.status === 'onsite' && local.visits[s.id]));
+  // A lot with a problem reported goes to the back, so the app moves on to the next one it can do (issue 46). It stays
+  // in the list, marked, for when the car is moved or the gate opens.
+  const left = stops.filter((s) => !['done', 'skipped'].includes(s.status) && !(s.status === 'onsite' && local.visits[s.id]));
+  const remaining = [...left.filter((s) => s.status !== 'problem'), ...left.filter((s) => s.status === 'problem')];
   const next = onsite ?? remaining.find((s) => s.id === local.nextStopId) ?? remaining[0] ?? null;
 
   // Geofence: a foreground prompt only. It never records anything by itself. High accuracy only near the stop.
@@ -412,7 +415,9 @@ export function DriverApp({ token }: { token: string }) {
     const queued = action({ client_uuid, kind: 'problem', run_stop_id: stop.id, problem: kind, note: note.trim() || null });
     inOrder(async () => {
       await apply(
-        { ...localRef.current, statuses: { ...localRef.current.statuses, [stop.id]: kind === 'skip' ? 'skipped' : 'problem' } },
+        // On site, the driver may sort it out and finish, so it stays the current stop. From the road (a locked gate,
+        // a car in the drive) the app moves on to the next lot it can do (issue 46).
+        { ...localRef.current, statuses: { ...localRef.current.statuses, [stop.id]: kind === 'skip' ? 'skipped' : 'problem' }, nextStopId: localRef.current.visits[stop.id] ? stop.id : localRef.current.nextStopId === stop.id ? null : localRef.current.nextStopId },
         [queued],
         voice ? { blob: voice, meta: { client_uuid: uuid(), phase: 'voice', problem_client_uuid: client_uuid } } : undefined,
       );
@@ -505,6 +510,7 @@ export function DriverApp({ token }: { token: string }) {
                   <button type="button" onClick={() => saveLocal({ ...localRef.current, nextStopId: s.id })} className="min-h-[64px] w-full rounded-xl bg-slate-800 p-3 text-left text-lg" data-testid="other-stop">
                     <div className="font-bold">{s.site.label}</div>
                     <div className="text-base text-slate-200">{s.site.address}</div>
+                    {s.status === 'problem' ? <div className="text-base font-semibold text-amber-300" data-testid="other-stop-problem">{t('problem_reported')}</div> : null}
                   </button>
                 </li>
               ))}

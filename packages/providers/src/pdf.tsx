@@ -149,8 +149,8 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
         ))}
         <Text style={s.h2}>Visits</Text>
         <Table
-          widths={[1.1, 2.2, 2.2, 1.5, 1, 0.8, 0.6]}
-          cols={['Crew', 'Arrived', 'Departed', 'GPS and accuracy', 'Services', 'Salt', 'Depth']}
+          widths={[1.1, 2.2, 2.2, 1.5, 1, 0.8, 0.6, 0.6]}
+          cols={['Crew', 'Arrived', 'Departed', 'GPS and accuracy', 'Services', 'Salt', 'Depth', 'Photos']}
           rows={m.visits.map((v) => [
             v.crew_name,
             `Phone: ${when(v.arrived_device_at)}\nServer: ${when(v.arrived_received_at)}`,
@@ -159,13 +159,17 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
             v.services.join(', ') + (v.is_replow ? ' (re-plow)' : ''),
             Array.isArray(v.salt) && v.salt.length ? (v.salt as any[]).map((x) => `${x.qty} ${x.unit}`).join(', ') : '-',
             val(v.depth_in, '"'),
+            String(v.photos.length),
           ])}
         />
       </Page>
 
-      {visitsWithPhotos.length ? (
+      {/* Photos are evidence too, so the packet always says what it has, even when that's none (issue 43). */}
+      {m.visits.length ? (
         <Page size="LETTER" style={s.page}>
           <Text style={s.h2}>Photos</Text>
+          {!visitsWithPhotos.length ? <Text>No photos were taken on these {m.visits.length === 1 ? 'visit' : `${m.visits.length} visits`}. The times, GPS and weather above are the record.</Text> : null}
+          {visitsWithPhotos.length && visitsWithPhotos.length < m.visits.length ? <Text style={s.muted}>{m.visits.length - visitsWithPhotos.length} of {m.visits.length} visits have no photos.</Text> : null}
           {visitsWithPhotos.map((v) => (
             <View key={v.id} wrap={false}>
               <Text style={s.h3}>{when(v.arrived_device_at)} - {v.crew_name}</Text>

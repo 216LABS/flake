@@ -28,6 +28,8 @@ export default defineConfig({
     { name: 'iphone-13', use: { ...devices['iPhone 13'], defaultBrowserType: 'chromium', browserName: 'chromium' } },
     { name: 'pixel-7', use: { ...devices['Pixel 7'] } },
     { name: 'webkit-driver', testMatch: /driver\.spec/, grep: /offline: 3 stops/, use: { ...devices['iPhone 13'] } },
+    // The office on a phone in WebKit, the engine Safari uses: date pickers and the tab bar behave differently there.
+    { name: 'webkit-phone', testMatch: /phone-shell\.spec/, use: { ...devices['iPhone 13'] } },
   ],
   webServer: {
     command: `pnpm build && pnpm exec next start -p ${PORT}`,

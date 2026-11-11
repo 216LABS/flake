@@ -34,6 +34,14 @@ export function plainCallError(e: string | null): string | null {
   return e;
 }
 
+/** A background job's last error, in words for Settings, System. Network blips read as such; the rest pass through. */
+export function plainJobError(e: string | null): string | null {
+  if (!e) return null;
+  if (/HTTP2 framing layer|ECONNRESET|socket hang up|fetch failed|other side closed|connection reset|EAI_AGAIN|ETIMEDOUT/i.test(e)) return 'A network hiccup reaching another service. Flake tries again on its own.';
+  if (/^(Resend|Twilio) 5\d\d/.test(e)) return `The ${e.split(' ')[0]} service had an error on its side. Flake tries again on its own.`;
+  return e;
+}
+
 export interface CronCalls { total: number; failed: number; last_error: string | null; last_failed_at: string | null }
 
 /**

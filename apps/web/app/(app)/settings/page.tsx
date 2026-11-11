@@ -13,7 +13,7 @@ import { breakerOpen, breakerState } from '@/lib/weather';
 import { getProviders, getSetting } from '@/lib/providers';
 import { listTeam } from '@/lib/team';
 import { PushPanel } from './push-panel';
-import { canSeeUsage, cronCalls, deploymentUsage } from '@/lib/usage';
+import { canSeeUsage, cronCalls, deploymentUsage, plainJobError } from '@/lib/usage';
 import { BusinessForm, CompanyForm, CrewPanel, PaymentsPanel, PlanPanel, RateCardForm, RetryJob, SmsSubmit, TeamPanel } from './panels';
 
 export const metadata = { title: 'Settings' };
@@ -134,29 +134,29 @@ async function SystemTab(tenantId: string, tz: string, email: string | null, can
         </Card>
       ) : null}
       <h2 className="font-semibold">Recent messages</h2>
-      <Table>
+      <Table stack data-testid="messages-table">
         <thead><tr><Th>When</Th><Th>Channel</Th><Th>To</Th><Th>Template</Th><Th>Status</Th></tr></thead>
         <tbody>
-          {messages.map((m) => <tr key={m.id} data-testid="message-row" data-status={m.status ?? ''}><Td>{fmtLocal(m.created_at!, tz)}</Td><Td>{m.channel}</Td><Td>{m.to_addr}</Td><Td>{m.template}</Td><Td>{m.status === 'not_sent' ? 'Not sent: email is off' : m.status}</Td></tr>)}
+          {messages.map((m) => <tr key={m.id} data-testid="message-row" data-status={m.status ?? ''}><Td className="font-medium">{fmtLocal(m.created_at!, tz)}</Td><Td label="Channel">{m.channel}</Td><Td label="To">{m.to_addr}</Td><Td label="Message">{m.template}</Td><Td label="Status">{m.status === 'not_sent' ? 'Not sent: email is off' : m.status === 'rejected' ? 'Rejected: address not valid' : m.status}</Td></tr>)}
           {!messages.length ? <tr><Td colSpan={5}>None yet.</Td></tr> : null}
         </tbody>
       </Table>
       {retrying.length ? (
         <>
           <h2 className="font-semibold">Retrying</h2>
-          <Table data-testid="retrying-jobs">
+          <Table stack data-testid="retrying-jobs">
             <thead><tr><Th>Kind</Th><Th>Attempts</Th><Th>Error</Th><Th>Next try</Th></tr></thead>
             <tbody>
-              {retrying.map((j) => <tr key={j.id}><Td>{j.kind}</Td><Td>{j.attempts}</Td><Td>{j.last_error}</Td><Td>{fmtLocal(j.run_at!, tz)}</Td></tr>)}
+              {retrying.map((j) => <tr key={j.id}><Td className="font-medium">{j.kind}</Td><Td label="Attempts">{j.attempts}</Td><Td label="Error">{plainJobError(j.last_error)}</Td><Td label="Next try">{fmtLocal(j.run_at!, tz)}</Td></tr>)}
             </tbody>
           </Table>
         </>
       ) : null}
       <h2 className="font-semibold">Failed jobs</h2>
-      <Table>
+      <Table stack data-testid="dead-jobs">
         <thead><tr><Th>Kind</Th><Th>Attempts</Th><Th>Error</Th><Th>When</Th><Th><span className="sr-only">Actions</span></Th></tr></thead>
         <tbody>
-          {dead.map((j) => <tr key={j.id}><Td>{j.kind}</Td><Td>{j.attempts}</Td><Td>{j.last_error}</Td><Td>{fmtLocal(j.dead_at!, tz)}</Td><Td>{canRetry ? <RetryJob id={j.id} /> : null}</Td></tr>)}
+          {dead.map((j) => <tr key={j.id}><Td className="font-medium">{j.kind}</Td><Td label="Attempts">{j.attempts}</Td><Td label="Error">{plainJobError(j.last_error)}</Td><Td label="When">{fmtLocal(j.dead_at!, tz)}</Td><Td>{canRetry ? <RetryJob id={j.id} /> : null}</Td></tr>)}
           {!dead.length ? <tr><Td colSpan={5}>None.</Td></tr> : null}
         </tbody>
       </Table>

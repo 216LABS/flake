@@ -60,11 +60,17 @@ test('walk every office screen and use its main control', async ({ page }) => {
   await page.getByRole('button', { name: 'Add', exact: true }).click();
   await expect(page.getByLabel(`Add a site to ${routeName}`)).toBeVisible();
   await page.getByLabel(`Add a site to ${routeName}`).selectOption({ index: 1 });
+  // An earlier device's walk may have put this lot on its own route, and then the app asks first.
+  if (await page.getByTestId('confirm-dialog').isVisible({ timeout: 2000 }).catch(() => false)) await page.getByTestId('confirm-yes').click();
   await expect.poll(async () => (await sql`select count(*)::int as n from route_stop rs join route r on r.id = rs.route_id where r.name = ${routeName}`)[0]!.n).toBe(1);
 
   // A route with no default driver: Publish refuses and says why, and the board can fix it.
   const [newRoute] = await sql`select id from route where name = ${routeName}`;
-  const noDriver = await (await page.request.post('/api/storms', { data: { name: `No driver ${Date.now()}`, routeIds: [newRoute!.id] } })).json();
+  // The lot may be live on the walk's own storm, and a lot is on one running storm at a time (issue 24).
+  await closeRunningStorms();
+  const made = await page.request.post('/api/storms', { data: { name: `No driver ${Date.now()}`, routeIds: [newRoute!.id] } });
+  expect(made.status(), await made.text()).toBe(201);
+  const noDriver = await made.json();
   await page.goto(`/storms/${noDriver.id}`);
   await page.getByTestId('publish').click();
   await expect(page.getByText('have no driver. Assign one first.')).toBeVisible();

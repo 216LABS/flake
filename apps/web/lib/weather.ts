@@ -1,6 +1,6 @@
 import { gzipSync } from 'node:zlib';
-import { and, app_setting, contract, desc, driver_action, eq, gte, inArray, serviceDb, site, sql, tenant, trigger_alert, weather_snapshot } from '@flake/db';
-import { expandSeries, evaluateSite, groupDecisions, alertHeadline, newWinterAlerts, summarize, toFahrenheit, toInches, type DepthReport, type HourBucket, type NwsAlert, type SiteDecision, type TriggerSite, type WeatherSeries } from '@flake/core/trigger';
+import { and, app_setting, contract, desc, driver_action, eq, gte, inArray, lte, serviceDb, site, sql, tenant, trigger_alert, weather_snapshot } from '@flake/db';
+import { expandSeries, evaluateSite, groupDecisions, alertHeadline, newWinterAlerts, summarize, sumOverlap, toFahrenheit, toInches, type DepthReport, type HourBucket, type NwsAlert, type SiteDecision, type TriggerSite, type WeatherSeries } from '@flake/core/trigger';
 import type { ContractService } from '@flake/core/pricing';
 import { fmtLocal, liveContracts } from '@flake/core/time';
 import type { FetchedDoc } from '@flake/providers';
@@ -299,16 +299,78 @@ export async function latestSnapshotIds(tenantId: string): Promise<string[]> {
   return ids;
 }
 
-/** The dashboard header: forecast vs elapsed with source labels. Anything missing reads "unavailable". */
+/** Why there are no numbers, in words a dispatcher can act on (issue 45). */
+const WHY = {
+  breaker: 'NWS is not answering, so Flake paused weather for a few minutes. It tries again on its own.',
+  not_mapped: 'These lots are not matched to an NWS forecast area yet. That happens a few minutes after a site is added with its address.',
+  no_snapshot: 'No NWS forecast has been fetched for these lots yet. It updates every few minutes.',
+} as const;
+
+/** The dashboard header: the live forecast vs elapsed with source labels. Anything missing reads "unavailable", with why. */
 export async function tenantWeatherHeader(tenantId: string, siteIds?: string[]) {
   const db = serviceDb();
   const [s] = await db.select().from(site).where(and(eq(site.tenant_id, tenantId), siteIds?.length ? inArray(site.id, siteIds) : undefined, sql`${site.nws_office} is not null`)).limit(1);
   const breaker = await breakerState();
-  const none = { forecast_in: null as number | null, elapsed_in: null as number | null, temp_f: null as number | null, source: 'unavailable', synthetic: false, fetched_at: null as string | null, breaker_open: breakerOpen(breaker) };
-  if (!s) return none;
+  const none = (why: keyof typeof WHY) => ({ forecast_in: null as number | null, elapsed_in: null as number | null, temp_f: null as number | null, source: 'unavailable', synthetic: false, fetched_at: null as string | null, breaker_open: breakerOpen(breaker), reason: (breakerOpen(breaker) ? WHY.breaker : WHY[why]) as string | null });
+  if (!s) return none('not_mapped');
   const [snap] = await db.select().from(weather_snapshot).where(and(eq(weather_snapshot.source, 'nws_grid'), eq(weather_snapshot.office, s.nws_office!), eq(weather_snapshot.grid_x, s.nws_grid_x!), eq(weather_snapshot.grid_y, s.nws_grid_y!))).orderBy(desc(weather_snapshot.fetched_at)).limit(1);
-  if (!snap) return none;
+  if (!snap) return none('no_snapshot');
   const now = await weatherNow();
   const v = summarize(seriesFromSummary(snap.summary), now.getTime());
-  return { forecast_in: v.snow_next12h_in, elapsed_in: v.snow_elapsed_in, temp_f: v.temp_f, source: snap.summary.synthetic ? 'Synthetic demo data' : 'NWS gridded forecast', synthetic: Boolean(snap.summary.synthetic), fetched_at: snap.fetched_at, breaker_open: breakerOpen(breaker) };
+  return { forecast_in: v.snow_next12h_in, elapsed_in: v.snow_elapsed_in, temp_f: v.temp_f, source: snap.summary.synthetic ? 'Synthetic demo data' : 'NWS gridded forecast', synthetic: Boolean(snap.summary.synthetic), fetched_at: snap.fetched_at, breaker_open: breakerOpen(breaker), reason: null as string | null };
+}
+
+/** How far past the close an observed total may run and still count as the storm's snow. */
+export const OBSERVED_SLACK_MS = 3 * HOUR;
+
+/**
+ * NOHRSC observed totals whose whole window falls inside the storm. The 24 h total fetched as a storm started is the
+ * day before, and a 2 inch storm after a 6 inch one would otherwise read as 6.
+ */
+export async function observedSnapshots(start: number, end: number) {
+  return (await serviceDb().select().from(weather_snapshot)
+    .where(and(eq(weather_snapshot.source, 'nohrsc'), gte(weather_snapshot.fetched_at, new Date(start).toISOString()), lte(weather_snapshot.fetched_at, new Date(end + OBSERVED_SLACK_MS + 6 * HOUR).toISOString()))))
+    .filter((x) => {
+      const validAt = Date.parse(x.summary.valid_at ?? x.fetched_at);
+      const hours = Number(x.summary.hours);
+      return Number.isFinite(validAt) && hours > 0 && validAt - hours * HOUR >= start - HOUR && validAt <= end + OBSERVED_SLACK_MS;
+    });
+}
+
+/**
+ * The weather of one storm, not today's (issue 45): snow in the storm's own window from the NWS forecast (the most any
+ * of its lots got), and NOHRSC observed snow when there is any. A closed storm reads only the snapshots attached to it
+ * at start and close; while it runs, the newest forecast for its lots. Nothing captured says so instead of 0.
+ */
+export async function stormWeather(tenantId: string, s: { status: string; started_at: string; closed_at: string | null; forecast_snapshot_ids: string[] | null }, siteIds: string[]) {
+  const db = serviceDb();
+  const start = Date.parse(s.started_at);
+  const active = s.status === 'active';
+  const end = !active && s.closed_at ? Date.parse(s.closed_at) : (await weatherNow()).getTime();
+  const sites = siteIds.length ? await db.select().from(site).where(and(eq(site.tenant_id, tenantId), inArray(site.id, siteIds))) : [];
+  const cells = [...new Map(sites.filter((x) => x.nws_office).map((x) => [`${x.nws_office}/${x.nws_grid_x}/${x.nws_grid_y}`, x])).values()];
+  let grids: (typeof weather_snapshot.$inferSelect)[] = [];
+  if (active) {
+    for (const c of cells) {
+      const [g] = await db.select().from(weather_snapshot).where(and(eq(weather_snapshot.source, 'nws_grid'), eq(weather_snapshot.office, c.nws_office!), eq(weather_snapshot.grid_x, c.nws_grid_x!), eq(weather_snapshot.grid_y, c.nws_grid_y!))).orderBy(desc(weather_snapshot.fetched_at)).limit(1);
+      if (g) grids.push(g);
+    }
+  } else if (s.forecast_snapshot_ids?.length) {
+    const attached = await db.select().from(weather_snapshot).where(and(inArray(weather_snapshot.id, s.forecast_snapshot_ids), eq(weather_snapshot.source, 'nws_grid'))).orderBy(desc(weather_snapshot.fetched_at));
+    // The newest snapshot per forecast area: the one taken at close knows the most about the storm's hours.
+    const newest = new Map<string, (typeof attached)[number]>();
+    for (const g of attached) if (!newest.has(`${g.office}/${g.grid_x}/${g.grid_y}`)) newest.set(`${g.office}/${g.grid_x}/${g.grid_y}`, g);
+    grids = [...newest.values()];
+  }
+  const totals = grids.map((g) => sumOverlap(seriesFromSummary(g.summary).snowIn, start, end)).filter((v): v is number => v !== null);
+  const observed = (await observedSnapshots(start, end)).flatMap((x) => siteIds.map((id) => x.summary.sites?.[id])).filter((v): v is number => typeof v === 'number');
+  const forecast_in = totals.length ? Math.max(...totals) : null;
+  const observed_in = observed.length ? Math.max(...observed) : null;
+  let note: string | null = null;
+  if (forecast_in === null && observed_in === null) {
+    if (!active) note = 'No weather was captured for this storm.';
+    else if (breakerOpen(await breakerState())) note = WHY.breaker;
+    else note = cells.length ? WHY.no_snapshot : WHY.not_mapped;
+  }
+  return { forecast_in, observed_in, synthetic: grids.some((g) => Boolean(g.summary.synthetic)), note };
 }

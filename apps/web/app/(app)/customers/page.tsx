@@ -15,16 +15,17 @@ export default async function Customers({ searchParams }: { searchParams: Promis
     <>
       <PageHeader title={showArchived ? 'Archived customers' : 'Customers'} actions={ctx.role !== 'viewer' && !showArchived ? <Link href="/customers/new" className={buttonVariants({ variant: 'accent' })} data-testid="new-customer">New customer</Link> : null} />
       {customers.length ? (
-        <Table>
+        <Table stack data-testid="customers-table">
           <thead><tr><Th>Name</Th><Th>Kind</Th><Th>Sites</Th><Th>Billing</Th><Th>Payment on file</Th></tr></thead>
           <tbody>
             {customers.map((c) => (
-              <tr key={c.id}>
-                <Td><Link className="font-semibold text-slate-950 underline-offset-2 hover:underline" href={`/customers/${c.id}`}>{c.name}</Link></Td>
-                <Td><Badge>{c.kind}</Badge></Td>
-                <Td>{sites.filter((s) => s.customer_id === c.id && s.active).length}</Td>
-                <Td>{c.billing_mode.replace(/_/g, ' ')}</Td>
-                <Td>{c.stripe_payment_method_id ? 'Yes' : 'No'}</Td>
+              <tr key={c.id} className="max-md:relative" data-testid="customer-row">
+                {/* On a phone the whole card opens the customer (issue 47). */}
+                <Td className="max-md:text-base"><Link className="font-semibold text-slate-950 underline-offset-2 hover:underline max-md:after:absolute max-md:after:inset-0" href={`/customers/${c.id}`}>{c.name}</Link></Td>
+                <Td label="Kind"><Badge>{c.kind}</Badge></Td>
+                <Td label="Sites">{sites.filter((s) => s.customer_id === c.id && s.active).length}</Td>
+                <Td label="Billing">{c.billing_mode.replace(/_/g, ' ')}</Td>
+                <Td label="Payment on file">{c.stripe_payment_method_id ? 'Yes' : 'No'}</Td>
               </tr>
             ))}
           </tbody>

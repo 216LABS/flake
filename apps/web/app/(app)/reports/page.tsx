@@ -28,10 +28,11 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   return (
     <>
       <PageHeader title="Reports" subtitle="Crew hours for payroll, and salt used and on hand." />
-      <form method="get" className="mb-6 flex flex-wrap items-end gap-3" data-testid="period">
-        <div><Label htmlFor="from">From</Label><Input id="from" name="from" type="date" defaultValue={p.from} /></div>
-        <div><Label htmlFor="to">To</Label><Input id="to" name="to" type="date" defaultValue={p.to} /></div>
-        <button type="submit" className={buttonVariants({ variant: 'outline' })}>Show</button>
+      {/* Stacked on a phone, so a wide iOS date control can't sit on top of Show (issue 44). */}
+      <form method="get" className="mb-6 grid grid-cols-1 items-end gap-3 sm:flex sm:flex-wrap" data-testid="period">
+        <div className="min-w-0"><Label htmlFor="from">From</Label><Input id="from" name="from" type="date" defaultValue={p.from} /></div>
+        <div className="min-w-0"><Label htmlFor="to">To</Label><Input id="to" name="to" type="date" defaultValue={p.to} /></div>
+        <button type="submit" className={buttonVariants({ variant: 'outline', className: 'h-11 sm:h-10' })} data-testid="period-show">Show</button>
       </form>
 
       <section className="mb-8" aria-labelledby="hours-title">
@@ -44,21 +45,21 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
         </p>
         {hours.length ? (
           <>
-            <Table data-testid="hours-summary">
+            <Table stack data-testid="hours-summary">
               <thead><tr><Th>Name</Th><Th>Type</Th><Th>Shifts</Th><Th>Stops done</Th><Th className="text-right">Hours</Th></tr></thead>
               <tbody>
                 {people.map((x) => (
-                  <tr key={x.id}><Td className="font-medium">{x.name}</Td><Td>{x.kind === 'sub' ? 'Subcontractor' : 'Employee'}</Td><Td className="tabular">{x.shifts}</Td><Td className="tabular">{x.stops}</Td><Td className="tabular text-right font-semibold">{x.hours.toFixed(2)}</Td></tr>
+                  <tr key={x.id}><Td className="font-medium">{x.name}</Td><Td label="Type">{x.kind === 'sub' ? 'Subcontractor' : 'Employee'}</Td><Td label="Shifts" className="tabular">{x.shifts}</Td><Td label="Stops done" className="tabular">{x.stops}</Td><Td label="Hours" className="tabular text-right font-semibold">{x.hours.toFixed(2)}</Td></tr>
                 ))}
               </tbody>
             </Table>
             <details className="mt-3">
               <summary className="cursor-pointer text-sm font-semibold text-slate-700">Every shift</summary>
-              <Table className="mt-2" data-testid="hours-shifts">
+              <Table stack className="mt-2" data-testid="hours-shifts">
                 <thead><tr><Th>Name</Th><Th>Storm</Th><Th>Clock in</Th><Th>Clock out</Th><Th className="text-right">Hours</Th><Th>Note</Th></tr></thead>
                 <tbody>
                   {hours.map((h, i) => (
-                    <tr key={i}><Td>{h.crew}</Td><Td>{h.storm}</Td><Td className="tabular">{h.clockIn}</Td><Td className="tabular">{h.clockOut}</Td><Td className="tabular text-right">{h.hours.toFixed(2)}</Td><Td className="text-amber-800">{h.note}</Td></tr>
+                    <tr key={i}><Td className="font-medium">{h.crew}</Td><Td label="Storm">{h.storm}</Td><Td label="Clock in" className="tabular">{h.clockIn}</Td><Td label="Clock out" className="tabular">{h.clockOut}</Td><Td label="Hours" className="tabular text-right">{h.hours.toFixed(2)}</Td><Td className="text-amber-800">{h.note}</Td></tr>
                   ))}
                 </tbody>
               </Table>
@@ -78,9 +79,9 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
         </div>
         {salt.stock.tons < 0 ? <p className="mb-4 rounded-md bg-amber-50 p-3 text-sm text-amber-950" data-testid="salt-negative">Drivers logged more salt than was delivered. Add the deliveries you are missing, or a count of the pile.</p> : null}
         {salt.storms.length ? (
-          <Table className="mb-4" data-testid="salt-storms">
+          <Table stack className="mb-4" data-testid="salt-storms">
             <thead><tr><Th>Storm</Th><Th>Salted visits</Th><Th className="text-right">Tons</Th><Th className="text-right">Applications</Th></tr></thead>
-            <tbody>{salt.storms.map((s) => <tr key={s.storm}><Td>{s.storm}</Td><Td className="tabular">{s.visits}</Td><Td className="tabular text-right">{s.tons.toFixed(2)}</Td><Td className="tabular text-right">{s.applications || '-'}</Td></tr>)}</tbody>
+            <tbody>{salt.storms.map((s) => <tr key={s.storm}><Td className="font-medium">{s.storm}</Td><Td label="Salted visits" className="tabular">{s.visits}</Td><Td label="Tons" className="tabular text-right">{s.tons.toFixed(2)}</Td><Td label="Applications" className="tabular text-right">{s.applications || '-'}</Td></tr>)}</tbody>
           </Table>
         ) : null}
         <p className="mb-3 max-w-2xl text-xs text-slate-600">Bags count as 50 lb. Salt logged as &quot;applications&quot; has no weight, so it is listed but not taken off the pile.</p>

@@ -29,7 +29,10 @@ export default async function Dashboard() {
     order by m.related->>'site_id', date_trunc('hour', m.created_at), m.created_at`)) as unknown as { site_id: string; customer_id: string; note: string | null; created_at: string; label: string; name: string }[];
   requests.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const w = await tenantWeatherHeader(ctx.tenantId);
-  const [{ failedMessages } = { failedMessages: 0 }] = await serviceDb().select({ failedMessages: sql<number>`count(*)::int` }).from(message_log).where(and(eq(message_log.tenant_id, ctx.tenantId), eq(message_log.status, 'failed'), sql`${message_log.created_at} > now() - interval '24 hours'`));
+  // Failures retry; rejected addresses don't, and need someone to fix the address (issue 49).
+  const [{ failedMessages, rejectedMessages } = { failedMessages: 0, rejectedMessages: 0 }] = await serviceDb()
+    .select({ failedMessages: sql<number>`(count(*) filter (where ${message_log.status} = 'failed'))::int`, rejectedMessages: sql<number>`(count(*) filter (where ${message_log.status} = 'rejected'))::int` })
+    .from(message_log).where(and(eq(message_log.tenant_id, ctx.tenantId), sql`${message_log.created_at} > now() - interval '24 hours'`));
   const usage = canSeeUsage(ctx.email) ? await deploymentUsage() : null;
   const fmt = (v: number | null, unit = '"') => (v === null ? 'unavailable' : `${v}${unit}`);
   const canEdit = ctx.role !== 'viewer';
@@ -45,12 +48,13 @@ export default async function Dashboard() {
       <PageHeader title="Dashboard" subtitle={ctx.tenant.name} actions={canEdit ? <Link href="/storms" className={buttonVariants({ variant: 'accent' })}>Start a storm</Link> : null} />
       {usage?.near_limit ? <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-800" data-testid="usage-warning">Storage is nearly full ({usage.files_mb} of {usage.files_limit_mb} MB of files, {usage.db_mb} of {usage.db_limit_mb} MB of database). <Link className="underline" href="/settings?tab=system">See details</Link></p> : null}
       {failedMessages ? <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-800" data-testid="messages-failed">{failedMessages === 1 ? '1 message' : `${failedMessages} messages`} could not be sent in the last 24 hours. Flake keeps retrying. <Link className="underline" href="/settings?tab=system">See why</Link></p> : null}
+      {rejectedMessages ? <p className="mb-4 rounded-md bg-amber-50 p-3 text-sm text-amber-950" data-testid="messages-rejected">{rejectedMessages === 1 ? '1 message was' : `${rejectedMessages} messages were`} not delivered because the email address or phone number was rejected. Fix it on the driver or customer, and route links go out again. <Link className="underline" href="/settings?tab=system">See which</Link></p> : null}
       <section className="overflow-hidden rounded-md bg-slate-950 text-white" data-testid="conditions">
         <div className="flex flex-wrap items-end gap-x-10 gap-y-4 p-5">
           <Stat label="Next 12 h" value={fmt(w.forecast_in)} />
           <Stat label="Elapsed this event" value={fmt(w.elapsed_in)} />
           <Stat label="Temperature" value={fmt(w.temp_f, ' F')} />
-          <p className="ml-auto text-xs text-slate-300">{w.breaker_open ? 'Weather unavailable. Polling is paused after repeated errors. ' : ''}Source: {w.source}{w.fetched_at ? `, ${fmtLocal(w.fetched_at, tz)}` : ''}</p>
+          <p className="ml-auto text-xs text-slate-300">{w.reason ? `${w.reason} ` : ''}Live forecast. Source: {w.source}{w.fetched_at ? `, ${fmtLocal(w.fetched_at, tz)}` : ''}</p>
         </div>
       </section>
       <div className={`mt-6 grid grid-cols-1 gap-6 ${setup.some((s) => !s.done) ? 'lg:grid-cols-3' : ''}`}>
@@ -113,14 +117,14 @@ export default async function Dashboard() {
       </div>
       <Eyebrow className="mb-2 mt-6">Recent storms</Eyebrow>
       {data.recent.length ? (
-        <Table>
+        <Table stack>
           <thead><tr><Th>Storm</Th><Th>Started</Th><Th>Status</Th><Th><span className="sr-only">Actions</span></Th></tr></thead>
           <tbody>
             {data.recent.map((s) => (
               <tr key={s.id}>
                 <Td><Link className="text-sky-800 underline" href={`/storms/${s.id}`}>{s.name}</Link></Td>
-                <Td>{fmtLocal(s.started_at, tz)}</Td>
-                <Td><Badge tone={s.status === 'billed' ? 'green' : 'amber'}>{s.status}</Badge></Td>
+                <Td label="Started">{fmtLocal(s.started_at, tz)}</Td>
+                <Td label="Status"><Badge tone={s.status === 'billed' ? 'green' : 'amber'}>{s.status}</Badge></Td>
                 <Td><Link className="text-sky-800 underline" href={`/billing?storm=${s.id}`}>Billing</Link></Td>
               </tr>
             ))}

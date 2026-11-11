@@ -5,6 +5,7 @@ import { baseUrl } from './env';
 import { enqueue } from './jobs';
 import { getProviders } from './providers';
 import { shortCode } from './tokens';
+import { log } from './log';
 
 type TenantRow = typeof tenant.$inferSelect;
 
@@ -31,8 +32,10 @@ async function reserve(t: TenantRow, channel: 'sms' | 'email' | 'push', to: stri
   const rows = (await serviceDb().execute(sql`
     insert into message_log (tenant_id, channel, to_addr, template, body, related, status, idempotency_key)
     values (${t.id}, ${channel}, ${to}, ${template}, ${body}, ${related ? JSON.stringify(related) : null}::jsonb, 'sending', ${key})
-    on conflict (tenant_id, idempotency_key) do update set status = 'sending'
+    on conflict (tenant_id, idempotency_key) do update set status = 'sending', to_addr = excluded.to_addr, body = excluded.body
       where message_log.status = 'failed' or (message_log.status = 'sending' and message_log.created_at < now() - interval '5 minutes')
+        -- A rejected address goes again only once it has been corrected.
+        or (message_log.status = 'rejected' and message_log.to_addr <> excluded.to_addr)
     returning id`)) as unknown as { id: string }[];
   return rows[0]?.id ?? null;
 }
@@ -52,9 +55,22 @@ export async function sendSms(t: TenantRow, opts: { to: string; template: Templa
     await finish(id, res.status, res.id);
     return true;
   } catch (err) {
-    await finish(id, 'failed', null);
-    throw err;
+    return failed(id, err);
   }
+}
+
+/**
+ * An address the provider refuses outright is marked rejected and not retried: the job finishes and the office sees
+ * it in System (issue 49). Anything else is a failure worth retrying, so it throws.
+ */
+async function failed(id: string, err: unknown): Promise<false> {
+  if ((err as { rejected?: boolean }).rejected) {
+    await finish(id, 'rejected', null);
+    log.info('message rejected', { message_id: id, error: err instanceof Error ? err.message : String(err) });
+    return false;
+  }
+  await finish(id, 'failed', null);
+  throw err;
 }
 
 export async function sendEmail(t: TenantRow, opts: { to: string; template: string; subject: string; text: string; key: string; related?: Record<string, unknown>; attachments?: { filename: string; content: Uint8Array }[]; fromName?: string; replyTo?: string | null }): Promise<boolean> {
@@ -66,8 +82,7 @@ export async function sendEmail(t: TenantRow, opts: { to: string; template: stri
     await finish(id, res.status, res.id);
     return true;
   } catch (err) {
-    await finish(id, 'failed', null);
-    throw err;
+    return failed(id, err);
   }
 }
 

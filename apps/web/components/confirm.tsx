@@ -47,7 +47,7 @@ function ConfirmDialog({ title, body, confirm, cancel = 'Cancel', danger, onAnsw
     return () => document.removeEventListener('keydown', onKey);
   }, [onAnswer]);
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 p-4 sm:items-center" onClick={(e) => e.target === e.currentTarget && onAnswer(false)}>
+    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-950/50 p-4 sm:items-center" onClick={(e) => e.target === e.currentTarget && onAnswer(false)}>
       <div role="alertdialog" aria-modal="true" aria-labelledby={titleId} className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" data-testid="confirm-dialog">
         <h2 id={titleId} className="font-display text-lg font-semibold">{title}</h2>
         {body ? <div className="mt-2 text-sm text-slate-700">{body}</div> : null}

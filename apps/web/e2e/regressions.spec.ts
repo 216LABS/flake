@@ -57,6 +57,23 @@ test('after reporting a Problem on site, the driver can get back in and finish',
   expect((await sql`select count(*)::int as n from visit where storm_id = ${id}`)[0]!.n).toBe(1);
 });
 
+test('a Problem reported from the road moves the driver on to the next lot, and keeps the lot in the list', async ({ page }) => {
+  await login(page);
+  const { runs } = await startStorm(page.request, `Road problem ${Date.now()}`, ['Rocky River']);
+  await page.goto(runs[0]!.link);
+  const first = await page.getByTestId('stop-label').textContent();
+  await page.getByTestId('problem').click();
+  await page.getByTestId('problem-blocked').click();
+  await page.getByTestId('problem-send').click();
+  // Issue 46: the board shows PROBLEM on that lot, so the phone shouldn't keep offering it as the next stop.
+  await expect(page.getByTestId('stop-label')).not.toHaveText(first!);
+  const back = page.getByTestId('other-stop').filter({ hasText: first!.trim() });
+  await expect(back.getByTestId('other-stop-problem')).toBeVisible();
+  await back.click();
+  await expect(page.getByTestId('stop-label')).toHaveText(first!);
+  await sql`update storm set status = 'closed', closed_at = now() where id = (select storm_id from storm_run where id = ${runs[0]!.id})`;
+});
+
 test('the driver sees the language the office chose, and a change in the office reaches the phone', async ({ page }) => {
   await login(page);
   const { runs } = await startStorm(page.request, `Spanish ${Date.now()}`, ['East Lakewood + Cleveland West']);

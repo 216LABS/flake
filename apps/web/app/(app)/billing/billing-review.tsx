@@ -30,7 +30,8 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
   const router = useRouter();
   const [ask, dialog] = useConfirm();
   const [rows, setRows] = useState(initial);
-  const [flaggedOnly, setFlaggedOnly] = useState(true);
+  // Everything shows by default, flagged first, so the clean invoices and the total aren't hidden (issue 50).
+  const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => setRows(initial), [initial]);
@@ -58,7 +59,8 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
   const fix = (body: Record<string, unknown>) => run(() => api('/api/billing/fix', { body: { storm_id: stormId, ...body } }));
   const clean = rows.filter((r) => r.status === 'draft' && isDraftClean(r.flags));
   const flagged = rows.filter((r) => r.status === 'draft' && !isDraftClean(r.flags));
-  const shown = flaggedOnly ? rows.filter((r) => r.status !== 'draft' || !isDraftClean(r.flags)) : rows;
+  const needsWork = (r: DraftRow) => r.status === 'draft' && !isDraftClean(r.flags);
+  const shown = (flaggedOnly ? rows.filter((r) => r.status !== 'draft' || !isDraftClean(r.flags)) : rows).slice().sort((a, b) => Number(needsWork(b)) - Number(needsWork(a)));
   const total = rows.reduce((s, r) => s + r.subtotal_cents, 0);
   const fees = rows.reduce((s, r) => s + r.fee_cents, 0);
 

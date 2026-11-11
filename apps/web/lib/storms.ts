@@ -1,4 +1,4 @@
-import { and, asc, asService, crew_member, customer, desc, driver_position, eq, inArray, invoice_draft, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, visitNotVoided, withUser, sms_consent, type Tx } from '@flake/db';
+import { and, asc, asService, crew_member, customer, desc, driver_position, eq, inArray, invoice_draft, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, visit_photo, visitNotVoided, withUser, sms_consent, type Tx } from '@flake/db';
 import { isLate, localHm } from '@flake/core/time';
 import { replanFrom } from '@flake/core/routing';
 import { z } from 'zod';
@@ -10,7 +10,9 @@ import { canTextFrom, notifyParty, shortLink } from './messaging';
 import { retiredLinkKey } from './driver';
 import { setSetting } from './providers';
 import { decryptToken, encryptToken, hashToken, newToken } from './tokens';
-import { latestSnapshotIds, tenantWeatherHeader } from './weather';
+import { latestSnapshotIds, stormWeather, tenantWeatherHeader } from './weather';
+import { generateDrafts } from './billing';
+import { log } from './log';
 
 export interface Ctx { userId: string; tenantId: string }
 
@@ -326,11 +328,15 @@ export async function notifyCustomer(p: { tenantId: string; siteId: string; temp
 
 /** Closing is blocked while anyone is on site unless forced. Links stay alive for 24 h after close. */
 export async function closeStorm(ctx: Ctx, stormId: string, force: boolean) {
+  return (await closeStormOnce(ctx, stormId, force)).storm;
+}
+
+async function closeStormOnce(ctx: Ctx, stormId: string, force: boolean) {
   return withUser(ctx.userId, async (tx) => {
     const [s] = await tx.select().from(storm).where(eq(storm.id, stormId)).for('update');
     if (!s) throw new HttpError(404, 'Storm not found');
     // Closing twice (a double tap, or an old tab) must not reopen links or pull a billed storm back to closed.
-    if (s.status !== 'active') return s;
+    if (s.status !== 'active') return { storm: s, closedNow: false };
     const runs = await tx.select({ id: storm_run.id }).from(storm_run).where(eq(storm_run.storm_id, stormId));
     const ids = runs.map((r) => r.id);
     const onsite = ids.length ? await tx.select({ id: run_stop.id }).from(run_stop).where(and(inArray(run_stop.storm_run_id, ids), eq(run_stop.status, 'onsite'))) : [];
@@ -341,14 +347,32 @@ export async function closeStorm(ctx: Ctx, stormId: string, force: boolean) {
     if (ids.length) await tx.update(storm_run).set({ link_expires_at: new Date(now.getTime() + 24 * 3600000).toISOString() }).where(inArray(storm_run.id, ids));
     // An alert that came in during the storm about its own lots was this storm. It doesn't stay up after the close.
     await settleAlerts(tx, stormId);
-    return closed!;
+    return { storm: closed!, closedNow: true };
   });
+}
+
+/**
+ * Close, then draft the invoices, so Billing review already has them when the office lands there (issue 48). The close
+ * stands even if drafting fails: the billing page offers Generate drafts, and the failure is logged.
+ */
+export async function closeStormAndDraft(ctx: Ctx, stormId: string, force: boolean) {
+  const { storm: closed, closedNow } = await closeStormOnce(ctx, stormId, force);
+  let drafted: number | null = null;
+  // Only the close that ended the storm drafts. A second tap gets the storm back and leaves Billing as it is.
+  if (closedNow) {
+    try {
+      drafted = (await generateDrafts(ctx, stormId)).length;
+    } catch (e) {
+      log.error('storm.close_draft_failed', e, { tenant_id: ctx.tenantId, storm_id: stormId });
+    }
+  }
+  return { ...closed, drafted };
 }
 
 /**
  * Closed by mistake, or more snow came: back to active, with route links live again. Only while nothing from it has
  * been approved for billing, so new work can't land beside an invoice that already went out. Drafts still in review
- * are dropped; they're made again after the next close.
+ * are dropped; closing again makes them fresh.
  */
 export async function reopenStorm(ctx: Ctx, stormId: string) {
   return withUser(ctx.userId, async (tx) => {
@@ -412,11 +436,12 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     const runIds = runs.map((r) => r.run.id);
     const stops = runIds.length ? await tx.select({ stop: run_stop, site, customer }).from(run_stop).innerJoin(site, eq(site.id, run_stop.site_id)).innerJoin(customer, eq(customer.id, site.customer_id)).where(inArray(run_stop.storm_run_id, runIds)).orderBy(asc(run_stop.seq)) : [];
     const visits = await tx.select().from(visit).where(and(eq(visit.storm_id, stormId), visitNotVoided));
+    const photoCounts = visits.length ? await tx.select({ visit_id: visit_photo.visit_id, n: sql<number>`count(*)::int` }).from(visit_photo).where(inArray(visit_photo.visit_id, visits.map((v) => v.id))).groupBy(visit_photo.visit_id) : [];
     const problems = runIds.length ? await tx.select().from(problem_report).where(and(inArray(problem_report.storm_run_id, runIds), sql`resolved_at is null`)).orderBy(desc(problem_report.created_at)) : [];
     const positions = runIds.length ? await tx.selectDistinctOn([driver_position.storm_run_id]).from(driver_position).where(inArray(driver_position.storm_run_id, runIds)).orderBy(driver_position.storm_run_id, desc(driver_position.device_at)) : [];
     const pins = stops.length ? await tx.select().from(site_pin).where(inArray(site_pin.site_id, stops.map((x) => x.site.id))) : [];
     const crew = await tx.select({ id: crew_member.id, name: crew_member.name, kind: crew_member.kind }).from(crew_member).where(eq(crew_member.active, true)).orderBy(asc(crew_member.name));
-    return { s: s!, runs, stops, visits, problems, positions, pins, crew };
+    return { s: s!, runs, stops, visits, photoCounts, problems, positions, pins, crew };
   });
   const now = Date.now();
   const started = Date.parse(data.s.started_at);
@@ -425,9 +450,12 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     const stops = data.stops.filter((x) => x.stop.storm_run_id === run.id).map(({ stop, site: st, customer: c }) => {
       const stopVisits = data.visits.filter((v) => v.run_stop_id === stop.id);
       const open = stopVisits.find((v) => !v.departed_device_at);
+      const finished = stopVisits.filter((v) => v.departed_device_at).at(-1);
+      const photos = stopVisits.reduce((n, v) => n + (data.photoCounts.find((p) => p.visit_id === v.id)?.n ?? 0), 0);
+      const problem = data.problems.find((p) => p.site_id === st.id && (p.storm_run_id === run.id || stop.previous_run_ids.includes(p.storm_run_id ?? '')));
       const late = (stop.status === 'open' || stop.status === 'enroute') && isLate(st.service_window, started, now, ctx.timezone);
       if (late) alerts.push({ kind: 'late', text: `${st.label} is past its ${st.service_window?.open_by} deadline`, stop_id: stop.id });
-      return { id: stop.id, seq: stop.seq, status: stop.status, late, priority: st.priority, site_id: st.id, label: st.label, address: st.address, lat: st.lat, lon: st.lon, customer: c.name, arrived_at: stop.status === 'onsite' ? (open?.arrived_device_at ?? null) : null, done_at: stopVisits.find((v) => v.departed_device_at)?.departed_device_at ?? null };
+      return { id: stop.id, seq: stop.seq, status: stop.status, late, priority: st.priority, site_id: st.id, label: st.label, address: st.address, lat: st.lat, lon: st.lon, customer: c.name, arrived_at: stop.status === 'onsite' ? (open?.arrived_device_at ?? null) : null, done_at: finished?.departed_device_at ?? null, depth_in: finished?.depth_in === null || finished?.depth_in === undefined ? null : Number(finished.depth_in), photos, problem: problem ? { kind: problem.kind, note: problem.note } : null };
     }).sort((a, b) => Number(b.late && b.priority <= 2) - Number(a.late && a.priority <= 2) || a.seq - b.seq);
     if (crew?.kind === 'sub' && run.published_at && !run.started_at && now - Date.parse(run.published_at) > 30 * 60000) {
       alerts.push({ kind: 'not_started', text: `${crew.name} has not started 30 minutes after publish`, at: run.published_at });
@@ -444,12 +472,15 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     alerts.push({ kind: 'problem', problem_id: p.id, text: `${p.kind} at ${st?.site.label ?? 'a site'}${p.note ? `: ${p.note}` : ''}`, at: p.created_at });
   }
   const all = boards.flatMap((b) => b.stops);
+  const siteIds = [...new Set(data.stops.map((x) => x.site.id))];
   return {
     storm: data.s,
     crew: data.crew,
     runs: boards,
     alerts,
     counts: { done: all.filter((x) => x.status === 'done').length, open: all.filter((x) => ['open', 'enroute', 'problem'].includes(x.status)).length, onsite: all.filter((x) => x.status === 'onsite').length, skipped: all.filter((x) => x.status === 'skipped').length, late: all.filter((x) => x.late).length, total: all.length },
-    weather: await tenantWeatherHeader(ctx.tenantId, [...new Set(data.stops.map((x) => x.site.id))]),
+    // That storm's weather, and while it runs, the live forecast for its lots too (issue 45).
+    weather: data.s.status === 'active' ? await tenantWeatherHeader(ctx.tenantId, siteIds) : null,
+    storm_weather: await stormWeather(ctx.tenantId, data.s, siteIds),
   };
 }

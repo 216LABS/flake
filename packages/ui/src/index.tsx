@@ -78,16 +78,17 @@ export function EmptyState({ title, body, action }: { title: string; body?: stri
   );
 }
 
-export function Table({ className, ...props }: HTMLAttributes<HTMLTableElement>) {
+/** `stack` makes each row a card on a phone; label its cells with Td's `label` (issue 47). */
+export function Table({ className, stack = false, ...props }: HTMLAttributes<HTMLTableElement> & { stack?: boolean }) {
   return (
-    <div tabIndex={0} className="relative overflow-x-auto rounded-md border border-slate-200 bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900">
+    <div tabIndex={0} className={cn('relative overflow-x-auto rounded-md border border-slate-200 bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900', stack && 'table-stack')}>
       <table className={cn('w-full text-left text-sm', className)} {...props} />
     </div>
   );
 }
 /** A class passed in adds to the cell's own look instead of replacing it. */
 export const Th = ({ className, ...props }: HTMLAttributes<HTMLTableCellElement>) => <th className={cn('font-display border-b border-slate-200 bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600', className)} {...props} />;
-export const Td = ({ className, ...props }: HTMLAttributes<HTMLTableCellElement> & { colSpan?: number }) => <td className={cn('border-b border-slate-100 px-3 py-2.5 align-top', className)} {...props} />;
+export const Td = ({ className, label, ...props }: HTMLAttributes<HTMLTableCellElement> & { colSpan?: number; label?: string }) => <td className={cn('border-b border-slate-100 px-3 py-2.5 align-top', className)} data-label={label} {...props} />;
 
 /** The mark: a snowflake, with six arms and an amber V near each tip. */
 export function Wordmark({ className, inverse = true }: { className?: string; inverse?: boolean }) {

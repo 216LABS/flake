@@ -24,6 +24,10 @@ export interface RouteOptions {
   start?: string;
   /** Leave the current first stop first (the stop nearest the yard, say). */
   keepFirst?: boolean;
+  /** 'full' (the default) adds Or-opt moves; 'basic' is the earlier search, kept for comparisons (issue 42). */
+  search?: 'basic' | 'full';
+  /** Stop improving after this long. The best order so far is returned. */
+  budgetMs?: number;
 }
 
 export interface PlannedStop { id: string; arrive: string; finish: string; drive_min: number; service_min: number; late: boolean }
@@ -137,7 +141,9 @@ export function suggestRoute(sites: RouteSite[], opts: RouteOptions = {}): Route
   for (const t of tiers) { bounds.push([at, at + t.length]); at += t.length; }
 
   let cost = score(order, start).cost;
-  for (let pass = 0, better = true; better && pass < 50; pass++) {
+  const full = (opts.search ?? 'full') === 'full';
+  const until = Date.now() + (opts.budgetMs ?? 4000);
+  for (let pass = 0, better = true; better && pass < 50 && Date.now() < until; pass++) {
     better = false;
     for (const [lo, hi] of bounds) {
       for (let i = lo; i < hi - 1; i++) {
@@ -155,6 +161,27 @@ export function suggestRoute(sites: RouteSite[], opts: RouteOptions = {}): Route
           sooner.splice(i, 0, sooner.splice(j, 1)[0]!);
           const c3 = score(sooner, start).cost;
           if (c3 < cost - 1e-9) { order = sooner; cost = c3; better = true; }
+        }
+      }
+    }
+    // Or-opt: lift a run of 2 or 3 stops and drop it anywhere else in its tier, either way round. Single moves and
+    // reversals can't fix a cluster sitting in the wrong part of town; this can (issue 42). Only once the cheap moves
+    // have stalled, so a big route spends its time budget on them first.
+    if (full && !better && Date.now() < until) {
+      for (const [lo, hi] of bounds) {
+        for (let k = 2; k <= 3; k++) {
+          for (let i = lo; i + k <= hi; i++) {
+            for (let p = lo; p <= hi - k; p++) {
+              if (p === i) continue;
+              for (const rev of [false, true]) {
+                const rest = [...order.slice(0, i), ...order.slice(i + k)];
+                const seg = order.slice(i, i + k);
+                const moved = [...rest.slice(0, p), ...(rev ? seg.reverse() : seg), ...rest.slice(p)];
+                const c = score(moved, start).cost;
+                if (c < cost - 1e-9) { order = moved; cost = c; better = true; }
+              }
+            }
+          }
         }
       }
     }

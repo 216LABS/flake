@@ -13,7 +13,7 @@ import type { EmailProvider, PaymentsProvider, Providers, SmsProvider } from './
 
 export * from './types';
 export { MockWeather, WEATHER_FIXTURES, type WeatherFixtureName } from './mock/weather';
-export { MockEmail } from './mock/email';
+export { MockEmail, MOCK_REJECTED_DOMAIN } from './mock/email';
 export { MockPayments, signMockWebhook, MOCK_WEBHOOK_SECRET } from './mock/payments';
 export { MockSms, signTwilio, MOCK_TWILIO_TOKEN } from './mock/sms';
 export { MockFootprints, MockGeocoder, MockOsm, MockParcels, MockTiles } from './mock/geo';

@@ -76,3 +76,71 @@ h3 {
 .tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * A table that turns into one card per row on a phone (issue 47). Each cell shows its column name from data-label;
+ * a cell without one (the row's name, or its action) spans the card.
+ */
+@media (max-width: 767.98px) {
+  .table-stack table,
+  .table-stack tbody,
+  .table-stack tr,
+  .table-stack td {
+    display: block;
+    width: 100%;
+  }
+  .table-stack thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .table-stack tr {
+    border-bottom: 1px solid var(--color-slate-200);
+    padding: 0.625rem 0.875rem;
+  }
+  .table-stack tr:last-child {
+    border-bottom: 0;
+  }
+  .table-stack td {
+    border: 0;
+    padding: 0.125rem 0;
+    overflow-wrap: anywhere;
+  }
+  .table-stack td[data-label] {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: space-between;
+    text-align: right;
+  }
+  .table-stack td[data-label]::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    text-align: left;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-slate-600);
+  }
+  .table-stack td:empty {
+    display: none;
+  }
+}
+
+/*
+ * iOS Safari gives date and time inputs a wide built-in minimum and its own height, so in a tight row they overflow
+ * into the next control (issue 44). These keep them inside their box and the same height as other fields.
+ */
+input[type='date'],
+input[type='time'],
+input[type='datetime-local'] {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 2.5rem;
+  -webkit-appearance: none;
+  appearance: none;
+}
+input::-webkit-date-and-time-value {
+  text-align: left;
+  min-height: 1.25em;
+}

@@ -39,7 +39,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
         {ctx.role === 'viewer' ? null : <PortalCard customerId={c.id} email={c.email} />}
       </div>
       <h2 className="mb-2 mt-6 font-semibold">Sites</h2>
-      <Table>
+      <Table stack>
         <thead><tr><Th>Site</Th><Th>Address</Th><Th>Area</Th><Th>Contract</Th></tr></thead>
         <tbody>
           {[...sites].sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active))).map((s) => {
@@ -48,9 +48,9 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
             return (
               <tr key={s.id} className={s.active ? '' : 'text-slate-500'} data-testid="site-row" data-active={String(Boolean(s.active))}>
                 <Td><Link className="text-sky-800 underline" href={`/sites/${s.id}`}>{s.label}</Link>{s.active ? null : <Badge className="ml-2">retired</Badge>}</Td>
-                <Td>{s.address}</Td>
-                <Td>{s.area_confirmed_sqft ? `${Number(s.area_confirmed_sqft).toLocaleString()} sq ft` : s.area_estimate_sqft ? `~${Number(s.area_estimate_sqft).toLocaleString()} sq ft` : 'unavailable'}</Td>
-                <Td><Badge tone={k?.status === 'accepted' ? 'green' : 'amber'}>{k?.status === 'sent' ? 'quote sent' : k?.status ?? 'none'}</Badge></Td>
+                <Td label="Address">{s.address}</Td>
+                <Td label="Area">{s.area_confirmed_sqft ? `${Number(s.area_confirmed_sqft).toLocaleString()} sq ft` : s.area_estimate_sqft ? `~${Number(s.area_estimate_sqft).toLocaleString()} sq ft` : 'unavailable'}</Td>
+                <Td label="Contract"><Badge tone={k?.status === 'accepted' ? 'green' : 'amber'}>{k?.status === 'sent' ? 'quote sent' : k?.status ?? 'none'}</Badge></Td>
               </tr>
             );
           })}

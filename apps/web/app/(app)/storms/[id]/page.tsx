@@ -28,7 +28,7 @@ export default async function StormPage({ params }: { params: Promise<{ id: stri
         <Link className={buttonVariants({ variant: 'outline' })} href={`/billing?storm=${id}`}>Billing</Link>
         <Link className={buttonVariants({ variant: 'outline' })} href={`/storms/${id}/pay`}>Sub pay</Link>
       </>} />
-      <StormBoard stormId={id} initial={JSON.parse(JSON.stringify(live))} layers={tiles.layers()} canEdit={ctx.role !== 'viewer'} canText={canTextFrom(ctx.tenant)} sites={sites} />
+      <StormBoard stormId={id} tz={ctx.tenant.timezone} initial={JSON.parse(JSON.stringify(live))} layers={tiles.layers()} canEdit={ctx.role !== 'viewer'} canText={canTextFrom(ctx.tenant)} sites={sites} />
     </>
   );
 }

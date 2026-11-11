@@ -1,4 +1,4 @@
-import { and, asc, asService, contract, customer, desc, eq, gte, inArray, installment_invoice, invoice_draft, notInArray, isNotNull, lte, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
+import { and, asc, asService, contract, customer, desc, eq, inArray, installment_invoice, invoice_draft, notInArray, isNotNull, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
 import { applyCorrections, draftInvoices, flagKey, isDraftClean, type BillingContract, type BillingFlag, type BillingVisit } from '@flake/core/billing';
 import { applicationFeeCents, feeRate, proFeaturesEnabled, type Plan } from '@flake/core/fees';
 import { seasonalInstallments, type ContractService, type Pricing, type SaltPricing, type StormDepthContext } from '@flake/core/pricing';
@@ -15,15 +15,13 @@ import { queueNotify } from './messaging';
 import { getProviders } from './providers';
 import { seriesFromSummary } from './weather';
 import type { Ctx } from './storms';
+import { observedSnapshots } from './weather';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
 export const tenantFeeRate = (t: { plan: Plan; free_season_until: string | null }) => feeRate(t.plan, t.free_season_until, today());
 export const tenantHasPro = (t: { plan: Plan; free_season_until: string | null }) => proFeaturesEnabled(t.plan, t.free_season_until, today());
 
-const HOUR = 3_600_000;
-/** How far past the close an observed total may run and still count as this storm's snow. */
-const OBSERVED_SLACK_MS = 3 * HOUR;
 
 /**
  * Observed snow at the site during the storm, and NWS elapsed over the storm. Unavailable stays null and is never
@@ -35,13 +33,7 @@ async function depthContext(s: typeof storm.$inferSelect, sites: (typeof site.$i
   const start = Date.parse(s.started_at);
   const end = s.closed_at ? Date.parse(s.closed_at) : Date.now();
   const snaps = s.forecast_snapshot_ids?.length ? await db.select().from(weather_snapshot).where(inArray(weather_snapshot.id, s.forecast_snapshot_ids)).orderBy(desc(weather_snapshot.fetched_at)) : [];
-  const observed = (await db.select().from(weather_snapshot)
-    .where(and(eq(weather_snapshot.source, 'nohrsc'), gte(weather_snapshot.fetched_at, new Date(start).toISOString()), lte(weather_snapshot.fetched_at, new Date(end + OBSERVED_SLACK_MS + 6 * HOUR).toISOString()))))
-    .filter((x) => {
-      const validAt = Date.parse(x.summary.valid_at ?? x.fetched_at);
-      const hours = Number(x.summary.hours);
-      return Number.isFinite(validAt) && hours > 0 && validAt - hours * HOUR >= start - HOUR && validAt <= end + OBSERVED_SLACK_MS;
-    });
+  const observed = await observedSnapshots(start, end);
   const out: Record<string, StormDepthContext> = {};
   for (const st of sites) {
     const totals = observed.map((x) => x.summary.sites?.[st.id]).filter((v): v is number => typeof v === 'number');

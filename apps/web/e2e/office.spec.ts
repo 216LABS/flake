@@ -104,8 +104,9 @@ test('billing: flags, inline fix, approve clean, failed card, QuickBooks export'
   await page.getByTestId('generate').click();
   await expect(page.getByTestId('draft').first()).toBeVisible();
 
-  // Show flagged only is on by default, and the missing visit is flagged.
-  await expect(page.getByTestId('flagged-only')).toBeChecked();
+  // Every draft shows by default, flagged ones first, and the missing visit is flagged (issue 50).
+  await expect(page.getByTestId('flagged-only')).not.toBeChecked();
+  await expect(page.getByTestId('draft').first().getByTestId('approve-blocked')).toBeVisible();
   const missing = page.locator('[data-code="missing_visit"]');
   await expect(missing).toHaveCount(1);
   await missing.getByTestId('fix-skip').click();

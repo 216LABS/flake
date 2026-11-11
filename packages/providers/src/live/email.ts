@@ -33,6 +33,9 @@ export class LiveEmail implements EmailProvider {
       const seconds = Number(res.headers.get('retry-after')) || (/quota/i.test(`${body.name} ${body.message}`) ? 3600 : 5);
       throw Object.assign(new Error(`Resend 429: ${body.message ?? 'rate limited'}`), { retryAfterSeconds: seconds });
     }
+    // 400 and 422 are about this message: a bad or blocked address won't send on any retry (issue 49). Other errors
+    // (an outage, a bad key) can clear, so they retry.
+    if (res.status === 400 || res.status === 422) throw Object.assign(new Error(`Resend ${res.status}: ${body.message ?? 'rejected'}`), { rejected: true });
     if (!res.ok) throw new Error(`Resend ${res.status}: ${body.message ?? 'request failed'}`);
     return { id: body.id ?? 'unknown', status: 'sent' };
   }

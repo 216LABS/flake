@@ -17,6 +17,10 @@ export class LiveSms implements SmsProvider {
   private async post(url: string, params: Record<string, string>, auth = this.auth()) {
     const res = await this.fetchImpl(url, { method: 'POST', headers: { Authorization: auth, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params) });
     const body = (await res.json()) as any;
+    // Not a valid number, not a mobile, or the person texted STOP: no retry will reach them (issue 49).
+    if (!res.ok && [21211, 21214, 21217, 21401, 21407, 21408, 21610, 21612, 21614].includes(Number(body.code))) {
+      throw Object.assign(new Error(`Twilio ${res.status}: ${body.message ?? 'rejected'}`), { rejected: true });
+    }
     if (!res.ok) throw new Error(`Twilio ${res.status}: ${body.message ?? 'request failed'}`);
     return body;
   }
