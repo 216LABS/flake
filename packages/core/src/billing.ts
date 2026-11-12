@@ -1,5 +1,6 @@
 import type { MultiPolygon, Polygon } from 'geojson';
 import { distanceMeters, distanceToPolygonMeters, gpsMatches } from './geo';
+import { usDistanceText } from './units';
 import { priceSiteForStorm, type ContractService, type InvoiceLine, type PricedVisit, type SaltPricing, type StormDepthContext } from './pricing';
 
 export const DUPLICATE_WINDOW_MS = 60 * 60 * 1000;
@@ -144,7 +145,7 @@ function flagsForSite(site: BillingSite, contract: BillingContract | undefined, 
       add('no_gps_match', `${site.label}: the phone didn't share its location on arrival, so there's no GPS record of this visit.`, v.id);
     } else if (!gpsMatches(v.arrive_lat, v.arrive_lon, site)) {
       const m = site.polygons ? distanceToPolygonMeters(v.arrive_lat, v.arrive_lon, site.polygons) : distanceMeters(v.arrive_lat, v.arrive_lon, site.lat, site.lon);
-      add('no_gps_match', `${site.label}: the phone was about ${m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m / 10) * 10} m`} from the lot on arrival.`, v.id);
+      add('no_gps_match', `${site.label}: the phone was about ${usDistanceText(m)} from the lot on arrival.`, v.id);
     }
     // Hourly lots bill straight from the phone's Arrive and Done times, so a Done tapped at the end of a shift, or a
     // phone clock that jumped, would bill hours nobody worked.

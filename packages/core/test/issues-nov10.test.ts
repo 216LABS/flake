@@ -106,18 +106,29 @@ describe('issue 78: the location flag says what happened, and every flag has a t
   const gps = (over: Partial<BillingVisit>) => draftInvoices(input(perPush, [v(over)]))[0]!.flags.find((f) => f.code === 'no_gps_match')?.message;
   it('no location at all is not the same as a location in the wrong place', () => {
     expect(gps({ arrive_lat: null, arrive_lon: null })).toMatch(/didn't share its location/);
-    expect(gps({ arrive_lat: LAT + 0.009, arrive_lon: LON })).toMatch(/about 1(\.0)? km from the lot/);
-    expect(gps({ arrive_lat: LAT + 0.0025, arrive_lon: LON })).toMatch(/about 280 m from the lot/);
+    expect(gps({ arrive_lat: LAT + 0.009, arrive_lon: LON })).toMatch(/about 0\.6 mi from the lot/);
+    expect(gps({ arrive_lat: LAT + 0.0025, arrive_lon: LON })).toMatch(/about 900 ft from the lot/);
     expect(gps({})).toBeUndefined();
   });
   it('measures from the drawn lot boundary when there is one', () => {
-    const d = 0.0005;
+    const d = 0.002;
     const square = { type: 'Polygon' as const, coordinates: [[[LON - d, LAT - d], [LON + d, LAT - d], [LON + d, LAT + d], [LON - d, LAT + d], [LON - d, LAT - d]]] };
     const withLot: DraftInput = { ...input(perPush, [v({ arrive_lat: LAT + 0.0035, arrive_lon: LON })]), sites: [{ id: 's1', customer_id: 'c1', label: 'Lot', lat: LAT, lon: LON, polygons: square }] };
-    // About 390 m from the center, but about 330 m from the boundary's edge.
-    expect(draftInvoices(withLot)[0]!.flags.find((f) => f.code === 'no_gps_match')?.message).toMatch(/about 33\d m from the lot/);
+    // About 390 m (0.2 mi) from the center, but about 170 m (550 ft) from the boundary's edge.
+    expect(draftInvoices(withLot)[0]!.flags.find((f) => f.code === 'no_gps_match')?.message).toMatch(/about 550 ft from the lot/);
   });
   it('money first, then proof, then lots not reached', () => {
     expect([FLAG_TIER.no_service, FLAG_TIER.no_after_photo, FLAG_TIER.missing_visit, FLAG_TIER.seasonal_info]).toEqual(['money', 'proof', 'not_done', 'info']);
+  });
+});
+
+describe('issue 89: distances read in feet and miles, the same as the driver page', () => {
+  it('feet when close, miles past about 1,000 ft', async () => {
+    const { usDistance, usDistanceText, feet } = await import('../src/units');
+    expect(usDistanceText(12_875)).toBe('8.0 mi');
+    expect(usDistanceText(280)).toBe('900 ft');
+    expect(usDistance(299)).toEqual({ d: '1000', unit: 'ft' });
+    expect(usDistance(300).unit).toBe('mi');
+    expect(feet(12)).toBe('39 ft');
   });
 });

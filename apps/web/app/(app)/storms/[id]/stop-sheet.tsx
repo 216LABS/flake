@@ -1,5 +1,6 @@
 'use client';
 
+import { feet } from '@flake/core/units';
 import { Badge, Button } from '@flake/ui';
 import { X } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
@@ -111,7 +112,7 @@ export function StopSheet({ stopId, tz, onClose }: { stopId: string; tz: string;
                         <dt className="text-slate-600">Depth</dt><dd>{v.depth_in !== null ? `${v.depth_in} in` : 'Not logged'}</dd>
                         {v.salt?.length ? <><dt className="text-slate-600">Salt</dt><dd>{v.salt.map((x) => `${x.qty} ${SALT_UNIT[x.unit] ?? x.unit}`).join(', ')}</dd></> : null}
                         <dt className="text-slate-600">GPS</dt>
-                        <dd>{v.gps ? <>{v.gps.lat.toFixed(5)}, {v.gps.lon.toFixed(5)}{v.gps.accuracy_m !== null ? `, within ${Math.round(v.gps.accuracy_m)} m` : ''}{v.gps.matched === false ? <span className="block text-xs font-medium text-amber-800">Not at the lot&apos;s mapped spot</span> : null}</> : 'Not shared'}</dd>
+                        <dd>{v.gps ? <>{v.gps.lat.toFixed(5)}, {v.gps.lon.toFixed(5)}{v.gps.accuracy_m !== null ? `, within ${feet(v.gps.accuracy_m)}` : ''}{v.gps.matched === false ? <span className="block text-xs font-medium text-amber-800">Not at the lot&apos;s mapped spot</span> : null}</> : 'Not shared'}</dd>
                         {v.notes ? <><dt className="text-slate-600">Note</dt><dd>{v.notes}</dd></> : null}
                       </dl>
                     </li>

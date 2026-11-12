@@ -1,6 +1,7 @@
 'use client';
 
 import { t as translate, type DictKey, type Lang } from '@flake/core/i18n';
+import { usDistance } from '@flake/core/units';
 import { BigButton, bigButtonClass, cn } from '@flake/ui';
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { commit, flush, kvGet, kvSet, pending } from './outbox';
@@ -571,7 +572,7 @@ const Shell = ({ children }: { children: React.ReactNode }) => <div className="m
 type T = (key: DictKey, vars?: Record<string, string | number>) => string;
 
 function NextStop({ t, token, stop, awayM, index, total, onNavigate, onArrive, onProblem }: { t: T; token: string; stop: Stop; awayM: number | null; index: number; total: number; onNavigate: () => void; onArrive: () => void; onProblem: () => void }) {
-  const away = awayM === null ? null : awayM < 300 ? t('away_ft', { d: Math.round(awayM * 3.28084 / 50) * 50 }) : t('away_mi', { d: (awayM / 1609.344).toFixed(1) });
+  const away = awayM === null ? null : (({ d, unit }) => t(unit === 'ft' ? 'away_ft' : 'away_mi', { d }))(usDistance(awayM));
   return (
     <section className="rounded-lg bg-slate-800 p-4" data-testid="next-stop">
       <div className="flex items-baseline justify-between gap-2">
