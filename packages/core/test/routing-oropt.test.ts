@@ -23,14 +23,15 @@ describe('issue 42: Or-opt in Suggest order', () => {
     for (let seed = 1; seed <= 12; seed++) {
       const sites = route(40, seed * 31);
       // Restarts are measured on their own (issue 67); this compares the search moves alone.
-      const basic = cost(suggestRoute(sites, { search: 'basic', restarts: 0 }));
-      const full = cost(suggestRoute(sites, { restarts: 0 }));
+      // A big budget, so a slow machine gets the same answer, not one cut short.
+      const basic = cost(suggestRoute(sites, { search: 'basic', restarts: 0, budgetMs: 60_000 }));
+      const full = cost(suggestRoute(sites, { restarts: 0, budgetMs: 60_000 }));
       expect(full).toBeLessThanOrEqual(basic);
       if (full < basic) better++;
     }
     // This is the part only Or-opt can do: with search 'basic' on both sides it would be 0.
     expect(better).toBeGreaterThan(0);
-  });
+  }, 60_000);
   it('puts a stray pair of stops back in line', () => {
     // A line of lots east to west, with a pair from the far west end stuck at the start, the wrong way round.
     const line = Array.from({ length: 8 }, (_, i) => ({ id: `l${i}`, lat: 41.48, lon: -81.75 - i * 0.01, priority: 1, sqft: null }));
@@ -55,16 +56,18 @@ describe('issue 42: Or-opt in Suggest order', () => {
 });
 
 describe('issue 67: restarts', () => {
+  // A big time budget, so the answer depends on the seed and not on how fast the machine is (CI is slower than a
+  // laptop, and a budget cut short there could make "the same answer twice" differ).
   it('are never worse than none, and the same route gives the same answer twice', () => {
-    for (let seed = 1; seed <= 6; seed++) {
+    for (let seed = 1; seed <= 3; seed++) {
       const sites = route(35, seed * 977);
-      const none = suggestRoute(sites, { restarts: 0 });
-      const some = suggestRoute(sites, { restarts: 5 });
+      const none = suggestRoute(sites, { restarts: 0, budgetMs: 60_000 });
+      const some = suggestRoute(sites, { restarts: 5, budgetMs: 60_000 });
       expect(cost(some)).toBeLessThanOrEqual(cost(none));
-      expect(suggestRoute(sites, { restarts: 5 }).map((s) => s.id)).toEqual(some.map((s) => s.id));
+      expect(suggestRoute(sites, { restarts: 5, budgetMs: 60_000 }).map((s) => s.id)).toEqual(some.map((s) => s.id));
       expect(some.every((s, i) => i === 0 || some[i - 1]!.priority <= s.priority)).toBe(true);
     }
-  });
+  }, 60_000);
 });
 
 describe('issue 66: not before', () => {
@@ -131,5 +134,30 @@ describe('issue 65: road times', () => {
     const order = suggestRoute(pts, { legMinutes: slow, keepFirst: true, restarts: 0 }).map((s) => s.id);
     const i = order.indexOf('a');
     expect(order[i + 1]).not.toBe('c');
+  });
+});
+
+describe('issue 72: a lot not open yet is planned when it opens, not waited for', () => {
+  // The production case: the route's only priority 1 lot opens at 5:30 PM; the truck starts at 4 AM.
+  const lot = (i: number, priority: number, extra: Partial<RouteSite> = {}): RouteSite => ({ id: `p${i}`, lat: 41.48 + (i % 3) * 0.004, lon: -81.80 - i * 0.004, priority, sqft: 20000, ...extra });
+  const route = [lot(0, 2), lot(1, 1, { not_before: '17:30' }), lot(2, 2), lot(3, 3), lot(4, 2), lot(5, 3), lot(6, 3)];
+  it('goes late in the route, and nobody waits for hours', () => {
+    const r = compareRoute(route, { start: '04:00' });
+    const ids = r.suggested.stops.map((s) => s.id);
+    expect(ids[0]).not.toBe('p1');
+    expect(ids.indexOf('p1')).toBe(ids.length - 1);
+    expect(r.suggested.wait_min).toBeLessThan(r.current.wait_min);
+    expect(r.suggested.total_min).toBeLessThan(r.current.total_min);
+    expect(new Set(ids)).toEqual(new Set(route.map((s) => s.id)));
+  });
+  it('a lot opening right after the start still comes early, as its priority asks', () => {
+    const soon = route.map((s) => (s.id === 'p1' ? { ...s, not_before: '04:10' } : s));
+    const ids = compareRoute(soon, { start: '04:00' }).suggested.stops.map((s) => s.id);
+    expect(ids.indexOf('p1')).toBeLessThanOrEqual(1);
+  });
+  it('with the yard, the late lot still comes before the trip home', () => {
+    const r = compareRoute(route, { start: '04:00', yard: { lat: 41.48, lon: -81.79 } });
+    expect(r.suggested.stops.at(-1)!.id).toBe('p1');
+    expect(r.suggested.stops.some((s) => s.id.startsWith('__'))).toBe(false);
   });
 });

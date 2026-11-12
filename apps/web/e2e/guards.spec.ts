@@ -56,11 +56,11 @@ test('removing a driver asks first, and a returning driver can be brought back',
   const [c] = await sql`insert into crew_member (tenant_id, name, kind, email) values (${t!.id}, ${name}, 'employee', ${`seasonal-${Date.now()}@flake.test`}) returning id`;
   await page.goto('/settings?tab=crew');
   const row = page.getByTestId('crew-row').filter({ hasText: name });
-  page.once('dialog', (d) => void d.dismiss());
   await row.getByTestId('crew-remove').click();
+  await page.getByTestId('confirm-no').click();
   await expect(row.getByTestId('crew-remove')).toBeVisible();
-  page.once('dialog', (d) => void d.accept());
   await row.getByTestId('crew-remove').click();
+  await page.getByTestId('confirm-yes').click();
   await expect(row.getByTestId('crew-restore')).toBeVisible();
   // Their old invite link is dead while they're off the crew.
   expect((await page.request.post(`/api/crew/${c!.id}/invite`)).status()).toBe(404);

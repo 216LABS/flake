@@ -3,6 +3,7 @@
 import { Badge, Button, Card, Input, Label, Table, Td, Th } from '@flake/ui';
 import { useState } from 'react';
 import { api, money } from '@/lib/client';
+import { useConfirm } from '@/components/confirm';
 
 interface Supplier {
   id: string; name: string; email: string; radius_mi: number; price_per_ton_cents: number; truckload_tons: number; stop_fee_cents: number;
@@ -24,6 +25,7 @@ export function SaltAdmin({ initial }: { initial: Data }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [ask, dialog] = useConfirm();
   const reload = async () => setData(await api<Data>('/api/admin/salt/suppliers'));
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -50,6 +52,7 @@ export function SaltAdmin({ initial }: { initial: Data }) {
 
   return (
     <div className="space-y-6">
+      {dialog}
       <Card>
         <h2 className="font-semibold">Suppliers</h2>
         <p className="mt-1 text-sm text-slate-600">Referral fees earned on delivered salt: <b className="tabular" data-testid="fees-earned">{money(total)}</b>. Invoice each supplier for theirs.</p>
@@ -72,7 +75,7 @@ export function SaltAdmin({ initial }: { initial: Data }) {
                     <Td className="text-right">
                       <div className="tabular">{t1(s.open_tons)} t</div>
                       {s.open_since ? <div className="text-xs text-slate-600" data-testid="open-age">waiting {days(s.open_since)}{s.open_needed_by ? `, needed by ${s.open_needed_by}` : ''}</div> : null}
-                      {s.open_tons > 0 ? <Button size="sm" variant="ghost" className="mt-1" disabled={busy} data-testid="send-now" onClick={() => { if (confirm(`Send ${t1(s.open_tons)} tons to ${s.name} now, short of a full truck? Check they'll run a partial load first.`)) void run(async () => { const r = await api<{ sent: number | null }>(`/api/admin/salt/suppliers/${s.id}`, { method: 'PATCH', body: { send_now: true } }); setMsg(r.sent ? `Sent ${r.sent} tons to ${s.name}. The companies in it were told.` : 'Nothing was waiting.'); }); }}>Send now</Button> : null}
+                      {s.open_tons > 0 ? <Button size="sm" variant="ghost" className="mt-1" disabled={busy} data-testid="send-now" onClick={async () => { if (await ask({ title: `Send ${t1(s.open_tons)} tons to ${s.name} now?`, body: "It's short of a full truck. Check they'll run a partial load first.", confirm: 'Send now' })) void run(async () => { const r = await api<{ sent: number | null }>(`/api/admin/salt/suppliers/${s.id}`, { method: 'PATCH', body: { send_now: true } }); setMsg(r.sent ? `Sent ${r.sent} tons to ${s.name}. The companies in it were told.` : 'Nothing was waiting.'); }); }}>Send now</Button> : null}
                     </Td>
                     <Td className="tabular text-right">{t1(s.delivered_tons)} t</Td>
                     <Td className="tabular text-right">{money(s.fees_earned_cents)}</Td>

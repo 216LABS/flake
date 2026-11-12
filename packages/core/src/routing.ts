@@ -161,6 +161,29 @@ export function suggestRoute(sites: RouteSite[], opts: RouteOptions = {}): Route
 }
 
 function suggestRouteNow(sites: RouteSite[], opts: RouteOptions): RouteSite[] {
+  // A lot that isn't open yet when the route starts can't usefully hold its priority place: a priority 1 church lot open
+  // from 5:30 PM had the truck waiting from 4 AM (issue 72). Plan the rest, then put each such lot where it costs least
+  // in driving, waiting and lateness. One opening just after the start still lands near the front.
+  const t0 = startOf(opts);
+  const pinned = opts.keepFirst ? sites[0] : undefined;
+  const later = sites.filter((s) => s !== pinned && s.id !== YARD_START && s.id !== YARD_END && (deadline(s.not_before, t0) ?? t0) > t0);
+  if (later.length && later.length < sites.length) {
+    let order = suggestRouteNow(sites.filter((s) => !later.includes(s)), opts);
+    const opens = (s: RouteSite) => deadline(s.not_before, t0)!;
+    for (const lot of [...later].sort((a, b) => opens(a) - opens(b))) {
+      const first = order[0] === pinned || order[0]?.id === YARD_START ? 1 : 0;
+      const end = order.findIndex((s) => s.id === YARD_END);
+      const last = end === -1 ? order.length : end;
+      let best = first;
+      let bestCost = Infinity;
+      for (let i = first; i <= last; i++) {
+        const c = score([...order.slice(0, i), lot, ...order.slice(i)], t0).cost;
+        if (c < bestCost - 1e-9) { bestCost = c; best = i; }
+      }
+      order = [...order.slice(0, best), lot, ...order.slice(best)];
+    }
+    return order;
+  }
   if (sites.length < 3) return opts.keepFirst ? [...sites] : [...sites].sort((a, b) => a.priority - b.priority);
   const start = startOf(opts);
   const fixed = opts.keepFirst ? sites[0]! : null;

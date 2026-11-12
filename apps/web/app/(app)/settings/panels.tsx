@@ -6,6 +6,7 @@ import { Badge, Button, Card, Input, Label, Select, Table, Td, Th } from '@flake
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api, dollarsToCents, money, phone } from '@/lib/client';
+import { useConfirm } from '@/components/confirm';
 import { rateCardProblem } from '@/lib/limits';
 
 function useAction() {
@@ -62,6 +63,7 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
   const [editing, setEditing] = useState<string | null>(null);
   const [invite, setInvite] = useState<string | null>(null);
   const { msg, busy, run } = useAction();
+  const [ask, dialog] = useConfirm();
   const load = (c: any) => {
     setEditing(c.id);
     setInvite(null);
@@ -73,23 +75,25 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
   };
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      {dialog}
       <div className="min-w-0 lg:col-span-2">
-        <Table>
+        {/* A card per person on a phone, with the actions on it, not off the edge (issue 73). */}
+        <Table stack data-testid="crew-table">
           <thead><tr><Th>Name</Th><Th>Kind</Th><Th>Contact</Th><Th>Language</Th><Th>Joined</Th><Th><span className="sr-only">Actions</span></Th></tr></thead>
           <tbody>
             {crew.map((c) => (
               <tr key={c.id} className={c.active ? '' : 'bg-slate-50 text-slate-600'} data-testid="crew-row">
-                <Td>{c.name}{c.active ? null : <span className="ml-2 text-xs font-medium">(no longer on the crew)</span>}</Td>
-                <Td><Badge>{c.kind}</Badge></Td>
-                <Td><div className="whitespace-nowrap">{phone(c.phone_e164)}</div><div>{c.email ?? ''}</div></Td>
-                <Td>{c.language === 'es' ? 'Español' : 'English'}</Td>
-                <Td>{c.joined_at ? 'Yes' : 'Invited'}</Td>
+                <Td className="font-medium">{c.name}{c.active ? null : <span className="ml-2 text-xs font-medium">(no longer on the crew)</span>}</Td>
+                <Td label="Kind"><Badge>{c.kind}</Badge></Td>
+                <Td label="Contact"><div className="whitespace-nowrap">{phone(c.phone_e164)}</div><div>{c.email ?? ''}</div></Td>
+                <Td label="Language">{c.language === 'es' ? 'Español' : 'English'}</Td>
+                <Td label="Joined">{c.joined_at ? 'Yes' : 'Invited'}</Td>
                 <Td>{c.active ? (
-                  <div className="flex gap-0.5">
+                  <div className="flex flex-wrap gap-0.5 max-md:mt-1">
                     <Button size="sm" variant="ghost" className="px-2" data-testid="crew-edit" onClick={() => load(c)}>Edit</Button>
                     <Button size="sm" variant="ghost" className="px-2" data-testid="crew-reinvite" onClick={() => run(async () => { setInvite((await api(`/api/crew/${c.id}/invite`, { method: 'POST' })).invite_url); }, 'New link ready')}>New link</Button>
-                    <Button size="sm" variant="ghost" className="px-2" data-testid="crew-remove" onClick={() => {
-                      if (!confirm(`Take ${c.name} off the crew? Any route link they have open stops working now.`)) return;
+                    <Button size="sm" variant="ghost" className="px-2" data-testid="crew-remove" onClick={async () => {
+                      if (!(await ask({ title: `Take ${c.name} off the crew?`, body: 'Any route link they have open stops working now. Work they already finished stays on record.', confirm: 'Take off the crew', danger: true }))) return;
                       void run(async () => { await api(`/api/crew/${c.id}`, { method: 'DELETE' }); router.refresh(); }, 'Removed');
                     }}>Remove</Button>
                   </div>
@@ -148,8 +152,10 @@ export function TeamPanel({ members, me }: { members: { user_id: string; email: 
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('dispatcher');
   const { msg, busy, run } = useAction();
+  const [ask, dialog] = useConfirm();
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      {dialog}
       <div className="min-w-0 lg:col-span-2">
         <Table>
           <thead><tr><Th>Email</Th><Th>Role</Th><Th><span className="sr-only">Actions</span></Th></tr></thead>
@@ -165,8 +171,8 @@ export function TeamPanel({ members, me }: { members: { user_id: string; email: 
                 <Td>{m.user_id !== me ? (
                   <div className="flex flex-wrap gap-1">
                     {m.pending ? <Button size="sm" variant="ghost" data-testid="team-resend" disabled={busy} onClick={() => void run(async () => { await api(`/api/settings/team/${m.user_id}`, { method: 'POST' }); }, `Sent the invite to ${m.email} again.`)}>Resend invite</Button> : null}
-                    <Button size="sm" variant="ghost" data-testid="team-remove" onClick={() => {
-                      if (!confirm(`Remove ${m.email ?? 'this person'} from your company? They lose access right away.`)) return;
+                    <Button size="sm" variant="ghost" data-testid="team-remove" onClick={async () => {
+                      if (!(await ask({ title: `Remove ${m.email ?? 'this person'}?`, body: 'They lose access to your company right away.', confirm: 'Remove', danger: true }))) return;
                       void run(async () => { await api(`/api/settings/team/${m.user_id}`, { method: 'DELETE' }); router.refresh(); }, 'Removed');
                     }}>Remove</Button>
                   </div>

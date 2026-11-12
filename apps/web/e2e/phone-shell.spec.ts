@@ -10,7 +10,7 @@ import { login, sql, startStorm } from './helpers';
  * here and in WebKit under the webkit-phone project.
  */
 const SIZES = [{ width: 390, height: 844 }, { width: 375, height: 667 }];
-const PAGES = ['/dashboard', '/storms', '/customers', '/routes', '/billing', '/proof', '/reports', '/settings', '/settings?tab=system', '/settings?tab=team'];
+const PAGES = ['/dashboard', '/storms', '/customers', '/routes', '/billing', '/proof', '/reports', '/settings', '/settings?tab=system', '/settings?tab=team', '/settings?tab=crew'];
 
 async function fitsTheScreen(page: Page, where: string) {
   const { scroll, inner } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }));
@@ -55,6 +55,21 @@ for (const size of SIZES) {
       await page.getByTestId('more-tab').click();
       await page.keyboard.press('Escape');
       await expect(page.getByTestId('more-menu')).toHaveCount(0);
+    });
+
+    test('every crew action is on screen, with no sideways scroll inside the table (issue 73)', async ({ page }) => {
+      await login(page);
+      await page.goto('/settings?tab=crew');
+      // Nothing to scroll sideways inside the table: scrolling into view would hide exactly that hunt.
+      const wrap = page.getByTestId('crew-table').locator('xpath=..');
+      expect(await wrap.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+      const buttons = page.getByTestId('crew-table').locator('[data-testid="crew-edit"], [data-testid="crew-reinvite"], [data-testid="crew-remove"]');
+      expect(await buttons.count()).toBeGreaterThan(0);
+      for (const b of (await buttons.all()).slice(0, 9)) {
+        const box = (await b.boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(size.width);
+      }
     });
 
     test('customers are cards the whole of which opens the customer', async ({ page }) => {

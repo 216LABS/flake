@@ -174,8 +174,8 @@ test('roles: dispatchers run storms but not settings, viewers only look, nobody 
   // A person in a company can't be added to a second one, and new office staff get a sign-in email.
   expect((await page.request.post('/api/settings/team', { data: { email: 'someone-new@flake.test'.replace('someone', randomUUID()), role: 'dispatcher' } })).status()).toBe(201);
 
-  page.once('dialog', (d) => void d.accept());
   await page.getByTestId('team-row').filter({ hasText: email }).getByTestId('team-remove').click();
+  await page.getByTestId('confirm-yes').click();
   await expect(page.getByTestId('team-row').filter({ hasText: email })).toHaveCount(0);
 
   await page.getByTestId('sign-out').click();
