@@ -182,7 +182,8 @@ describe('billing', () => {
     const d = rows.find((r) => r.draft.customer_id === x.customerIds[4])!;
     expect((d.draft.flags as any[]).map((f) => f.code)).toContain('missing_visit');
     const fixed = await applyFlagFix(ctxOf(x), { action: 'skip', storm_id: sid, site_id: x.siteIds[4]! });
-    expect((fixed.find((r) => r.draft.customer_id === x.customerIds[4])!.draft.flags as any[]).map((f) => f.code)).not.toContain('missing_visit');
+    // A skipped lot with no visit has nothing to bill, so its customer's draft is gone, not left at $0 (issue 90).
+    expect(fixed.find((r) => r.draft.customer_id === x.customerIds[4])).toBeUndefined();
     const [stop] = await serviceDb().select().from(run_stop).where(eq(run_stop.id, stops[4]!.id));
     expect(stop!.status).toBe('skipped');
 

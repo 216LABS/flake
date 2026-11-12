@@ -139,5 +139,8 @@ describe('issue 90: a skipped lot is not a $0 bill', () => {
     expect(draftInvoices({ ...input(perPush, [v()]), stops: [{ site_id: 's1', status: 'skipped' }] })[0]!.subtotal_cents).toBe(4500);
     // Not reached and not skipped is still flagged for review.
     expect(draftInvoices({ ...input(perPush, []), stops: [{ site_id: 's1', status: 'open' }] })[0]!.flags.map((f) => f.code)).toContain('missing_visit');
+    // With no contract and no visit, it's only not reached: there's nothing unpriced to flag.
+    const noContract = draftInvoices({ ...input(perPush, []), contracts: [], stops: [{ site_id: 's1', status: 'open' }] })[0]!.flags.map((f) => f.code);
+    expect(noContract).toEqual(['missing_visit']);
   });
 });

@@ -18,7 +18,7 @@ export function RequestVisit({ token, company, sites }: { token: string; company
         <p className="mt-2 text-sm" role="status" data-testid="request-sent">Sent. {company} has your request and will be in touch.</p>
       ) : (
         <>
-          <p className="mt-1 text-sm text-slate-600">Ask {company} for another visit. They get it right away.</p>
+          <p className="mt-1 text-sm text-slate-600">Ask for another visit. Your request goes straight to {company}'s office.</p>
           {sites.length > 1 ? (
             <div className="mt-3"><Label htmlFor="req-site">Which lot</Label><Select id="req-site" value={siteId} onChange={(e) => setSiteId(e.target.value)}>{sites.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</Select></div>
           ) : null}

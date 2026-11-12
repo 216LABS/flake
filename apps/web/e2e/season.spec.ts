@@ -65,6 +65,8 @@ async function acceptQuote(browser: Browser, url: string, signer: string, card: 
   await q.goto(url);
   await q.getByTestId('sign-name').fill(signer);
   await q.getByTestId('agree').check();
+  // These customers want service updates, and say so: the box starts unticked (issue 94).
+  await q.getByTestId('consent-email').check();
   await q.getByTestId('accept').click();
   await expect(q.getByTestId('accepted')).toBeVisible();
   if (card) {
