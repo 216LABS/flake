@@ -185,3 +185,46 @@ test('a storm stop opens to its visit and photos, and every truck is on a phone 
   await expect(page.getByTestId('confirm-dialog')).toHaveCount(0);
   await sql`update storm set status = 'closed', closed_at = now() where id = ${id}`;
 });
+
+/**
+ * Every other page on a phone, not just the list pages: the detail pages the office opens, every Settings tab, and
+ * the pages customers, drivers and prospects open from a link. Collects every page that scrolls sideways before
+ * failing, so one run shows the whole list.
+ */
+for (const size of SIZES) {
+  test(`every detail, link and public page fits ${size.width} wide`, async ({ page, browser, baseURL }, info) => {
+    test.skip(info.project.name === 'pixel-7', 'Pixel width is covered by the other suites');
+    await page.setViewportSize(size);
+    await login(page);
+    const { id, runs } = await startStorm(page.request, `Fit ${size.width} ${Date.now()}`, ['West Lakewood']);
+    const run = runs[0]!;
+    const [s] = await sql`select s.id, s.customer_id from site s where s.id = ${run.stops[0]!.site_id}`;
+    const [alert] = await sql`select id from trigger_alert where tenant_id = (select id from tenant where slug = 'lakeshore-demo') order by created_at desc limit 1`;
+    const quote = await (await page.request.post('/api/quotes', { data: { site_id: s!.id, season: '2032-33', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 7500 } }], send: false } })).json();
+    const portal = await (await page.request.get(`/api/customers/${s!.customer_id}/portal`)).json();
+
+    const wide: string[] = [];
+    const check = async (p: Page, path: string) => {
+      const res = await p.goto(path);
+      expect(res?.status(), path).toBeLessThan(400);
+      await p.waitForLoadState('networkidle');
+      const { scroll, inner } = await p.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }));
+      if (scroll > inner) wide.push(`${path} (${scroll}px)`);
+    };
+    const office = [
+      `/storms/${id}`, `/storms/${id}/pay`, `/customers/${s!.customer_id}`, '/customers/new', `/sites/${s!.id}`,
+      ...(alert ? [`/alerts/${alert.id}`] : []),
+      ...['company', 'rate', 'alerts', 'payments', 'sms', 'plan', 'data'].map((t) => `/settings?tab=${t}`),
+    ];
+    for (const path of office) await check(page, path);
+
+    const guest = await browser.newContext({ baseURL, viewport: size });
+    const g = await guest.newPage();
+    const links = [new URL(run.link).pathname, new URL(portal.url).pathname, new URL(quote.url).pathname];
+    for (const path of [...links, '/', '/pricing', '/login', '/b/lakeshore-demo', '/b/lakeshore-demo/sms', '/legal/terms', '/legal/privacy', '/legal/sms-terms', '/tools/snow-removal-contract', '/tools/snow-removal-pricing-calculator']) await check(g, path);
+    await guest.close();
+    await sql`update storm set status = 'closed', closed_at = now() where id = ${id}`;
+    // Token links stay out of failure messages: report the page kind, not the token.
+    expect(wide.map((w) => w.replace(/\/(c|d|q|s)\/[^ ]+/, '/$1/<token>')), 'pages that scroll sideways').toEqual([]);
+  });
+}
