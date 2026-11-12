@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { api } from '@/lib/client';
 
 interface Stop { id: string; label: string; arrive: string; late: boolean }
-interface Plan { from: 'truck' | 'lot' | null; times_label?: string; position_at?: string | null; changed: boolean; order: string[]; suggested: { stops: Stop[]; drive_min: number; late: number } | null; current: { drive_min: number; late: number } | null }
+interface Plan { from: 'truck' | 'lot' | 'last_done' | null; from_label?: string | null; times_label?: string; position_at?: string | null; changed: boolean; order: string[]; suggested: { stops: Stop[]; drive_min: number; late: number } | null; current: { drive_min: number; late: number } | null }
 
 const clock = (hm: string) => {
   const [h, m] = hm.split(':').map(Number);
@@ -13,6 +13,9 @@ const clock = (hm: string) => {
 };
 
 /** Re-plans one truck's remaining stops from where it is now. Nothing changes until the office taps Use this order. */
+/** Where a re-plan starts from, in words. */
+const where = (p: { from: string | null; from_label?: string | null }) => p.from === 'lot' ? 'the lot the driver is on' : p.from === 'last_done' ? `the last lot finished, ${p.from_label ?? ''}` : "the truck's last position";
+
 export function RunPlan({ runId, onDone }: { runId: string; onDone: () => void }) {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [busy, setBusy] = useState(false);
@@ -44,10 +47,11 @@ export function RunPlan({ runId, onDone }: { runId: string; onDone: () => void }
     <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs" data-testid="replan-panel">
       {!plan.from ? <p data-testid="replan-no-position">No position from this truck yet. The phone shares it after the driver taps Arrive and allows location, and it updates about once a minute while the route is open.</p>
         : !s ? <p>Fewer than two stops left to order.</p>
-        : !plan.changed ? <p data-testid="replan-summary">The current order is already the shortest from {plan.from === 'lot' ? 'the lot the driver is on' : "the truck's position"}.</p>
+        : !plan.changed ? <p data-testid="replan-summary">The current order is already the shortest from {where(plan)}.</p>
         : (
           <>
-            <p className="font-medium" data-testid="replan-summary">From {plan.from === 'lot' ? 'the lot the driver is on' : "the truck's last position"}: {saved > 0 ? `saves about ${saved} min of driving` : `${(plan.current?.late ?? 0) - s.late} fewer late stops`}.</p>
+            {plan.from === 'last_done' ? <p className="mb-1 text-amber-900" data-testid="replan-fallback">This truck hasn't shared a location and nobody is on a lot, so this starts from the last lot it finished.</p> : null}
+            <p className="font-medium" data-testid="replan-summary">From {where(plan)}: {saved > 0 ? `saves about ${saved} min of driving` : `${(plan.current?.late ?? 0) - s.late} fewer late stops`}.</p>
             <ol className="mt-1 space-y-0.5">
               {s.stops.map((x, i) => <li key={x.id} className="flex justify-between gap-2"><span>{i + 1}. {x.label}</span><span className="tabular-nums">{clock(x.arrive)}{x.late ? ' late' : ''}</span></li>)}
             </ol>

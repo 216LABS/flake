@@ -72,6 +72,8 @@ export function DriverApp({ token }: { token: string }) {
   const [showProblem, setShowProblem] = useState(false);
   const [here, setHere] = useState(false);
   const [awayM, setAwayM] = useState<number | null>(null);
+  // The driver said no to location (issue 77): say once, plainly, what that costs them.
+  const [locationOff, setLocationOff] = useState(false);
   const [tick, setTick] = useState(0);
   const localRef = useRef(local);
   const position = useRef<{ lat: number; lon: number; acc: number } | null>(null);
@@ -311,7 +313,9 @@ export function DriverApp({ token }: { token: string }) {
             fetch(`/api/d/${token}/position`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat, lon, acc, at: nowIso() }) }).catch(() => {});
           }
         },
-        () => {},
+        (err) => {
+          if (err.code === err.PERMISSION_DENIED) setLocationOff(true);
+        },
         { enableHighAccuracy: highAccuracy, maximumAge: 15000, timeout: 20000 },
       );
     };
@@ -492,6 +496,7 @@ export function DriverApp({ token }: { token: string }) {
         </div>
       </header>
 
+      {locationOff ? <div role="alert" className="mx-4 mb-2 rounded-lg bg-amber-300 p-3 text-base font-semibold text-black" data-testid="location-off">{t('location_off')}</div> : null}
       {toast ? <div role="status" className="mx-4 mb-2 rounded-lg bg-sky-300 p-3 text-center text-lg font-bold text-black">{toast}</div> : null}
 
       {here && next && next.status !== 'onsite' && run.storm.status === 'active' ? (
@@ -577,7 +582,8 @@ function NextStop({ t, token, stop, awayM, index, total, onNavigate, onArrive, o
       <p className="mt-1 text-xl text-slate-100">{stop.site.address}</p>
       {away ? <p className="mt-1 text-lg font-bold text-sky-300" data-testid="away">{away}</p> : null}
       <div className="mt-3 flex flex-wrap gap-2 text-base">
-        <span className="rounded-lg bg-slate-700 px-3 py-2" data-testid="priority">{t('priority_of', { p: stop.site.priority })}</span>
+        {/* A driver needs "do this first", not the office's priority number (issue 80). */}
+        {stop.site.priority === 1 ? <span className="rounded-lg bg-amber-300 px-3 py-2 font-bold text-black" data-testid="priority">{t('do_first')}</span> : null}
         {stop.site.not_before ? <span className="rounded-lg bg-slate-700 px-3 py-2" data-testid="not-before-tag">{t('not_before')} {stop.site.not_before}</span> : null}
         {stop.site.open_by ? <span className="rounded-lg bg-slate-700 px-3 py-2">{t('window')} {stop.site.open_by}</span> : null}
         {stop.pins.map((p) => <span key={p.id} className="rounded-lg bg-slate-700 px-3 py-2">{p.kind}{p.note ? `: ${p.note}` : ''}</span>)}

@@ -14,6 +14,9 @@ function hashText(s: string): number {
 
 export class MockGeocoder implements Geocoder {
   async search(q: string): Promise<GeocodeHit[]> {
+    // An address ending "#nomatch" isn't on the map, so the "pick the closest" path can be tested. Suggestions for the
+    // same text still come back, the way a real geocoder finds the street but not the number.
+    if (q.trim().toLowerCase().endsWith('#nomatch')) return [];
     const h = hashText(q.trim().toLowerCase());
     return [{ label: `${q.trim()} (mock geocode)`, lat: 41.47 + ((h % 400) / 400) * 0.03, lon: -81.84 + (((h >> 9) % 400) / 400) * 0.06 }];
   }

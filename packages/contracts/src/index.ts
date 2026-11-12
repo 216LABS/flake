@@ -299,6 +299,8 @@ export const tenantSettings = z.object({
   expected_monthly_volume: z.number().int().min(1).max(1000000).optional(),
   /** The yard's street address; the server finds it on the map. Empty clears it (issue 64). */
   yard_address: z.string().trim().max(300).nullish(),
+  /** The point of a suggestion the owner picked, so it isn't looked up again and can't miss (issue 79). */
+  yard_point: z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) }).nullish(),
 });
 export const tollFreeSubmit = z.object({ ein: z.string().regex(/^\d{2}-?\d{7}$/, 'Use the format 12-3456789') });
 export const rateCardSchema = z.object({

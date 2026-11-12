@@ -4,7 +4,7 @@ import { FREE_SITE_LIMIT } from '@flake/core/fees';
 import type { RateCard } from '@flake/core/quote';
 import { Badge, Button, Card, Input, Label, Select, Table, Td, Th } from '@flake/ui';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, dollarsToCents, money, phone } from '@/lib/client';
 import { useConfirm } from '@/components/confirm';
 import { rateCardProblem } from '@/lib/limits';
@@ -236,6 +236,19 @@ const ZONES = [
 export function CompanyForm({ tenant }: { tenant: any }) {
   const router = useRouter();
   const [f, setF] = useState({ name: tenant.name ?? '', timezone: tenant.timezone ?? 'America/New_York', contact_email: tenant.contact_email ?? '', contact_phone: tenant.contact_phone ?? '', yard_address: tenant.yard?.address ?? '' });
+  // Real matches as the owner types, and again when a typed address can't be found (issue 79).
+  const [yardHits, setYardHits] = useState<{ label: string; lat: number; lon: number }[]>([]);
+  const [yardPoint, setYardPoint] = useState<{ lat: number; lon: number } | null>(null);
+  const [yardMissed, setYardMissed] = useState(false);
+  useEffect(() => {
+    const q = f.yard_address.trim();
+    if (yardPoint || q.length < 4 || q === (tenant.yard?.address ?? '')) { setYardHits([]); return; }
+    let stale = false;
+    const t = setTimeout(() => {
+      api<{ hits: { label: string; lat: number; lon: number }[] }>('/api/sites/suggest', { body: { q } }).then((o) => !stale && setYardHits(o.hits), () => undefined);
+    }, 300);
+    return () => { stale = true; clearTimeout(t); };
+  }, [f.yard_address, yardPoint, tenant.yard?.address]);
   const { msg, busy, run } = useAction();
   const zones = ZONES.some(([z]) => z === f.timezone) ? ZONES : [[f.timezone, f.timezone] as const, ...ZONES];
   return (
@@ -254,13 +267,28 @@ export function CompanyForm({ tenant }: { tenant: any }) {
         <div><Label htmlFor="co-phone">Office phone</Label><Input id="co-phone" type="tel" data-testid="co-phone" value={f.contact_phone} onChange={(e) => setF({ ...f, contact_phone: e.target.value })} /></div>
         <div className="sm:col-span-2">
           <Label htmlFor="co-yard">Yard address (optional)</Label>
-          <Input id="co-yard" data-testid="co-yard" maxLength={300} placeholder="Where your trucks start and end a storm" value={f.yard_address} onChange={(e) => setF({ ...f, yard_address: e.target.value })} />
+          <Input id="co-yard" data-testid="co-yard" maxLength={300} autoComplete="off" placeholder="Where your trucks start and end a storm" value={f.yard_address} onChange={(e) => { setF({ ...f, yard_address: e.target.value }); setYardPoint(null); setYardMissed(false); }} />
+          {yardMissed ? <p className="mt-1 text-sm text-amber-900" data-testid="co-yard-missed">That exact address isn't on the map. Pick the closest match{yardHits.length ? ' below' : ', or try the street number next door'}.</p> : null}
+          {yardHits.length ? (
+            <ul className="mt-1 divide-y divide-slate-100 rounded-md border border-slate-200 bg-white" data-testid="co-yard-hits">
+              {yardHits.map((h) => <li key={h.label}><button type="button" className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-slate-50" data-testid="co-yard-hit" onClick={() => { setF({ ...f, yard_address: h.label }); setYardPoint({ lat: h.lat, lon: h.lon }); setYardHits([]); setYardMissed(false); }}>{h.label}</button></li>)}
+            </ul>
+          ) : null}
           <p className="mt-1 text-xs text-slate-600">With a yard, Suggest order starts and ends each route there. Turn that off for a route on the Routes page.</p>
         </div>
       </div>
       <div className="mt-3 flex items-center gap-2">
         <Button disabled={busy || f.name.trim().length < 2} data-testid="co-save" onClick={() => run(async () => {
-          await api('/api/settings', { method: 'PATCH', body: { name: f.name, timezone: f.timezone, contact_email: f.contact_email, contact_phone: f.contact_phone, ...(f.yard_address.trim() !== (tenant.yard?.address ?? '') ? { yard_address: f.yard_address.trim() || null } : {}) } });
+          try {
+            await api('/api/settings', { method: 'PATCH', body: { name: f.name, timezone: f.timezone, contact_email: f.contact_email, contact_phone: f.contact_phone, ...(f.yard_address.trim() !== (tenant.yard?.address ?? '') ? { yard_address: f.yard_address.trim() || null, yard_point: yardPoint } : {}) } });
+          } catch (e) {
+            // No exact match: offer the nearest ones instead of a dead end (issue 79).
+            if ((e as { code?: string }).code !== 'address_not_found') throw e;
+            setYardMissed(true);
+            const o = await api<{ hits: { label: string; lat: number; lon: number }[] }>('/api/sites/suggest', { body: { q: f.yard_address.trim() } }).catch(() => ({ hits: [] }));
+            setYardHits(o.hits);
+            throw new Error("That yard address isn't on the map. Pick the closest match under the field.", { cause: e });
+          }
           router.refresh();
         })}>Save</Button>
         {msg ? <span className="text-sm text-slate-600" role="status" data-testid="co-msg">{msg}</span> : null}

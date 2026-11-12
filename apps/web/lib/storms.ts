@@ -280,7 +280,11 @@ export async function planRun(ctx: Ctx & { timezone: string }, runId: string) {
   });
   const onsite = data.stops.find((x) => x.stop.status === 'onsite');
   const open = data.stops.filter((x) => ['open', 'enroute', 'problem'].includes(x.stop.status));
-  const from = onsite ? { lat: onsite.site.lat, lon: onsite.site.lon, kind: 'lot' as const } : data.pos ? { lat: data.pos.lat, lon: data.pos.lon, kind: 'truck' as const } : null;
+  // With nobody on a lot and no GPS from the phone, start from the lot this truck finished last (issue 77), and say so.
+  const lastDone = data.stops.filter((x) => x.stop.status === 'done').sort((a, b) => Date.parse(b.stop.updated_at ?? '') - Date.parse(a.stop.updated_at ?? ''))[0];
+  const from = onsite ? { lat: onsite.site.lat, lon: onsite.site.lon, kind: 'lot' as const }
+    : data.pos ? { lat: data.pos.lat, lon: data.pos.lon, kind: 'truck' as const }
+    : lastDone ? { lat: lastDone.site.lat, lon: lastDone.site.lon, kind: 'last_done' as const } : null;
   if (!from || open.length < 2) return { from: from?.kind ?? null, changed: false, order: data.stops.map((x) => x.stop.id), suggested: null, current: null };
   const endAt = data.trip?.yard && data.trip.yard_trip !== false ? { lat: data.trip.yard.lat, lon: data.trip.yard.lon } : null;
   // Road times between the lots and the yard, which don't move, so they're cached. The leg from the truck's latest
@@ -291,7 +295,7 @@ export async function planRun(ctx: Ctx & { timezone: string }, runId: string) {
   const fixed = data.stops.filter((x) => !open.includes(x)).map((x) => x.stop.id);
   const label = new Map(data.stops.map((x) => [x.stop.id, x.site.label]));
   const named = (p: typeof plan.suggested) => ({ ...p, stops: p.stops.map((x) => ({ ...x, label: label.get(x.id) ?? '' })) });
-  return { times_label: road.label, from: from.kind, position_at: from.kind === 'truck' ? data.pos!.device_at : null, changed: plan.changed, order: [...fixed, ...plan.suggested.stops.map((x) => x.id)], suggested: named(plan.suggested), current: named(plan.current) };
+  return { times_label: road.label, from: from.kind, from_label: from.kind === 'last_done' ? lastDone!.site.label : null, position_at: from.kind === 'truck' ? data.pos!.device_at : null, changed: plan.changed, order: [...fixed, ...plan.suggested.stops.map((x) => x.id)], suggested: named(plan.suggested), current: named(plan.current) };
 }
 
 export async function notifyRouteChanged(tenantId: string, runId: string, key: string) {

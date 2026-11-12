@@ -112,3 +112,20 @@ describe('issue 85: every lot nobody reached is skipped in one go', () => {
     expect(skipped.filter((s) => missing.includes(s.site_id)).every((s) => s.status === 'skipped')).toBe(true);
   });
 });
+
+describe('issue 77: re-plan with no truck position starts from the last lot finished', () => {
+  it('says so, and orders the rest from there', async () => {
+    const { planRun } = await import('@/lib/storms');
+    const w = await makeWorld();
+    const ctx = ctxOf(w);
+    const out = await createStorm(ctx, { name: 'S', routeIds: [w.routeId], crewAssignments: {} });
+    const rs = await resolveToken(decryptToken(out.runs[0]!.link_token_enc!));
+    const stops = (await serviceDb().select().from(run_stop).where(eq(run_stop.storm_run_id, out.runs[0]!.id))).sort((a, b) => a.seq - b.seq);
+    // Nothing done yet and no GPS: nothing to start from.
+    expect((await planRun({ ...ctx, timezone: 'America/New_York' }, out.runs[0]!.id)).from).toBeNull();
+    await processActions(rs, stopActions(stops[0]!.id, new Date(Date.now() - 30 * 60_000), { gps: null }).actions as never);
+    const plan = await planRun({ ...ctx, timezone: 'America/New_York' }, out.runs[0]!.id);
+    expect(plan).toMatchObject({ from: 'last_done', from_label: 'Site 0' });
+    expect(plan.suggested!.stops.map((s) => s.id)).not.toContain(stops[0]!.id);
+  });
+});

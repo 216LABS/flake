@@ -169,3 +169,63 @@ test('Send routes to crew says who gets what first, and Cancel sends nothing (is
     await sql`update storm set status = 'closed', closed_at = now() where id = ${id}`;
   }
 });
+
+test('a driver who blocks location is told plainly what it costs (issue 77)', async ({ browser, baseURL, page }) => {
+  await login(page);
+  const { id, runs } = await startStorm(page.request, `No location ${Date.now()}`, ['Rocky River']);
+  // A phone that said no to location for this site.
+  const ctx = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, permissions: [] });
+  try {
+    const d = await ctx.newPage();
+    await d.goto(runs[0]!.link);
+    await expect(d.getByTestId('location-off')).toHaveCount(0);
+    await d.getByTestId('arrive').click();
+    await expect(d.getByTestId('location-off')).toContainText("won't have GPS proof");
+  } finally {
+    await ctx.close();
+    await sql`update storm set status = 'closed', closed_at = now() where id = ${id}`;
+  }
+});
+
+test('a yard address with no exact match offers the closest ones, and a picked one saves (issue 79)', async ({ page }) => {
+  await login(page);
+  const [t] = await sql`select id, yard from tenant where id = (select tenant_id from route where name = 'Rocky River' limit 1)`;
+  try {
+    await page.goto('/settings');
+    await page.getByTestId('co-yard').fill('13000 Berea Rd #nomatch');
+    await page.getByTestId('co-save').click();
+    await expect(page.getByTestId('co-yard-missed')).toBeVisible();
+    const hit = page.getByTestId('co-yard-hit').first();
+    const label = (await hit.textContent())!;
+    await hit.click();
+    await expect(page.getByTestId('co-yard')).toHaveValue(label);
+    await page.getByTestId('co-save').click();
+    await expect.poll(async () => (await sql`select yard from tenant where id = ${t!.id}`)[0]!.yard?.address).toBe(label);
+    // Typing shows matches too, before saving.
+    await page.getByTestId('co-yard').fill('12900 Berea');
+    await expect(page.getByTestId('co-yard-hit').first()).toBeVisible();
+  } finally {
+    await sql`update tenant set yard = ${t!.yard ? sql.json(t!.yard) : null} where id = ${t!.id}`;
+  }
+});
+
+test('the driver sees "Do this one first" on a priority 1 lot and no number on the others (issue 80)', async ({ page }) => {
+  await login(page);
+  const { id, runs } = await startStorm(page.request, `First lot ${Date.now()}`, ['Rocky River']);
+  const first = runs[0]!.stops[0]!;
+  const [before] = await sql`select priority from site where id = ${first.site_id}`;
+  try {
+    await sql`update site set priority = 1 where id = ${first.site_id}`;
+    const d = await page.context().newPage();
+    await d.goto(runs[0]!.link);
+    await expect(d.getByTestId('priority')).toHaveText('Do this one first');
+    await sql`update site set priority = 3 where id = ${first.site_id}`;
+    await d.reload();
+    await expect(d.getByTestId('stop-label')).toBeVisible();
+    await expect(d.getByTestId('priority')).toHaveCount(0);
+    await expect(d.getByText(/Priority \d/)).toHaveCount(0);
+  } finally {
+    await sql`update site set priority = ${before!.priority} where id = ${first.site_id}`;
+    await sql`update storm set status = 'closed', closed_at = now() where id = ${id}`;
+  }
+});
