@@ -72,6 +72,19 @@ for (const size of SIZES) {
       }
     });
 
+    test('every Settings tab is on screen without scrolling sideways (issue 82)', async ({ page }) => {
+      await login(page);
+      await page.goto('/settings');
+      const tabs = page.getByTestId('settings-tabs').getByRole('link');
+      expect(await tabs.count()).toBeGreaterThan(4);
+      for (const t of await tabs.all()) {
+        const b = (await t.boundingBox())!;
+        expect(b.x).toBeGreaterThanOrEqual(0);
+        expect(b.x + b.width).toBeLessThanOrEqual(size.width);
+      }
+      expect(await page.getByTestId('settings-tabs').evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+    });
+
     test('customers are cards the whole of which opens the customer', async ({ page }) => {
       await login(page);
       await page.goto('/customers');

@@ -15,6 +15,24 @@ const STATUS_WORD: Record<string, string> = { open: 'Open', enroute: 'On the way
 const STATUS_TONE: Record<string, 'gray' | 'blue' | 'green' | 'amber' | 'red'> = { open: 'gray', enroute: 'blue', onsite: 'amber', done: 'green', skipped: 'gray', problem: 'red' };
 const PIN_COLOR: Record<string, string> = { open: '#475569', enroute: '#0284c7', onsite: '#d97706', done: '#059669', skipped: '#94a3b8', problem: '#dc2626' };
 
+/**
+ * Hands the route link to the phone: the share sheet where there is one (pick Messages, WhatsApp, anything), and a new
+ * text message otherwise. Nothing goes through Flake's servers.
+ */
+async function textLink(name: string, link: string) {
+  const text = `Your route for tonight, ${name}: ${link}`;
+  if (typeof navigator.share === 'function') {
+    try {
+      await navigator.share({ text });
+      return;
+    } catch (e) {
+      // Cancelled is a choice, not a failure; anything else falls back to Messages.
+      if ((e as Error).name === 'AbortError') return;
+    }
+  }
+  window.location.href = `sms:?&body=${encodeURIComponent(text)}`;
+}
+
 /** 12:47 AM in the company's zone, so the server and the phone print the same time. */
 export const clock = (iso: string, tz: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz });
 
@@ -259,6 +277,9 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
               <p className="font-medium">{linkFor.name}&apos;s route link</p>
               <Input readOnly value={linkFor.link} data-testid="run-link" className="mt-1" />
               <div className="mt-2 flex flex-wrap gap-2">
+                {/* From the dispatcher's own phone, until Flake's texting is live (issue 84). The link goes straight to the
+                    phone's share sheet or Messages; Flake never logs it. */}
+                <Button size="sm" variant="accent" data-testid="text-link" onClick={() => void textLink(linkFor.name, linkFor.link)}>Text it</Button>
                 <Button size="sm" onClick={() => navigator.clipboard.writeText(linkFor.link)}>Copy link</Button>
                 {editable ? <Button size="sm" variant="outline" data-testid="replace-link" onClick={() => void replaceLink()}>New link</Button> : null}
                 <Button size="sm" variant="ghost" onClick={() => setLinkFor(null)}>Close</Button>
@@ -320,7 +341,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
                         <Badge className="shrink-0" tone={STATUS_TONE[s.status]}>{STATUS_WORD[s.status] ?? s.status}</Badge>
                       </span>
                       <span className="block text-xs text-slate-600">{s.customer}</span>
-                      {s.done_at ? <span className="block text-xs text-slate-700" data-testid="stop-summary">Finished {clock(s.done_at, tz)}{s.depth_in !== null ? `, ${s.depth_in}"` : ''}, {s.photos === 1 ? '1 photo' : `${s.photos} photos`}{s.after_photos === 0 ? ', no after photo' : ''}</span> : null}
+                      {s.done_at ? <span className="block text-xs text-slate-700" data-testid="stop-summary">Finished {clock(s.done_at, tz)}{s.depth_in !== null ? `, ${s.depth_in}"` : ''}, {s.photos === 0 ? 'no photos' : `${s.photos === 1 ? '1 photo' : `${s.photos} photos`}${s.after_photos === 0 ? ', no after photo' : ''}`}</span> : null}
                       {s.problem ? <span className="block text-xs font-medium text-red-800">{s.problem.kind}{s.problem.note ? `: ${s.problem.note}` : ''}</span> : null}
                     </button>
                     {s.late ? <div className="text-xs font-bold text-red-700">Late</div> : null}

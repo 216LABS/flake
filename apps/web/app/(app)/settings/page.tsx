@@ -37,7 +37,8 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   return (
     <>
       <PageHeader title="Settings" subtitle={`Routes are edited on the Routes page. You are the ${ctx.role}.`} />
-      <nav aria-label="Settings sections" className="mb-5 flex gap-1 overflow-x-auto overflow-y-hidden whitespace-nowrap border-b border-slate-300 text-sm [scrollbar-width:thin]">
+      {/* Wraps on a phone so every section shows, instead of some hiding past the edge (issue 82). */}
+      <nav aria-label="Settings sections" data-testid="settings-tabs" className="mb-5 flex flex-wrap gap-1 whitespace-nowrap border-b border-slate-300 text-sm md:flex-nowrap md:overflow-x-auto md:overflow-y-hidden md:[scrollbar-width:thin]">
         {TABS.filter(([k]) => owner || !OWNER_TABS.includes(k)).map(([k, label]) => <Link key={k} href={`/settings?tab=${k}`} data-testid={`tab-${k}`} aria-current={tab === k ? 'page' : undefined} className={`-mb-px border-b-2 px-3 py-2 font-medium ${tab === k ? 'border-beacon text-slate-950' : 'border-transparent text-slate-600 hover:text-slate-950'}`}>{label}</Link>)}
       </nav>
       {!allowed ? <Card className="max-w-2xl" data-testid="owner-only"><p className="text-sm">Only an owner can open this.</p></Card> : null}

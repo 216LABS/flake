@@ -44,7 +44,7 @@ test('push: a driver problem alerts the office, and a dead subscription is remov
   const [sub] = await sql`select id from push_subscription where endpoint = ${live}`;
   const [msg] = await sql`select body, status from message_log where channel = 'push' and idempotency_key like ${`push:problem:%:${sub!.id}`}`;
   expect(msg).toMatchObject({ status: 'sent' });
-  expect(msg!.body).toContain('blocked');
+  expect(msg!.body).toMatch(/blocked/i);
   expect((await page.request.post('/api/push/unsubscribe', { data: { endpoint: live } })).ok()).toBe(true);
   expect((await sql`select count(*)::int n from push_subscription where endpoint = ${live}`)[0]!.n).toBe(0);
 });

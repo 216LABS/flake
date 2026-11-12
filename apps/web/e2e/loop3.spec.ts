@@ -229,3 +229,25 @@ test('the driver sees "Do this one first" on a priority 1 lot and no number on t
     await sql`update storm set status = 'closed', closed_at = now() where id = ${id}`;
   }
 });
+
+test('"Text it" hands the route link to the phone to send, with no message from Flake (issue 84)', async ({ page }) => {
+  await login(page);
+  // Stand in for the phone's share sheet and remember what it was given.
+  await page.addInitScript(() => {
+    (window as unknown as { shared: string[] }).shared = [];
+    Object.defineProperty(navigator, 'share', { configurable: true, value: async (d: { text: string }) => { (window as unknown as { shared: string[] }).shared.push(d.text); } });
+  });
+  await sql`update storm set status = 'closed', closed_at = now() where status = 'active'`;
+  const [r] = await sql`select id from route where name = 'Rocky River' limit 1`;
+  const { id } = await (await page.request.post('/api/storms', { data: { name: `Text it ${Date.now()}`, routeIds: [r!.id] } })).json();
+  try {
+    await page.goto(`/storms/${id}`);
+    await page.getByTestId('show-link').first().click();
+    const link = await page.getByTestId('run-link').inputValue();
+    await page.getByTestId('text-link').click();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { shared: string[] }).shared[0] ?? '')).toContain(link);
+    expect((await sql`select count(*)::int as n from message_log m join storm_run sr on (m.related->>'storm_run_id')::uuid = sr.id where sr.storm_id = ${id}`)[0]!.n).toBe(0);
+  } finally {
+    await sql`update storm set status = 'closed', closed_at = now() where id = ${id}`;
+  }
+});

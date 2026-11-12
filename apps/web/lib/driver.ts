@@ -6,7 +6,7 @@ import type { ContractService } from '@flake/core/pricing';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { getBlob, putBlob, removeBlob, signedUploadUrl } from './blob';
 import { log } from './log';
-import { notifyOffice, queuePush } from './messaging';
+import { notifyOffice, plainText } from './messaging';
 import { HttpError } from './http';
 import { enqueue } from './jobs';
 import { baseUrl } from './env';
@@ -14,6 +14,8 @@ import { getSetting } from './providers';
 import { hashToken, sha256Hex } from './tokens';
 
 export const UNDO_WINDOW_MS = 2 * 60 * 1000;
+/** A driver's problem kind, in the words an office alert uses. */
+const PROBLEM_WORD: Record<string, string> = { blocked: 'Blocked', breakdown: 'Breakdown', damage: 'Damage', skip: 'Skipped', other: 'Problem' };
 /** The same cap on every upload path, direct or through signed storage (issue 56). */
 export const MAX_PHOTO_BYTES = 30 * 1024 * 1024;
 
@@ -217,7 +219,16 @@ export async function processAction(rs: RunScope, a: DriverAction): Promise<Ack>
         }
         await tx.insert(problem_report).values({ tenant_id: tenantId, client_uuid: a.client_uuid, storm_run_id: runId, site_id: st?.id ?? null, crew_id: crewId, kind: a.problem, note: a.note ?? null }).onConflictDoNothing({ target: problem_report.client_uuid });
         await setStop(tx, rs, stop!.id, a.problem === 'skip' ? 'skipped' : 'problem', ['open', 'enroute', 'onsite', 'problem']);
-        after.push(() => queuePush(tenantId, { title: 'Driver problem', body: `${a.problem} at ${st?.label ?? 'a site'}`, url: `/storms/${stormId}`, key: `problem:${a.client_uuid}`, related: { storm_id: stormId } }));
+        // Push alone misses an owner who hasn't added the app to an iPhone home screen: this goes by email too, and by
+        // text to the company phone once texting is live. One alert per report (issue 83). The note is the driver's
+        // own words, made plain text by notifyOffice.
+        after.push(() => notifyOffice(rs.tenant, {
+          subject: `${PROBLEM_WORD[a.problem] ?? 'Problem'} at ${st?.label ?? 'a lot'}`,
+          headline: `${rs.crew?.name ?? 'A driver'} reported ${(PROBLEM_WORD[a.problem] ?? a.problem).toLowerCase()} at ${st?.label ?? 'a lot'}.${a.note ? ` Their note: "${plainText(a.note)}"` : ''}`,
+          link: `${baseUrl()}/storms/${stormId}`,
+          key: `problem:${a.client_uuid}`,
+          related: { storm_id: stormId },
+        }));
         break;
       }
       case 'undo_last': {

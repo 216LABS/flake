@@ -10,7 +10,7 @@ import { ctxOf, drain, makeWorld, stopActions, type World, createStorm } from '.
 const NOON = Date.parse('2026-01-20T17:00:00Z');
 const STARTED = '2026-01-20T08:00:00Z';
 
-const lateJobs = (stormId: string) => serviceDb().select().from(job).where(sql`${job.kind} = 'notify.push' and ${job.dedupe_key} like ${`%late:${stormId}:%`}`);
+const lateJobs = (stormId: string) => serviceDb().select().from(job).where(sql`${job.kind} = 'notify.push' and ${job.dedupe_key} like ${`%late_alert:${stormId}:%`}`);
 const lateEmails = (stormId: string) => serviceDb().select().from(message_log).where(sql`${message_log.template} = 'owner_alert' and ${message_log.idempotency_key} like ${`%late_alert:${stormId}:%`}`);
 
 afterAll(() => closeDb());

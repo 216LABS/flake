@@ -129,3 +129,20 @@ describe('issue 77: re-plan with no truck position starts from the last lot fini
     expect(plan.suggested!.stops.map((s) => s.id)).not.toContain(stops[0]!.id);
   });
 });
+
+describe('issue 83: a driver problem reaches the office by email, not only push', () => {
+  it('one alert per report, with the note as plain text', async () => {
+    const w = await makeWorld();
+    const ctx = ctxOf(w);
+    const out = await createStorm(ctx, { name: 'S', routeIds: [w.routeId], crewAssignments: {} });
+    const rs = await resolveToken(decryptToken(out.runs[0]!.link_token_enc!));
+    const stops = (await serviceDb().select().from(run_stop).where(eq(run_stop.storm_run_id, out.runs[0]!.id))).sort((a, b) => a.seq - b.seq);
+    const report = { client_uuid: randomUUID(), at: new Date().toISOString(), kind: 'problem', run_stop_id: stops[1]!.id, problem: 'blocked', note: 'Car in the <b>drive</b>' };
+    await processActions(rs, [report] as never);
+    await processActions(rs, [report] as never);
+    await drain();
+    const mail = await serviceDb().select().from(message_log).where(and(eq(message_log.tenant_id, w.tenantId), eq(message_log.template, 'owner_alert'), eq(message_log.channel, 'email')));
+    expect(mail).toHaveLength(1);
+    expect(mail[0]!.body).toContain('Crew One reported blocked at Site 1. Their note: "Car in the drive"');
+  });
+});

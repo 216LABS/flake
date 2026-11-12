@@ -4,7 +4,7 @@ import { billInstallments, chargeDraft, redraftAfterLatePhoto } from './billing'
 import { getBlob, putBlob } from './blob';
 import { baseUrl } from './env';
 import { drainJobs, enqueue, type JobHandler } from './jobs';
-import { notifyParty, queueNotify, queuePush, sendEmail, sendOfficePush, sendSms, shortLink } from './messaging';
+import { notifyOffice, notifyParty, sendEmail, sendOfficePush, sendSms, shortLink } from './messaging';
 import { renderProof } from './proof';
 import { setTollFreeStatus, submitTollFree } from './sms-admin';
 import { notifyCustomer, notifyRouteChanged, sendRunLink } from './storms';
@@ -91,11 +91,9 @@ export async function lateCheck() {
     for (const { site: st } of stops) {
       if (!isLate(st.service_window, Date.parse(s.started_at), Date.now(), t.timezone)) continue;
       late++;
-      await queuePush(t.id, { title: 'Late site', body: `${st.label} is past its ${st.service_window?.open_by} deadline.`, url: `/storms/${s.id}`, key: `late:${s.id}:${st.id}`, related: { storm_id: s.id } });
-      const owners = (await db.execute(sql`select u.email from membership m join auth.users u on u.id = m.user_id where m.tenant_id = ${t.id} and m.role in ('owner','dispatcher') and u.email is not null`)) as unknown as { email: string }[];
-      for (const o of owners) {
-        await queueNotify(t.id, { email: o.email }, { template: 'owner_alert', vars: { headline: `${st.label} is past its ${st.service_window?.open_by} deadline.`, link: `${baseUrl()}/storms/${s.id}` }, subject: `Late: ${st.label}`, key: `late_alert:${s.id}:${st.id}:${o.email}`, related: { storm_id: s.id } });
-      }
+      // The office alert path: push, email to owners and dispatchers, and a text to the company phone once texting is
+      // live, once per stop (issue 83). The key matches the email key used before, so a stop already alerted isn't again.
+      await notifyOffice(t, { subject: `Late: ${st.label}`, headline: `${st.label} is past its ${st.service_window?.open_by} deadline.`, link: `${baseUrl()}/storms/${s.id}`, key: `late_alert:${s.id}:${st.id}`, related: { storm_id: s.id } });
     }
   }
   return { late };
