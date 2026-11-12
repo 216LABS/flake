@@ -57,10 +57,16 @@ export interface GeocodeHit {
   lat: number;
   lon: number;
 }
+export interface SuggestOptions {
+  /** Keep results near here: the company's yard or its first site (issue 87). */
+  near?: { lat: number; lon: number } | null;
+  /** After a save found no exact match: also try the house numbers next door, and the street itself. */
+  expand?: boolean;
+}
 export interface Geocoder {
   search(q: string): Promise<GeocodeHit[]>;
   /** Type-ahead. Best effort: an empty list just means the person keeps typing and uses Find. */
-  suggest(q: string): Promise<GeocodeHit[]>;
+  suggest(q: string, opts?: SuggestOptions): Promise<GeocodeHit[]>;
 }
 export interface TileLayer {
   tiles: string[];

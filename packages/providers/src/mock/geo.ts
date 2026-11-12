@@ -1,4 +1,4 @@
-import type { FootprintProvider, GeocodeHit, Geocoder, Geom, OsmProvider, Parcel, ParcelProvider, TileProvider } from '../types';
+import type { FootprintProvider, GeocodeHit, Geocoder, Geom, OsmProvider, Parcel, ParcelProvider, TileProvider, SuggestOptions } from '../types';
 
 const rect = (lon: number, lat: number, w: number, h: number): Geom => ({
   type: 'Polygon',
@@ -20,7 +20,7 @@ export class MockGeocoder implements Geocoder {
     const h = hashText(q.trim().toLowerCase());
     return [{ label: `${q.trim()} (mock geocode)`, lat: 41.47 + ((h % 400) / 400) * 0.03, lon: -81.84 + (((h >> 9) % 400) / 400) * 0.06 }];
   }
-  async suggest(q: string): Promise<GeocodeHit[]> {
+  async suggest(q: string, _opts?: SuggestOptions): Promise<GeocodeHit[]> {
     const text = q.trim();
     return (await Promise.all([`${text} Ave, Lakewood, OH`, `${text} Rd, Rocky River, OH`].map((s) => this.search(s)))).map((hits) => ({ ...hits[0]!, label: hits[0]!.label.replace(' (mock geocode)', '') }));
   }

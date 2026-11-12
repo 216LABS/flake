@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { distanceMeters } from '@flake/core/geo';
-import type { FootprintProvider, GeocodeHit, Geocoder, Geom, OsmProvider, Parcel, ParcelProvider, TileProvider } from '../types';
+import type { FootprintProvider, GeocodeHit, Geocoder, Geom, OsmProvider, Parcel, ParcelProvider, SuggestOptions, TileProvider } from '../types';
 
 /**
  * County parcel services (DECISIONS D4), queried live by point. Cuyahoga's polygon layer was checked against the
@@ -80,11 +80,33 @@ export class LiveGeocoder implements Geocoder {
   }
 
   /**
-   * Photon (OpenStreetMap data, free, no key). Census only answers complete addresses, so it can't do type-ahead,
-   * and Nominatim's usage policy forbids it. Biased to Northeast Ohio. Any failure just means no suggestions.
+   * Suggestions for an address (issue 87). OpenStreetMap often lacks house numbers (Berea Rd in Cleveland has none),
+   * so a numbered query also asks Census for that exact address. When a save found nothing, `expand` tries the
+   * numbers next door through Census, then the street itself. Everything is kept within 80 km of the company. Any
+   * failure just means fewer suggestions.
    */
-  async suggest(q: string): Promise<GeocodeHit[]> {
-    const params = new URLSearchParams({ q, limit: '6', lat: '41.48', lon: '-81.8', lang: 'en' });
+  async suggest(q: string, opts: SuggestOptions = {}): Promise<GeocodeHit[]> {
+    const near = opts.near ?? { lat: 41.48, lon: -81.8 };
+    const close = (h: GeocodeHit) => kmBetween(h, near) <= 80;
+    const typed = /^\s*(\d+)\s+(.+)$/.exec(q);
+    const census = (text: string) => this.search(text).catch(() => [] as GeocodeHit[]);
+    // A typed number only goes to Census once the rest looks like a street, so type-ahead doesn't hammer a free service.
+    const [osm, exact] = await Promise.all([this.photon(q, near), typed && typed[2]!.trim().length >= 4 ? census(q) : Promise.resolve([] as GeocodeHit[])]);
+    let hits = dedupe([...exact, ...osm]).filter(close);
+    if (!hits.length && typed && opts.expand) {
+      const n = Number(typed[1]);
+      const rest = typed[2]!;
+      const nextDoor = [n - 10, n + 10, n - 20, n + 20, n - 50, n + 50, n - 100, n + 100].filter((x) => x > 0);
+      hits = dedupe((await Promise.all(nextDoor.map((x) => census(`${x} ${rest}`)))).flat()).filter(close);
+      // Still nothing: the street itself, so the owner can at least land on the right road.
+      if (!hits.length) hits = (await this.photon(rest, near)).filter(close).map((h) => ({ ...h, label: `${h.label} (street, no house number)` }));
+    }
+    return hits.slice(0, 6);
+  }
+
+  /** Photon (OpenStreetMap data, free, no key). Nominatim's usage policy forbids type-ahead, so this is the one used. */
+  private async photon(q: string, near: { lat: number; lon: number }): Promise<GeocodeHit[]> {
+    const params = new URLSearchParams({ q, limit: '6', lat: String(near.lat), lon: String(near.lon), lang: 'en' });
     try {
       const res = await this.fetchImpl(`https://photon.komoot.io/api/?${params}`, { signal: AbortSignal.timeout(4000), headers: { 'User-Agent': 'Flake (flake.216labs.dev)' } });
       if (!res.ok) return [];
@@ -110,6 +132,19 @@ export class LiveGeocoder implements Geocoder {
       return [];
     }
   }
+}
+
+const kmBetween = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) => distanceMeters(a.lat, a.lon, b.lat, b.lon) / 1000;
+
+/** One of each address, however Census and OpenStreetMap spell it. */
+function dedupe(hits: GeocodeHit[]) {
+  const seen = new Set<string>();
+  return hits.filter((h) => {
+    const k = h.label.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 }
 
 /** [T] Confirm the basemap free-tier terms before launch (DECISIONS D2). */

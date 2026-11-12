@@ -285,7 +285,8 @@ export function CompanyForm({ tenant }: { tenant: any }) {
             // No exact match: offer the nearest ones instead of a dead end (issue 79).
             if ((e as { code?: string }).code !== 'address_not_found') throw e;
             setYardMissed(true);
-            const o = await api<{ hits: { label: string; lat: number; lon: number }[] }>('/api/sites/suggest', { body: { q: f.yard_address.trim() } }).catch(() => ({ hits: [] }));
+            // The numbers next door, then the street itself, kept near the company (issue 87).
+            const o = await api<{ hits: { label: string; lat: number; lon: number }[] }>('/api/sites/suggest', { body: { q: f.yard_address.trim(), expand: true } }).catch(() => ({ hits: [] }));
             setYardHits(o.hits);
             throw new Error("That yard address isn't on the map. Pick the closest match under the field.", { cause: e });
           }
