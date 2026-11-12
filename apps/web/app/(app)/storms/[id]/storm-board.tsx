@@ -34,6 +34,9 @@ async function textLink(name: string, link: string) {
 }
 
 /** 12:47 AM in the company's zone, so the server and the phone print the same time. */
+
+// The storm header is near black: the usual dark focus ring would vanish on it.
+const DARK_RING = 'focus-visible:outline-white';
 export const clock = (iso: string, tz: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz });
 
 function since(iso: string | null, now: number) {
@@ -180,19 +183,19 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
         </div>
         </div>
         <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap lg:ml-auto lg:w-auto">
-          {editable && unpublished ? <Button variant="accent" data-testid="publish" onClick={async () => {
+          {editable && unpublished ? <Button className={DARK_RING} variant="accent" data-testid="publish" onClick={async () => {
             // Sending messages the crew, so it says who first (issue 76).
             if (!(await ask({ title: 'Send routes to the crew?', body: sendRoutesBody(live.runs), confirm: 'Send routes' }))) return;
             await act(() => api(`/api/storms/${stormId}/publish`, { method: 'POST' }));
           }}>Send routes to crew</Button> : null}
-          {editable ? <Button variant="outline" data-testid="notify-open" onClick={() => setNotify(true)}>Notify customers</Button> : null}
-          {editable ? <Button variant="outline" data-testid="another-pass" onClick={async () => {
+          {editable ? <Button className={DARK_RING} variant="outline" data-testid="notify-open" onClick={() => setNotify(true)}>Notify customers</Button> : null}
+          {editable ? <Button className={DARK_RING} variant="outline" data-testid="another-pass" onClick={async () => {
             if (!(await ask({ title: 'Start another pass?', body: 'Every driver gets a new route link for it.', confirm: 'Start pass' }))) return;
             await act(() => api(`/api/storms/${stormId}/pass`, { method: 'POST' }));
           }}>Another pass</Button> : null}
-          <Button variant="outline" onClick={() => setShowMap(!showMap)}>{showMap ? 'Hide map' : 'Map'}</Button>
+          <Button className={DARK_RING} variant="outline" onClick={() => setShowMap(!showMap)}>{showMap ? 'Hide map' : 'Map'}</Button>
           {editable ? (
-            <Button variant="danger" data-testid="close-storm" onClick={async () => {
+            <Button className={DARK_RING} variant="danger" data-testid="close-storm" onClick={async () => {
               // A stray tap mid-storm must not close it, and the office should see what's still undone.
               const left = live.counts.open + live.counts.onsite;
               const ok = await ask({
@@ -215,7 +218,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
           ) : closed ? (
             <div className="flex items-center gap-2">
               <Badge tone="green" data-testid="storm-closed">{live.storm.status}</Badge>
-              {canEdit && live.storm.status === 'closed' ? <Button variant="outline" data-testid="reopen-storm" onClick={async () => {
+              {canEdit && live.storm.status === 'closed' ? <Button className={DARK_RING} variant="outline" data-testid="reopen-storm" onClick={async () => {
                 if (!(await ask({ title: 'Reopen this storm?', body: 'Route links work again and drivers can keep going. Invoice drafts still in review are dropped, and made again when you close it.', confirm: 'Reopen' }))) return;
                 await act(() => api(`/api/storms/${stormId}/reopen`, { method: 'POST' }));
                 router.refresh();

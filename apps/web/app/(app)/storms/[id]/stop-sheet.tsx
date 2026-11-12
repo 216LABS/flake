@@ -152,7 +152,7 @@ function PhotoViewer({ photo, onClose }: { photo: Photo; onClose: () => void }) 
   useModal(box, { initial: close });
   return (
     <div ref={box} className="fixed inset-0 z-[80] flex flex-col bg-slate-950/95" role="dialog" aria-modal="true" aria-label="Photo" data-testid="photo-viewer" onClick={onClose}>
-      <div className="flex justify-end p-3"><Button ref={close} variant="ghost" className="text-white hover:bg-slate-800" onClick={onClose}>Close</Button></div>
+      <div className="flex justify-end p-3"><Button ref={close} variant="ghost" className="text-white hover:bg-slate-800 focus-visible:outline-white" onClick={onClose}>Close</Button></div>
       <img src={`/api/photos/${photo.id}`} alt={`${PHASE[photo.phase ?? ''] ?? 'Photo'} photo, full size`} className="min-h-0 flex-1 object-contain" />
     </div>
   );

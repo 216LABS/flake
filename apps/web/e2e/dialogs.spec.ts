@@ -71,6 +71,15 @@ for (const size of SIZES) {
     await page.keyboard.press('Escape');
     await expect(sheet).toHaveCount(0);
     expect(await focused(page)).toBe('stop-open');
+
+    // The storm header is near black, so its buttons' focus ring is white, not the dark ring used on white pages.
+    const map = page.getByRole('button', { name: 'Map' });
+    await map.focus();
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Tab');
+    await expect(map).toBeFocused();
+    // Polled: buttons fade their colors in, the ring included.
+    await expect.poll(() => map.evaluate((el) => getComputedStyle(el).outlineColor)).toBe('rgb(255, 255, 255)');
     await closeRunningStorms();
   });
 }
