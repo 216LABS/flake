@@ -2,7 +2,7 @@
 
 import { Button, Card, Input, Label, Select } from '@flake/ui';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useConfirm } from '@/components/confirm';
 import { api } from '@/lib/client';
 import { SuggestOrder } from './suggest-order';
@@ -16,6 +16,13 @@ export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]
   const [error, setError] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ route: string; index: number } | null>(null);
   const [ask, dialog] = useConfirm();
+  // The order a route had before "Use this order", kept a minute so it can be put back (issue 81).
+  const [undo, setUndo] = useState<{ routeId: string; ids: string[] } | null>(null);
+  useEffect(() => {
+    if (!undo) return;
+    const t = setTimeout(() => setUndo(null), 60_000);
+    return () => clearTimeout(t);
+  }, [undo]);
   const site = (id: string) => sites.find((s) => s.id === id);
   const label = (id: string) => {
     const s = site(id);
@@ -93,7 +100,13 @@ export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]
                 Start and end at the yard
               </label>
             ) : null}
-            <SuggestOrder key={`${r.id}:${r.yard_trip}`} routeId={r.id} siteIds={r.site_ids} label={label} yard={yard && r.yard_trip ? yard : null} onAccept={(ids) => update({ ...r, site_ids: ids })} />
+            <SuggestOrder key={`${r.id}:${r.yard_trip}`} routeId={r.id} siteIds={r.site_ids} label={label} yard={yard && r.yard_trip ? yard : null} onAccept={(ids) => { setUndo({ routeId: r.id, ids: r.site_ids }); update({ ...r, site_ids: ids }); }} />
+            {undo?.routeId === r.id ? (
+              <p className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-emerald-50 p-2 text-sm text-emerald-900" role="status" data-testid="suggest-undo-bar">
+                New order saved.
+                <Button size="sm" variant="outline" data-testid="suggest-undo" onClick={() => { update({ ...r, site_ids: undo.ids }); setUndo(null); }}>Undo</Button>
+              </p>
+            ) : null}
             <Select aria-label={`Add a site to ${r.name}`} className="mt-2" value="" onChange={(e) => e.target.value && void addSite(r, e.target.value)}>
               <option value="">Add a site...</option>
               {sites.filter((s) => s.active && !r.site_ids.includes(s.id)).map((s) => {

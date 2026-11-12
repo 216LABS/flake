@@ -30,6 +30,7 @@ test('trigger alert to links sent takes 2 taps, with snapshots attached', async 
 
   await page.getByTestId('start-storm').click();
   await page.getByTestId('publish').click();
+  await page.getByTestId('confirm-yes').click();
   await page.waitForURL(/\/storms\/[0-9a-f-]+$/);
   const stormId = page.url().split('/').pop()!;
 
@@ -107,9 +108,12 @@ test('billing: flags, inline fix, approve clean, failed card, QuickBooks export'
   // Every draft shows by default, flagged ones first, and the missing visit is flagged (issue 50).
   await expect(page.getByTestId('flagged-only')).not.toBeChecked();
   await expect(page.getByTestId('draft').first().getByTestId('approve-blocked')).toBeVisible();
-  const missing = page.locator('[data-code="missing_visit"]');
-  await expect(missing).toHaveCount(1);
-  await missing.getByTestId('fix-skip').click();
+  // The lot nobody reached is in one "not plowed" box at the top, not its own $0 card (issue 85).
+  const unplowed = page.getByTestId('unplowed');
+  await expect(unplowed).toContainText('not plowed this storm');
+  await expect(page.getByTestId('draft').filter({ has: page.locator('[data-code="missing_visit"]') })).toHaveCount(0);
+  await unplowed.getByTestId('unplowed-skip').click();
+  await expect(unplowed).toHaveCount(0);
   await expect(page.locator('[data-code="missing_visit"]')).toHaveCount(0);
 
   // These test visits have no after photos; waiving them makes the drafts clean.

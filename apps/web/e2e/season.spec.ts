@@ -147,6 +147,7 @@ test('a new plow company runs a whole storm from sign up to paid invoices', asyn
   await page.getByTestId('alert-review').first().click();
   await page.getByTestId('start-storm').click();
   await page.getByTestId('publish').click();
+  await page.getByTestId('confirm-yes').click();
   await page.waitForURL(/\/storms\/[0-9a-f-]+$/);
   const stormId = page.url().split('/').pop()!;
   await expect(page.getByTestId('run-column')).toHaveCount(2);

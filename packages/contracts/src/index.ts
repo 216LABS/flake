@@ -164,6 +164,8 @@ export const billingApprove = z.object({ draftIds: z.array(uuid).min(1).max(500)
 export const flagFix = z.discriminatedUnion('action', [
   z.object({ action: z.literal('waive'), storm_id: uuid, flag_key: z.string().max(200) }),
   z.object({ action: z.literal('skip'), storm_id: uuid, site_id: uuid }),
+  /** Every lot nobody reached, in one go (issue 85). */
+  z.object({ action: z.literal('skip_all'), storm_id: uuid, site_ids: z.array(uuid).min(1).max(500) }),
   z.object({ action: z.literal('replow'), storm_id: uuid, visit_id: uuid }),
   z.object({ action: z.literal('salt'), storm_id: uuid, visit_id: uuid, unit: saltUnit, qty: z.number().positive().max(10000) }),
   z.object({ action: z.literal('depth'), storm_id: uuid, site_id: uuid, depth_in: z.number().min(0).max(120) }),

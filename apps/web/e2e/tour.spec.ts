@@ -154,6 +154,7 @@ test('a real day', async ({ browser }) => {
   await page.getByTestId('start-storm').click();
   await shot(page, 'storm-ready');
   await page.getByTestId('publish').click();
+  await page.getByTestId('confirm-yes').click();
   await page.waitForURL(/\/storms\/[0-9a-f-]+$/);
   const stormId = page.url().split('/').pop()!;
   await expect(page.getByTestId('run-column')).toHaveCount(2);

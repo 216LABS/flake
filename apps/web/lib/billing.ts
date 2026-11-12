@@ -176,6 +176,11 @@ export async function applyFlagFix(ctx: Ctx, fix: z.infer<typeof flagFix>) {
         if (runs.length) await tx.update(run_stop).set({ status: 'skipped', updated_at: new Date().toISOString() }).where(and(inArray(run_stop.storm_run_id, runs.map((r) => r.id)), eq(run_stop.site_id, fix.site_id), inArray(run_stop.status, ['open', 'enroute', 'problem'])));
         break;
       }
+      case 'skip_all': {
+        const runs = await tx.select({ id: storm_run.id }).from(storm_run).where(eq(storm_run.storm_id, fix.storm_id));
+        if (runs.length) await tx.update(run_stop).set({ status: 'skipped', updated_at: new Date().toISOString() }).where(and(inArray(run_stop.storm_run_id, runs.map((r) => r.id)), inArray(run_stop.site_id, fix.site_ids), inArray(run_stop.status, ['open', 'enroute', 'problem'])));
+        break;
+      }
       case 'replow': {
         await tx.insert(visit_correction).values({ tenant_id: ctx.tenantId, visit_id: fix.visit_id, field: 'is_replow', old_value: false, new_value: true, reason: 'Marked as re-plow in billing review', by_user: ctx.userId });
         break;

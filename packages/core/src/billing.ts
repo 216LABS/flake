@@ -1,5 +1,5 @@
 import type { MultiPolygon, Polygon } from 'geojson';
-import { gpsMatches } from './geo';
+import { distanceMeters, distanceToPolygonMeters, gpsMatches } from './geo';
 import { priceSiteForStorm, type ContractService, type InvoiceLine, type PricedVisit, type SaltPricing, type StormDepthContext } from './pricing';
 
 export const DUPLICATE_WINDOW_MS = 60 * 60 * 1000;
@@ -16,6 +16,19 @@ export type FlagCode =
   | 'odd_duration'
   | 'no_service'
   | 'salt_unit';
+
+/**
+ * How much a flag matters at a dawn billing review (issue 78): money at risk first, then missing proof, then lots
+ * nobody reached. Info isn't a problem.
+ */
+export type FlagTier = 'money' | 'proof' | 'not_done' | 'info';
+export const FLAG_TIER: Record<FlagCode, FlagTier> = {
+  no_contract: 'money', no_service: 'money', missing_salt_qty: 'money', salt_unit: 'money', missing_depth: 'money', duplicate: 'money', odd_duration: 'money',
+  no_after_photo: 'proof', no_gps_match: 'proof',
+  missing_visit: 'not_done',
+  seasonal_info: 'info',
+};
+export const TIER_ORDER: FlagTier[] = ['money', 'proof', 'not_done', 'info'];
 
 export interface BillingFlag {
   code: FlagCode;
@@ -108,8 +121,12 @@ function flagsForSite(site: BillingSite, contract: BillingContract | undefined, 
     if (prev && !v.is_replow && Date.parse(v.arrived_at) - Date.parse(prev.arrived_at) < DUPLICATE_WINDOW_MS) {
       add('duplicate', `${site.label} has two done visits under 60 minutes apart. Mark as re-plow if both are real.`, v.id);
     }
-    if (!gpsMatches(v.arrive_lat, v.arrive_lon, site)) {
-      add('no_gps_match', `${site.label}: arrive location is unavailable or more than 150 m from the site.`, v.id);
+    // No location at all and a location in the wrong place are different problems (issue 78).
+    if (v.arrive_lat == null || v.arrive_lon == null) {
+      add('no_gps_match', `${site.label}: the phone didn't share its location on arrival, so there's no GPS record of this visit.`, v.id);
+    } else if (!gpsMatches(v.arrive_lat, v.arrive_lon, site)) {
+      const m = site.polygons ? distanceToPolygonMeters(v.arrive_lat, v.arrive_lon, site.polygons) : distanceMeters(v.arrive_lat, v.arrive_lon, site.lat, site.lon);
+      add('no_gps_match', `${site.label}: the phone was about ${m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m / 10) * 10} m`} from the lot on arrival.`, v.id);
     }
     // Hourly lots bill straight from the phone's Arrive and Done times, so a Done tapped at the end of a shift, or a
     // phone clock that jumped, would bill hours nobody worked.

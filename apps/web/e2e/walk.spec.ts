@@ -26,6 +26,7 @@ test('walk every office screen and use its main control', async ({ page }) => {
   const stormId = page.url().split('/').pop()!;
   await expect(page.getByTestId('run-column').nth(2)).toBeVisible();
   await page.getByTestId('publish').click();
+  await page.getByTestId('confirm-yes').click();
   await expect(page.getByTestId('publish')).toHaveCount(0);
   await page.getByTestId('show-link').first().click();
   await expect(page.getByTestId('run-link')).toHaveValue(/\/d\//);
@@ -73,10 +74,12 @@ test('walk every office screen and use its main control', async ({ page }) => {
   const noDriver = await made.json();
   await page.goto(`/storms/${noDriver.id}`);
   await page.getByTestId('publish').click();
+  await page.getByTestId('confirm-yes').click();
   await expect(page.getByText('have no driver. Assign one first.')).toBeVisible();
   await page.getByTestId('assign-driver').selectOption({ index: 1 });
   await expect(page.getByTestId('run-column')).not.toContainText('No driver');
   await page.getByTestId('publish').click();
+  await page.getByTestId('confirm-yes').click();
   await expect(page.getByTestId('publish')).toHaveCount(0);
   await expect(page.getByTestId('show-link')).toBeVisible();
 
@@ -110,7 +113,9 @@ test('walk every office screen and use its main control', async ({ page }) => {
   await page.goto('/billing');
   await page.getByTestId('storm-picker').selectOption({ label: 'Dec 13 Lake-Effect Storm (Demo)' });
   await page.waitForURL(/billing\?storm=/);
-  for (const code of ['missing_visit', 'no_after_photo', 'missing_salt_qty']) await expect(page.locator(`[data-code="${code}"]`)).toHaveCount(1);
+  for (const code of ['no_after_photo', 'missing_salt_qty']) await expect(page.locator(`[data-code="${code}"]`)).toHaveCount(1);
+  // The lot nobody reached shows as a flag on its bill, or in the "not plowed" box when that's all there is (issue 85).
+  await expect(page.locator('[data-code="missing_visit"], [data-testid="unplowed"]').first()).toBeVisible();
   await page.screenshot({ path: `test-results/walk-billing-${test.info().project.name}.png`, fullPage: true });
 
   // A site's proof packet page lists the seeded packet.

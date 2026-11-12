@@ -91,3 +91,24 @@ describe("issue 75: an after photo that lands after the close clears the draft's
     expect((await serviceDb().select().from(storm).where(eq(storm.id, out.storm.id)))[0]!.status).toBe('closed');
   });
 });
+
+describe('issue 85: every lot nobody reached is skipped in one go', () => {
+  it('Mark all skipped clears their $0 drafts and keeps the real ones', async () => {
+    const { applyFlagFix, generateDrafts } = await import('@/lib/billing');
+    const w = await makeWorld();
+    const ctx = ctxOf(w);
+    const out = await createStorm(ctx, { name: 'S', routeIds: [w.routeId], crewAssignments: {} });
+    const rs = await resolveToken(decryptToken(out.runs[0]!.link_token_enc!));
+    const stops = (await serviceDb().select().from(run_stop).where(eq(run_stop.storm_run_id, out.runs[0]!.id))).sort((a, b) => a.seq - b.seq);
+    await processActions(rs, stopActions(stops[0]!.id, new Date(Date.now() - 30 * 60_000)).actions as never);
+    await closeStorm(ctx, out.storm.id, true);
+    const before = await generateDrafts(ctx, out.storm.id);
+    const missing = before.flatMap((d) => (d.draft.flags as { code: string; site_id: string }[]).filter((f) => f.code === 'missing_visit').map((f) => f.site_id));
+    expect(missing.length).toBeGreaterThan(1);
+    const after = await applyFlagFix(ctx, { action: 'skip_all', storm_id: out.storm.id, site_ids: missing });
+    expect(after.flatMap((d) => (d.draft.flags as { code: string }[]).map((f) => f.code))).not.toContain('missing_visit');
+    expect(after.some((d) => d.draft.customer_id === w.customerIds[0])).toBe(true);
+    const skipped = await serviceDb().select().from(run_stop).where(eq(run_stop.storm_run_id, out.runs[0]!.id));
+    expect(skipped.filter((s) => missing.includes(s.site_id)).every((s) => s.status === 'skipped')).toBe(true);
+  });
+});

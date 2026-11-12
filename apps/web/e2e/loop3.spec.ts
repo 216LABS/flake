@@ -146,3 +146,26 @@ test('with a yard saved, each route starts and ends there by default, and a rout
     await sql`update tenant set yard = ${t!.yard ? sql.json(t!.yard) : null} where id = ${t!.id}`;
   }
 });
+
+test('Send routes to crew says who gets what first, and Cancel sends nothing (issue 76)', async ({ page }) => {
+  await login(page);
+  await sql`update storm set status = 'closed', closed_at = now() where status = 'active'`;
+  const [r] = await sql`select id from route where name = 'Rocky River' limit 1`;
+  const { id } = await (await page.request.post('/api/storms', { data: { name: `Send ${Date.now()}`, routeIds: [r!.id] } })).json();
+  try {
+    await page.goto(`/storms/${id}`);
+    await expect(page.getByTestId('publish')).toHaveText('Send routes to crew');
+    await page.getByTestId('publish').click();
+    const list = page.getByTestId('send-routes-list');
+    await expect(list).toContainText('Teo Placeholder');
+    await expect(list).toContainText(/by (text and )?email/);
+    await page.getByTestId('confirm-no').click();
+    expect((await sql`select count(*)::int as n from storm_run where storm_id = ${id} and published_at is not null`)[0]!.n).toBe(0);
+    await page.getByTestId('publish').click();
+    await page.getByTestId('confirm-yes').click();
+    await expect(page.getByTestId('publish')).toHaveCount(0);
+    expect((await sql`select count(*)::int as n from storm_run where storm_id = ${id} and published_at is null`)[0]!.n).toBe(0);
+  } finally {
+    await sql`update storm set status = 'closed', closed_at = now() where id = ${id}`;
+  }
+});

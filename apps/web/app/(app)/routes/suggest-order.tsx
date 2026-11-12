@@ -3,6 +3,7 @@
 import { Button, Input, Label } from '@flake/ui';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/client';
+import { useConfirm } from '@/components/confirm';
 
 interface Stop { id: string; arrive: string; finish: string; drive_min: number; late: boolean; wait_min?: number; break_min?: number; via_yard?: boolean; out_at?: string | null }
 interface Plan { stops: Stop[]; drive_min: number; total_min: number; late: number; break_min?: number; work_min?: number }
@@ -17,6 +18,7 @@ const hours = (min: number) => (min < 60 ? `${min} min` : `${Math.floor(min / 60
 /** Suggests a stop order. It never saves by itself: the dispatcher reads it and taps Use this order. */
 export function SuggestOrder({ routeId, siteIds, label, onAccept, yard = null }: { routeId: string; siteIds: string[]; label: (id: string) => string; onAccept: (ids: string[]) => void; yard?: string | null }) {
   const [open, setOpen] = useState(false);
+  const [ask, dialog] = useConfirm();
   const [start, setStart] = useState('04:00');
   const [keepFirst, setKeepFirst] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
@@ -41,6 +43,7 @@ export function SuggestOrder({ routeId, siteIds, label, onAccept, yard = null }:
   const saved = s && c ? c.drive_min - s.drive_min : 0;
   return (
     <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm" data-testid="suggest-panel">
+      {dialog}
       <div className="flex flex-wrap items-end gap-3">
         <div><Label htmlFor={`start-${routeId}`}>{yard ? 'Leave the yard at' : 'First stop at'}</Label><Input id={`start-${routeId}`} type="time" value={start} onChange={(e) => setStart(e.target.value)} className="w-32" /></div>
         <label className="flex items-center gap-2 pb-2"><input type="checkbox" checked={keepFirst} onChange={(e) => setKeepFirst(e.target.checked)} /> Keep the first stop first</label>
@@ -78,7 +81,32 @@ export function SuggestOrder({ routeId, siteIds, label, onAccept, yard = null }:
         </>
       ) : null}
       <div className="mt-3 flex gap-2">
-        {result?.changed ? <Button size="sm" onClick={() => { const ids = result.suggested.stops.map((x) => x.id); onAccept([...ids, ...siteIds.filter((x) => !ids.includes(x))]); setOpen(false); setResult(null); }} data-testid="suggest-accept">Use this order</Button> : null}
+        {result?.changed ? <Button size="sm" onClick={async () => {
+          const ids = result.suggested.stops.map((x) => x.id);
+          const next = [...ids, ...siteIds.filter((x) => !ids.includes(x))];
+          // It rewrites the master route every storm starts from, so it says what moves first (issue 81).
+          const ord = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
+          const moves = next.flatMap((id, to) => {
+            const from = siteIds.indexOf(id);
+            return from === to ? [] : [{ id, from, to, by: Math.abs(from - to) }];
+          }).sort((a, b) => b.by - a.by);
+          const ok = await ask({
+            title: 'Change the saved order of this route?',
+            body: (
+              <div data-testid="suggest-moves">
+                <p>Every storm from now on starts from this order. {moves.length} {moves.length === 1 ? 'stop moves' : 'stops move'}:</p>
+                <ul className="mt-1 list-disc pl-5">{moves.slice(0, 6).map((m) => <li key={m.id}>{label(m.id)}: {ord(m.from + 1)} to {ord(m.to + 1)}</li>)}</ul>
+                {moves.length > 6 ? <p className="mt-1">and {moves.length - 6} more.</p> : null}
+                <p className="mt-2 text-slate-600">You can undo it for a minute after.</p>
+              </div>
+            ),
+            confirm: 'Use this order',
+          });
+          if (!ok) return;
+          onAccept(next);
+          setOpen(false);
+          setResult(null);
+        }} data-testid="suggest-accept">Use this order</Button> : null}
         <Button size="sm" variant="ghost" onClick={() => { setOpen(false); setResult(null); }}>{result?.changed ? 'Keep mine' : 'Close'}</Button>
       </div>
     </div>

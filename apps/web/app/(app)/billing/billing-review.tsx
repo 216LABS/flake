@@ -1,6 +1,6 @@
 'use client';
 
-import { flagKey, isDraftClean, type BillingFlag } from '@flake/core/billing';
+import { FLAG_TIER, TIER_ORDER, flagKey, isDraftClean, type BillingFlag, type FlagTier } from '@flake/core/billing';
 import { Badge, Button, Card, EmptyState, Input, Table, Td, Th, buttonVariants } from '@flake/ui';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -60,7 +60,16 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
   const clean = rows.filter((r) => r.status === 'draft' && isDraftClean(r.flags));
   const flagged = rows.filter((r) => r.status === 'draft' && !isDraftClean(r.flags));
   const needsWork = (r: DraftRow) => r.status === 'draft' && !isDraftClean(r.flags);
-  const shown = (flaggedOnly ? rows.filter((r) => r.status !== 'draft' || !isDraftClean(r.flags)) : rows).slice().sort((a, b) => Number(needsWork(b)) - Number(needsWork(a)));
+  // Lots nobody reached make $0 drafts with only "missing visit" on them. They're one list with one action at the top,
+  // not a card each (issue 85).
+  const open = (r: DraftRow) => r.flags.filter((f) => f.severity === 'review' && !f.waived);
+  const unplowed = rows.filter((r) => r.status === 'draft' && r.subtotal_cents === 0 && open(r).length > 0 && open(r).every((f) => f.code === 'missing_visit'));
+  const unplowedSites = [...new Set(unplowed.flatMap((r) => open(r).map((f) => f.site_id)))];
+  // Money at risk first, then missing proof (issue 78).
+  const worst = (r: DraftRow) => Math.min(...open(r).map((f) => TIER_ORDER.indexOf(FLAG_TIER[f.code])), TIER_ORDER.length);
+  const shown = (flaggedOnly ? rows.filter((r) => r.status !== 'draft' || !isDraftClean(r.flags)) : rows).filter((r) => !unplowed.includes(r)).slice()
+    .sort((a, b) => Number(needsWork(b)) - Number(needsWork(a)) || worst(a) - worst(b));
+  const tierCount = (t: FlagTier) => rows.filter((r) => r.status === 'draft' && !unplowed.includes(r) && open(r).some((f) => FLAG_TIER[f.code] === t)).length;
   const total = rows.reduce((s, r) => s + r.subtotal_cents, 0);
   const fees = rows.reduce((s, r) => s + r.fee_cents, 0);
 
@@ -92,6 +101,19 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
       {error ? <p className="mb-3 rounded-md bg-red-50 p-3 text-sm text-red-800" role="alert">{error}</p> : null}
       {!rows.length ? <EmptyState title="No drafts yet" body="Generate drafts to price this storm's visits." /> : null}
       {rows.length ? <p className="mb-3 text-sm text-slate-600">{flagged.length} flagged, {clean.length} clean and ready. Total {money(total)}.{showFees ? ` Flake fees ${money(fees)}.` : ''}</p> : null}
+      {rows.length && (tierCount('money') || tierCount('proof')) ? (
+        <p className="mb-3 text-sm" data-testid="flag-tiers">
+          {tierCount('money') ? <><b className="text-red-800">{tierCount('money')} with money at risk</b> (no price, nothing ticked, salt or depth missing, a possible duplicate). </> : null}
+          {tierCount('proof') ? <><b>{tierCount('proof')} missing proof</b> (no after photo, no or far-off location). Waive if you know the work was done.</> : null}
+        </p>
+      ) : null}
+      {unplowed.length ? (
+        <Card className="mb-3 border-slate-300" data-testid="unplowed">
+          <p className="font-medium">{unplowedSites.length === 1 ? '1 lot was' : `${unplowedSites.length} lots were`} not plowed this storm.</p>
+          <p className="mt-1 text-sm text-slate-700">{unplowed.map((r) => r.customer).join(', ')}. Nothing is billed for {unplowedSites.length === 1 ? 'it' : 'them'}.</p>
+          <Button size="sm" variant="outline" className="mt-2" disabled={busy} data-testid="unplowed-skip" onClick={() => fix({ action: 'skip_all', site_ids: unplowedSites })}>Mark {unplowedSites.length === 1 ? 'it' : 'all'} skipped</Button>
+        </Card>
+      ) : null}
       {flaggedOnly && rows.length && !shown.length ? <EmptyState title="Nothing is flagged" body="Everything here is clean. Approve it, or turn off the filter to see it." /> : null}
       <div className="space-y-3">
         {shown.map((r) => (
@@ -119,7 +141,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
             ) : null}
             {r.flags.length ? (
               <ul className="mt-2 space-y-2">
-                {r.flags.map((f) => <FlagRow key={flagKey(f)} flag={f} editable={r.status === 'draft'} busy={busy} onFix={fix} />)}
+                {[...r.flags].sort((a, b) => TIER_ORDER.indexOf(FLAG_TIER[a.code]) - TIER_ORDER.indexOf(FLAG_TIER[b.code])).map((f) => <FlagRow key={flagKey(f)} flag={f} editable={r.status === 'draft'} busy={busy} onFix={fix} />)}
               </ul>
             ) : null}
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
@@ -134,10 +156,13 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
   );
 }
 
+const TIER_LABEL: Record<FlagTier, string> = { money: 'Money at risk', proof: 'Proof missing', not_done: 'Not plowed', info: '' };
+
 function FlagRow({ flag, editable, busy, onFix }: { flag: BillingFlag; editable: boolean; busy: boolean; onFix: (b: Record<string, unknown>) => void }) {
   const [qty, setQty] = useState('');
   return (
-    <li className={`rounded-md p-2 text-sm ${flag.severity === 'info' || flag.waived ? 'bg-slate-50 text-slate-600' : 'bg-amber-50 text-amber-950'}`} data-testid="flag" data-code={flag.code}>
+    <li className={`rounded-md p-2 text-sm ${flag.severity === 'info' || flag.waived ? 'bg-slate-50 text-slate-600' : FLAG_TIER[flag.code] === 'money' ? 'bg-red-50 text-red-950' : 'bg-amber-50 text-amber-950'}`} data-testid="flag" data-code={flag.code} data-tier={FLAG_TIER[flag.code]}>
+      {flag.severity === 'review' && !flag.waived ? <div className="text-xs font-semibold uppercase tracking-wide opacity-80">{TIER_LABEL[FLAG_TIER[flag.code]]}</div> : null}
       <div>{flag.message}{flag.waived ? ' (waived)' : ''}</div>
       {editable && flag.severity === 'review' && !flag.waived ? (
         <div className="mt-1 flex flex-wrap items-center gap-2">

@@ -470,7 +470,7 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     }
     const pos = data.positions.find((p) => p.storm_run_id === run.id);
     return {
-      id: run.id, pass: run.pass, name: r?.name ?? 'Run', crew: crew ? { id: crew.id, name: crew.name, kind: crew.kind, callout_reply: crew.callout_reply_at && Date.parse(crew.callout_reply_at) >= started ? crew.callout_reply : null, reachable: Boolean(crew.email) || textable.has(crew.phone_e164) } : null,
+      id: run.id, pass: run.pass, name: r?.name ?? 'Run', crew: crew ? { id: crew.id, name: crew.name, kind: crew.kind, callout_reply: crew.callout_reply_at && Date.parse(crew.callout_reply_at) >= started ? crew.callout_reply : null, reachable: Boolean(crew.email) || textable.has(crew.phone_e164), reach: { email: Boolean(crew.email), text: textable.has(crew.phone_e164) } } : null,
       published_at: run.published_at, started_at: run.started_at, // The link exists from the start; showing a QR in person shouldn't need Publish, which messages the crew (issue 58).
       link: ctx.role !== 'viewer' ? runLink(run) : null, stops,
       position: pos ? { lat: pos.lat, lon: pos.lon, at: pos.device_at } : null,

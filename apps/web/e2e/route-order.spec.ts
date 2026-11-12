@@ -27,10 +27,26 @@ test('suggest order: shows a shorter order with times, saves only when accepted,
     // A later start moves the times; then accept.
     await panel.getByLabel('First stop at').fill('05:30');
     await expect(panel.getByTestId('suggest-list')).toContainText('5:30 AM');
+    // It says what moves before it saves, and Cancel saves nothing (issue 81).
     await panel.getByTestId('suggest-accept').click();
+    await expect(page.getByTestId('suggest-moves')).toContainText('Every storm from now on starts from this order');
+    await expect(page.getByTestId('suggest-moves')).toContainText(' to ');
+    await page.getByTestId('confirm-no').click();
+    expect(await order()).toEqual(zig);
+    await panel.getByTestId('suggest-accept').click();
+    await page.getByTestId('confirm-yes').click();
     await expect(panel).toHaveCount(0);
     await expect.poll(order).not.toEqual(zig);
     expect(new Set(await order())).toEqual(new Set(zig));
+    // Undo puts the old order back.
+    await card.getByTestId('suggest-undo').click();
+    await expect.poll(order).toEqual(zig);
+    await expect(card.getByTestId('suggest-undo-bar')).toHaveCount(0);
+    // And again, for the rest of the test.
+    await card.getByTestId('suggest-open').click();
+    await card.getByTestId('suggest-accept').click();
+    await page.getByTestId('confirm-yes').click();
+    await expect.poll(order).not.toEqual(zig);
 
     // Asked again, it leaves the order alone.
     await card.getByTestId('suggest-open').click();

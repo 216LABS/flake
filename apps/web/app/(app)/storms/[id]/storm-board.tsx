@@ -6,6 +6,7 @@ import { RunPlan } from './run-plan';
 import QRCode from 'qrcode';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StopSheet } from './stop-sheet';
+import { sendRoutesBody } from './send-routes';
 import { api } from '@/lib/client';
 import { useConfirm } from '@/components/confirm';
 import { MapView, type MapPin, type TileLayers } from '@/components/map-view';
@@ -161,7 +162,11 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
         </div>
         </div>
         <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap lg:ml-auto lg:w-auto">
-          {editable && unpublished ? <Button variant="accent" data-testid="publish" onClick={() => act(() => api(`/api/storms/${stormId}/publish`, { method: 'POST' }))}>Publish</Button> : null}
+          {editable && unpublished ? <Button variant="accent" data-testid="publish" onClick={async () => {
+            // Sending messages the crew, so it says who first (issue 76).
+            if (!(await ask({ title: 'Send routes to the crew?', body: sendRoutesBody(live.runs), confirm: 'Send routes' }))) return;
+            await act(() => api(`/api/storms/${stormId}/publish`, { method: 'POST' }));
+          }}>Send routes to crew</Button> : null}
           {editable ? <Button variant="outline" data-testid="notify-open" onClick={() => setNotify(true)}>Notify customers</Button> : null}
           {editable ? <Button variant="outline" data-testid="another-pass" onClick={async () => {
             if (!(await ask({ title: 'Start another pass?', body: 'Every driver gets a new route link for it.', confirm: 'Start pass' }))) return;
