@@ -4,8 +4,8 @@ import { Button, Input, Label } from '@flake/ui';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/client';
 
-interface Stop { id: string; arrive: string; finish: string; drive_min: number; late: boolean; wait_min?: number }
-interface Plan { stops: Stop[]; drive_min: number; total_min: number; late: number }
+interface Stop { id: string; arrive: string; finish: string; drive_min: number; late: boolean; wait_min?: number; break_min?: number; via_yard?: boolean; out_at?: string | null }
+interface Plan { stops: Stop[]; drive_min: number; total_min: number; late: number; break_min?: number; work_min?: number }
 interface Result { current: Plan; suggested: Plan; changed: boolean; skipped: number; times_label?: string }
 
 const clock = (hm: string) => {
@@ -58,7 +58,8 @@ export function SuggestOrder({ routeId, siteIds, label, onAccept, yard = null }:
                 : `Same driving or a little more, but ${c.late - s.late} fewer missed deadlines.`}
           </p>
           <p className="text-slate-600">
-            Whole route about {hours(s.total_min)} with plowing time. {s.late ? `${s.late} ${s.late === 1 ? 'stop misses its' : 'stops miss their'} open-by time.` : 'Every open-by time is met.'}
+            {/* Working time, with any break called out, not one long day (issue 74). */}
+            {s.break_min ? <span data-testid="suggest-work">About {hours(s.work_min ?? s.total_min)} of work with plowing time, plus a {hours(s.break_min)} break between runs. </span> : <>Whole route about {hours(s.total_min)} with plowing time. </>}{s.late ? `${s.late} ${s.late === 1 ? 'stop misses its' : 'stops miss their'} open-by time.` : 'Every open-by time is met.'}
             {c.late !== s.late ? ` Now: ${c.late} missed.` : ''}
           </p>
           <ol className="mt-2 space-y-1" data-testid="suggest-list">
@@ -67,6 +68,7 @@ export function SuggestOrder({ routeId, siteIds, label, onAccept, yard = null }:
                 <span className="w-6 text-right text-slate-500">{i + 1}.</span>
                 <span className="flex-1">{label(x.id)}</span>
                 <span className="tabular-nums text-slate-600">{clock(x.arrive)}</span>
+                {x.break_min && x.out_at ? <span className="rounded-sm bg-slate-200 px-1 text-xs font-medium text-slate-800" data-testid="suggest-break">{x.via_yard ? `Back at the yard until ${clock(x.out_at)}` : `Free until ${clock(x.out_at)}`}</span> : null}
                 {x.wait_min ? <span className="rounded-sm bg-sky-100 px-1 text-xs font-medium text-sky-900" data-testid="suggest-wait">Waits {x.wait_min} min</span> : null}
                 {x.late ? <span className="rounded-sm bg-red-100 px-1 text-xs font-medium text-red-800">Late</span> : null}
               </li>

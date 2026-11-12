@@ -442,7 +442,7 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     const runIds = runs.map((r) => r.run.id);
     const stops = runIds.length ? await tx.select({ stop: run_stop, site, customer }).from(run_stop).innerJoin(site, eq(site.id, run_stop.site_id)).innerJoin(customer, eq(customer.id, site.customer_id)).where(inArray(run_stop.storm_run_id, runIds)).orderBy(asc(run_stop.seq)) : [];
     const visits = await tx.select().from(visit).where(and(eq(visit.storm_id, stormId), visitNotVoided));
-    const photoCounts = visits.length ? await tx.select({ visit_id: visit_photo.visit_id, n: sql<number>`count(*)::int` }).from(visit_photo).where(inArray(visit_photo.visit_id, visits.map((v) => v.id))).groupBy(visit_photo.visit_id) : [];
+    const photoCounts = visits.length ? await tx.select({ visit_id: visit_photo.visit_id, n: sql<number>`count(*)::int`, after: sql<number>`(count(*) filter (where ${visit_photo.phase} = 'after'))::int` }).from(visit_photo).where(inArray(visit_photo.visit_id, visits.map((v) => v.id))).groupBy(visit_photo.visit_id) : [];
     const problems = runIds.length ? await tx.select().from(problem_report).where(and(inArray(problem_report.storm_run_id, runIds), sql`resolved_at is null`)).orderBy(desc(problem_report.created_at)) : [];
     const positions = runIds.length ? await tx.selectDistinctOn([driver_position.storm_run_id]).from(driver_position).where(inArray(driver_position.storm_run_id, runIds)).orderBy(driver_position.storm_run_id, desc(driver_position.device_at)) : [];
     const pins = stops.length ? await tx.select().from(site_pin).where(inArray(site_pin.site_id, stops.map((x) => x.site.id))) : [];
@@ -458,10 +458,12 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
       const open = stopVisits.find((v) => !v.departed_device_at);
       const finished = stopVisits.filter((v) => v.departed_device_at).at(-1);
       const photos = stopVisits.reduce((n, v) => n + (data.photoCounts.find((p) => p.visit_id === v.id)?.n ?? 0), 0);
+      // Billing asks for an after photo; the board says when there isn't one, so the two agree (issue 75).
+      const afterPhotos = finished ? (data.photoCounts.find((p) => p.visit_id === finished.id)?.after ?? 0) : 0;
       const problem = data.problems.find((p) => p.site_id === st.id && (p.storm_run_id === run.id || stop.previous_run_ids.includes(p.storm_run_id ?? '')));
       const late = (stop.status === 'open' || stop.status === 'enroute') && isLate(st.service_window, started, now, ctx.timezone);
       if (late) alerts.push({ kind: 'late', text: `${st.label} is past its ${st.service_window?.open_by} deadline`, stop_id: stop.id });
-      return { id: stop.id, seq: stop.seq, status: stop.status, late, priority: st.priority, site_id: st.id, label: st.label, address: st.address, lat: st.lat, lon: st.lon, customer: c.name, arrived_at: stop.status === 'onsite' ? (open?.arrived_device_at ?? null) : null, done_at: finished?.departed_device_at ?? null, depth_in: finished?.depth_in === null || finished?.depth_in === undefined ? null : Number(finished.depth_in), photos, problem: problem ? { kind: problem.kind, note: problem.note } : null };
+      return { id: stop.id, seq: stop.seq, status: stop.status, late, priority: st.priority, site_id: st.id, label: st.label, address: st.address, lat: st.lat, lon: st.lon, customer: c.name, arrived_at: stop.status === 'onsite' ? (open?.arrived_device_at ?? null) : null, done_at: finished?.departed_device_at ?? null, depth_in: finished?.depth_in === null || finished?.depth_in === undefined ? null : Number(finished.depth_in), photos, after_photos: afterPhotos, problem: problem ? { kind: problem.kind, note: problem.note } : null };
     }).sort((a, b) => Number(b.late && b.priority <= 2) - Number(a.late && a.priority <= 2) || a.seq - b.seq);
     if (crew?.kind === 'sub' && run.published_at && !run.started_at && now - Date.parse(run.published_at) > 30 * 60000) {
       alerts.push({ kind: 'not_started', text: `${crew.name} has not started 30 minutes after publish`, at: run.published_at });

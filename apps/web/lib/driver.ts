@@ -322,6 +322,15 @@ async function recordPhoto(rs: RunScope, visitId: string, path: string, input: {
   }).onConflictDoNothing({ target: visit_photo.client_uuid }).returning({ id: visit_photo.id });
   if (!rows.length) return { status: 'duplicate' };
   await enqueue('photo.process', { tenantId, photoId: rows[0]!.id }, { dedupeKey: `photo:${rows[0]!.id}` });
+  // A photo can land after the close drafted the storm's invoices, which then still say "no after photo" (issue 75).
+  // Remake the drafts in review, half a minute later so a burst of photos remakes them once.
+  if (input.phase === 'after') {
+    const [v] = await serviceDb().select({ storm_id: visit.storm_id, status: storm.status }).from(visit).innerJoin(storm, eq(storm.id, visit.storm_id)).where(and(eq(visit.tenant_id, tenantId), eq(visit.id, visitId)));
+    if (v && v.status === 'closed') {
+      const slot = Math.floor(Date.now() / 30_000);
+      await enqueue('billing.redraft', { tenantId, stormId: v.storm_id }, { dedupeKey: `redraft:${v.storm_id}:${slot}`, runAt: new Date((slot + 1) * 30_000 + 5_000) });
+    }
+  }
   return { status: 'ok', id: rows[0]!.id };
 }
 

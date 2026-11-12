@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
-import { and, closeDb, eq, message_log, run_stop, serviceDb, sql, visit } from '@flake/db';
-import { processActions, resolveToken } from '@/lib/driver';
+import { and, closeDb, eq, invoice_draft, message_log, run_stop, serviceDb, sql, storm, visit } from '@flake/db';
+import { processActions, resolveToken, savePhoto } from '@/lib/driver';
 import { plainText } from '@/lib/messaging';
 import { createQuote, declineQuote } from '@/lib/quotes';
 import { closeStorm } from '@/lib/storms';
@@ -58,5 +58,36 @@ describe('issue 71: a lot started before the close can still be finished after i
     expect((await serviceDb().select().from(run_stop).where(eq(run_stop.id, stops[0]!.id)))[0]!.status).toBe('done');
     // A lot never started is still refused.
     expect((await processActions(after, [stopActions(stops[2]!.id, new Date(later)).actions[0]] as never))[0]).toMatchObject({ status: 'rejected', reason: 'storm_closed' });
+  });
+});
+
+describe("issue 75: an after photo that lands after the close clears the draft's photo flag", () => {
+  it('the drafts in review are remade, and the board says when there is no after photo', async () => {
+    const sharp = (await import('sharp')).default;
+    const { closeStormAndDraft, stormLive } = await import('@/lib/storms');
+    const w = await makeWorld();
+    const ctx = ctxOf(w);
+    const out = await createStorm(ctx, { name: 'S', routeIds: [w.routeId], crewAssignments: {} });
+    const rs = await resolveToken(decryptToken(out.runs[0]!.link_token_enc!));
+    const stops = (await serviceDb().select().from(run_stop).where(eq(run_stop.storm_run_id, out.runs[0]!.id))).sort((a, b) => a.seq - b.seq);
+    const a = stopActions(stops[0]!.id, new Date(Date.now() - 30 * 60_000));
+    await processActions(rs, a.actions as never);
+    const jpg = new Uint8Array(await sharp({ create: { width: 32, height: 24, channels: 3, background: '#789' } }).jpeg().toBuffer());
+    // A before photo only: the board says there's no after photo, as billing will.
+    await savePhoto(rs, { client_uuid: randomUUID(), visit_client_uuid: a.visit, phase: 'before', bytes: jpg, contentType: 'image/jpeg' });
+    const board = await stormLive({ ...ctx, timezone: 'America/New_York', role: 'owner' }, out.storm.id);
+    expect(board.runs[0]!.stops.find((s) => s.id === stops[0]!.id)).toMatchObject({ photos: 1, after_photos: 0 });
+    // The office closes before the after photo has uploaded: drafts are made with the flag.
+    await closeStormAndDraft(ctx, out.storm.id, true);
+    const flagged = async () => (await serviceDb().select().from(invoice_draft).where(eq(invoice_draft.storm_id, out.storm.id)))
+      .flatMap((d) => (d.flags as { code: string; visit_id?: string }[]).filter((f) => f.code === 'no_after_photo'));
+    const [v] = await serviceDb().select().from(visit).where(eq(visit.client_uuid, a.visit));
+    const mine = async () => (await flagged()).filter((f) => f.visit_id === v!.id);
+    expect(await mine()).toHaveLength(1);
+    // Now it lands.
+    await savePhoto(rs, { client_uuid: randomUUID(), visit_client_uuid: a.visit, phase: 'after', bytes: jpg, contentType: 'image/jpeg' });
+    await drain();
+    expect(await mine()).toHaveLength(0);
+    expect((await serviceDb().select().from(storm).where(eq(storm.id, out.storm.id)))[0]!.status).toBe('closed');
   });
 });

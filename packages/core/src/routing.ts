@@ -40,8 +40,28 @@ export interface RouteOptions {
   restarts?: number;
 }
 
-export interface PlannedStop { id: string; arrive: string; finish: string; drive_min: number; service_min: number; late: boolean; wait_min: number }
-export interface RoutePlan { stops: PlannedStop[]; drive_min: number; total_min: number; late: number; wait_min: number }
+export interface PlannedStop {
+  id: string; arrive: string; finish: string; drive_min: number; service_min: number; late: boolean; wait_min: number;
+  /** A break before this stop: the truck is free this long, at the yard when there is one (issue 74). */
+  break_min: number;
+  /** The break is spent back at the yard; the drive there and out again is in drive_min. */
+  via_yard: boolean;
+  /** When the truck sets out again for this stop after a break, 'HH:MM'. */
+  out_at: string | null;
+}
+export interface RoutePlan {
+  stops: PlannedStop[]; drive_min: number; total_min: number; late: number; wait_min: number;
+  /** Time free between runs, not working. */
+  break_min: number;
+  /** Driving, plowing and short waits: the route less its breaks. */
+  work_min: number;
+}
+
+/**
+ * Waiting this long or more for a lot to open isn't waiting: the morning work is done and the lot is for later. The
+ * truck goes back to the yard, or is simply free, and sets out again in time (issue 74).
+ */
+export const BREAK_MIN = 60;
 
 const YARD_START = '__yard_start';
 const YARD_END = '__yard_end';
@@ -103,27 +123,56 @@ function score(order: RouteSite[], start: number) {
   let lateMin = 0;
   let late = 0;
   let waitMin = 0;
+  let breakMin = 0;
+  const home = order.find((s) => s.id === YARD_START) ?? order.find((s) => s.id === YARD_END) ?? null;
   const stops: PlannedStop[] = [];
   for (let i = 0; i < order.length; i++) {
     const s = order[i]!;
-    const legMin = i === 0 ? 0 : leg(order[i - 1]!, s);
-    drive += legMin;
+    const prev = i === 0 ? null : order[i - 1]!;
+    let legMin = prev ? leg(prev, s) : 0;
     clock += legMin;
-    // Too early for a lot that mustn't be plowed yet: the truck waits there. Waiting costs like driving, so the search
-    // would rather do something else first.
+    // Too early for a lot that mustn't be plowed yet. A short gap is a wait at the lot, costed like driving so the
+    // search would rather do something else first. A long one is a break: back to the yard when there is one and out
+    // again in time, with that drive counted (issue 74).
     const opens = deadline(s.not_before, start);
-    const wait = opens !== null && clock < opens ? opens - clock : 0;
+    const gap = opens !== null && clock < opens ? opens - clock : 0;
+    let wait = gap;
+    let pause = 0;
+    let viaYard = false;
+    let outAt: string | null = null;
+    if (gap >= BREAK_MIN && prev) {
+      if (home && prev.id !== YARD_START) {
+        const there = leg(prev, home);
+        const back = leg(home, s);
+        if (gap - there - back + legMin >= BREAK_MIN) {
+          viaYard = true;
+          pause = gap - there - back + legMin;
+          legMin = there + back;
+          outAt = toHm(opens! - back);
+        }
+      }
+      if (!viaYard) {
+        pause = gap;
+        outAt = toHm(opens! - legMin);
+      }
+      wait = 0;
+    }
+    drive += legMin;
     waitMin += wait;
-    clock += wait;
+    breakMin += pause;
+    if (opens !== null && clock < opens) clock = opens;
     const arrive = clock;
     const service = s.service_min ?? serviceMinutes(s.sqft);
     clock += service;
     const due = deadline(s.open_by, start);
     const over = due === null ? 0 : clock - due;
     if (over > 0) { late++; lateMin += over; }
-    stops.push({ id: s.id, arrive: toHm(arrive), finish: toHm(clock), drive_min: Math.round(legMin), service_min: service, late: over > 0, wait_min: Math.round(wait) });
+    stops.push({ id: s.id, arrive: toHm(arrive), finish: toHm(clock), drive_min: Math.round(legMin), service_min: service, late: over > 0, wait_min: Math.round(wait), break_min: Math.round(pause), via_yard: viaYard, out_at: outAt });
   }
-  return { plan: { stops, drive_min: Math.round(drive), total_min: Math.round(clock - start), late, wait_min: Math.round(waitMin) }, cost: drive + waitMin + LATE_WEIGHT * lateMin };
+  const total = clock - start;
+  // Idle is idle when choosing the order: a break costs what a wait does, so the plan never takes one with plowing still
+  // to do. It's only shown differently, as time back at the yard instead of hours parked at a closed lot (issue 74).
+  return { plan: { stops, drive_min: Math.round(drive), total_min: Math.round(total), late, wait_min: Math.round(waitMin), break_min: Math.round(breakMin), work_min: Math.round(total - breakMin) }, cost: drive + waitMin + breakMin + LATE_WEIGHT * lateMin };
 }
 
 export function evaluateRoute(order: RouteSite[], opts: RouteOptions = {}): RoutePlan {

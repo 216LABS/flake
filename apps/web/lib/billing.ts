@@ -1,4 +1,4 @@
-import { and, asc, asService, contract, customer, desc, eq, inArray, installment_invoice, invoice_draft, notInArray, isNotNull, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
+import { and, asc, asService, contract, customer, membership, desc, eq, inArray, installment_invoice, invoice_draft, notInArray, isNotNull, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
 import { applyCorrections, draftInvoices, flagKey, isDraftClean, type BillingContract, type BillingFlag, type BillingVisit } from '@flake/core/billing';
 import { applicationFeeCents, feeRate, proFeaturesEnabled, type Plan } from '@flake/core/fees';
 import { seasonalInstallments, type ContractService, type Pricing, type SaltPricing, type StormDepthContext } from '@flake/core/pricing';
@@ -143,6 +143,22 @@ export async function generateDrafts(ctx: Ctx, stormId: string) {
 }
 
 export const draftClean = (flags: unknown) => isDraftClean(flags as BillingFlag[]);
+
+/**
+ * A late after photo (issue 75): remake the storm's drafts still in review so their photo flags match what the office
+ * sees. Runs as an owner of the company, as pressing Regenerate would; approved and charged invoices are left alone,
+ * and nothing happens once every draft has moved on.
+ */
+export async function redraftAfterLatePhoto(tenantId: string, stormId: string) {
+  const db = serviceDb();
+  const [s] = await db.select({ status: storm.status }).from(storm).where(and(eq(storm.id, stormId), eq(storm.tenant_id, tenantId)));
+  if (s?.status !== 'closed') return;
+  const [inReview] = await db.select({ id: invoice_draft.id }).from(invoice_draft).where(and(eq(invoice_draft.storm_id, stormId), eq(invoice_draft.tenant_id, tenantId), eq(invoice_draft.status, 'draft'))).limit(1);
+  if (!inReview) return;
+  const [owner] = await db.select({ user_id: membership.user_id }).from(membership).where(and(eq(membership.tenant_id, tenantId), eq(membership.role, 'owner'))).limit(1);
+  if (!owner) return;
+  await generateDrafts({ userId: owner.user_id, tenantId }, stormId);
+}
 
 /**
  * Inline fixes from the review table. Waives and corrections are appended, never edits: the visit row

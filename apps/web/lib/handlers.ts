@@ -1,6 +1,6 @@
 import { and, crew_member, customer, eq, isNotNull, proof_packet, visit_correction, run_stop, serviceDb, site, sql, storm, storm_run, tenant, visit, visit_photo, weather_snapshot } from '@flake/db';
 import { fmtLocal, isLate } from '@flake/core/time';
-import { billInstallments, chargeDraft } from './billing';
+import { billInstallments, chargeDraft, redraftAfterLatePhoto } from './billing';
 import { getBlob, putBlob } from './blob';
 import { baseUrl } from './env';
 import { drainJobs, enqueue, type JobHandler } from './jobs';
@@ -155,6 +155,7 @@ export const JOB_HANDLERS: Record<string, JobHandler> = {
     await completionReport(p.tenantId, p.visitId);
   },
   'photo.process': (p) => processPhoto(p.tenantId, p.photoId),
+  'billing.redraft': (p) => redraftAfterLatePhoto(p.tenantId, p.stormId),
   'sms.tollfree_submit': (p) => submitTollFree(p.tenantId, decryptToken(p.ein)),
   'sms.mock_approve': (p) => setTollFreeStatus({ tenantId: p.tenantId }, 'approved', null),
 };

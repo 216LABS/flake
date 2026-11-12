@@ -42,7 +42,7 @@ export function RunPlan({ runId, onDone }: { runId: string; onDone: () => void }
   const saved = s && plan.current ? plan.current.drive_min - s.drive_min : 0;
   return (
     <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs" data-testid="replan-panel">
-      {!plan.from ? <p>No position from this truck yet. It shows once the driver has the route open.</p>
+      {!plan.from ? <p data-testid="replan-no-position">No position from this truck yet. The phone shares it after the driver taps Arrive and allows location, and it updates about once a minute while the route is open.</p>
         : !s ? <p>Fewer than two stops left to order.</p>
         : !plan.changed ? <p data-testid="replan-summary">The current order is already the shortest from {plan.from === 'lot' ? 'the lot the driver is on' : "the truck's position"}.</p>
         : (

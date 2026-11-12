@@ -79,11 +79,13 @@ describe('issue 66: not before', () => {
     expect(plan.wait_min).toBe(plan.stops[1]!.wait_min);
   });
   it('Suggest order does the other lots first instead of waiting', () => {
-    // Nearest-first would do the church lot (n1) second and wait; it goes last instead.
+    // Nearest-first would do the church lot (n1) second and wait; it goes later, where the drive is shortest.
     const sites = [at(0), at(1, { not_before: '06:00' }), at(2), at(3), at(4)];
     const out = suggestRoute(sites, { start: '04:00', keepFirst: true }).map((s) => s.id);
-    expect(out.at(-1)).toBe('n1');
-    expect(evaluateRoute(suggestRoute(sites, { start: '04:00', keepFirst: true }), { start: '04:00' }).wait_min).toBeLessThan(evaluateRoute(sites, { start: '04:00' }).wait_min);
+    expect(out.indexOf('n1')).toBeGreaterThan(1);
+    // Idle time, whether waited on site or taken as a break, goes down.
+    const idle = (p: ReturnType<typeof evaluateRoute>) => p.wait_min + p.break_min;
+    expect(idle(evaluateRoute(suggestRoute(sites, { start: '04:00', keepFirst: true }), { start: '04:00' }))).toBeLessThan(idle(evaluateRoute(sites, { start: '04:00' })));
   });
   it('a time earlier on the clock than the start means the next morning', () => {
     const plan = evaluateRoute([at(0), at(1, { not_before: '01:00' })], { start: '22:00' });
@@ -146,8 +148,13 @@ describe('issue 72: a lot not open yet is planned when it opens, not waited for'
     const ids = r.suggested.stops.map((s) => s.id);
     expect(ids[0]).not.toBe('p1');
     expect(ids.indexOf('p1')).toBe(ids.length - 1);
-    expect(r.suggested.wait_min).toBeLessThan(r.current.wait_min);
-    expect(r.suggested.total_min).toBeLessThan(r.current.total_min);
+    // No stop has a truck sitting at a lot for an hour or more (issue 74): the gap is a break, not a wait.
+    expect(Math.max(...r.suggested.stops.map((s) => s.wait_min))).toBeLessThan(60);
+    const late = r.suggested.stops.at(-1)!;
+    expect(late).toMatchObject({ arrive: '17:30', via_yard: false });
+    expect(late.break_min).toBeGreaterThan(8 * 60);
+    expect(r.suggested.work_min).toBeLessThan(4 * 60);
+    expect(r.suggested.work_min).toBe(r.suggested.total_min - r.suggested.break_min);
     expect(new Set(ids)).toEqual(new Set(route.map((s) => s.id)));
   });
   it('a lot opening right after the start still comes early, as its priority asks', () => {
@@ -159,5 +166,21 @@ describe('issue 72: a lot not open yet is planned when it opens, not waited for'
     const r = compareRoute(route, { start: '04:00', yard: { lat: 41.48, lon: -81.79 } });
     expect(r.suggested.stops.at(-1)!.id).toBe('p1');
     expect(r.suggested.stops.some((s) => s.id.startsWith('__'))).toBe(false);
+  });
+  it('with the yard, the truck goes back between runs and sets out in time, and that drive counts (issue 74)', () => {
+    const yard = { lat: 41.48, lon: -81.79 };
+    const r = compareRoute(route, { start: '04:00', yard });
+    const late = r.suggested.stops.at(-1)!;
+    expect(late).toMatchObject({ id: 'p1', arrive: '17:30', via_yard: true, wait_min: 0 });
+    expect(late.break_min).toBeGreaterThan(8 * 60);
+    // Sets out before 5:30 PM by the drive from the yard.
+    expect(late.out_at! < '17:30').toBe(true);
+    expect(late.drive_min).toBeGreaterThan(0);
+    expect(r.suggested.work_min).toBeLessThan(4 * 60);
+  });
+  it('a short gap stays a wait at the lot, not a break', () => {
+    const soon = route.map((s) => (s.id === 'p1' ? { ...s, not_before: '04:20' } : s));
+    const p = evaluateRoute([soon[1]!, ...soon.filter((s) => s.id !== 'p1')].reverse(), { start: '04:00' });
+    expect(p.break_min).toBe(0);
   });
 });

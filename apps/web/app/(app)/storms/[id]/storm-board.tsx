@@ -315,7 +315,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
                         <Badge className="shrink-0" tone={STATUS_TONE[s.status]}>{STATUS_WORD[s.status] ?? s.status}</Badge>
                       </span>
                       <span className="block text-xs text-slate-600">{s.customer}</span>
-                      {s.done_at ? <span className="block text-xs text-slate-700" data-testid="stop-summary">Finished {clock(s.done_at, tz)}{s.depth_in !== null ? `, ${s.depth_in}"` : ''}, {s.photos === 1 ? '1 photo' : `${s.photos} photos`}</span> : null}
+                      {s.done_at ? <span className="block text-xs text-slate-700" data-testid="stop-summary">Finished {clock(s.done_at, tz)}{s.depth_in !== null ? `, ${s.depth_in}"` : ''}, {s.photos === 1 ? '1 photo' : `${s.photos} photos`}{s.after_photos === 0 ? ', no after photo' : ''}</span> : null}
                       {s.problem ? <span className="block text-xs font-medium text-red-800">{s.problem.kind}{s.problem.note ? `: ${s.problem.note}` : ''}</span> : null}
                     </button>
                     {s.late ? <div className="text-xs font-bold text-red-700">Late</div> : null}
