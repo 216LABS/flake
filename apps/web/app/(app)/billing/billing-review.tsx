@@ -1,6 +1,6 @@
 'use client';
 
-import { FLAG_TIER, TIER_ORDER, flagKey, isDraftClean, type BillingFlag, type FlagTier } from '@flake/core/billing';
+import { FLAG_TIER, TIER_ORDER, flagKey, isDraftClean, tierReasons, type BillingFlag, type FlagTier } from '@flake/core/billing';
 import { Badge, Button, Card, EmptyState, Input, Table, Td, Th, buttonVariants } from '@flake/ui';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -70,6 +70,8 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
   const shown = (flaggedOnly ? rows.filter((r) => r.status !== 'draft' || !isDraftClean(r.flags)) : rows).filter((r) => !unplowed.includes(r)).slice()
     .sort((a, b) => Number(needsWork(b)) - Number(needsWork(a)) || worst(a) - worst(b));
   const tierCount = (t: FlagTier) => rows.filter((r) => r.status === 'draft' && !unplowed.includes(r) && open(r).some((f) => FLAG_TIER[f.code] === t)).length;
+  // Only the reasons actually on these bills (issue 75 retest).
+  const tierWhy = (t: FlagTier) => tierReasons(t, rows.filter((r) => r.status === 'draft' && !unplowed.includes(r)).flatMap((r) => open(r).map((f) => f.code)));
   const total = rows.reduce((s, r) => s + r.subtotal_cents, 0);
   const fees = rows.reduce((s, r) => s + r.fee_cents, 0);
 
@@ -103,8 +105,8 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
       {rows.length ? <p className="mb-3 text-sm text-slate-600">{flagged.length} flagged, {clean.length} clean and ready. Total {money(total)}.{showFees ? ` Flake fees ${money(fees)}.` : ''}</p> : null}
       {rows.length && (tierCount('money') || tierCount('proof')) ? (
         <p className="mb-3 text-sm" data-testid="flag-tiers">
-          {tierCount('money') ? <><b className="text-red-800">{tierCount('money')} with money at risk</b> (no price, nothing ticked, salt or depth missing, a possible duplicate). </> : null}
-          {tierCount('proof') ? <><b>{tierCount('proof')} missing proof</b> (no after photo, no or far-off location). Waive if you know the work was done.</> : null}
+          {tierCount('money') ? <><b className="text-red-800">{tierCount('money')} with money at risk</b> ({tierWhy('money')}). </> : null}
+          {tierCount('proof') ? <><b>{tierCount('proof')} missing proof</b> ({tierWhy('proof')}). Waive if you know the work was done.</> : null}
         </p>
       ) : null}
       {unplowed.length ? (

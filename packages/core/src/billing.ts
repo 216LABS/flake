@@ -30,6 +30,24 @@ export const FLAG_TIER: Record<FlagCode, FlagTier> = {
 };
 export const TIER_ORDER: FlagTier[] = ['money', 'proof', 'not_done', 'info'];
 
+/** Each flag in the few words a billing summary line uses. */
+const TIER_REASON: Record<FlagCode, string> = {
+  no_contract: 'no price', no_service: 'nothing ticked', missing_salt_qty: 'salt missing', salt_unit: 'salt missing',
+  missing_depth: 'depth missing', duplicate: 'a possible duplicate', odd_duration: 'an odd time on site',
+  no_after_photo: 'no after photo', no_gps_match: 'no or far-off location',
+  missing_visit: 'not reached', seasonal_info: 'seasonal',
+};
+
+/**
+ * The reasons behind one tier's count, naming only the flags actually there, so a bill missing only its location
+ * doesn't read as missing a photo too (issue 75 retest).
+ */
+export function tierReasons(tier: FlagTier, codes: Iterable<FlagCode>): string {
+  const seen = new Set<string>();
+  for (const c of codes) if (FLAG_TIER[c] === tier) seen.add(TIER_REASON[c]);
+  return [...seen].join(', ');
+}
+
 export interface BillingFlag {
   code: FlagCode;
   site_id: string;
