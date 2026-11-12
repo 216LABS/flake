@@ -111,7 +111,7 @@ const routeBase = z.object({
   site_ids: siteList,
 });
 export const routeCreate = routeBase.extend({ site_ids: siteList.default([]) });
-export const routeUpdate = routeBase.partial().extend({ archived: z.boolean().optional() });
+export const routeUpdate = routeBase.partial().extend({ archived: z.boolean().optional(), yard_trip: z.boolean().optional() });
 
 export const subRateCard = z.object({
   per_visit_cents: cents.optional(),
@@ -295,6 +295,8 @@ export const tenantSettings = z.object({
   website: emptyToNull(z.url()),
   contact_name: emptyToNull(z.string().max(120)),
   expected_monthly_volume: z.number().int().min(1).max(1000000).optional(),
+  /** The yard's street address; the server finds it on the map. Empty clears it (issue 64). */
+  yard_address: z.string().trim().max(300).nullish(),
 });
 export const tollFreeSubmit = z.object({ ein: z.string().regex(/^\d{2}-?\d{7}$/, 'Use the format 12-3456789') });
 export const rateCardSchema = z.object({

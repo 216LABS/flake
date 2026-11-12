@@ -11,6 +11,7 @@ import { retiredLinkKey } from './driver';
 import { setSetting } from './providers';
 import { decryptToken, encryptToken, hashToken, newToken } from './tokens';
 import { latestSnapshotIds, stormWeather, tenantWeatherHeader } from './weather';
+import { roadTimes } from './road-times';
 import { generateDrafts } from './billing';
 import { log } from './log';
 
@@ -274,18 +275,23 @@ export async function planRun(ctx: Ctx & { timezone: string }, runId: string) {
     const stops = await tx.select({ stop: run_stop, site }).from(run_stop).innerJoin(site, eq(site.id, run_stop.site_id)).where(eq(run_stop.storm_run_id, runId)).orderBy(asc(run_stop.seq));
     if (!stops.length) throw new HttpError(404, 'Run not found');
     const [pos] = await tx.select().from(driver_position).where(eq(driver_position.storm_run_id, runId)).orderBy(desc(driver_position.device_at)).limit(1);
-    return { stops, pos };
+    const [trip] = await tx.select({ yard_trip: route.yard_trip, yard: tenant.yard }).from(storm_run).leftJoin(route, eq(route.id, storm_run.route_id)).innerJoin(tenant, eq(tenant.id, storm_run.tenant_id)).where(eq(storm_run.id, runId));
+    return { stops, pos, trip };
   });
   const onsite = data.stops.find((x) => x.stop.status === 'onsite');
   const open = data.stops.filter((x) => ['open', 'enroute', 'problem'].includes(x.stop.status));
   const from = onsite ? { lat: onsite.site.lat, lon: onsite.site.lon, kind: 'lot' as const } : data.pos ? { lat: data.pos.lat, lon: data.pos.lon, kind: 'truck' as const } : null;
   if (!from || open.length < 2) return { from: from?.kind ?? null, changed: false, order: data.stops.map((x) => x.stop.id), suggested: null, current: null };
-  const plan = replanFrom(from, open.map((x) => ({ id: x.stop.id, lat: x.site.lat, lon: x.site.lon, priority: x.site.priority, open_by: x.site.service_window?.open_by ?? null, not_before: x.site.service_window?.not_before ?? null, sqft: x.site.area_confirmed_sqft ?? x.site.area_estimate_sqft })), { start: localHm(Date.now(), ctx.timezone).hm });
+  const endAt = data.trip?.yard && data.trip.yard_trip !== false ? { lat: data.trip.yard.lat, lon: data.trip.yard.lon } : null;
+  // Road times between the lots and the yard, which don't move, so they're cached. The leg from the truck's latest
+  // position is an estimate rather than a fresh router call on every press (issue 65).
+  const road = await roadTimes([...open.map((x) => ({ lat: x.site.lat, lon: x.site.lon })), ...(endAt ? [endAt] : [])]);
+  const plan = replanFrom(from, open.map((x) => ({ id: x.stop.id, lat: x.site.lat, lon: x.site.lon, priority: x.site.priority, open_by: x.site.service_window?.open_by ?? null, not_before: x.site.service_window?.not_before ?? null, sqft: x.site.area_confirmed_sqft ?? x.site.area_estimate_sqft })), { start: localHm(Date.now(), ctx.timezone).hm, endAt, legMinutes: road.legMinutes });
   // Done, skipped and on-site stops keep their places at the front; the re-planned open ones follow.
   const fixed = data.stops.filter((x) => !open.includes(x)).map((x) => x.stop.id);
   const label = new Map(data.stops.map((x) => [x.stop.id, x.site.label]));
   const named = (p: typeof plan.suggested) => ({ ...p, stops: p.stops.map((x) => ({ ...x, label: label.get(x.id) ?? '' })) });
-  return { from: from.kind, position_at: from.kind === 'truck' ? data.pos!.device_at : null, changed: plan.changed, order: [...fixed, ...plan.suggested.stops.map((x) => x.id)], suggested: named(plan.suggested), current: named(plan.current) };
+  return { times_label: road.label, from: from.kind, position_at: from.kind === 'truck' ? data.pos!.device_at : null, changed: plan.changed, order: [...fixed, ...plan.suggested.stops.map((x) => x.id)], suggested: named(plan.suggested), current: named(plan.current) };
 }
 
 export async function notifyRouteChanged(tenantId: string, runId: string, key: string) {

@@ -9,11 +9,15 @@ import { MockFootprints, MockGeocoder, MockOsm, MockParcels, MockTiles } from '.
 import { MockPayments } from './mock/payments';
 import { MockSms } from './mock/sms';
 import { MockWeather, type WeatherFixtureName } from './mock/weather';
+import { MockRouteMatrix } from './mock/router';
+import { LiveRouteMatrix, noRouter } from './live/router';
 import type { EmailProvider, PaymentsProvider, Providers, SmsProvider } from './types';
 
 export * from './types';
 export { MockWeather, WEATHER_FIXTURES, type WeatherFixtureName } from './mock/weather';
 export { MockEmail, MOCK_REJECTED_DOMAIN } from './mock/email';
+export { MockRouteMatrix } from './mock/router';
+export { LiveRouteMatrix, noRouter } from './live/router';
 export { MockPayments, signMockWebhook, MOCK_WEBHOOK_SECRET } from './mock/payments';
 export { MockSms, signTwilio, MOCK_TWILIO_TOKEN } from './mock/sms';
 export { MockFootprints, MockGeocoder, MockOsm, MockParcels, MockTiles } from './mock/geo';
@@ -67,6 +71,7 @@ export function createProviders(opts: ProviderOptions): Providers {
   if (mode === 'mock') {
     return {
       mode,
+      router: new MockRouteMatrix(),
       push: new MockPush(),
       weather: new MockWeather(opts.weatherFixture ?? 'lakewood-lake-effect-2025-12'),
       parcel: new MockParcels(),
@@ -86,6 +91,8 @@ export function createProviders(opts: ProviderOptions): Providers {
   }
   return {
     mode,
+    // Road times when the free OpenRouteService key is set (issue 65); straight-line estimates without it.
+    router: env.ORS_API_KEY ? new LiveRouteMatrix(env.ORS_API_KEY) : noRouter(),
     push: env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY ? new LivePush(env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY, env.VAPID_SUBJECT ?? baseUrl) : noPush(),
     weather: new LiveWeather(env.NWS_USER_AGENT ?? '(flake.216labs.dev, sam@216labs.dev)'),
     parcel: new LiveParcels(),

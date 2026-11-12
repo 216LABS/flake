@@ -3,12 +3,15 @@ import { eq, tenant } from '@flake/db';
 import { asUser, requireApi } from '@/lib/auth';
 import { parseJson, route } from '@/lib/http';
 import { requestTollFree } from '@/lib/sms-admin';
+import { geocodeAddress } from '@/lib/geocode';
 
 export const PATCH = route(async (req) => {
   const ctx = await requireApi('owner');
-  const { ein, website, contact_name, expected_monthly_volume, ...rest } = await parseJson(req, tenantSettings);
+  const { ein, website, contact_name, expected_monthly_volume, yard_address, ...rest } = await parseJson(req, tenantSettings);
+  // The yard is found on the map once, when it's saved, so planning never waits on a lookup (issue 64).
+  const yard = yard_address === undefined ? undefined : yard_address ? await geocodeAddress(yard_address).then((g) => ({ address: yard_address, lat: g.lat, lon: g.lon })) : null;
   const verification = { ...((ctx.tenant.sms_verification ?? {}) as Record<string, unknown>), ...(website !== undefined ? { website } : {}), ...(contact_name !== undefined ? { contact_name } : {}), ...(expected_monthly_volume !== undefined ? { expected_monthly_volume } : {}) };
-  const [row] = await asUser(ctx, (tx) => tx.update(tenant).set({ ...rest, sms_verification: verification, ...(ein ? { ein_last4: ein.replace(/\D/g, '').slice(-4) } : {}) }).where(eq(tenant.id, ctx.tenantId)).returning());
+  const [row] = await asUser(ctx, (tx) => tx.update(tenant).set({ ...rest, ...(yard !== undefined ? { yard } : {}), sms_verification: verification, ...(ein ? { ein_last4: ein.replace(/\D/g, '').slice(-4) } : {}) }).where(eq(tenant.id, ctx.tenantId)).returning());
   return row;
 });
 

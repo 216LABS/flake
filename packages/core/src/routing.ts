@@ -30,12 +30,21 @@ export interface RouteOptions {
   search?: 'basic' | 'full';
   /** Stop improving after this long. The best order so far is returned. */
   budgetMs?: number;
+  /** Start and end at the company yard (issue 64). The plan's drive time includes the trip out and back. */
+  yard?: { lat: number; lon: number } | null;
+  /** Road minutes between two points, or null to use the straight-line estimate for that pair (issue 65). */
+  legMinutes?: ((a: { lat: number; lon: number }, b: { lat: number; lon: number }) => number | null) | null;
+  /** End here without starting here: a mid-storm re-plan heading back to the yard. */
+  endAt?: { lat: number; lon: number } | null;
   /** Extra searches from kicked copies of the best order (issue 67). Default: 5 up to 50 stops, none above. */
   restarts?: number;
 }
 
 export interface PlannedStop { id: string; arrive: string; finish: string; drive_min: number; service_min: number; late: boolean; wait_min: number }
 export interface RoutePlan { stops: PlannedStop[]; drive_min: number; total_min: number; late: number; wait_min: number }
+
+const YARD_START = '__yard_start';
+const YARD_END = '__yard_end';
 
 export const ROAD_FACTOR = 1.3;
 export const STORM_MPH = 25;
@@ -46,6 +55,26 @@ export function serviceMinutes(sqft: number | null | undefined): number {
   if (!sqft || sqft <= 0) return 20;
   return Math.round(15 + sqft / 4000);
 }
+
+/**
+ * Road minutes for a pair when the caller has them (issue 65), else null. Set for the length of one synchronous
+ * planning call by withLegs, so every part of the search uses the same times.
+ */
+let roadLeg: ((a: { lat: number; lon: number }, b: { lat: number; lon: number }) => number | null) | null = null;
+
+function withLegs<T>(opts: RouteOptions, fn: () => T): T {
+  if (opts.legMinutes === undefined) return fn();
+  const before = roadLeg;
+  roadLeg = opts.legMinutes;
+  try {
+    return fn();
+  } finally {
+    roadLeg = before;
+  }
+}
+
+/** Road time when known, the straight-line estimate otherwise. */
+const leg = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) => roadLeg?.(a, b) ?? driveMinutes(a, b);
 
 export function driveMinutes(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
   const miles = (distanceMeters(a.lat, a.lon, b.lat, b.lon) * ROAD_FACTOR) / 1609.344;
@@ -77,9 +106,9 @@ function score(order: RouteSite[], start: number) {
   const stops: PlannedStop[] = [];
   for (let i = 0; i < order.length; i++) {
     const s = order[i]!;
-    const leg = i === 0 ? 0 : driveMinutes(order[i - 1]!, s);
-    drive += leg;
-    clock += leg;
+    const legMin = i === 0 ? 0 : leg(order[i - 1]!, s);
+    drive += legMin;
+    clock += legMin;
     // Too early for a lot that mustn't be plowed yet: the truck waits there. Waiting costs like driving, so the search
     // would rather do something else first.
     const opens = deadline(s.not_before, start);
@@ -92,12 +121,16 @@ function score(order: RouteSite[], start: number) {
     const due = deadline(s.open_by, start);
     const over = due === null ? 0 : clock - due;
     if (over > 0) { late++; lateMin += over; }
-    stops.push({ id: s.id, arrive: toHm(arrive), finish: toHm(clock), drive_min: Math.round(leg), service_min: service, late: over > 0, wait_min: Math.round(wait) });
+    stops.push({ id: s.id, arrive: toHm(arrive), finish: toHm(clock), drive_min: Math.round(legMin), service_min: service, late: over > 0, wait_min: Math.round(wait) });
   }
   return { plan: { stops, drive_min: Math.round(drive), total_min: Math.round(clock - start), late, wait_min: Math.round(waitMin) }, cost: drive + waitMin + LATE_WEIGHT * lateMin };
 }
 
 export function evaluateRoute(order: RouteSite[], opts: RouteOptions = {}): RoutePlan {
+  return withLegs(opts, () => evaluateRouteNow(order, opts));
+}
+
+function evaluateRouteNow(order: RouteSite[], opts: RouteOptions): RoutePlan {
   return score(order, startOf(opts)).plan;
 }
 
@@ -115,7 +148,7 @@ function nearestFirst(first: RouteSite | null, tiers: RouteSite[][]): RouteSite[
       const here = out[out.length - 1];
       let best = 0;
       if (here) {
-        for (let i = 1; i < left.length; i++) if (driveMinutes(here, left[i]!) < driveMinutes(here, left[best]!)) best = i;
+        for (let i = 1; i < left.length; i++) if (leg(here, left[i]!) < leg(here, left[best]!)) best = i;
       }
       out.push(left.splice(best, 1)[0]!);
     }
@@ -124,6 +157,10 @@ function nearestFirst(first: RouteSite | null, tiers: RouteSite[][]): RouteSite[
 }
 
 export function suggestRoute(sites: RouteSite[], opts: RouteOptions = {}): RouteSite[] {
+  return withLegs(opts, () => suggestRouteNow(sites, opts));
+}
+
+function suggestRouteNow(sites: RouteSite[], opts: RouteOptions): RouteSite[] {
   if (sites.length < 3) return opts.keepFirst ? [...sites] : [...sites].sort((a, b) => a.priority - b.priority);
   const start = startOf(opts);
   const fixed = opts.keepFirst ? sites[0]! : null;
@@ -248,7 +285,22 @@ function doubleBridge(order: RouteSite[], bounds: [number, number][], rand: () =
  * Current plan next to the suggested one. When the current order already keeps the tiers and is no
  * worse, the suggestion is the current order, so the button never proposes a change for its own sake.
  */
-export function compareRoute(sites: RouteSite[], opts: RouteOptions = {}) {
+export function compareRoute(sites: RouteSite[], opts: RouteOptions = {}): { current: RoutePlan; suggested: RoutePlan; changed: boolean } {
+  return withLegs(opts, () => compareRouteNow(sites, opts));
+}
+
+function compareRouteNow(sites: RouteSite[], opts: RouteOptions): { current: RoutePlan; suggested: RoutePlan; changed: boolean } {
+  // The yard (issue 64): a fixed first stop and a fixed last one, with no time on site, so the plan counts the drive out
+  // and back. "Keep the first stop first" then means first after the yard. The yard stops are dropped from what's shown.
+  if (opts.yard || opts.endAt) {
+    const home = opts.yard ?? opts.endAt!;
+    const out: RouteSite[] = opts.yard ? [{ id: YARD_START, lat: opts.yard.lat, lon: opts.yard.lon, priority: -1e9, service_min: 0 }] : [];
+    const inner = opts.yard && opts.keepFirst && sites[0] ? [{ ...sites[0], priority: -1e8 }, ...sites.slice(1)] : sites;
+    const back: RouteSite = { id: YARD_END, lat: home.lat, lon: home.lon, priority: 1e9, service_min: 0 };
+    const r = compareRoute([...out, ...inner, back], { ...opts, yard: null, endAt: null, keepFirst: Boolean(opts.yard) || opts.keepFirst });
+    const real = (p: RoutePlan): RoutePlan => ({ ...p, stops: p.stops.filter((x) => x.id !== YARD_START && x.id !== YARD_END) });
+    return { current: real(r.current), suggested: real(r.suggested), changed: r.changed };
+  }
   const start = startOf(opts);
   const now = score(sites, start);
   let order = suggestRoute(sites, opts);
@@ -262,7 +314,7 @@ export function compareRoute(sites: RouteSite[], opts: RouteOptions = {}) {
  * Mid-storm: order a truck's remaining stops starting from where the truck is now. The truck's position is a
  * starting point with no time on site; tiers and open-by times work as they do for a master route.
  */
-export function replanFrom(at: { lat: number; lon: number }, remaining: RouteSite[], opts: Omit<RouteOptions, 'keepFirst'> = {}) {
+export function replanFrom(at: { lat: number; lon: number }, remaining: RouteSite[], opts: Omit<RouteOptions, 'keepFirst' | 'yard'> = {}) {
   const truck: RouteSite = { id: '__truck', lat: at.lat, lon: at.lon, priority: 0, service_min: 0 };
   const r = compareRoute([truck, ...remaining], { ...opts, keepFirst: true });
   const drop = (p: RoutePlan): RoutePlan => ({ ...p, stops: p.stops.slice(1) });

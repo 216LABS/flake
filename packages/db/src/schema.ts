@@ -25,6 +25,8 @@ export const tenant = pgTable('tenant', {
   business_legal_name: text('business_legal_name'),
   ein_last4: text('ein_last4'),
   address: jsonb('address').$type<Record<string, string> | null>(),
+  /** Where trucks start and end (issue 64), geocoded by the server. */
+  yard: jsonb('yard').$type<{ address: string; lat: number; lon: number } | null>(),
   contact_email: text('contact_email'),
   contact_phone: text('contact_phone'),
   rate_card: jsonb('rate_card').notNull().default(sql`'{}'::jsonb`),
@@ -136,6 +138,8 @@ export const route = pgTable('route', {
   name: text('name').notNull(),
   default_crew_id: uuid('default_crew_id'),
   archived_at: ts('archived_at'),
+  /** Suggest order starts and ends this route at the yard, when the company has one (issue 64). */
+  yard_trip: boolean('yard_trip').notNull().default(true),
   created_at: createdAt(),
 });
 

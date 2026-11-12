@@ -6,7 +6,7 @@ import { api } from '@/lib/client';
 
 interface Stop { id: string; arrive: string; finish: string; drive_min: number; late: boolean; wait_min?: number }
 interface Plan { stops: Stop[]; drive_min: number; total_min: number; late: number }
-interface Result { current: Plan; suggested: Plan; changed: boolean; skipped: number }
+interface Result { current: Plan; suggested: Plan; changed: boolean; skipped: number; times_label?: string }
 
 const clock = (hm: string) => {
   const [h, m] = hm.split(':').map(Number);
@@ -15,7 +15,7 @@ const clock = (hm: string) => {
 const hours = (min: number) => (min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${min % 60} min`);
 
 /** Suggests a stop order. It never saves by itself: the dispatcher reads it and taps Use this order. */
-export function SuggestOrder({ routeId, siteIds, label, onAccept }: { routeId: string; siteIds: string[]; label: (id: string) => string; onAccept: (ids: string[]) => void }) {
+export function SuggestOrder({ routeId, siteIds, label, onAccept, yard = null }: { routeId: string; siteIds: string[]; label: (id: string) => string; onAccept: (ids: string[]) => void; yard?: string | null }) {
   const [open, setOpen] = useState(false);
   const [start, setStart] = useState('04:00');
   const [keepFirst, setKeepFirst] = useState(false);
@@ -42,9 +42,10 @@ export function SuggestOrder({ routeId, siteIds, label, onAccept }: { routeId: s
   return (
     <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm" data-testid="suggest-panel">
       <div className="flex flex-wrap items-end gap-3">
-        <div><Label htmlFor={`start-${routeId}`}>First stop at</Label><Input id={`start-${routeId}`} type="time" value={start} onChange={(e) => setStart(e.target.value)} className="w-32" /></div>
+        <div><Label htmlFor={`start-${routeId}`}>{yard ? 'Leave the yard at' : 'First stop at'}</Label><Input id={`start-${routeId}`} type="time" value={start} onChange={(e) => setStart(e.target.value)} className="w-32" /></div>
         <label className="flex items-center gap-2 pb-2"><input type="checkbox" checked={keepFirst} onChange={(e) => setKeepFirst(e.target.checked)} /> Keep the first stop first</label>
       </div>
+      {yard ? <p className="mt-2 text-slate-700" data-testid="suggest-yard">Starts and ends at the yard, {yard}. Drive times include the trip out and back.</p> : null}
       {error ? <p className="mt-2 text-red-700" role="alert">{error}</p> : null}
       {!result && !error ? <p className="mt-2 text-slate-600">Working it out...</p> : null}
       {s && c ? (
@@ -71,7 +72,7 @@ export function SuggestOrder({ routeId, siteIds, label, onAccept }: { routeId: s
               </li>
             ))}
           </ol>
-          <p className="mt-2 text-xs text-slate-500">Priority 1 sites go first, then 2, and so on. Drive times are estimates from distance, not live traffic.{result.skipped ? ` ${result.skipped} retired ${result.skipped === 1 ? 'site was' : 'sites were'} left out.` : ''}</p>
+          <p className="mt-2 text-xs text-slate-500">Priority 1 sites go first, then 2, and so on. <span data-testid="suggest-times">{result.times_label ?? 'Drive times are estimates from distance, not live traffic.'}</span>{result.skipped ? ` ${result.skipped} retired ${result.skipped === 1 ? 'site was' : 'sites were'} left out.` : ''}</p>
         </>
       ) : null}
       <div className="mt-3 flex gap-2">

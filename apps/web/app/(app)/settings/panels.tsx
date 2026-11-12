@@ -229,7 +229,7 @@ const ZONES = [
 /** What customers and crew see: the name on every message, the office's reply address and phone, and the clock. */
 export function CompanyForm({ tenant }: { tenant: any }) {
   const router = useRouter();
-  const [f, setF] = useState({ name: tenant.name ?? '', timezone: tenant.timezone ?? 'America/New_York', contact_email: tenant.contact_email ?? '', contact_phone: tenant.contact_phone ?? '' });
+  const [f, setF] = useState({ name: tenant.name ?? '', timezone: tenant.timezone ?? 'America/New_York', contact_email: tenant.contact_email ?? '', contact_phone: tenant.contact_phone ?? '', yard_address: tenant.yard?.address ?? '' });
   const { msg, busy, run } = useAction();
   const zones = ZONES.some(([z]) => z === f.timezone) ? ZONES : [[f.timezone, f.timezone] as const, ...ZONES];
   return (
@@ -246,10 +246,15 @@ export function CompanyForm({ tenant }: { tenant: any }) {
         </div>
         <div><Label htmlFor="co-email">Office email</Label><Input id="co-email" type="email" data-testid="co-email" value={f.contact_email} onChange={(e) => setF({ ...f, contact_email: e.target.value })} /></div>
         <div><Label htmlFor="co-phone">Office phone</Label><Input id="co-phone" type="tel" data-testid="co-phone" value={f.contact_phone} onChange={(e) => setF({ ...f, contact_phone: e.target.value })} /></div>
+        <div className="sm:col-span-2">
+          <Label htmlFor="co-yard">Yard address (optional)</Label>
+          <Input id="co-yard" data-testid="co-yard" maxLength={300} placeholder="Where your trucks start and end a storm" value={f.yard_address} onChange={(e) => setF({ ...f, yard_address: e.target.value })} />
+          <p className="mt-1 text-xs text-slate-600">With a yard, Suggest order starts and ends each route there. Turn that off for a route on the Routes page.</p>
+        </div>
       </div>
       <div className="mt-3 flex items-center gap-2">
         <Button disabled={busy || f.name.trim().length < 2} data-testid="co-save" onClick={() => run(async () => {
-          await api('/api/settings', { method: 'PATCH', body: { name: f.name, timezone: f.timezone, contact_email: f.contact_email, contact_phone: f.contact_phone } });
+          await api('/api/settings', { method: 'PATCH', body: { name: f.name, timezone: f.timezone, contact_email: f.contact_email, contact_phone: f.contact_phone, ...(f.yard_address.trim() !== (tenant.yard?.address ?? '') ? { yard_address: f.yard_address.trim() || null } : {}) } });
           router.refresh();
         })}>Save</Button>
         {msg ? <span className="text-sm text-slate-600" role="status" data-testid="co-msg">{msg}</span> : null}

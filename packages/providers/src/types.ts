@@ -161,7 +161,20 @@ export interface PushProvider {
   send(target: PushTarget, message: PushMessage): Promise<{ status: 'sent' | 'gone' }>;
 }
 
+/**
+ * Driving minutes between every pair of points, from a road router (issue 65). Null means "no road times": the caller
+ * plans with straight-line estimates. A failure throws, and the caller falls back the same way.
+ */
+export interface RouteMatrix {
+  /** What the minutes came from, for the "Drive times are ..." line. */
+  readonly source: string;
+  /** The most points one call takes. Bigger routes use estimates. */
+  readonly maxPoints: number;
+  minutes(points: { lat: number; lon: number }[]): Promise<(number | null)[][] | null>;
+}
+
 export interface Providers {
+  router: RouteMatrix;
   push: PushProvider;
   mode: 'mock' | 'live';
   weather: WeatherProvider;

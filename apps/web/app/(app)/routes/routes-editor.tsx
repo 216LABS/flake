@@ -7,9 +7,9 @@ import { useConfirm } from '@/components/confirm';
 import { api } from '@/lib/client';
 import { SuggestOrder } from './suggest-order';
 
-interface R { id: string; name: string; default_crew_id: string | null; site_ids: string[] }
+interface R { id: string; name: string; default_crew_id: string | null; yard_trip: boolean; site_ids: string[] }
 
-export function RoutesEditor({ routes, sites, crew }: { routes: R[]; sites: { id: string; label: string; active: boolean }[]; crew: { id: string; name: string }[] }) {
+export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]; sites: { id: string; label: string; active: boolean }[]; crew: { id: string; name: string }[]; yard?: string | null }) {
   const router = useRouter();
   const [list, setList] = useState(routes);
   const [name, setName] = useState('');
@@ -76,7 +76,24 @@ export function RoutesEditor({ routes, sites, crew }: { routes: R[]; sites: { id
                 </li>
               ))}
             </ol>
-            <SuggestOrder routeId={r.id} siteIds={r.site_ids} label={label} onAccept={(ids) => update({ ...r, site_ids: ids })} />
+            {/* On by default once there's a yard; some routes are run from somewhere else (issue 64). */}
+            {yard ? (
+              <label className="mt-3 flex items-center gap-2 text-sm">
+                <input type="checkbox" data-testid="route-yard-trip" checked={r.yard_trip} onChange={async (e) => {
+                  const on = e.target.checked;
+                  setList((all) => all.map((x) => (x.id === r.id ? { ...x, yard_trip: on } : x)));
+                  setError(null);
+                  try {
+                    await api(`/api/routes/${r.id}`, { method: 'PATCH', body: { yard_trip: on } });
+                  } catch (err) {
+                    setList((all) => all.map((x) => (x.id === r.id ? { ...x, yard_trip: !on } : x)));
+                    setError((err as Error).message);
+                  }
+                }} />
+                Start and end at the yard
+              </label>
+            ) : null}
+            <SuggestOrder key={`${r.id}:${r.yard_trip}`} routeId={r.id} siteIds={r.site_ids} label={label} yard={yard && r.yard_trip ? yard : null} onAccept={(ids) => update({ ...r, site_ids: ids })} />
             <Select aria-label={`Add a site to ${r.name}`} className="mt-2" value="" onChange={(e) => e.target.value && void addSite(r, e.target.value)}>
               <option value="">Add a site...</option>
               {sites.filter((s) => s.active && !r.site_ids.includes(s.id)).map((s) => {
@@ -104,7 +121,7 @@ export function RoutesEditor({ routes, sites, crew }: { routes: R[]; sites: { id
           setError(null);
           try {
             const created = await api<{ id: string; name: string }>('/api/routes', { body: { name: name.trim() } });
-            setList((all) => [...all, { id: created.id, name: created.name, default_crew_id: null, site_ids: [] }]);
+            setList((all) => [...all, { id: created.id, name: created.name, default_crew_id: null, yard_trip: true, site_ids: [] }]);
             setName('');
           } catch (e) {
             setError((e as Error).message);

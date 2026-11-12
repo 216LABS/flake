@@ -118,8 +118,8 @@ Missed windows don't change, because these instances have deadlines that no orde
 ## Slices (implementation tickets to file)
 
 1. **Or-opt and a time budget.** Done in this change, with unit tests in `packages/core/test/routing-oropt.test.ts`.
-2. **Yard location and depot start/end.** Company setting plus geocoding, and the Suggest order checkboxes. No migration (`tenant.address` / settings JSON). About 1 day.
-3. **Road-time matrix through OpenRouteService.** `ORS_API_KEY` env (free tier), a provider behind a `matrix()` interface with a mock for tests, the matrix cache, quota handling, and the straight-line fallback. Not a pilot blocker.
+2. **Yard location and depot start/end.** Done (issue 64). Settings, Company has a yard address, geocoded once when saved (`tenant.yard`). Each route has "Start and end at the yard", on by default (`route.yard_trip`, migration `20261111200000_yard.sql`). Suggest order plans out from the yard and back; mid-storm re-plan heads back to it.
+3. **Road-time matrix through OpenRouteService.** Done (issue 65). `ORS_API_KEY` on Vercel (free tier, set by STAR). `RouteMatrix` provider (live: ORS Matrix, driving-car, 4 s timeout, up to 50 points; mock for tests; none without a key). Matrices are cached 30 days in `cached_lookup` per set of points, so a route's repeat Suggest costs nothing. Mid-storm re-plan uses road times between lots and the yard; the leg from the truck's moving position stays an estimate so every press isn't a new call. Any failure, a quota answer or more than 50 points plans on straight-line estimates, and the preview says which it used. Watch the free plan's Matrix quota in the ORS dashboard; it is separate from, and smaller than, the directions quota.
 4. **`not_before` windows.** Site editor field and engine waits. About half a day.
 5. **Randomized restarts for 30 to 80 stops.** Done (issue 67). Measured with `scripts/measure-restarts.ts` (8 seeded routes per size):
 

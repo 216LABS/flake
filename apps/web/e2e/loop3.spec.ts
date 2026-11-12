@@ -110,3 +110,39 @@ test('a "not before" time saves on the site, keeps its open-by time, and the dri
     await sql`update storm set status = 'closed', closed_at = now() where id = ${id}`;
   }
 });
+
+test('with a yard saved, each route starts and ends there by default, and a route can turn it off', async ({ page }) => {
+  await login(page);
+  const [t] = await sql`select id, yard from tenant where id = (select tenant_id from route where name = 'Rocky River' limit 1)`;
+  try {
+    await page.goto('/settings');
+    await page.getByTestId('co-yard').fill('13000 Berea Rd, Cleveland, OH');
+    await page.getByTestId('co-save').click();
+    await expect(page.getByTestId('co-msg')).toBeVisible();
+    const [saved] = await sql`select yard from tenant where id = ${t!.id}`;
+    expect(saved!.yard).toMatchObject({ address: '13000 Berea Rd, Cleveland, OH', lat: expect.any(Number), lon: expect.any(Number) });
+
+    await page.goto('/routes');
+    const card = page.getByTestId('route-card').filter({ has: page.locator('input[value="Rocky River"]') });
+    await expect(card.getByTestId('route-yard-trip')).toBeChecked();
+    await card.getByTestId('suggest-open').click();
+    await expect(card.getByTestId('suggest-yard')).toContainText('13000 Berea Rd');
+    await expect(card.getByTestId('suggest-list')).toBeVisible();
+    // Road times from the router (mocked in tests), and the plan says so (issue 65).
+    await expect(card.getByTestId('suggest-times')).toContainText('mock road times');
+    const withYard = await page.request.post(`/api/routes/${(await sql`select id from route where name = 'Rocky River' and tenant_id = ${t!.id}`)[0]!.id}/suggest`, { data: { site_ids: (await sql`select rs.site_id from route_stop rs join route r on r.id = rs.route_id where r.name = 'Rocky River' and r.tenant_id = ${t!.id} order by rs.seq`).map((x) => x.site_id) } });
+    expect((await withYard.json()).yard).toBe(true);
+
+    // Off for this route: the switch sticks, and Suggest order no longer mentions the yard.
+    await card.getByTestId('route-yard-trip').uncheck();
+    await expect.poll(async () => (await sql`select yard_trip from route where name = 'Rocky River' and tenant_id = ${t!.id}`)[0]!.yard_trip).toBe(false);
+    await page.reload();
+    await expect(card.getByTestId('route-yard-trip')).not.toBeChecked();
+    await card.getByTestId('suggest-open').click();
+    await expect(card.getByTestId('suggest-list')).toBeVisible();
+    await expect(card.getByTestId('suggest-yard')).toHaveCount(0);
+  } finally {
+    await sql`update route set yard_trip = true where tenant_id = ${t!.id}`;
+    await sql`update tenant set yard = ${t!.yard ? sql.json(t!.yard) : null} where id = ${t!.id}`;
+  }
+});

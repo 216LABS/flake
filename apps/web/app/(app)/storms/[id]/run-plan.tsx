@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { api } from '@/lib/client';
 
 interface Stop { id: string; label: string; arrive: string; late: boolean }
-interface Plan { from: 'truck' | 'lot' | null; position_at?: string | null; changed: boolean; order: string[]; suggested: { stops: Stop[]; drive_min: number; late: number } | null; current: { drive_min: number; late: number } | null }
+interface Plan { from: 'truck' | 'lot' | null; times_label?: string; position_at?: string | null; changed: boolean; order: string[]; suggested: { stops: Stop[]; drive_min: number; late: number } | null; current: { drive_min: number; late: number } | null }
 
 const clock = (hm: string) => {
   const [h, m] = hm.split(':').map(Number);
@@ -51,6 +51,7 @@ export function RunPlan({ runId, onDone }: { runId: string; onDone: () => void }
             <ol className="mt-1 space-y-0.5">
               {s.stops.map((x, i) => <li key={x.id} className="flex justify-between gap-2"><span>{i + 1}. {x.label}</span><span className="tabular-nums">{clock(x.arrive)}{x.late ? ' late' : ''}</span></li>)}
             </ol>
+            {plan.times_label ? <p className="mt-1 text-slate-600" data-testid="replan-times">{plan.times_label}</p> : null}
           </>
         )}
       <div className="mt-2 flex gap-2">
