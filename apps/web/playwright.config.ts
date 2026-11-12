@@ -21,7 +21,8 @@ export default defineConfig({
   timeout: 180_000,
   expect: { timeout: 20_000 },
   retries: 0,
-  reporter: [['list']],
+  // In CI, failures also go to GitHub as annotations, so a failing test can be read without the full job log.
+  reporter: process.env.CI ? [['list'], ['github']] : [['list']],
   globalSetup: './e2e/global-setup.ts',
   use: { baseURL: `http://localhost:${PORT}`, trace: 'retain-on-failure', screenshot: 'only-on-failure' },
   projects: [
