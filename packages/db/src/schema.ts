@@ -199,6 +199,8 @@ export const storm_run = pgTable('storm_run', {
   link_token_enc: text('link_token_enc'),
   link_expires_at: ts('link_expires_at').notNull(),
   link_revoked_at: ts('link_revoked_at'),
+  /** The first time the driver app loaded this run (issue 86). */
+  link_opened_at: ts('link_opened_at'),
   published_at: ts('published_at'),
   started_at: ts('started_at'),
   created_at: createdAt(),

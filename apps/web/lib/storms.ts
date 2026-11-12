@@ -414,7 +414,7 @@ export async function revokeRunLink(ctx: Ctx, runId: string) {
   // The phone holding the old link may have finished work it hasn't sent yet. See resolveToken.
   await setSetting(retiredLinkKey(old.hash), { runId, at: new Date().toISOString() });
   return withUser(ctx.userId, async (tx) => {
-    const [r] = await tx.update(storm_run).set({ link_token_hash: link.hash, link_token_enc: link.enc, link_revoked_at: null }).where(eq(storm_run.id, runId)).returning();
+    const [r] = await tx.update(storm_run).set({ link_token_hash: link.hash, link_token_enc: link.enc, link_revoked_at: null, link_opened_at: null }).where(eq(storm_run.id, runId)).returning();
     if (!r) throw new HttpError(404, 'Run not found');
     return r;
   });
@@ -425,7 +425,8 @@ export async function assignRunDriver(ctx: Ctx, runId: string, crewId: string) {
   const run = await withUser(ctx.userId, async (tx) => {
     await requireActiveStorm(tx, { runId });
     if (!(await activeCrew(tx, crewId))) throw new HttpError(422, 'That person is no longer on your crew.', 'inactive_crew');
-    const [r] = await tx.update(storm_run).set({ crew_id: crewId }).where(eq(storm_run.id, runId)).returning();
+    // A new driver hasn't opened it yet, so the board asks again (issue 86). The same driver picked again keeps it.
+    const [r] = await tx.update(storm_run).set({ crew_id: crewId, link_opened_at: sql`case when ${storm_run.crew_id} is not distinct from ${crewId} then ${storm_run.link_opened_at} end` }).where(eq(storm_run.id, runId)).returning();
     if (!r) throw new HttpError(404, 'Run not found');
     return r;
   });
@@ -475,7 +476,7 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     const pos = data.positions.find((p) => p.storm_run_id === run.id);
     return {
       id: run.id, pass: run.pass, name: r?.name ?? 'Run', crew: crew ? { id: crew.id, name: crew.name, kind: crew.kind, callout_reply: crew.callout_reply_at && Date.parse(crew.callout_reply_at) >= started ? crew.callout_reply : null, reachable: Boolean(crew.email) || textable.has(crew.phone_e164), reach: { email: Boolean(crew.email), text: textable.has(crew.phone_e164) } } : null,
-      published_at: run.published_at, started_at: run.started_at, // The link exists from the start; showing a QR in person shouldn't need Publish, which messages the crew (issue 58).
+      published_at: run.published_at, started_at: run.started_at, opened_at: run.link_opened_at, // The link exists from the start; showing a QR in person shouldn't need Publish, which messages the crew (issue 58).
       link: ctx.role !== 'viewer' ? runLink(run) : null, stops,
       position: pos ? { lat: pos.lat, lon: pos.lon, at: pos.device_at } : null,
     };

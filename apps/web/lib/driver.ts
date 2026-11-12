@@ -91,6 +91,11 @@ export async function resolveToken(token: string, opts: { forUpload?: boolean } 
   };
 }
 
+/** The first time the driver app loads its run, for "Opened 3:12 AM" on the board (issue 86). Later loads keep it. */
+export async function markLinkOpened(runId: string) {
+  await serviceDb().update(storm_run).set({ link_opened_at: new Date().toISOString() }).where(and(eq(storm_run.id, runId), sql`${storm_run.link_opened_at} is null`));
+}
+
 /** What the phone caches. Every query carries the tenant id and the run id from the token. */
 export async function loadRun(rs: RunScope) {
   const db = serviceDb();
