@@ -1,5 +1,5 @@
 import { and, crew_member, desc, eq, job, message_log, serviceDb, sql, tenant } from '@flake/db';
-import { fmtLocal } from '@flake/core/time';
+import { fmtLocal, todayIn } from '@flake/core/time';
 import { inFreeSeason } from '@flake/core/fees';
 import { DEFAULT_RATE_CARD, type RateCard } from '@flake/core/quote';
 import { Badge, Card, PageHeader, Table, Td, Th } from '@flake/ui';
@@ -33,7 +33,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   const readOnly = ctx.role === 'viewer';
   const t = ctx.tenant;
   const tz = t.timezone;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIn(tz);
   return (
     <>
       <PageHeader title="Settings" subtitle={`Routes are edited on the Routes page. You are the ${ctx.role}.`} />

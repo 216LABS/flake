@@ -6,6 +6,14 @@ export function fmtLocal(iso: string | number | Date, tz: string, opts?: Intl.Da
   }).format(new Date(iso));
 }
 
+/**
+ * Today's date in the company's zone, as YYYY-MM-DD. The UTC date is already tomorrow in Ohio from 7 or 8 PM, which is
+ * when storms run.
+ */
+export function todayIn(tz: string, at: number | Date = Date.now()): string {
+  return localHm(at, tz).date;
+}
+
 export function localHm(at: number | Date, tz: string): { hm: string; date: string } {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: tz,

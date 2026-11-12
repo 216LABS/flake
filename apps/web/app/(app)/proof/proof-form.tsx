@@ -1,6 +1,6 @@
 'use client';
 
-import { addDays, fmtLocal, zonedDayEnd, zonedDayStart } from '@flake/core/time';
+import { addDays, fmtLocal, todayIn, zonedDayEnd, zonedDayStart } from '@flake/core/time';
 import { Button, Card, Input, Label, Select, Table, Td, Th } from '@flake/ui';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/client';
@@ -10,11 +10,12 @@ export function ProofForm({ sites, packets, preselect, tz }: { sites: { id: stri
   const [siteId, setSiteId] = useState(preselect ?? sites[0]?.id ?? '');
   const [mode, setMode] = useState<'range' | 'claim'>('range');
   // This season so far: snow seasons start in the fall, so before July it's the one that began last October.
+  // Dates are the company's calendar: the UTC date is already tomorrow on a storm evening.
   const [from, setFrom] = useState(() => {
-    const now = new Date();
-    return `${now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1}-10-01`;
+    const [y, m] = todayIn(tz).split('-').map(Number);
+    return `${m! >= 7 ? y : y! - 1}-10-01`;
   });
-  const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
+  const [to, setTo] = useState(() => todayIn(tz));
   const [claim, setClaim] = useState('');
   const [state, setState] = useState<'idle' | 'working' | 'ready'>('idle');
   const [result, setResult] = useState<{ url: string; manifest_sha256: string } | null>(null);

@@ -3,7 +3,7 @@ import { applyCorrections, draftInvoices, flagKey, isDraftClean, type BillingCon
 import { applicationFeeCents, feeRate, proFeaturesEnabled, type Plan } from '@flake/core/fees';
 import { seasonalInstallments, type ContractService, type Pricing, type SaltPricing, type StormDepthContext } from '@flake/core/pricing';
 import { qboCsv, type QboRow } from '@flake/core/qbo';
-import { fmtLocal, liveContracts, localHm } from '@flake/core/time';
+import { fmtLocal, liveContracts, localHm, todayIn } from '@flake/core/time';
 import { sumOverlap } from '@flake/core/trigger';
 import type { StripeEventLike } from '@flake/providers';
 import { z } from 'zod';
@@ -17,10 +17,11 @@ import { seriesFromSummary } from './weather';
 import type { Ctx } from './storms';
 import { observedSnapshots } from './weather';
 
-const today = () => new Date().toISOString().slice(0, 10);
 
-export const tenantFeeRate = (t: { plan: Plan; free_season_until: string | null }) => feeRate(t.plan, t.free_season_until, today());
-export const tenantHasPro = (t: { plan: Plan; free_season_until: string | null }) => proFeaturesEnabled(t.plan, t.free_season_until, today());
+
+// The free season ends on the company's own calendar, not UTC's.
+export const tenantFeeRate = (t: { plan: Plan; free_season_until: string | null; timezone: string }) => feeRate(t.plan, t.free_season_until, todayIn(t.timezone));
+export const tenantHasPro = (t: { plan: Plan; free_season_until: string | null; timezone: string }) => proFeaturesEnabled(t.plan, t.free_season_until, todayIn(t.timezone));
 
 
 /**
