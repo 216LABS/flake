@@ -302,7 +302,9 @@ export async function notifyRouteChanged(tenantId: string, runId: string, key: s
   const db = serviceDb();
   const [row] = await db.select({ run: storm_run, crew: crew_member, tenant }).from(storm_run).innerJoin(tenant, eq(tenant.id, storm_run.tenant_id)).leftJoin(crew_member, eq(crew_member.id, storm_run.crew_id)).where(and(eq(storm_run.id, runId), eq(storm_run.tenant_id, tenantId)));
   const url = row && runLink(row.run);
-  if (!row?.crew || !url) return;
+  // A route that was never sent to the crew hasn't changed for them: nothing goes out until the office confirms Send
+  // routes to crew, which sends the whole route (issue 91).
+  if (!row?.crew || !url || !row.run.published_at) return;
   const link = await shortLink(tenantId, new URL(url).pathname);
   await notifyParty(row.tenant, { phone: row.crew.phone_e164, email: row.crew.email }, { template: 'route_changed', vars: { link }, subject: `${row.tenant.name}: your route changed`, key: `route_changed:${key}:${runId}`, related: { storm_run_id: runId } });
 }

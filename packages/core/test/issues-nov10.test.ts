@@ -132,3 +132,12 @@ describe('issue 89: distances read in feet and miles, the same as the driver pag
     expect(feet(12)).toBe('39 ft');
   });
 });
+
+describe('issue 90: a skipped lot is not a $0 bill', () => {
+  it('no draft for a lot only skipped, but a skipped lot with a visit is still billed', () => {
+    expect(draftInvoices({ ...input(perPush, []), stops: [{ site_id: 's1', status: 'skipped' }] })).toEqual([]);
+    expect(draftInvoices({ ...input(perPush, [v()]), stops: [{ site_id: 's1', status: 'skipped' }] })[0]!.subtotal_cents).toBe(4500);
+    // Not reached and not skipped is still flagged for review.
+    expect(draftInvoices({ ...input(perPush, []), stops: [{ site_id: 's1', status: 'open' }] })[0]!.flags.map((f) => f.code)).toContain('missing_visit');
+  });
+});

@@ -108,6 +108,8 @@ describe('issue 85: every lot nobody reached is skipped in one go', () => {
     const after = await applyFlagFix(ctx, { action: 'skip_all', storm_id: out.storm.id, site_ids: missing });
     expect(after.flatMap((d) => (d.draft.flags as { code: string }[]).map((f) => f.code))).not.toContain('missing_visit');
     expect(after.some((d) => d.draft.customer_id === w.customerIds[0])).toBe(true);
+    // Skipped lots leave no $0 draft behind for Approve all clean to pick up (issue 90).
+    expect(after.filter((d) => d.draft.subtotal_cents === 0 && d.draft.status === 'draft')).toEqual([]);
     const skipped = await serviceDb().select().from(run_stop).where(eq(run_stop.storm_run_id, out.runs[0]!.id));
     expect(skipped.filter((s) => missing.includes(s.site_id)).every((s) => s.status === 'skipped')).toBe(true);
   });

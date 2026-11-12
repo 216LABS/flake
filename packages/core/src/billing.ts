@@ -188,6 +188,8 @@ export function draftInvoices(input: DraftInput): DraftInvoice[] {
     const statuses = input.stops.filter((s) => s.site_id === site.id).map((s) => s.status);
     const visits = effective.filter((v) => v.site_id === site.id);
     if (!statuses.length && !visits.length) continue;
+    // A lot the office marked skipped, with no visit, has nothing to bill: no $0 draft that could be approved (issue 90).
+    if (!visits.length && statuses.every((x) => x === 'skipped')) continue;
     const contract = input.contracts.find((c) => c.site_id === site.id);
     const lines = contract
       ? priceSiteForStorm(contract.services, contract.salt_pricing, visits, input.depth[site.id] ?? { nohrsc24hIn: null, nwsElapsedIn: null })

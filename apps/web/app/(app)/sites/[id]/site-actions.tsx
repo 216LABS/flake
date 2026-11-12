@@ -46,6 +46,23 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [] 
   const problem = quoteProblem(price, trigger);
   const replaces = signedSeasons.includes(season.trim());
   const zero = Number(trigger) === 0 && trigger !== '';
+  const [sent, setSent] = useState(true);
+  const make = async (send: boolean) => {
+    if (zero && type !== 'seasonal' && !(await ask({ title: `${send ? 'Send' : 'Make'} with a 0 inch trigger?`, body: 'Any measurable snow starts service, so every dusting is billable.', confirm: send ? 'Send quote' : 'Get link' }))) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const services = [{ service: 'plow', trigger_in: Number(trigger), pricing: pricing(type, dollarsToCents(price)) }, ...(salt ? [{ service: 'salt', trigger_in: null }] : [])];
+      const out = await api('/api/quotes', { body: { site_id: siteId, season: season.trim(), services, salt_pricing: salt ? { unit: 'bag50lb', amount_cents: saltCents } : null, send } });
+      setSent(send);
+      setUrl(out.url);
+      router.refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <Card>
       {dialog}
@@ -60,23 +77,11 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [] 
         {replaces ? <p className="rounded-md bg-amber-50 p-2 text-xs text-amber-950" data-testid="q-replaces">This lot already has a signed contract for {season.trim()}. If the customer accepts this quote, it replaces that one. Seasonal installments already billed carry over.</p> : null}
       </div>
       {price !== '' && problem ? <p className="mt-2 text-sm text-red-700" data-testid="q-problem">{problem}</p> : null}
-      <Button className="mt-3 w-full" disabled={busy || Boolean(problem) || !season.trim()} data-testid="q-send" onClick={async () => {
-        if (zero && type !== 'seasonal' && !(await ask({ title: 'Send with a 0 inch trigger?', body: 'Any measurable snow starts service, so every dusting is billable.', confirm: 'Send quote' }))) return;
-        setError(null);
-        setBusy(true);
-        try {
-          const services = [{ service: 'plow', trigger_in: Number(trigger), pricing: pricing(type, dollarsToCents(price)) }, ...(salt ? [{ service: 'salt', trigger_in: null }] : [])];
-          const out = await api('/api/quotes', { body: { site_id: siteId, season: season.trim(), services, salt_pricing: salt ? { unit: 'bag50lb', amount_cents: saltCents } : null, send: true } });
-          setUrl(out.url);
-          router.refresh();
-        } catch (e) {
-          setError((e as Error).message);
-        } finally {
-          setBusy(false);
-        }
-      }}>Send quote</Button>
+      <Button className="mt-3 w-full" disabled={busy || Boolean(problem) || !season.trim()} data-testid="q-send" onClick={() => void make(true)}>Send quote</Button>
+      {/* For a quote handed over in person or sent from the office's own phone: nothing is emailed or texted (issue 92). */}
+      <Button variant="outline" className="mt-2 w-full" disabled={busy || Boolean(problem) || !season.trim()} data-testid="q-link-only" onClick={() => void make(false)}>Get link only, don&apos;t send</Button>
       {error ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
-      {url ? <div className="mt-2"><Label>Quote link. Share it if the customer has no email on file.</Label><Input readOnly value={url} data-testid="q-url" /></div> : null}
+      {url ? <div className="mt-2"><Label>{sent ? 'Quote link. Share it if the customer has no email on file.' : 'Quote link. Nothing was sent, so share it with the customer.'}</Label><Input readOnly value={url} data-testid="q-url" /></div> : null}
     </Card>
   );
 }

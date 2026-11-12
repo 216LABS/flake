@@ -23,10 +23,10 @@ export default async function Dashboard() {
   }));
   // Customers' "come back" requests from their records page, one per lot and hour, for a week (issue 5).
   const requests = (await serviceDb().execute(sql`
-    select distinct on (m.related->>'site_id', date_trunc('hour', m.created_at)) m.related->>'site_id' as site_id, m.related->>'customer_id' as customer_id, m.related->>'note' as note, m.created_at, s.label, c.name
+    select distinct on (m.related->>'site_id', date_trunc('hour', m.created_at), coalesce(m.related->>'note', '')) m.related->>'site_id' as site_id, m.related->>'customer_id' as customer_id, m.related->>'note' as note, m.created_at, s.label, c.name
     from message_log m join site s on s.id = (m.related->>'site_id')::uuid join customer c on c.id = s.customer_id
     where m.tenant_id = ${ctx.tenantId} and m.related->>'kind' = 'visit_request' and m.created_at > now() - interval '7 days'
-    order by m.related->>'site_id', date_trunc('hour', m.created_at), m.created_at`)) as unknown as { site_id: string; customer_id: string; note: string | null; created_at: string; label: string; name: string }[];
+    order by m.related->>'site_id', date_trunc('hour', m.created_at), coalesce(m.related->>'note', ''), m.created_at`)) as unknown as { site_id: string; customer_id: string; note: string | null; created_at: string; label: string; name: string }[];
   requests.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const w = await tenantWeatherHeader(ctx.tenantId);
   // Failures retry; rejected addresses don't, and need someone to fix the address (issue 49).

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { and, customer, eq, serviceDb, site, tenant } from '@flake/db';
 import { z } from 'zod';
 import { baseUrl } from '@/lib/env';
@@ -9,7 +10,8 @@ const body = z.object({ site_id: z.string().uuid(), note: z.string().trim().max(
 
 /**
  * "Can you come back?" from the customer's records page. The office gets a push, an email, and a text if it has a
- * number, with a link to the customer. One request per lot per hour reaches the office; repeats just confirm.
+ * number, with a link to the customer. One request per lot per hour reaches the office; repeats just confirm, unless
+ * they say something new, which reaches the office too, so a fuller note sent after a short one isn't lost (issue 93).
  */
 export const POST = route<{ params: Promise<{ token: string }> }>(async (req, { params }) => {
   rateLimit(`portal-request:${clientIp(req)}`, 10, 60_000);
@@ -27,7 +29,7 @@ export const POST = route<{ params: Promise<{ token: string }> }>(async (req, { 
   await notifyOffice(row.tenant, {
     headline: `${row.customer.name} asked for a visit at ${row.site.label}.${said}`,
     link: `${baseUrl()}/customers/${row.customer.id}`,
-    key: `visit_request:${row.site.id}:${hour}`,
+    key: `visit_request:${row.site.id}:${hour}${note ? `:${createHash('sha256').update(note).digest('hex').slice(0, 12)}` : ''}`,
     // Kept with the messages, so the dashboard can list requests for anyone who missed the push or email.
     related: { site_id: row.site.id, customer_id: row.customer.id, kind: 'visit_request', note: note ?? null },
   });

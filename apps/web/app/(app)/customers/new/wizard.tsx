@@ -136,7 +136,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
     }
   };
 
-  const finish = async () => {
+  const finish = async (send = true) => {
     setBusy(true);
     setError(null);
     try {
@@ -165,8 +165,8 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
         { service: 'plow', trigger_in: trigger, pricing: pricingBody() },
         ...(withSalt ? [{ service: 'salt', trigger_in: null }] : []),
       ];
-      const out = await api('/api/quotes', { body: { site_id: siteId, season, services, salt_pricing: withSalt ? { unit: 'bag50lb', amount_cents: suggestion.salt_bag_cents } : null, send: true } });
-      setEmailed(Boolean(out.emailed && c.email));
+      const out = await api('/api/quotes', { body: { site_id: siteId, season, services, salt_pricing: withSalt ? { unit: 'bag50lb', amount_cents: suggestion.salt_bag_cents } : null, send } });
+      setEmailed(send && Boolean(out.emailed && c.email));
       setQuoteUrl(out.url);
     } catch (e) {
       setError((e as Error).message);
@@ -316,7 +316,13 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
         {error ? <p className="mt-3 text-sm text-red-700" role="alert">{error}</p> : null}
         <div className="mt-6 flex justify-between">
           {step > firstStep ? <Button variant="ghost" onClick={() => setStep(step - 1)}>Back</Button> : <span />}
-          {step < STEPS.length - 1 ? <Button variant="accent" disabled={!canNext} data-testid="next" onClick={() => setStep(step + 1)}>Next</Button> : <Button variant="accent" disabled={busy} data-testid="send-quote" onClick={() => void finish()}>Send quote</Button>}
+          {step < STEPS.length - 1 ? <Button variant="accent" disabled={!canNext} data-testid="next" onClick={() => setStep(step + 1)}>Next</Button> : (
+            <div className="flex flex-wrap justify-end gap-2">
+              {/* Nothing is emailed or texted: for a quote handed over in person (issue 92). */}
+              <Button variant="outline" disabled={busy} data-testid="link-only-quote" onClick={() => void finish(false)}>Get link only</Button>
+              <Button variant="accent" disabled={busy} data-testid="send-quote" onClick={() => void finish()}>Send quote</Button>
+            </div>
+          )}
         </div>
       </Card>
     </>

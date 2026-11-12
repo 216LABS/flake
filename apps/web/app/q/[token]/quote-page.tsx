@@ -11,7 +11,8 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
   const [name, setName] = useState('');
   const [agree, setAgree] = useState(false);
   const [sms, setSms] = useState(false);
-  const [emailOk, setEmailOk] = useState(true);
+  // The customer opts in; nothing is ticked for them (issue 94).
+  const [emailOk, setEmailOk] = useState(false);
   const [phone, setPhone] = useState(quote.customer.phone ?? '');
   const [accepted, setAccepted] = useState(quote.contract.status === 'accepted');
   const [error, setError] = useState<string | null>(null);
