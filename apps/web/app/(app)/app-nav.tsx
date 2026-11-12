@@ -4,7 +4,8 @@ import { cn } from '@flake/ui';
 import { ClipboardList, CloudSnow, FileCheck2, LayoutDashboard, Menu, Receipt, Route, Settings, Users, Wrench, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useModal } from '@/components/use-modal';
 
 const NAV = [
   ['/dashboard', 'Dashboard', LayoutDashboard],
@@ -49,6 +50,8 @@ export function AppNav({ showDev }: { showDev: boolean }) {
 export function MobileTabs({ showDev }: { showDev: boolean }) {
   const path = usePathname();
   const [more, setMore] = useState(false);
+  const menu = useRef<HTMLElement>(null);
+  useModal(menu, { active: more });
   useEffect(() => setMore(false), [path]);
   useEffect(() => {
     if (!more) return;
@@ -63,7 +66,7 @@ export function MobileTabs({ showDev }: { showDev: boolean }) {
     <div className="md:hidden">
       {more ? <button type="button" aria-label="Close menu" className="fixed inset-0 z-40 bg-slate-950/40" onClick={() => setMore(false)} /> : null}
       {more ? (
-        <nav aria-label="More" id="more-menu" data-testid="more-menu" className="fixed inset-x-0 z-50 rounded-t-xl bg-slate-950 p-3 text-slate-200 shadow-2xl" style={{ bottom: 'calc(3.5rem + env(safe-area-inset-bottom))' }}>
+        <nav ref={menu} aria-label="More" id="more-menu" data-testid="more-menu" className="fixed inset-x-0 z-50 rounded-t-xl bg-slate-950 p-3 text-slate-200 shadow-2xl" style={{ bottom: 'calc(3.5rem + env(safe-area-inset-bottom))' }}>
           <ul className="grid grid-cols-2 gap-2">
             {[...rest, ...(showDev ? ([['/dev', 'Dev', Wrench]] as const) : [])].map(([href, label, Icon]) => {
               const here = isHere(path, href);

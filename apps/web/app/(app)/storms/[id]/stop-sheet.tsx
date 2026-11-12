@@ -3,6 +3,7 @@
 import { feet } from '@flake/core/units';
 import { Badge, Button } from '@flake/ui';
 import { X } from 'lucide-react';
+import { useModal } from '@/components/use-modal';
 import { useEffect, useId, useRef, useState } from 'react';
 import { api } from '@/lib/client';
 
@@ -39,6 +40,8 @@ export function StopSheet({ stopId, tz, onClose }: { stopId: string; tz: string;
   const [big, setBig] = useState<Photo | null>(null);
   const titleId = useId();
   const closeBtn = useRef<HTMLButtonElement>(null);
+  const sheet = useRef<HTMLDivElement>(null);
+  useModal(sheet, { initial: closeBtn });
   useEffect(() => {
     let live = true;
     setD(null);
@@ -49,7 +52,6 @@ export function StopSheet({ stopId, tz, onClose }: { stopId: string; tz: string;
     };
   }, [stopId]);
   useEffect(() => {
-    closeBtn.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (big) setBig(null);
@@ -62,7 +64,7 @@ export function StopSheet({ stopId, tz, onClose }: { stopId: string; tz: string;
   const photos = d?.visits.flatMap((v) => v.photos) ?? [];
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/50 sm:items-stretch sm:justify-end" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid="stop-sheet" className="flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-xl bg-white shadow-2xl sm:max-h-none sm:max-w-md sm:rounded-none">
+      <div ref={sheet} role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid="stop-sheet" className="flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-xl bg-white shadow-2xl sm:max-h-none sm:max-w-md sm:rounded-none">
         <div className="flex items-start gap-3 border-b border-slate-200 p-4">
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="font-display text-lg font-semibold leading-tight">{d ? d.site.label : 'Stop'}</h2>
@@ -139,12 +141,19 @@ export function StopSheet({ stopId, tz, onClose }: { stopId: string; tz: string;
           ) : null}
         </div>
       </div>
-      {big ? (
-        <div className="fixed inset-0 z-[80] flex flex-col bg-slate-950/95" role="dialog" aria-modal="true" aria-label="Photo" onClick={() => setBig(null)}>
-          <div className="flex justify-end p-3"><Button variant="ghost" className="text-white hover:bg-slate-800" onClick={() => setBig(null)}>Close</Button></div>
-          <img src={`/api/photos/${big.id}`} alt={`${PHASE[big.phase ?? ''] ?? 'Photo'} photo, full size`} className="min-h-0 flex-1 object-contain" />
-        </div>
-      ) : null}
+      {big ? <PhotoViewer photo={big} onClose={() => setBig(null)} /> : null}
+    </div>
+  );
+}
+
+function PhotoViewer({ photo, onClose }: { photo: Photo; onClose: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  const close = useRef<HTMLButtonElement>(null);
+  useModal(box, { initial: close });
+  return (
+    <div ref={box} className="fixed inset-0 z-[80] flex flex-col bg-slate-950/95" role="dialog" aria-modal="true" aria-label="Photo" data-testid="photo-viewer" onClick={onClose}>
+      <div className="flex justify-end p-3"><Button ref={close} variant="ghost" className="text-white hover:bg-slate-800" onClick={onClose}>Close</Button></div>
+      <img src={`/api/photos/${photo.id}`} alt={`${PHASE[photo.phase ?? ''] ?? 'Photo'} photo, full size`} className="min-h-0 flex-1 object-contain" />
     </div>
   );
 }

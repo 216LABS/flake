@@ -2,6 +2,7 @@
 
 import { Button } from '@flake/ui';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useModal } from './use-modal';
 
 export interface ConfirmOptions {
   title: string;
@@ -37,9 +38,12 @@ export function useConfirm() {
 
 function ConfirmDialog({ title, body, confirm, cancel = 'Cancel', danger, onAnswer }: ConfirmOptions & { onAnswer: (ok: boolean) => void }) {
   const titleId = useId();
+  const box = useRef<HTMLDivElement>(null);
   const yes = useRef<HTMLButtonElement>(null);
+  const no = useRef<HTMLButtonElement>(null);
+  // A dangerous question starts on Cancel, so a stray Enter can't close a storm or void a bill.
+  useModal(box, { initial: danger ? no : yes });
   useEffect(() => {
-    yes.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onAnswer(false);
     };
@@ -48,11 +52,11 @@ function ConfirmDialog({ title, body, confirm, cancel = 'Cancel', danger, onAnsw
   }, [onAnswer]);
   return (
     <div className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-950/50 p-4 sm:items-center" onClick={(e) => e.target === e.currentTarget && onAnswer(false)}>
-      <div role="alertdialog" aria-modal="true" aria-labelledby={titleId} className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" data-testid="confirm-dialog">
+      <div ref={box} role="alertdialog" aria-modal="true" aria-labelledby={titleId} className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" data-testid="confirm-dialog">
         <h2 id={titleId} className="font-display text-lg font-semibold">{title}</h2>
         {body ? <div className="mt-2 text-sm text-slate-700">{body}</div> : null}
         <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <Button variant="outline" data-testid="confirm-no" onClick={() => onAnswer(false)}>{cancel}</Button>
+          <Button ref={no} variant="outline" data-testid="confirm-no" onClick={() => onAnswer(false)}>{cancel}</Button>
           <Button ref={yes} variant={danger ? 'danger' : 'accent'} data-testid="confirm-yes" onClick={() => onAnswer(true)}>{confirm}</Button>
         </div>
       </div>
