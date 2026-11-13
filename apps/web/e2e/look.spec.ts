@@ -106,6 +106,9 @@ test('customers can be found by a street, and each phone card is one summary lin
   const row = page.getByTestId('customer-row');
   await expect(row).toHaveCount(1);
   await expect(row.getByTestId('customer-summary')).toHaveText('HOA · 1 site · Net-30 invoice · no payment on file');
+  // The summary replaces the four column cells on a phone; they don't stack underneath it (issue 95).
+  for (const label of ['Kind', 'Sites', 'Billing', 'Payment on file']) await expect(row.locator(`td[data-label="${label}"]`)).toBeHidden();
+  expect((await row.boundingBox())!.height).toBeLessThan(110);
   await page.getByTestId('customer-search').fill('no such customer anywhere');
   await page.getByTestId('customer-search').press('Enter');
   await expect(page.getByText('No customers match')).toBeVisible();

@@ -35,6 +35,12 @@ async function brokenWords(page: Page): Promise<string[]> {
   });
 }
 
+/** Code words that leaked onto a screen: snake_case values, or one with its underscores swapped for spaces (issue 95). */
+async function rawWords(page: Page): Promise<string[]> {
+  const text = await page.evaluate(() => document.body.innerText);
+  return [...new Set(text.match(/\b[a-z]+_[a-z0-9_]+\b|\b(?:invoice net30|per inch tier|ach on file)\b/g) ?? [])];
+}
+
 test('no short label on any screen breaks a word across two lines at 375 wide', async ({ page, browser }) => {
   test.setTimeout(180_000);
   await page.setViewportSize({ width: 375, height: 812 });
@@ -44,11 +50,14 @@ test('no short label on any screen breaks a word across two lines at 375 wide', 
   const [s] = await sql`select id from site where customer_id = ${c!.id} limit 1`;
   const office = ['/dashboard', '/storms', `/storms/${id}`, '/customers', `/customers/${c!.id}`, `/sites/${s!.id}`, '/customers/new', '/routes', '/billing', '/proof', '/reports',
     '/settings', '/settings?tab=rate', '/settings?tab=crew', '/settings?tab=team', '/settings?tab=payments', '/settings?tab=sms', '/settings?tab=plan', '/settings?tab=system'];
+  const [demo] = await sql`select s.id from storm s join tenant t on t.id = s.tenant_id where t.slug = 'lakeshore-demo' and s.name = 'Dec 13 Lake-Effect Storm (Demo)'`;
+  office.push(`/billing?storm=${demo!.id}`);
   const found: string[] = [];
   for (const path of office) {
     await page.goto(path);
     await page.waitForLoadState('networkidle');
     for (const w of await brokenWords(page)) found.push(`${path}: ${w}`);
+    for (const w of await rawWords(page)) found.push(`${path}: code word "${w}"`);
   }
   for (const lang of ['en', 'es'] as const) {
     const [crew] = await sql`select c.id, c.language from crew_member c join storm_run r on r.crew_id = c.id where r.id = ${runs[0]!.id}`;

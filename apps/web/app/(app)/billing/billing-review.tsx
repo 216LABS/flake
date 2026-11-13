@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useConfirm } from '@/components/confirm';
 import { api, money } from '@/lib/client';
+import { billingLabel } from '@/lib/labels';
 
 export interface DraftRow {
   id: string;
@@ -147,7 +148,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
               </ul>
             ) : null}
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-faint">
-              <span>{showFees ? `Only owners see this: Flake fee ${money(r.fee_cents)}. Estimated Stripe fee ${money(r.stripe_fee_cents)}. ` : ''}{r.billing_mode.replace(/_/g, ' ')}.</span>
+              <span>{showFees ? `Only owners see this: Flake fee ${money(r.fee_cents)}. Estimated Stripe fee ${money(r.stripe_fee_cents)}. ` : ''}{billingLabel(r.billing_mode)}.</span>
               {r.status === 'draft' && isDraftClean(r.flags) ? <Button size="sm" variant="outline" disabled={busy} data-testid="approve-one" onClick={() => run(() => api('/api/billing/approve', { body: { draftIds: [r.id] } }))}>Approve</Button> : null}
               {r.status === 'draft' && !isDraftClean(r.flags) ? <span className="font-medium text-warn-ink" data-testid="approve-blocked">Fix or waive the flags to approve.</span> : null}
             </div>

@@ -79,6 +79,18 @@ export function billableQuarterHours(arrivedAt: string, departedAt: string | nul
 const LABEL: Record<string, string> = { plow: 'Plow', salt: 'Salt', walks: 'Walks', haul: 'Haul' };
 const SALT_LABEL: Record<string, string> = { bag50lb: '50 lb bag', lb: 'lb', ton: 'ton', application: 'application' };
 
+/** Salt a driver logged, as a customer reads it: "3 bags (50 lb)", "1.5 tons", "200 lb", "1 application". */
+export function saltAmountText(qty: number, unit: string): string {
+  const one = Number(qty) === 1;
+  switch (unit) {
+    case 'bag50lb': return `${qty} ${one ? 'bag' : 'bags'} (50 lb)`;
+    case 'ton': return `${qty} ${one ? 'ton' : 'tons'}`;
+    case 'lb': return `${qty} lb`;
+    case 'application': return `${qty} ${one ? 'application' : 'applications'}`;
+    default: return `${qty} ${unit}`;
+  }
+}
+
 function line(
   visit: PricedVisit,
   svc: ContractService,
@@ -114,11 +126,11 @@ export function priceVisit(svc: ContractService, visit: PricedVisit, depthIn: nu
       return [line(visit, svc, 'per_event', 1, p.amount_cents, p.amount_cents, 'per event')];
     case 'per_inch_tier': {
       if (depthIn === null) {
-        const l = line(visit, svc, 'per_inch_tier', 1, 0, 0, 'per inch tier, depth unavailable');
+        const l = line(visit, svc, 'per_inch_tier', 1, 0, 0, 'by snow depth, depth not recorded');
         return [{ ...l, needs_depth: true }];
       }
       const amount = tierAmountCents(p.tiers, depthIn);
-      return [line(visit, svc, 'per_inch_tier', 1, amount, amount, `per inch tier at ${depthIn}"`)];
+      return [line(visit, svc, 'per_inch_tier', 1, amount, amount, `for ${depthIn}" of snow`)];
     }
     case 'seasonal':
       return [];

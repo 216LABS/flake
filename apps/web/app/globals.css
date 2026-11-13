@@ -242,6 +242,10 @@ h3 {
   .table-stack td:empty {
     display: none;
   }
+  /* A cell marked phone-hidden stays hidden: the card rules above aren't in a layer, so they beat Tailwind's (issue 95). */
+  .table-stack td.max-md\:hidden {
+    display: none;
+  }
 }
 
 /*

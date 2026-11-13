@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { api, dollarsToCents, money } from '@/lib/client';
+import { pricingLabel } from '@/lib/labels';
 import { uploadPinPhoto } from '@/lib/shrink-image';
 import { MapView, type MapMode, type TileLayers } from '@/components/map-view';
 import { customerProblem, toE164 } from '../[id]/customer-editor';
@@ -307,7 +308,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
           <div className="text-sm">
             <p><b>{c.name}</b>, {label || address}</p>
             <p>{sqft ? `${sqft.toLocaleString()} sq ft` : 'Area not set'}{walkLf ? `, ${walkLf} ft of walks` : ''}</p>
-            <p>{pricingType.replace(/_/g, ' ')}{pricingType !== 'per_inch_tier' ? `: $${price}` : ''}, {trigger === 0 ? 'zero tolerance' : <>{trigger}&quot; trigger</>}{withSalt ? ', plus salt' : ''}</p>
+            <p>{pricingLabel(pricingType)}{pricingType !== 'per_inch_tier' ? `: $${price}` : ''}, {trigger === 0 ? 'zero tolerance' : <>{trigger}&quot; trigger</>}{withSalt ? ', plus salt' : ''}</p>
             <p className="mt-2 text-muted">Sending goes to {c.email || 'no email yet, so you will get a link to share'}. The customer sees the scope, price and terms, signs, and can put a card or bank account on file.</p>
           </div>
         ) : null}

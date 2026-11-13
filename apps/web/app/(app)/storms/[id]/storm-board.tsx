@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { StopSheet } from './stop-sheet';
 import { sendRoutesBody } from './send-routes';
 import { api } from '@/lib/client';
+import { stormStatus } from '@/lib/labels';
 import { useConfirm } from '@/components/confirm';
 import { MapView, type MapPin, type TileLayers } from '@/components/map-view';
 
@@ -218,7 +219,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
             }}>Close storm</Button>
           ) : closed ? (
             <div className="flex items-center gap-2">
-              <Badge tone="green" data-testid="storm-closed">{live.storm.status}</Badge>
+              <Badge tone={stormStatus(live.storm.status).tone} data-testid="storm-closed">{stormStatus(live.storm.status).word}</Badge>
               {canEdit && live.storm.status === 'closed' ? <Button className={DARK_RING} variant="outline" data-testid="reopen-storm" onClick={async () => {
                 if (!(await ask({ title: 'Reopen this storm?', body: 'Route links work again and drivers can keep going. Invoice drafts still in review are dropped, and made again when you close it.', confirm: 'Reopen' }))) return;
                 await act(() => api(`/api/storms/${stormId}/reopen`, { method: 'POST' }));
