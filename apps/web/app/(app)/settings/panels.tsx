@@ -203,7 +203,8 @@ export function PaymentsPanel({ connected, enabled }: { connected: boolean; enab
       <h2 className="font-semibold">Stripe</h2>
       <p className="mt-1 text-sm">Status: <Badge tone={enabled ? 'green' : connected ? 'amber' : 'gray'} data-testid="stripe-status">{enabled ? 'Charges enabled' : connected ? 'Finish onboarding' : 'Not connected'}</Badge></p>
       <p className="mt-2 text-sm text-muted">Payments go straight to your own Stripe account. You pay Stripe&apos;s fees, Stripe handles disputes and losses, and you log in to your own Stripe Dashboard. Flake takes a small application fee on each payment, shown on every billing review. You can skip this and use Flake without online payments.</p>
-      <Button className="mt-3" variant="accent" disabled={busy || enabled} data-testid="stripe-connect" onClick={() => run(async () => { window.location.href = (await api('/api/settings/stripe', { method: 'POST' })).url; }, 'Opening Stripe...')}>{connected ? 'Continue onboarding' : 'Connect Stripe'}</Button>
+      {/* Once charges are on there's nothing left to onboard; a dead button there read as broken (QA walk). */}
+      {enabled ? <p className="mt-3 text-sm" data-testid="stripe-done">You&apos;re set up. Payouts, refunds and disputes are in your Stripe Dashboard.</p> : <Button className="mt-3" variant="accent" disabled={busy} data-testid="stripe-connect" onClick={() => run(async () => { window.location.href = (await api('/api/settings/stripe', { method: 'POST' })).url; }, 'Opening Stripe...')}>{connected ? 'Continue onboarding' : 'Connect Stripe'}</Button>}
       {msg ? <p className="mt-2 text-sm text-muted">{msg}</p> : null}
     </Card>
   );

@@ -20,3 +20,14 @@ test('a viewer with no storm running is told the office starts one, not to start
   await page.goto('/dashboard');
   await expect(page.getByText('Start one by hand, or wait for a trigger alert.')).toBeVisible();
 });
+
+test('settings: an unknown tab opens the first one, and finished Stripe setup offers no dead button', async ({ page }) => {
+  await login(page);
+  await page.goto('/settings?tab=export');
+  await expect(page.getByTestId('tab-company')).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByLabel('Company name')).toBeVisible();
+  await page.goto('/settings?tab=payments');
+  await expect(page.getByTestId('stripe-status')).toHaveText('Charges enabled');
+  await expect(page.getByTestId('stripe-connect')).toHaveCount(0);
+  await expect(page.getByTestId('stripe-done')).toBeVisible();
+});

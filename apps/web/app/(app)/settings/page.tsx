@@ -28,7 +28,8 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   const { tab: asked } = await searchParams;
   const ctx = await requirePage();
   const owner = ctx.role === 'owner';
-  const tab = asked ?? (owner ? 'company' : 'crew');
+  // An unknown tab (an old bookmark, a typo) opens the first tab instead of a blank page.
+  const tab = asked && TABS.some(([k]) => k === asked) ? asked : owner ? 'company' : 'crew';
   const allowed = owner || !OWNER_TABS.includes(tab);
   const readOnly = ctx.role === 'viewer';
   const t = ctx.tenant;
