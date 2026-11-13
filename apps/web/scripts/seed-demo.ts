@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { contract, crew_member, customer, eq, membership, message_log, proof_packet, route, route_stop, run_stop, serviceDb, closeDb, site, sms_consent, sql, storm, storm_run, tenant, visit, visit_photo } from '@flake/db';
+import { and, contract, crew_member, customer, eq, membership, message_log, proof_packet, route, route_stop, run_stop, serviceDb, closeDb, site, sms_consent, sql, storm, storm_run, tenant, visit, visit_photo } from '@flake/db';
 import { SEED_CREW, SEED_ROUTES, SEED_SITES } from '@flake/db/seed-data';
 import { DEFAULT_RATE_CARD } from '@flake/core/quote';
 import { FREE_SEASON_END } from '@flake/core/fees';
@@ -76,10 +76,20 @@ async function main() {
       priority: s.priority ?? 3, service_window: s.open_by ? { open_by: s.open_by } : null, notes: s.kind === 'residential' ? 'Keep clear of the mailbox.' : 'Pile snow at the back of the lot.',
     }).onConflictDoNothing();
     const services = [{ service: 'plow', trigger_in: s.trigger, pricing: s.pricing }, ...(s.salt ? [{ service: 'salt', trigger_in: null }] : [])];
+    // Last winter's agreement covers the sample storm (Dec 2025), and is fully billed. This winter's renewal covers
+    // storms now. Billing prices a storm by the agreement in force when it happened (issue 109), so the sample storm
+    // needs its own season's contract or every lot on it reads "no contract".
+    const salt_pricing = s.salt ? { unit: 'bag50lb' as const, amount_cents: 1800 } : null;
     await db.insert(contract).values({
-      id: id(`contract:${s.key}`), tenant_id: tenantId, site_id: id(`site:${s.key}`), season: '2026-27', status: 'accepted', services, salt_pricing: s.salt ? { unit: 'bag50lb', amount_cents: 1800 } : null,
-      terms_md: 'Demo contract terms.', accepted_at: '2025-11-01T15:00:00Z', accepted_name: 'Demo Contact',
+      id: id(`contract:${s.key}:2025-26`), tenant_id: tenantId, site_id: id(`site:${s.key}`), season: '2025-26', status: 'accepted', services, salt_pricing,
+      terms_md: 'Demo contract terms.', accepted_at: '2025-11-01T15:00:00Z', accepted_name: 'Demo Contact', installments_billed: s.pricing.type === 'seasonal' ? s.pricing.installments : 0,
     }).onConflictDoNothing();
+    await db.insert(contract).values({
+      id: id(`contract:${s.key}`), tenant_id: tenantId, site_id: id(`site:${s.key}`), season: '2026-27', status: 'accepted', services, salt_pricing,
+      terms_md: 'Demo contract terms.', accepted_at: '2026-10-15T15:00:00Z', accepted_name: 'Demo Contact',
+    }).onConflictDoNothing();
+    // Demo data seeded before the above signed this winter's contract a year early. Move that signature to the renewal date.
+    await db.update(contract).set({ accepted_at: '2026-10-15T15:00:00Z' }).where(and(eq(contract.id, id(`contract:${s.key}`)), eq(contract.accepted_at, '2025-11-01T15:00:00Z')));
     const seq = (seqByRoute[s.route] = (seqByRoute[s.route] ?? 0) + 1);
     await db.insert(route_stop).values({ route_id: id(`route:${s.route}`), site_id: id(`site:${s.key}`), seq, tenant_id: tenantId }).onConflictDoNothing();
   }

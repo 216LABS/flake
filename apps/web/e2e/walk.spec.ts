@@ -114,6 +114,9 @@ test('walk every office screen and use its main control', async ({ page }) => {
   await page.getByTestId('storm-picker').selectOption({ label: 'Dec 13 Lake-Effect Storm (Demo)' });
   await page.waitForURL(/billing\?storm=/);
   for (const code of ['no_after_photo', 'missing_salt_qty']) await expect(page.locator(`[data-code="${code}"]`)).toHaveCount(1);
+  // The sample storm is priced by last winter's contracts, so a new user sees real bills, not "no contract" at $0.
+  await expect(page.locator('[data-code="no_contract"]')).toHaveCount(0);
+  expect((await page.getByTestId('draft-total').allTextContents()).filter((t) => t !== '$0.00').length).toBeGreaterThan(15);
   // The lot nobody reached shows as a flag on its bill, or in the "not plowed" box when that's all there is (issue 85).
   await expect(page.locator('[data-code="missing_visit"], [data-testid="unplowed"]').first()).toBeVisible();
   await page.screenshot({ path: `test-results/walk-billing-${test.info().project.name}.png`, fullPage: true });
