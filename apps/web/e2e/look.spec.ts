@@ -92,3 +92,22 @@ test('a master route lists each stop on one line with icon controls named for th
   expect((await row.boundingBox())!.height).toBeLessThan(60);
   await expect(row.getByTestId('route-remove')).toHaveAttribute('aria-label', /^Remove .+/);
 });
+
+test('customers can be found by a street, and each phone card is one summary line', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 667 });
+  await login(page);
+  const tag = `Zq${Date.now().toString(36)}`;
+  const c = await (await page.request.post('/api/customers', { data: { name: `Search ${tag}`, kind: 'hoa', email: `${tag.toLowerCase()}@example.com`, billing_mode: 'invoice_net30' } })).json();
+  await page.request.post('/api/sites', { data: { customer_id: c.id, label: 'Front lot', address: `12 ${tag} Ave, Lakewood, OH`, lat: 41.48, lon: -81.8 } });
+  await page.goto('/customers');
+  await page.getByTestId('customer-search').fill(`${tag} ave`);
+  await page.getByTestId('customer-search').press('Enter');
+  await expect(page.getByTestId('customer-search-count')).toContainText('1 customer matches');
+  const row = page.getByTestId('customer-row');
+  await expect(row).toHaveCount(1);
+  await expect(row.getByTestId('customer-summary')).toHaveText('HOA · 1 site · Net-30 invoice · no payment on file');
+  await page.getByTestId('customer-search').fill('no such customer anywhere');
+  await page.getByTestId('customer-search').press('Enter');
+  await expect(page.getByText('No customers match')).toBeVisible();
+  await sql`update customer set archived_at = now() where id = ${c.id}`;
+});

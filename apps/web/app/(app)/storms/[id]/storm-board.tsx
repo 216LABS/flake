@@ -344,7 +344,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
                     {/* The name opens the stop's visits and photos (issue 41); the buttons below stay their own targets. */}
                     <button type="button" className="-m-1 block w-[calc(100%+0.5rem)] rounded p-1 text-left hover:bg-tint focus-visible:outline-2 focus-visible:outline-ink" data-testid="stop-open" aria-label={`${s.label}: details and photos`} onClick={() => setOpenStop(s.id)}>
                       <span className="flex items-start justify-between gap-2">
-                        <span className="font-medium">{s.seq}. {s.label}</span>
+                        <span className="min-w-0 font-medium wrap-anywhere">{s.seq}. {s.label}</span>
                         <Badge className="shrink-0" tone={STATUS_TONE[s.status]}>{STATUS_WORD[s.status] ?? s.status}</Badge>
                       </span>
                       <span className="block text-xs text-muted">{s.customer}</span>

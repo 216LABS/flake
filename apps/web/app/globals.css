@@ -165,8 +165,16 @@
 body {
   background: var(--page);
   color: var(--ink);
+  /*
+   * Text people type (a customer's note, a pasted link, a long email) wraps instead of pushing the page sideways,
+   * even inside a row of flex items. Tables keep whole words: they scroll in their own box instead.
+   */
+  overflow-wrap: anywhere;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+}
+table {
+  overflow-wrap: break-word;
 }
 
 h1,
