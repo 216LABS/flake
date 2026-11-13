@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { finishStops, login, sql, startStorm } from './helpers';
+import { finishStops, login, settingsSections, sql, startStorm } from './helpers';
 
 /** A brand new company, signed in through a fresh browser context. */
 async function strangerContext(browser: import('@playwright/test').Browser, baseURL: string | undefined) {
@@ -123,10 +123,11 @@ test('roles: dispatchers run storms but not settings, viewers only look, nobody 
   // A dispatcher is offered the tabs they can use, and owner-only pages say so.
   const dispatcherPage = await dispatcher.newPage();
   await dispatcherPage.goto('/settings');
-  await expect(dispatcherPage.getByTestId('tab-crew')).toBeVisible();
   await expect(dispatcherPage.getByTestId('crew-invite')).toBeVisible();
-  await expect(dispatcherPage.getByTestId('tab-rate')).toHaveCount(0);
-  await expect(dispatcherPage.getByTestId('tab-payments')).toHaveCount(0);
+  const offered = await settingsSections(dispatcherPage);
+  expect(offered).toContain('crew');
+  expect(offered).not.toContain('rate');
+  expect(offered).not.toContain('payments');
   await dispatcherPage.goto('/settings?tab=payments');
   await expect(dispatcherPage.getByTestId('owner-only')).toBeVisible();
   await dispatcher.close();

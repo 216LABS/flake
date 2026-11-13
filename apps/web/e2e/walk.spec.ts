@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { closeRunningStorms, finishStops, login, sql, startStorm } from './helpers';
+import { closeRunningStorms, currentSettings, finishStops, login, sql, startStorm } from './helpers';
 
 /** Uses each office screen the way a person would, and fails on any page error or 5xx along the way. */
 test('walk every office screen and use its main control', async ({ page }) => {
@@ -95,7 +95,7 @@ test('walk every office screen and use its main control', async ({ page }) => {
   // Every settings tab and the public business pages.
   for (const tab of ['rate', 'crew', 'payments', 'sms', 'plan', 'data', 'system']) {
     await page.goto(`/settings?tab=${tab}`);
-    await expect(page.getByTestId(`tab-${tab}`)).toBeVisible();
+    expect(await currentSettings(page)).toBe(tab);
   }
   const exported = await page.request.get('/api/settings/export?table=customer');
   expect(await exported.text()).toContain('billing_mode');

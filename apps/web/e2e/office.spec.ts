@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { finishStops, login, sql, startStorm } from './helpers';
+import { finishStops, login, openSettings, sql, startStorm } from './helpers';
 
 test.afterAll(async () => {
   await sql`select 1`;
@@ -175,10 +175,10 @@ test('settings: rate card, Stripe onboarding in mock, crew invite with opt-in, S
   await page.goto('/settings?tab=rate');
   await page.getByTestId('rate-save').click();
   await expect(page.getByTestId('rate-msg')).toHaveText('Saved');
-  await page.getByTestId('tab-payments').click();
+  await openSettings(page, 'payments');
   await expect(page.getByTestId('stripe-status')).toHaveText('Charges enabled');
 
-  await page.getByTestId('tab-crew').click();
+  await openSettings(page, 'crew');
   const name = `Invited ${Date.now()}`;
   await page.getByTestId('crew-name').fill(name);
   await page.getByLabel('Mobile').fill('+12165550155');

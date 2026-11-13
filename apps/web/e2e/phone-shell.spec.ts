@@ -72,17 +72,21 @@ for (const size of SIZES) {
       }
     });
 
-    test('every Settings tab is on screen without scrolling sideways (issue 82)', async ({ page }) => {
+    test('Settings on a phone is one section picker, not rows of tabs, and picking a section opens it', async ({ page }) => {
       await login(page);
       await page.goto('/settings');
-      const tabs = page.getByTestId('settings-tabs').getByRole('link');
-      expect(await tabs.count()).toBeGreaterThan(4);
-      for (const t of await tabs.all()) {
-        const b = (await t.boundingBox())!;
-        expect(b.x).toBeGreaterThanOrEqual(0);
-        expect(b.x + b.width).toBeLessThanOrEqual(size.width);
-      }
-      expect(await page.getByTestId('settings-tabs').evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+      await expect(page.getByTestId('settings-tabs')).toBeHidden();
+      const picker = page.getByTestId('settings-section');
+      // One line: the tabs took three rows and pushed the settings half a screen down.
+      expect((await picker.boundingBox())!.height).toBeLessThan(60);
+      expect(await picker.locator('option').count()).toBe(10);
+      expect(await picker.inputValue()).toBe('company');
+      await picker.selectOption('payments');
+      await page.waitForURL(/tab=payments/);
+      await expect(page.getByTestId('stripe-status')).toBeVisible();
+      expect(await page.getByTestId('settings-section').inputValue()).toBe('payments');
+      // The section's own heading starts within the first screen, under the header.
+      expect((await page.getByRole('heading', { name: 'Stripe' }).boundingBox())!.y).toBeLessThan(400);
     });
 
     test('customers are cards the whole of which opens the customer', async ({ page }) => {

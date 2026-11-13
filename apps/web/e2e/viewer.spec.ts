@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { closeRunningStorms, login } from './helpers';
+import { closeRunningStorms, currentSettings, login } from './helpers';
 
 /** Someone with view-only access isn't told to do things they can't. */
 test('a viewer with no storm running is told the office starts one, not to start one', async ({ page, browser, baseURL }) => {
@@ -24,7 +24,7 @@ test('a viewer with no storm running is told the office starts one, not to start
 test('settings: an unknown tab opens the first one, and finished Stripe setup offers no dead button', async ({ page }) => {
   await login(page);
   await page.goto('/settings?tab=export');
-  await expect(page.getByTestId('tab-company')).toHaveAttribute('aria-current', 'page');
+  expect(await currentSettings(page)).toBe('company');
   await expect(page.getByLabel('Company name')).toBeVisible();
   await page.goto('/settings?tab=payments');
   await expect(page.getByTestId('stripe-status')).toHaveText('Charges enabled');

@@ -57,3 +57,22 @@ export async function finishStops(request: APIRequestContext, run: LiveRun, stop
 export async function waitOfflineReady(page: Page) {
   await page.waitForFunction(() => document.documentElement.dataset.offlineReady === 'true' && Boolean(navigator.serviceWorker.controller), undefined, { timeout: 30000 });
 }
+
+/** Settings sections are a picker on a phone and tabs on a desk; these work with either. */
+export async function settingsSections(page: Page): Promise<string[]> {
+  const picker = page.getByTestId('settings-section');
+  if (await picker.isVisible()) return picker.locator('option').evaluateAll((o) => o.map((x) => (x as HTMLOptionElement).value));
+  return page.getByTestId('settings-tabs').getByRole('link').evaluateAll((l) => l.map((x) => x.getAttribute('data-testid')!.slice(4)));
+}
+export async function openSettings(page: Page, key: string) {
+  const picker = page.getByTestId('settings-section');
+  if (await picker.isVisible()) {
+    await picker.selectOption(key);
+    await page.waitForURL(new RegExp(`tab=${key}`));
+  } else await page.getByTestId(`tab-${key}`).click();
+}
+export async function currentSettings(page: Page): Promise<string> {
+  const picker = page.getByTestId('settings-section');
+  if (await picker.isVisible()) return picker.inputValue();
+  return (await page.getByTestId('settings-tabs').locator('[aria-current="page"]').getAttribute('data-testid'))!.slice(4);
+}
