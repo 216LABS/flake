@@ -3,6 +3,7 @@ import { fmtLocal } from '@flake/core/time';
 import { Badge, buttonVariants, Card, EmptyState, Eyebrow, PageHeader, Progress, Stat, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
+import { stormStatus } from '@/lib/labels';
 import { canSeeUsage, deploymentUsage } from '@/lib/usage';
 import { tenantWeatherHeader } from '@/lib/weather';
 
@@ -48,7 +49,7 @@ export default async function Dashboard() {
   ];
   return (
     <>
-      <PageHeader title="Dashboard" subtitle={ctx.tenant.name} actions={canEdit ? <Link href="/storms" className={buttonVariants({ variant: 'accent' })}>Start a storm</Link> : null} />
+      <PageHeader title="Dashboard" subtitle={ctx.tenant.name} actions={canEdit ? <Link href="/storms#start" className={buttonVariants({ variant: 'accent' })}>Start a storm</Link> : null} />
       {usage?.near_limit ? <p className="mb-4 rounded-md bg-danger-tint p-3 text-sm text-danger" data-testid="usage-warning">Storage is nearly full ({usage.files_mb} of {usage.files_limit_mb} MB of files, {usage.db_mb} of {usage.db_limit_mb} MB of database). <Link className="underline" href="/settings?tab=system">See details</Link></p> : null}
       {failedMessages ? <p className="mb-4 rounded-md bg-danger-tint p-3 text-sm text-danger" data-testid="messages-failed">{failedMessages === 1 ? '1 message' : `${failedMessages} messages`} could not be sent in the last 24 hours. {retrying ? 'Flake is still retrying.' : 'Flake has stopped retrying. Check the address, then send again from the driver or customer.'} <Link className="underline" href="/settings?tab=system">See why</Link></p> : null}
       {rejectedMessages ? <p className="mb-4 rounded-md bg-warn-tint p-3 text-sm text-warn-ink" data-testid="messages-rejected">{rejectedMessages === 1 ? '1 message was' : `${rejectedMessages} messages were`} not delivered because the email address or phone number was rejected. Fix it on the driver or customer, and route links go out again. <Link className="underline" href="/settings?tab=system">See which</Link></p> : null}
@@ -97,7 +98,7 @@ export default async function Dashboard() {
                   return (
                     <Link key={s.id} href={`/storms/${s.id}`} data-testid="active-storm">
                       <Card className="transition-colors hover:border-ink">
-                        <div className="flex items-start justify-between gap-2"><div className="font-display text-lg font-semibold leading-tight">{s.name}</div><Badge tone="amber">Live</Badge></div>
+                        <div className="flex items-start justify-between gap-2"><div className="font-display text-lg font-semibold leading-tight">{s.name}</div><Badge tone={stormStatus('active').tone}>{stormStatus('active').word}</Badge></div>
                         <div className="mt-0.5 text-xs text-muted">Started {fmtLocal(s.started_at, tz)}</div>
                         <Progress className="mt-3" value={p?.finished ?? 0} max={p?.total ?? 0} label={`Stops finished in ${s.name}`} />
                         <div className="tabular mt-1.5 text-sm font-medium text-ink" data-testid="storm-progress">{p ? `${p.finished} of ${p.total} stops finished` : 'No stops yet'}</div>
@@ -127,7 +128,7 @@ export default async function Dashboard() {
               <tr key={s.id}>
                 <Td><Link className="text-link underline" href={`/storms/${s.id}`}>{s.name}</Link></Td>
                 <Td label="Started">{fmtLocal(s.started_at, tz)}</Td>
-                <Td label="Status"><Badge tone={s.status === 'billed' ? 'green' : 'amber'}>{s.status}</Badge></Td>
+                <Td label="Status"><Badge tone={stormStatus(s.status).tone}>{stormStatus(s.status).word}</Badge></Td>
                 <Td><Link className="text-link underline" href={`/billing?storm=${s.id}`}>Billing</Link></Td>
               </tr>
             ))}

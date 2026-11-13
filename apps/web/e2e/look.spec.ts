@@ -111,3 +111,17 @@ test('customers can be found by a street, and each phone card is one summary lin
   await expect(page.getByText('No customers match')).toBeVisible();
   await sql`update customer set archived_at = now() where id = ${c.id}`;
 });
+
+test('on a phone, Start a storm jumps past the storm list to the form, and statuses say what is next', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page);
+  await page.goto('/dashboard');
+  await page.getByRole('link', { name: 'Start a storm' }).click();
+  await page.waitForURL(/\/storms#start$/);
+  await expect(page.getByTestId('storm-name')).toBeInViewport();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.getByTestId('jump-start-storm').click();
+  await expect(page.getByTestId('storm-name')).toBeInViewport();
+  const words = await page.locator('main li span.font-display').allTextContents();
+  for (const w of words) expect(['Live', 'Ready to bill', 'Billed']).toContain(w);
+});

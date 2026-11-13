@@ -1,8 +1,9 @@
 import { crew_member, desc, eq, route, storm } from '@flake/db';
 import { fmtLocal } from '@flake/core/time';
-import { Badge, Card, EmptyState, PageHeader } from '@flake/ui';
+import { Badge, buttonVariants, Card, cn, EmptyState, PageHeader } from '@flake/ui';
 import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
+import { stormStatus } from '@/lib/labels';
 import { NewStorm } from './new-storm';
 
 export const metadata = { title: 'Storms' };
@@ -16,7 +17,7 @@ export default async function Storms() {
   }));
   return (
     <>
-      <PageHeader title="Storms" subtitle="Start from your master routes, publish once, then move stops." />
+      <PageHeader title="Storms" subtitle="Start from your master routes, publish once, then move stops." actions={ctx.role !== 'viewer' ? <a href="#start" className={cn(buttonVariants({ variant: 'accent' }), 'lg:hidden')} data-testid="jump-start-storm">Start a storm</a> : null} />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
           {data.storms.length ? (
@@ -26,7 +27,7 @@ export default async function Storms() {
                   <Link href={`/storms/${s.id}`}>
                     <Card className="flex items-center justify-between transition-colors hover:border-ink">
                       <div><div className="font-display text-lg font-semibold leading-tight">{s.name}</div><div className="text-sm text-muted">{fmtLocal(s.started_at, ctx.tenant.timezone)}</div></div>
-                      <Badge tone={s.status === 'active' ? 'blue' : s.status === 'billed' ? 'green' : 'amber'}>{s.status}</Badge>
+                      <Badge tone={stormStatus(s.status).tone}>{stormStatus(s.status).word}</Badge>
                     </Card>
                   </Link>
                 </li>
@@ -34,7 +35,8 @@ export default async function Storms() {
             </ul>
           ) : <EmptyState title="No storms yet" body="Add routes first, then start your first storm here." />}
         </div>
-        <NewStorm defaultName={`Storm ${fmtLocal(new Date(), ctx.tenant.timezone, { month: 'short', day: 'numeric' })}`} routes={data.routes.map((r) => ({ id: r.id, name: r.name, default_crew_id: r.default_crew_id }))} crew={data.crew.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))} />
+        {/* On a phone the form sits below every storm so far; the header button and the dashboard jump here. */}
+        <div id="start" className="scroll-mt-20"><NewStorm defaultName={`Storm ${fmtLocal(new Date(), ctx.tenant.timezone, { month: 'short', day: 'numeric' })}`} routes={data.routes.map((r) => ({ id: r.id, name: r.name, default_crew_id: r.default_crew_id }))} crew={data.crew.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))} /></div>
       </div>
     </>
   );
