@@ -127,9 +127,16 @@ test('billing: every fix on a flag, approving one bill, and the QuickBooks file'
 
   await page.getByTestId('flagged-only').uncheck();
   await page.getByTestId('flagged-only').check();
+  // The QuickBooks file has approved invoices only (issue 99): the one approved here if it charges anything, and
+  // none of the bills still in review. A bill waived down to $0 has no lines (a job voids it shortly after).
   const csv = await page.request.get(`/api/billing/export.csv?storm=${id}`);
   expect(csv.status()).toBe(200);
-  expect(await csv.text()).toContain('Plow');
+  const text = await csv.text();
+  const [approved] = await sql`select subtotal_cents from invoice_draft where id = ${draftId}`;
+  if (approved!.subtotal_cents > 0) expect(text).toContain(draftId.slice(0, 8));
+  else expect(text).not.toContain(draftId.slice(0, 8));
+  const stillDraft = await sql`select id from invoice_draft where storm_id = ${id} and status = 'draft'`;
+  for (const d of stillDraft) expect(text).not.toContain(String(d.id).slice(0, 8));
   await expect(page.getByTestId('qbo')).toHaveAttribute('href', new RegExp(id));
 });
 
