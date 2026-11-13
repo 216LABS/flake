@@ -52,13 +52,13 @@ export async function parseJson<T extends z.ZodTypeAny>(req: Request, schema: T)
     throw new HttpError(400, 'Invalid JSON');
   }
   const out = schema.safeParse(body);
-  if (!out.success) throw new HttpError(422, out.error.issues.map(readableIssue).join(' '), 'validation');
+  if (!out.success) throw new HttpError(422, [...new Set(out.error.issues.map(readableIssue))].join(' '), 'validation');
   return out.data;
 }
 
 export function parseQuery<T extends z.ZodTypeAny>(value: unknown, schema: T): z.infer<T> {
   const out = schema.safeParse(value);
-  if (!out.success) throw new HttpError(422, out.error.issues.map(readableIssue).join(' '), 'validation');
+  if (!out.success) throw new HttpError(422, [...new Set(out.error.issues.map(readableIssue))].join(' '), 'validation');
   return out.data;
 }
 

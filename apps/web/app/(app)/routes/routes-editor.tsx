@@ -10,7 +10,7 @@ import { SuggestOrder } from './suggest-order';
 
 interface R { id: string; name: string; default_crew_id: string | null; yard_trip: boolean; site_ids: string[] }
 
-export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]; sites: { id: string; label: string; active: boolean }[]; crew: { id: string; name: string }[]; yard?: string | null }) {
+export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]; sites: { id: string; label: string; active: boolean; contracted?: boolean }[]; crew: { id: string; name: string }[]; yard?: string | null }) {
   const router = useRouter();
   const [list, setList] = useState(routes);
   const [name, setName] = useState('');
@@ -77,7 +77,7 @@ export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]
             <ol className="mt-3 space-y-1">
               {r.site_ids.map((id, i) => (
                 <li key={id} draggable onDragStart={(e) => { e.dataTransfer.setData('text/plain', id); setDrag({ route: r.id, index: i }); }} onDragOver={(e) => e.preventDefault()} onDrop={() => { if (drag?.route === r.id) moveTo(r, drag.index, i); setDrag(null); }} className="flex items-center gap-1 rounded-row border bg-surface px-2 py-1 text-sm shadow-drop">
-                  <span className="min-w-0 flex-1">{i + 1}. {label(id)}{elsewhere(id, r.id).length ? <span className="block text-xs text-warn-ink">Also on {elsewhere(id, r.id).join(', ')}</span> : null}</span>
+                  <span className="min-w-0 flex-1">{i + 1}. {label(id)}{elsewhere(id, r.id).length ? <span className="block text-xs text-warn-ink">Also on {elsewhere(id, r.id).join(', ')}</span> : null}{sites.find((x) => x.id === id)?.contracted === false ? <span className="block text-xs font-medium text-warn-ink" data-testid="route-no-contract">No accepted contract: won&apos;t be billed</span> : null}</span>
                   <Button size="sm" variant="ghost" className="h-10 w-10 shrink-0 p-0 md:h-8 md:w-8" aria-label={`Move ${label(id)} up`} data-testid="route-up" disabled={i === 0} onClick={() => moveTo(r, i, i - 1)}><ArrowUp size={18} aria-hidden="true" /></Button>
                   <Button size="sm" variant="ghost" className="h-10 w-10 shrink-0 p-0 md:h-8 md:w-8" aria-label={`Move ${label(id)} down`} data-testid="route-down" disabled={i === r.site_ids.length - 1} onClick={() => moveTo(r, i, i + 1)}><ArrowDown size={18} aria-hidden="true" /></Button>
                   <Button size="sm" variant="ghost" className="h-10 w-10 shrink-0 p-0 hover:bg-danger-tint hover:text-danger md:h-8 md:w-8" aria-label={`Remove ${label(id)}`} data-testid="route-remove" onClick={() => update({ ...r, site_ids: r.site_ids.filter((x) => x !== id) })}><X size={18} aria-hidden="true" /></Button>
@@ -112,7 +112,7 @@ export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]
               <option value="">Add a site...</option>
               {sites.filter((s) => s.active && !r.site_ids.includes(s.id)).map((s) => {
                 const other = elsewhere(s.id, r.id);
-                return <option key={s.id} value={s.id}>{s.label}{other.length ? ` (on ${other.join(', ')})` : ''}</option>;
+                return <option key={s.id} value={s.id}>{s.label}{s.contracted === false ? ' (no contract)' : ''}{other.length ? ` (on ${other.join(', ')})` : ''}</option>;
               })}
             </Select>
             <Button size="sm" variant="ghost" className="mt-2" data-testid="route-archive" onClick={async () => {

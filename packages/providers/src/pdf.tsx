@@ -216,6 +216,8 @@ export interface ContractPdfInput {
   season: string;
   services: unknown;
   saltText?: string | null;
+  /** How the client pays, in a sentence. */
+  payment?: string | null;
   terms: string | null;
   acceptance?: { name: string; at: string; ip: string | null } | null;
   disclaimer?: string;
@@ -236,6 +238,7 @@ function ContractDoc(i: ContractPdfInput) {
         <Text style={s.h2}>Services and pricing</Text>
         {lines.map((l) => <Text key={l}>{l}</Text>)}
         {i.saltText ? <Text>{i.saltText}</Text> : null}
+        {i.payment ? <Text>Payment: {i.payment}</Text> : null}
         {i.terms ? (
           <View>
             <Text style={s.h2}>Terms</Text>

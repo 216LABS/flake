@@ -1,7 +1,7 @@
 import type { MultiPolygon, Polygon } from 'geojson';
 import { distanceMeters, distanceToPolygonMeters, gpsMatches } from './geo';
 import { usDistanceText } from './units';
-import { priceSiteForStorm, type ContractService, type InvoiceLine, type PricedVisit, type SaltPricing, type StormDepthContext } from './pricing';
+import { priceSiteForStorm, stormDepthIn, type ContractService, type InvoiceLine, type PricedVisit, type SaltPricing, type StormDepthContext } from './pricing';
 
 export const DUPLICATE_WINDOW_MS = 60 * 60 * 1000;
 
@@ -16,7 +16,8 @@ export type FlagCode =
   | 'no_contract'
   | 'odd_duration'
   | 'no_service'
-  | 'salt_unit';
+  | 'salt_unit'
+  | 'below_trigger';
 
 /**
  * How much a flag matters at a dawn billing review (issue 78): money at risk first, then missing proof, then lots
@@ -24,7 +25,7 @@ export type FlagCode =
  */
 export type FlagTier = 'money' | 'proof' | 'not_done' | 'info';
 export const FLAG_TIER: Record<FlagCode, FlagTier> = {
-  no_contract: 'money', no_service: 'money', missing_salt_qty: 'money', salt_unit: 'money', missing_depth: 'money', duplicate: 'money', odd_duration: 'money',
+  no_contract: 'money', no_service: 'money', missing_salt_qty: 'money', salt_unit: 'money', missing_depth: 'money', duplicate: 'money', odd_duration: 'money', below_trigger: 'money',
   no_after_photo: 'proof', no_gps_match: 'proof',
   missing_visit: 'not_done',
   seasonal_info: 'info',
@@ -34,7 +35,7 @@ export const TIER_ORDER: FlagTier[] = ['money', 'proof', 'not_done', 'info'];
 /** Each flag in the few words a billing summary line uses. */
 const TIER_REASON: Record<FlagCode, string> = {
   no_contract: 'no price', no_service: 'nothing ticked', missing_salt_qty: 'salt missing', salt_unit: 'salt missing',
-  missing_depth: 'depth missing', duplicate: 'a possible duplicate', odd_duration: 'an odd time on site',
+  missing_depth: 'depth missing', duplicate: 'a possible duplicate', odd_duration: 'an odd time on site', below_trigger: 'under the trigger',
   no_after_photo: 'no after photo', no_gps_match: 'no or far-off location',
   missing_visit: 'not reached', seasonal_info: 'seasonal',
 };
@@ -108,6 +109,8 @@ export interface DraftInput {
 }
 
 export const flagKey = (f: Pick<BillingFlag, 'code' | 'site_id' | 'visit_id'>) => `${f.code}:${f.site_id}:${f.visit_id ?? ''}`;
+/** Stored with the storm's waived flags: leave this lot off this storm's bill. */
+export const noBillKey = (siteId: string) => `nobill:${siteId}`;
 
 const CORRECTABLE = new Set(['salt', 'is_replow', 'services', 'depth_in']);
 
@@ -125,7 +128,7 @@ export function applyCorrections(visits: BillingVisit[], corrections: VisitCorre
 /** Longer than this on one hourly lot is unusual enough for a person to look before it bills. */
 const LONG_VISIT_MINUTES = 4 * 60;
 
-function flagsForSite(site: BillingSite, contract: BillingContract | undefined, statuses: string[], visits: BillingVisit[]): BillingFlag[] {
+function flagsForSite(site: BillingSite, contract: BillingContract | undefined, statuses: string[], visits: BillingVisit[], depthIn: number | null): BillingFlag[] {
   const flags: BillingFlag[] = [];
   const add = (code: FlagCode, message: string, visit_id?: string, severity: BillingFlag['severity'] = 'review', extra: Pick<BillingFlag, 'unit' | 'services'> = {}) =>
     flags.push({ code, site_id: site.id, message, severity, ...(visit_id ? { visit_id } : {}), ...extra });
@@ -170,6 +173,16 @@ function flagsForSite(site: BillingSite, contract: BillingContract | undefined, 
       add('no_service', `${site.label}: the driver finished this visit with no service ticked (${priced.join(', ')} on the contract), so nothing was billed for it.`, v.id, 'review', { services: priced });
     }
   });
+  // A contract that starts at 2" of snow, billed for a 1.5" storm, is a charge the customer can dispute. The office
+  // may have been asked to plow anyway, so it's a question, not a silent drop. Unknown depth sets no flag here.
+  if (contract && depthIn !== null) {
+    for (const svc of contract.services) {
+      const trigger = svc.trigger_in;
+      if (trigger == null || trigger <= 0 || !svc.pricing || svc.pricing.type === 'seasonal' || depthIn >= trigger) continue;
+      if (!visits.some((v) => v.services.includes(svc.service))) continue;
+      add('below_trigger', `${site.label}: this storm measured ${depthIn}" here, under the ${trigger}" this contract starts at, but ${svc.service} is billed. Bill it only if the customer asked for it.`);
+    }
+  }
   if (!contract) {
     if (visits.length) add('no_contract', `${site.label} has visits but no accepted contract, so nothing was priced.`);
   } else if (contract.services.some((s) => s.pricing?.type === 'seasonal')) {
@@ -191,10 +204,12 @@ export function draftInvoices(input: DraftInput): DraftInvoice[] {
     // A lot the office marked skipped, with no visit, has nothing to bill: no $0 draft that could be approved (issue 90).
     if (!visits.length && statuses.every((x) => x === 'skipped')) continue;
     const contract = input.contracts.find((c) => c.site_id === site.id);
-    const lines = contract
-      ? priceSiteForStorm(contract.services, contract.salt_pricing, visits, input.depth[site.id] ?? { nohrsc24hIn: null, nwsElapsedIn: null })
-      : [];
-    const flags = flagsForSite(site, contract, statuses, visits);
+    const depthCtx = input.depth[site.id] ?? { nohrsc24hIn: null, nwsElapsedIn: null };
+    // "Don't bill" on a lot under its trigger: its work stays on record, its charge comes off this storm's bill.
+    const noBill = waived.has(noBillKey(site.id));
+    const lines = contract && !noBill ? priceSiteForStorm(contract.services, contract.salt_pricing, visits, depthCtx) : [];
+    const flags = flagsForSite(site, contract, statuses, visits, stormDepthIn(visits.map((v) => v.depth_in), depthCtx))
+      .map((f) => (noBill && f.code === 'below_trigger' ? { ...f, message: `${f.message} Not billed for this storm.`, waived: true } : f));
     for (const l of lines) {
       if (l.needs_depth) {
         flags.push({ code: 'missing_depth', site_id: site.id, severity: 'review', message: `${site.label}: storm depth is unavailable, so the tier price could not be set.` });
@@ -206,7 +221,10 @@ export function draftInvoices(input: DraftInput): DraftInvoice[] {
     draft.flags.push(...flags.map((f) => (waived.has(flagKey(f)) ? { ...f, waived: true } : f)));
     byCustomer.set(site.customer_id, draft);
   }
-  return [...byCustomer.values()];
+  // A seasonal lot with nothing to charge this storm isn't an invoice to approve (issue 102), even with a photo
+  // missing: that still shows on the board and the customer's records. Money and not-plowed flags keep the draft,
+  // since those are billing decisions (a missing price, or a lot to mark skipped).
+  return [...byCustomer.values()].filter((d) => d.lines.length || d.flags.some((f) => f.severity !== 'info' && FLAG_TIER[f.code] !== 'proof'));
 }
 
 export function isDraftClean(flags: BillingFlag[]): boolean {

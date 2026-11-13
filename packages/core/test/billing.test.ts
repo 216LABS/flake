@@ -56,12 +56,22 @@ describe('draftInvoices flags', () => {
     expect(flagsOf(input({ visits: [v('s1', { services: ['plow', 'salt'], salt: [{ unit: 'bag50lb', qty: 0 }] })] }))).toEqual(['missing_salt_qty']);
     expect(flagsOf(input({ visits: [v('s1', { services: ['plow', 'salt'], salt: [{ unit: 'bag50lb', qty: 1 }] })] }))).toEqual([]);
   });
-  it('seasonal_info is informational and stays clean', () => {
+  it('a seasonal lot with nothing to charge makes no draft to approve (issue 102)', () => {
     const contracts: BillingContract[] = [{ site_id: 's1', services: [{ service: 'plow', pricing: { type: 'seasonal', total_cents: 100, installments: 5 } }] }];
-    const [d] = draftInvoices(input({ contracts }));
+    expect(draftInvoices(input({ contracts }))).toEqual([]);
+  });
+  it('seasonal_info stays informational on a draft that also has a charge', () => {
+    const contracts: BillingContract[] = [{ site_id: 's1', services: [{ service: 'plow', pricing: { type: 'seasonal', total_cents: 100, installments: 5 } }, { service: 'walks', pricing: { type: 'per_push', amount_cents: 2500 } }] }];
+    const [d] = draftInvoices(input({ contracts, visits: [v('s1', { services: ['plow', 'walks'] })] }));
     expect(d!.flags.map((f) => f.code)).toEqual(['seasonal_info']);
-    expect(d!.subtotal_cents).toBe(0);
+    expect(d!.subtotal_cents).toBe(2500);
     expect(isDraftClean(d!.flags)).toBe(true);
+  });
+  it('a seasonal lot missing only a photo still makes no draft; a lot nobody reached does', () => {
+    const contracts: BillingContract[] = [{ site_id: 's1', services: [{ service: 'plow', pricing: { type: 'seasonal', total_cents: 100, installments: 5 } }] }];
+    expect(draftInvoices(input({ contracts, visits: [v('s1', { after_photos: 0 })] }))).toEqual([]);
+    const [d] = draftInvoices(input({ contracts, visits: [] }));
+    expect(d!.flags.map((f) => f.code)).toContain('missing_visit');
   });
   it('no_contract when visits exist without one, silent when nothing happened', () => {
     expect(flagsOf(input({ contracts: [] }))).toEqual(['no_contract']);
@@ -139,7 +149,7 @@ describe('acceptance: a storm with 20 visits across all 5 pricing types', () => 
     expect(total('res')).toBe(22000); // 4 pushes x $55
     expect(total('tier')).toBe(25000 + 4 * 3600); // deepest report is 6", so top tier once, + 2 bags on 4 visits
     expect(total('event')).toBe(30000); // once per storm
-    expect(total('season')).toBe(0); // seasonal_info only
+    expect(drafts.find((d) => d.customer_id === 'c_season')).toBeUndefined(); // nothing to charge, no draft
     expect(total('hourly')).toBe(4 * 9000); // 40 min rounds to 0.75 h x $120
     expect(drafts.every((d) => isDraftClean(d.flags))).toBe(true);
   });

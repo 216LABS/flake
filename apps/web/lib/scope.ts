@@ -21,3 +21,16 @@ export function scopeLine(s: { service: string; trigger_in?: number | null; pric
   const when = s.trigger_in === 0 ? '. Starts with any measurable snow.' : s.trigger_in != null ? `. Starts at ${s.trigger_in}" of snow.` : '';
   return `${s.service[0]!.toUpperCase()}${s.service.slice(1)}: ${price}${when}`;
 }
+
+/**
+ * How the customer pays, said on the quote and in the signed agreement, so nobody signs without knowing (the terms
+ * otherwise said only "as stated on each invoice").
+ */
+export function paymentText(mode: string, company: string): string {
+  switch (mode) {
+    case 'card_on_file': return 'Charged to a card on file after each storm. You add the card after accepting.';
+    case 'ach_on_file': return 'Paid from a bank account on file after each storm. You add the account after accepting.';
+    case 'invoice_net30': return 'Invoiced after each storm, due within 30 days.';
+    default: return `Invoiced by ${company} after each storm.`;
+  }
+}

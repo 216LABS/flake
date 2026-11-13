@@ -1,4 +1,5 @@
 import { and, asService, contract, customer, eq, inArray, ne, notInArray, serviceDb, site, sms_consent, tenant, withUser } from '@flake/db';
+import { paymentText } from './scope';
 import { CUSTOMER_CONSENT_TEXT } from '@flake/core/messages';
 import { quoteAccept, quoteCreate, quoteDecline } from '@flake/contracts';
 import { z } from 'zod';
@@ -65,7 +66,7 @@ export async function acceptQuote(token: string, input: z.infer<typeof quoteAcce
   const db = serviceDb();
   const at = new Date().toISOString();
   const { renderContractPdf } = await import('@flake/providers/pdf');
-  const pdf = await renderContractPdf({ company: r.tenant.name, customer: r.customer.name, site: `${r.site.label}, ${r.site.address}`, season: r.contract.season, services: r.contract.services, terms: r.contract.terms_md, acceptance: { name: input.name, at, ip } });
+  const pdf = await renderContractPdf({ company: r.tenant.name, customer: r.customer.name, site: `${r.site.label}, ${r.site.address}`, season: r.contract.season, services: r.contract.services, payment: paymentText(r.customer.billing_mode, r.tenant.name), terms: r.contract.terms_md, acceptance: { name: input.name, at, ip } });
   // Its own file per acceptance, so a second tap that loses the race below can't overwrite the signed copy.
   const pdfPath = `${r.tenant.id}/${r.contract.id}-${Date.parse(at)}.pdf`;
   await putBlob('contracts', pdfPath, pdf, 'application/pdf', { upsert: true });

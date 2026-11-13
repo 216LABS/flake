@@ -2,10 +2,11 @@
 
 import { Button, Card, Input, Label } from '@flake/ui';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
-import { loadStripe } from '@stripe/stripe-js';
+// The pure entry loads Stripe.js only when a card form opens; the plain import injects it on every quote view.
+import { loadStripe } from '@stripe/stripe-js/pure';
 import { useState } from 'react';
 import { api, money } from '@/lib/client';
-import { priceText } from '@/lib/scope';
+import { paymentText, priceText } from '@/lib/scope';
 
 export function QuotePage({ token, quote }: { token: string; quote: any }) {
   const [name, setName] = useState('');
@@ -33,6 +34,7 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
             <li key={i} data-testid="scope-line"><b className="capitalize">{s.service}</b>: {s.service === 'salt' && quote.contract.salt_pricing ? `${money(quote.contract.salt_pricing.amount_cents)} per ${quote.contract.salt_pricing.unit === 'bag50lb' ? '50 lb bag' : quote.contract.salt_pricing.unit}` : priceText(s.pricing)}{s.trigger_in === 0 ? '. Starts with any measurable snow.' : s.trigger_in != null ? `. Starts at ${s.trigger_in}" of snow.` : ''}</li>
           ))}
         </ul>
+        <p className="mt-2 text-sm" data-testid="payment-line"><b>Payment</b>: {paymentText(quote.customer.billing_mode, quote.company)}</p>
         {quote.contract.terms_md ? <><h3 className="mt-3 text-sm font-semibold">Terms</h3><p className="mt-1 whitespace-pre-wrap text-sm text-ink-2">{quote.contract.terms_md}</p></> : null}
       </Card>
       {declined && !accepted ? (

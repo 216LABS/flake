@@ -348,6 +348,8 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
                         <Badge className="shrink-0" tone={STATUS_TONE[s.status]}>{STATUS_WORD[s.status] ?? s.status}</Badge>
                       </span>
                       <span className="block text-xs text-muted">{s.customer}</span>
+                      {/* Work here bills nothing: the customer declined or never signed (found in a QA pass). */}
+                      {s.no_contract ? <span className="block text-xs font-medium text-warn-ink" data-testid="no-contract">No accepted contract: this lot won&apos;t be billed</span> : null}
                       {s.done_at ? <span className="block text-xs text-ink-2" data-testid="stop-summary">Finished {clock(s.done_at, tz)}{s.depth_in !== null ? `, ${s.depth_in}"` : ''}, {s.photos === 0 ? 'no photos' : `${s.photos === 1 ? '1 photo' : `${s.photos} photos`}${s.after_photos === 0 ? ', no after photo' : ''}`}</span> : null}
                       {s.problem ? <span className="block text-xs font-medium text-danger">{s.problem.kind}{s.problem.note ? `: ${s.problem.note}` : ''}</span> : null}
                     </button>

@@ -1,6 +1,6 @@
 'use client';
 
-import { FLAG_TIER, TIER_ORDER, flagKey, isDraftClean, tierReasons, type BillingFlag, type FlagTier } from '@flake/core/billing';
+import { FLAG_TIER, TIER_ORDER, flagKey, isDraftClean, noBillKey, tierReasons, type BillingFlag, type FlagTier } from '@flake/core/billing';
 import { Badge, Button, Card, EmptyState, Input, Table, Td, Th, buttonVariants } from '@flake/ui';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -98,7 +98,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
           for (let i = 0; i < clean.length; i += 500) await api('/api/billing/approve', { body: { draftIds: clean.slice(i, i + 500).map((r) => r.id) } });
         })}>Approve all clean ({clean.length})</Button>
         <label className="ml-2 flex items-center gap-2 text-sm"><input type="checkbox" data-testid="flagged-only" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.target.checked)} /> Show flagged only</label>
-        {canExport ? <a className={buttonVariants({ variant: 'outline' })} data-testid="qbo" href={`/api/billing/export.csv?storm=${stormId}`}>QuickBooks CSV</a> : null}
+        {canExport ? <a className={buttonVariants({ variant: 'outline' })} data-testid="qbo" href={`/api/billing/export.csv?storm=${stormId}`}>QuickBooks CSV (approved)</a> : null}
       </div>
       {error ? <p className="mb-3 rounded-md bg-danger-tint p-3 text-sm text-danger" role="alert">{error}</p> : null}
       {!rows.length ? <EmptyState title="No drafts yet" body="Generate drafts to price this storm's visits." /> : null}
@@ -186,8 +186,14 @@ function FlagRow({ flag, editable, busy, onFix }: { flag: BillingFlag; editable:
               <Button size="sm" variant="outline" disabled={busy || qty === ''} data-testid="fix-depth" onClick={() => onFix({ action: 'depth', site_id: flag.site_id, depth_in: Number(qty) })}>Set depth</Button>
             </>
           ) : null}
+          {flag.code === 'below_trigger' ? (
+            <>
+              <Button size="sm" variant="outline" disabled={busy} data-testid="fix-bill-anyway" onClick={() => onFix({ action: 'waive', flag_key: flagKey(flag) })}>Bill it anyway</Button>
+              <Button size="sm" variant="outline" disabled={busy} data-testid="fix-no-bill" onClick={() => onFix({ action: 'waive', flag_key: noBillKey(flag.site_id) })}>Don&apos;t bill</Button>
+            </>
+          ) : null}
           {/* Waiving a missing depth would bill a per-inch lot $0, so that one needs a depth instead. */}
-          {flag.code !== 'missing_depth' ? <Button size="sm" variant="ghost" disabled={busy} data-testid="fix-waive" onClick={() => onFix({ action: 'waive', flag_key: flagKey(flag) })}>Waive</Button> : null}
+          {flag.code !== 'missing_depth' && flag.code !== 'below_trigger' ? <Button size="sm" variant="ghost" disabled={busy} data-testid="fix-waive" onClick={() => onFix({ action: 'waive', flag_key: flagKey(flag) })}>Waive</Button> : null}
         </div>
       ) : null}
     </li>

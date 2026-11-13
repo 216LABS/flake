@@ -523,16 +523,19 @@ async function billInstallment(r: InstallmentRow, pricing: Extract<Pricing, { ty
   return true;
 }
 
+/** Approved invoices only: a draft still in review isn't a sale yet, and may still be voided or left unbilled. */
 export async function exportQbo(ctx: Ctx & { timezone: string }, stormId: string) {
   return withUser(ctx.userId, async (tx) => {
-    const rows = await tx.select({ draft: invoice_draft, customer, storm }).from(invoice_draft).innerJoin(customer, eq(customer.id, invoice_draft.customer_id)).innerJoin(storm, eq(storm.id, invoice_draft.storm_id)).where(and(eq(invoice_draft.storm_id, stormId), sql`${invoice_draft.status} <> 'void'`));
+    const rows = await tx.select({ draft: invoice_draft, customer, storm }).from(invoice_draft).innerJoin(customer, eq(customer.id, invoice_draft.customer_id)).innerJoin(storm, eq(storm.id, invoice_draft.storm_id)).where(and(eq(invoice_draft.storm_id, stormId), inArray(invoice_draft.status, ['approved', 'charged', 'sent', 'paid', 'failed'])));
     const date = (d: Date) => fmtLocal(d, ctx.timezone, { year: 'numeric', month: '2-digit', day: '2-digit' });
     const out: QboRow[] = [];
     for (const { draft, customer: c, storm: s } of rows) {
       const invDate = new Date(s.closed_at ?? s.started_at);
-      const due = new Date(invDate.getTime() + 30 * 86400000);
+      // A card or bank on file is charged when approved; only an invoiced customer gets 30 days.
+      const onFile = c.billing_mode === 'card_on_file' || c.billing_mode === 'ach_on_file';
+      const due = new Date(invDate.getTime() + (onFile ? 0 : 30 * 86400000));
       for (const l of draft.lines as { service: string; description: string; quantity: number; unit_amount_cents: number; amount_cents: number }[]) {
-        out.push({ invoiceNo: draft.id.slice(0, 8), customer: c.name, invoiceDate: date(invDate), dueDate: date(due), terms: 'Net 30', memo: s.name, item: l.service, description: l.description, quantity: l.quantity, rateCents: l.unit_amount_cents, amountCents: l.amount_cents });
+        out.push({ invoiceNo: draft.id.slice(0, 8), customer: c.name, invoiceDate: date(invDate), dueDate: date(due), terms: onFile ? 'Due on receipt' : 'Net 30', memo: s.name, item: l.service, description: l.description, quantity: l.quantity, rateCents: l.unit_amount_cents, amountCents: l.amount_cents });
       }
     }
     return qboCsv(out);

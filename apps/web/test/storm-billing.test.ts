@@ -161,10 +161,9 @@ describe('billing', () => {
     expect(total(0)).toBe(6500); // per_push
     expect(total(1)).toBe(15000); // tier at 3"
     expect(total(2)).toBe(30000); // per_event
-    expect(total(3)).toBe(0); // seasonal
     expect(total(4)).toBe(9000); // 40 min rounds to 0.75 h x $120
-    const seasonal = rows.find((r) => r.draft.customer_id === w.customerIds[3])!;
-    expect((seasonal.draft.flags as any[]).map((f) => f.code)).toContain('seasonal_info');
+    // Seasonal: nothing to charge this storm, so no $0 invoice to approve (issue 102).
+    expect(rows.find((r) => r.draft.customer_id === w.customerIds[3])).toBeUndefined();
   });
 
   it('applies 1% clamped to the $0.50 minimum during the free season', async () => {
@@ -172,7 +171,6 @@ describe('billing', () => {
     const fee = (i: number) => rows.find((r) => r.customer_id === w.customerIds[i])!.application_fee_cents;
     expect(fee(0)).toBe(65);
     expect(fee(2)).toBe(300);
-    expect(fee(3)).toBe(0);
   });
 
   it('flags missing visits, and the fixes are appended rather than edited', async () => {
@@ -301,13 +299,12 @@ describe('billing', () => {
     expect(d!.status_detail).toMatch(/on file/);
   });
 
-  it('zero-dollar seasonal drafts are voided, not charged', async () => {
+  it('a seasonal lot makes no $0 draft, and the storm is billed once the real drafts are handled (issue 102)', async () => {
     const rows = await drafts(stormId);
-    const id = rows.find((r) => r.customer_id === w.customerIds[3])!.id;
-    await approveDrafts(ctxOf(w), [id]);
+    expect(rows.find((r) => r.customer_id === w.customerIds[3])).toBeUndefined();
+    const left = rows.filter((r) => r.status === 'draft').map((r) => r.id);
+    if (left.length) await approveDrafts(ctxOf(w), left);
     await drain();
-    const [d] = await serviceDb().select().from(invoice_draft).where(eq(invoice_draft.id, id));
-    expect(d!.status).toBe('void');
     const [s] = await serviceDb().select().from(storm).where(eq(storm.id, stormId));
     expect(s!.status).toBe('billed');
   });
