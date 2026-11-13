@@ -92,3 +92,39 @@ describe('issue 109: a storm is billed at the price in force when it happened', 
     expect((d!.flags as any[]).map((f) => f.code)).toContain('no_contract');
   });
 });
+
+describe('issue 111: the office cannot skip a stop a driver is on, or one already done', () => {
+  it('refuses both, and still skips an open stop', async () => {
+    const { patchRunStop } = await import('@/lib/storms');
+    const w = await makeWorld();
+    const ctx = ctxOf(w);
+    const out = await createStorm(ctx, { name: 'Skips', routeIds: [w.routeId], crewAssignments: {} });
+    await publishStorm(ctx, out.storm.id);
+    const r = await resolveToken(decryptToken(out.runs[0]!.link_token_enc!));
+    const stops = (await serviceDb().select().from(run_stop).where(eq(run_stop.storm_run_id, out.runs[0]!.id))).sort((a, b) => a.seq - b.seq);
+    const [done, onsite, open] = stops;
+    await processActions(r, stopActions(done!.id, new Date(Date.now() - 3600_000), { depth: 3, gps: { lat: 41.48, lon: -81.8 }, minutes: 20 }).actions as never);
+    const arriving = stopActions(onsite!.id, new Date(Date.now() - 600_000), { depth: 3, gps: { lat: 41.48, lon: -81.8 }, minutes: 20 }).actions.filter((a: any) => a.kind === 'arrive');
+    await processActions(r, arriving as never);
+    await expect(patchRunStop(ctx, onsite!.id, { status: 'skipped' })).rejects.toThrow(/on site/);
+    await expect(patchRunStop(ctx, done!.id, { status: 'skipped' })).rejects.toThrow(/already done/);
+    expect((await patchRunStop(ctx, open!.id, { status: 'skipped' })).status).toBe('skipped');
+  });
+});
+
+describe('issue 109: a proof packet shows the agreement in force for its period', () => {
+  it('a December packet keeps December\'s terms after a January re-signature', async () => {
+    const { contract } = await import('@flake/db');
+    const { assembleProof } = await import('@/lib/proof');
+    const w = await makeWorld();
+    const siteId = w.siteIds[0]!;
+    const db = serviceDb();
+    const [old] = await db.select().from(contract).where(eq(contract.site_id, siteId));
+    await db.update(contract).set({ status: 'void', accepted_at: '2026-11-01T12:00:00Z', accepted_name: 'December Signer' }).where(eq(contract.id, old!.id));
+    await db.insert(contract).values({ tenant_id: w.tenantId, site_id: siteId, season: old!.season, status: 'accepted', accepted_at: '2027-01-10T12:00:00Z', accepted_name: 'January Signer', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 9000 } }] });
+    const dec = await assembleProof(w.tenantId, siteId, '2026-12-09T05:00:00Z', '2026-12-13T05:00:00Z');
+    expect(dec.contract?.accepted_name).toBe('December Signer');
+    const feb = await assembleProof(w.tenantId, siteId, '2027-02-01T05:00:00Z', '2027-02-05T05:00:00Z');
+    expect(feb.contract?.accepted_name).toBe('January Signer');
+  });
+});

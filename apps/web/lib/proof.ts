@@ -1,4 +1,5 @@
 import { and, asc, contract, crew_member, customer, desc, eq, gte, inArray, lte, message_log, proof_packet, serviceDb, site, sql, storm, tenant, visit, visit_correction, visit_photo, weather_snapshot } from '@flake/db';
+import { contractsInForce } from '@flake/core/time';
 import { photoOrder } from '@flake/core/proof';
 import { buildManifest, type ProofInput, type ProofSnapshot, type ProofVisit } from '@flake/core/proof';
 import { getBlob, putBlob } from './blob';
@@ -17,7 +18,11 @@ export async function assembleProof(tenantId: string, siteId: string, from: stri
   const db = serviceDb();
   const [row] = await db.select({ site, customer, tenant }).from(site).innerJoin(customer, eq(customer.id, site.customer_id)).innerJoin(tenant, eq(tenant.id, site.tenant_id)).where(and(eq(site.id, siteId), eq(site.tenant_id, tenantId)));
   if (!row) throw new Error('Site not found for tenant');
-  const [c] = await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), eq(contract.site_id, siteId), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)).limit(1);
+  // The agreement in force during the period (issue 109), not whatever was signed last: a packet for a December claim
+  // shows December's terms even after a January re-signature or next winter's renewal. Taken at the window's middle,
+  // which for a claim-date packet is the claim date.
+  const middle = new Date((Date.parse(from) + Date.parse(to)) / 2);
+  const [c] = contractsInForce(await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), eq(contract.site_id, siteId), inArray(contract.status, ['accepted', 'void']))).orderBy(desc(contract.created_at)), middle, row.tenant.timezone);
   const visits = await db.select({ visit, crew: crew_member }).from(visit).innerJoin(crew_member, eq(crew_member.id, visit.crew_id)).where(and(eq(visit.tenant_id, tenantId), eq(visit.site_id, siteId), gte(visit.arrived_device_at, from), lte(visit.arrived_device_at, to))).orderBy(asc(visit.arrived_device_at));
   const visitIds = visits.map((v) => v.visit.id);
   const photos = visitIds.length ? await db.select().from(visit_photo).where(and(eq(visit_photo.tenant_id, tenantId), inArray(visit_photo.visit_id, visitIds))) : [];

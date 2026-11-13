@@ -216,6 +216,10 @@ export async function patchRunStop(ctx: Ctx, stopId: string, patch: z.infer<type
     } else if (patch.seq !== undefined) {
       set.seq = patch.seq;
     }
+    // The same rule as moving: skipping a lot someone is standing on, or one already done, would show "skipped" beside
+    // a finished visit that still bills (found testing the storm rules).
+    if (patch.status === 'skipped' && stop.status === 'onsite') throw new HttpError(409, 'The driver is on site. Wait until they finish.', 'onsite');
+    if (patch.status === 'skipped' && stop.status === 'done') throw new HttpError(409, 'That stop is already done.', 'done');
     if (patch.status) set.status = patch.status;
     const [updated] = await tx.update(run_stop).set(set).where(eq(run_stop.id, stopId)).returning();
     return { stop: updated!, moved };
