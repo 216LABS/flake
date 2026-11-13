@@ -119,7 +119,7 @@ Both stay off until their keys exist. Use test mode first; production refuses no
    | Endpoint | Listen to | Events |
    |---|---|---|
    | Your account | Events on your account | `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted` |
-   | Connected accounts | Events on connected accounts | `account.updated`, `setup_intent.succeeded`, `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_intent.requires_action`, `invoice.finalized`, `invoice.paid`, `invoice.payment_failed`, `charge.dispute.created` |
+   | Connected accounts | Events on connected accounts | `account.updated`, `setup_intent.succeeded`, `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_intent.requires_action`, `invoice.finalized`, `invoice.paid`, `invoice.payment_failed`, `charge.dispute.created`, `charge.dispute.closed`, `charge.refunded` |
 
 4. Set in Vercel and redeploy:
 

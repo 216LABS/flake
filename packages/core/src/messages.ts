@@ -34,7 +34,7 @@ const TEMPLATES: Record<TemplateKey, string> = {
   done: '{company}: {site} cleared at {time}. Photo: {link}',
   late: '{company}: Heavy snow is slowing routes. We expect to reach {site} by {time}.',
   invoice: '{company}: Invoice for {storm} - ${amount}. View/pay: {link}',
-  receipt: '{company}: Paid. {storm} - ${amount}, charged to the payment method on file.',
+  receipt: '{company}: Payment received. {storm} - ${amount}. Thank you.',
   help: '{company} service texts via Flake. Contact {phone}. Reply STOP to opt out.',
   route_changed: '{company}: Your route changed. Open your link to see it: {link}',
   quote: '{company}: Your snow service quote is ready. Review and accept: {link}',

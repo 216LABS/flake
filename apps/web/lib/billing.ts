@@ -1,4 +1,4 @@
-import { and, asc, asService, contract, customer, membership, desc, eq, inArray, installment_invoice, invoice_draft, notInArray, isNotNull, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
+import { and, or, asc, asService, contract, customer, membership, desc, eq, inArray, installment_invoice, invoice_draft, notInArray, isNotNull, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
 import { applyCorrections, draftInvoices, flagKey, isDraftClean, type BillingContract, type BillingFlag, type BillingVisit } from '@flake/core/billing';
 import { applicationFeeCents, feeRate, proFeaturesEnabled, type Plan } from '@flake/core/fees';
 import { seasonalInstallments, type ContractService, type Pricing, type SaltPricing, type StormDepthContext } from '@flake/core/pricing';
@@ -249,6 +249,14 @@ export async function approveDrafts(ctx: Ctx, draftIds: string[]) {
   return { approved: approved.length };
 }
 
+/** One receipt per invoice, once the money arrived: a card charge, a bank debit that cleared, or a pay link paid. */
+async function sendReceipt(tenantId: string, draftId: string) {
+  const row = await loadDraft(tenantId, draftId);
+  if (!row) return;
+  const amount = dollars(row.draft.subtotal_cents);
+  await queueNotify(tenantId, { email: row.customer.email }, { template: 'receipt', vars: { storm: row.storm.name, amount }, subject: `${row.tenant.name}: payment for ${row.storm.name}, $${amount}`, key: `receipt:${draftId}`, related: { draft_id: draftId } });
+}
+
 async function loadDraft(tenantId: string, draftId: string) {
   const [row] = await serviceDb().select({ draft: invoice_draft, customer, tenant, storm }).from(invoice_draft)
     .innerJoin(customer, eq(customer.id, invoice_draft.customer_id))
@@ -378,8 +386,9 @@ async function chargeDraftLocked(tenantId: string, draftId: string, attempt?: nu
     customerId, paymentMethodId: c.stripe_payment_method_id, amountCents: draft.subtotal_cents, feeCents: fee, idempotencyKey: stripeKey, description: `${t.name}: ${s.name}`, metadata,
   });
   if (charge.status === 'succeeded' || charge.status === 'processing') {
+    // The receipt goes out when Stripe says the money arrived (payment_intent.succeeded, below, or days later for a bank
+    // debit), so nobody is told it's paid when a bank payment then bounces.
     await setStatus('charged', charge.status === 'processing' ? 'Bank payment processing' : null, { stripe_payment_intent_id: charge.paymentIntentId, application_fee_cents: fee });
-    await queueNotify(t.id, { email: c.email }, { template: 'receipt', vars: { storm: s.name, amount: dollars(draft.subtotal_cents) }, subject: `${t.name}: payment for ${s.name}, $${dollars(draft.subtotal_cents)}`, key: `receipt:${draftId}`, related: { draft_id: draftId } });
   } else {
     await db.update(invoice_draft).set({ stripe_payment_intent_id: charge.paymentIntentId, application_fee_cents: fee }).where(eq(invoice_draft.id, draftId));
     await failDraft(tenantId, draftId, charge.failure ?? 'Payment failed');
@@ -412,7 +421,10 @@ export async function handleStripeEvent(evt: StripeEventLike): Promise<'processe
       }
       break;
     case 'payment_intent.succeeded':
-      if (draftId && tenantId) await db.update(invoice_draft).set({ status: 'paid', status_detail: null, stripe_payment_intent_id: obj.id }).where(and(eq(invoice_draft.id, draftId), eq(invoice_draft.tenant_id, tenantId)));
+      if (draftId && tenantId) {
+        await db.update(invoice_draft).set({ status: 'paid', status_detail: null, stripe_payment_intent_id: obj.id }).where(and(eq(invoice_draft.id, draftId), eq(invoice_draft.tenant_id, tenantId)));
+        await sendReceipt(tenantId, draftId);
+      }
       break;
     case 'payment_intent.payment_failed':
     case 'payment_intent.requires_action':
@@ -430,6 +442,22 @@ export async function handleStripeEvent(evt: StripeEventLike): Promise<'processe
     case 'charge.dispute.created': {
       const pi = typeof obj.payment_intent === 'string' ? obj.payment_intent : obj.payment_intent?.id;
       if (pi) await db.update(invoice_draft).set({ disputed: true }).where(eq(invoice_draft.stripe_payment_intent_id, pi));
+      break;
+    }
+    // A dispute the company won clears the flag; a lost one keeps it and says so.
+    case 'charge.dispute.closed': {
+      const pi = typeof obj.payment_intent === 'string' ? obj.payment_intent : obj.payment_intent?.id;
+      if (pi) await db.update(invoice_draft).set(obj.status === 'won' ? { disputed: false } : { disputed: true, status_detail: 'Dispute lost: the customer kept the payment' }).where(eq(invoice_draft.stripe_payment_intent_id, pi));
+      break;
+    }
+    // A refund made in Stripe shows on the invoice, so the office doesn't count it as money in.
+    case 'charge.refunded': {
+      const pi = typeof obj.payment_intent === 'string' ? obj.payment_intent : obj.payment_intent?.id;
+      const inv = typeof obj.invoice === 'string' ? obj.invoice : obj.invoice?.id;
+      const refunded = Number(obj.amount_refunded ?? 0);
+      const detail = obj.refunded || refunded >= Number(obj.amount ?? 0) ? `Refunded $${dollars(refunded)} in Stripe` : `Refunded $${dollars(refunded)} of $${dollars(Number(obj.amount))} in Stripe`;
+      const match = pi && inv ? or(eq(invoice_draft.stripe_payment_intent_id, pi), eq(invoice_draft.stripe_invoice_id, inv)) : pi ? eq(invoice_draft.stripe_payment_intent_id, pi) : inv ? eq(invoice_draft.stripe_invoice_id, inv) : null;
+      if (match && refunded > 0) await db.update(invoice_draft).set({ status_detail: detail }).where(match);
       break;
     }
     case 'customer.subscription.created':

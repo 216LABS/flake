@@ -20,7 +20,7 @@ describe('issue 105: the per-visit service record email follows the customer\'s 
     const rs = await resolveToken(decryptToken(run.link_token_enc!));
     const stops = await serviceDb().select().from(run_stop).where(eq(run_stop.storm_run_id, run.id));
     for (const [i, s] of stops.entries()) {
-      const a = stopActions(s.id, new Date(Date.now() - 3600_000 + i * 1200_000), { depth: 3, gps: { lat: 41.48, lon: -81.8 }, minutes: 15 });
+      const a = stopActions(s.id, new Date(Date.now() - 3600_000 + i * 1200_000), { depth: 3, gps: { lat: 41.48, lon: -81.8 }, minutes: 15, services: ['plow', 'salt'], salt: [{ unit: 'bag50lb', qty: 3 }] });
       await processActions(rs, a.actions as never);
     }
     await drain();
@@ -30,6 +30,9 @@ describe('issue 105: the per-visit service record email follows the customer\'s 
     const [on] = await serviceDb().select().from(customer).where(eq(customer.id, w.customerIds[2]!));
     expect(to).toContain(on!.email);
     expect(to).not.toContain(off!.email);
+    // Salt reads as words on the record, not the unit code.
+    expect(reports[0]!.body).toContain('Salt: 3 bags (50 lb)');
+    expect(reports[0]!.body).not.toContain('bag50lb');
   });
 });
 
@@ -126,5 +129,123 @@ describe('issue 109: a proof packet shows the agreement in force for its period'
     expect(dec.contract?.accepted_name).toBe('December Signer');
     const feb = await assembleProof(w.tenantId, siteId, '2027-02-01T05:00:00Z', '2027-02-05T05:00:00Z');
     expect(feb.contract?.accepted_name).toBe('January Signer');
+  });
+});
+
+describe('issue 113: a new quote for a lot replaces the one still waiting, so the old price can\'t be signed', () => {
+  it('voids the waiting quote, refuses its link with a plain reason, and an earlier decline cannot be signed after a re-quote', async () => {
+    const { contract } = await import('@flake/db');
+    const { acceptQuote, createQuote, declineQuote, getQuote } = await import('@/lib/quotes');
+    const w = await makeWorld();
+    const ctx = ctxOf(w);
+    const siteId = w.siteIds[1]!;
+    const quote = (cents: number) => createQuote(ctx, { site_id: siteId, season: '2027-28', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: cents } }], send: false });
+    const cheap = await quote(6500);
+    const real = await quote(9000);
+    const statusOf = async (id: string) => (await serviceDb().select({ s: contract.status }).from(contract).where(eq(contract.id, id)))[0]!.s;
+    expect(await statusOf(cheap.contract.id)).toBe('void');
+    await expect(getQuote(cheap.token)).rejects.toMatchObject({ status: 410, code: 'quote_replaced' });
+    await expect(acceptQuote(cheap.token, { name: 'Pat', consentSms: false, consentEmail: true } as never, null)).rejects.toMatchObject({ code: 'quote_replaced' });
+    // The customer declines the new one, the office sends a third: the declined one can't be signed now either.
+    await declineQuote(real.token, { reason: '' } as never);
+    const third = await quote(8000);
+    await expect(acceptQuote(real.token, { name: 'Pat', consentSms: false, consentEmail: true } as never, null)).rejects.toMatchObject({ code: 'quote_replaced' });
+    expect(await statusOf(real.contract.id)).toBe('declined');
+    expect((await acceptQuote(third.token, { name: 'Pat', consentSms: false, consentEmail: true } as never, null)).already).toBe(false);
+    const accepted = await serviceDb().select().from(contract).where(and(eq(contract.site_id, siteId), eq(contract.season, '2027-28'), eq(contract.status, 'accepted')));
+    expect(accepted.map((c) => (c.services as any[])[0].pricing.amount_cents)).toEqual([8000]);
+  });
+
+  it('a signed agreement still opens after a newer quote is sent, and a different season is left alone', async () => {
+    const { acceptQuote, createQuote, getQuote } = await import('@/lib/quotes');
+    const w = await makeWorld();
+    const ctx = ctxOf(w);
+    const siteId = w.siteIds[1]!;
+    const q = (season: string) => createQuote(ctx, { site_id: siteId, season, services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 7000 } }], send: false });
+    const signed = await q('2027-28');
+    await acceptQuote(signed.token, { name: 'Pat', consentSms: false, consentEmail: true } as never, null);
+    const nextSeason = await q('2028-29');
+    await q('2027-28');
+    expect((await getQuote(signed.token)).contract.status).toBe('accepted');
+    expect((await getQuote(nextSeason.token)).contract.status).toBe('draft');
+  });
+});
+
+describe('issue 116: the customer is told "payment received" only once the money arrived', () => {
+  it('a bank debit sends no receipt while it is processing, one when it clears; a pay link paid after a declined card sends one too', async () => {
+    const { customer, invoice_draft, sql } = await import('@flake/db');
+    const { approveDrafts, generateDrafts, handleStripeEvent } = await import('@/lib/billing');
+    const { closeStorm } = await import('@/lib/storms');
+    const w = await makeWorld();
+    const ctx = ctxOf(w);
+    const db = serviceDb();
+    const [bankSite, cardSite] = [w.siteIds[0]!, w.siteIds[1]!];
+    await db.update(customer).set({ billing_mode: 'ach_on_file', stripe_payment_method_id: 'pm_mock_bank', stripe_customer_id: 'cus_mock_bank', email: 'bank@example.com' }).where(eq(customer.id, w.customerIds[0]!));
+    await db.update(customer).set({ billing_mode: 'card_on_file', stripe_payment_method_id: 'pm_mock_0002', stripe_customer_id: 'cus_mock_card', email: 'card@example.com' }).where(eq(customer.id, w.customerIds[1]!));
+    const out = await createStorm(ctx, { name: 'Receipts', routeIds: [w.routeId], crewAssignments: {}, siteIds: [bankSite, cardSite] });
+    await publishStorm(ctx, out.storm.id);
+    const r = await resolveToken(decryptToken(out.runs[0]!.link_token_enc!));
+    const stops = await db.select().from(run_stop).where(eq(run_stop.storm_run_id, out.runs[0]!.id));
+    for (const [i, s] of stops.entries()) await processActions(r, stopActions(s.id, new Date(Date.now() - 3600_000 + i * 1200_000), { depth: 3, gps: { lat: 41.48, lon: -81.8 }, minutes: 15 }).actions as never);
+    await closeStorm(ctx, out.storm.id, true);
+    await generateDrafts(ctx, out.storm.id);
+    const rows = await db.select().from(invoice_draft).where(eq(invoice_draft.storm_id, out.storm.id));
+    const bank = rows.find((d) => d.customer_id === w.customerIds[0])!;
+    const card = rows.find((d) => d.customer_id === w.customerIds[1])!;
+    await db.execute(sql`update invoice_draft set flags = coalesce((select jsonb_agg(f || '{"waived": true}'::jsonb) from jsonb_array_elements(flags) f), '[]'::jsonb) where storm_id = ${out.storm.id}`);
+    await approveDrafts(ctx, [bank.id, card.id]);
+    await drain();
+    const receipts = async (to: string) => (await db.select().from(message_log).where(and(eq(message_log.tenant_id, w.tenantId), eq(message_log.template, 'receipt'), eq(message_log.to_addr, to))));
+    const statusOf = async (id: string) => (await db.select().from(invoice_draft).where(eq(invoice_draft.id, id)))[0]!;
+
+    expect(await statusOf(bank.id)).toMatchObject({ status: 'charged', status_detail: 'Bank payment processing' });
+    expect(await receipts('bank@example.com')).toHaveLength(0);
+    const cleared = (n: number, id: string) => handleStripeEvent({ id: `evt_${id}_${n}`, type: 'payment_intent.succeeded', data: { object: { id: `pi_${id}`, metadata: { draft_id: id, tenant_id: w.tenantId } } } });
+    await cleared(1, bank.id);
+    await cleared(2, bank.id);
+    await drain();
+    expect((await statusOf(bank.id)).status).toBe('paid');
+    const got = await receipts('bank@example.com');
+    expect(got).toHaveLength(1);
+    expect(got[0]!.body).toContain('Payment received. Receipts');
+
+    expect((await statusOf(card.id)).status).toBe('failed');
+    expect(await receipts('card@example.com')).toHaveLength(0);
+    await cleared(1, card.id);
+    await drain();
+    expect((await statusOf(card.id)).status).toBe('paid');
+    expect(await receipts('card@example.com')).toHaveLength(1);
+  });
+});
+
+describe('issue 117: refunds and dispute outcomes from Stripe show on the invoice', () => {
+  it('a partial then full refund is written on the paid invoice, a won dispute clears, a lost one says so', async () => {
+    const { invoice_draft, storm } = await import('@flake/db');
+    const { handleStripeEvent } = await import('@/lib/billing');
+    const w = await makeWorld();
+    const db = serviceDb();
+    const [s] = await db.insert(storm).values({ tenant_id: w.tenantId, name: 'Refunds', started_at: new Date().toISOString(), status: 'billed' }).returning();
+    const draft = async (pi: string, inv: string | null, who: number) => (await db.insert(invoice_draft).values({ tenant_id: w.tenantId, storm_id: s!.id, customer_id: w.customerIds[who]!, lines: [], subtotal_cents: 6500, flags: [], status: 'paid', stripe_payment_intent_id: pi, stripe_invoice_id: inv }).returning())[0]!;
+    const card = await draft(`pi_card_${w.tenantId}`, null, 0);
+    const net30 = await draft(`pi_inv_${w.tenantId}`, `in_${w.tenantId}`, 1);
+    const detail = async (id: string) => (await db.select().from(invoice_draft).where(eq(invoice_draft.id, id)))[0]!;
+    let n = 0;
+    const send = (type: string, object: Record<string, unknown>) => handleStripeEvent({ id: `evt_${w.tenantId}_${n++}`, type, data: { object } } as never);
+
+    await send('charge.refunded', { payment_intent: card.stripe_payment_intent_id, amount: 6500, amount_refunded: 2000, refunded: false });
+    expect((await detail(card.id)).status_detail).toBe('Refunded $20.00 of $65.00 in Stripe');
+    await send('charge.refunded', { payment_intent: card.stripe_payment_intent_id, amount: 6500, amount_refunded: 6500, refunded: true });
+    expect(await detail(card.id)).toMatchObject({ status: 'paid', status_detail: 'Refunded $65.00 in Stripe' });
+    // A Stripe invoice's charge names the invoice; its payment intent isn't stored on a net-30 bill.
+    await send('charge.refunded', { payment_intent: 'pi_unknown', invoice: net30.stripe_invoice_id, amount: 6500, amount_refunded: 6500, refunded: true });
+    expect((await detail(net30.id)).status_detail).toBe('Refunded $65.00 in Stripe');
+
+    await send('charge.dispute.created', { payment_intent: card.stripe_payment_intent_id });
+    expect((await detail(card.id)).disputed).toBe(true);
+    await send('charge.dispute.closed', { payment_intent: card.stripe_payment_intent_id, status: 'won' });
+    expect((await detail(card.id)).disputed).toBe(false);
+    await send('charge.dispute.created', { payment_intent: net30.stripe_payment_intent_id });
+    await send('charge.dispute.closed', { payment_intent: net30.stripe_payment_intent_id, status: 'lost' });
+    expect(await detail(net30.id)).toMatchObject({ disputed: true, status_detail: 'Dispute lost: the customer kept the payment' });
   });
 });

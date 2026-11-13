@@ -35,6 +35,8 @@ export class MockPayments implements PaymentsProvider {
     if (input.paymentMethodId.endsWith('0002')) {
       return { status: 'failed', paymentIntentId, failure: 'Your card was declined.', events: [event('payment_intent.payment_failed', accountId, input.idempotencyKey, { ...object, last_payment_error: { message: 'Your card was declined.' } })] };
     }
+    // A bank debit (ACH) clears days later, as in Stripe: processing now, payment_intent.succeeded arrives on its own.
+    if (input.paymentMethodId === 'pm_mock_bank') return { status: 'processing', paymentIntentId, events: [] };
     return { status: 'succeeded', paymentIntentId, events: [event('payment_intent.succeeded', accountId, input.idempotencyKey, object)] };
   }
   async createPayLink(_accountId: string, input: { idempotencyKey: string }) {

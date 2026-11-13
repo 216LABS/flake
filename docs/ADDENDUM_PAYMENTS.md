@@ -21,7 +21,7 @@ Sources and rationale: DECISIONS D5.
 - **Pro plan:** a normal Stripe Billing subscription on the **platform** account for the tenant (price ids in env).
 
 ## 4. Webhooks
-`/api/webhooks/stripe` with Connect events enabled: `account.updated`, `setup_intent.succeeded`, `payment_intent.succeeded|payment_failed|requires_action`, `invoice.paid|payment_failed|finalized`, `charge.dispute.created`, `customer.subscription.*`. Verify the signature on the raw body; dedupe on `stripe_event.id`.
+`/api/webhooks/stripe` with Connect events enabled: `account.updated`, `setup_intent.succeeded`, `payment_intent.succeeded|payment_failed|requires_action`, `invoice.paid|payment_failed|finalized`, `charge.dispute.created|closed`, `charge.refunded`, `customer.subscription.*`. Verify the signature on the raw body; dedupe on `stripe_event.id`.
 
 ## 5. Mock mode
 `MockPayments` simulates accounts (charges_enabled after 1 click), SetupIntents (test card 4242 behavior), and a decline with card ending 0002. It emits the same webhook-shaped events into the handler. The billing e2e runs fully in mock mode.
