@@ -228,3 +228,16 @@ for (const size of SIZES) {
     expect(wide.map((w) => w.replace(/\/(c|d|q|s)\/[^ ]+/, '/$1/<token>')), 'pages that scroll sideways').toEqual([]);
   });
 }
+
+test('every field on a phone has 16px text, so Safari does not zoom in when it is tapped', async ({ page }) => {
+  await login(page);
+  for (const path of ['/customers/new', '/settings', '/proof', '/routes']) {
+    await page.goto(path);
+    await expect(page.locator('main')).toBeVisible();
+    const small = await page.locator('input:visible, select:visible, textarea:visible').evaluateAll((els) => els
+      .filter((el) => !['checkbox', 'radio', 'range', 'file', 'button', 'submit', 'hidden'].includes((el as HTMLInputElement).type))
+      .map((el) => ({ name: el.getAttribute('aria-label') ?? el.getAttribute('name') ?? el.id, size: parseFloat(getComputedStyle(el).fontSize) }))
+      .filter((f) => f.size < 16));
+    expect(small, `${path} has fields Safari would zoom into`).toEqual([]);
+  }
+});

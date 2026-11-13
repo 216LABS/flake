@@ -155,3 +155,12 @@ input::-webkit-date-and-time-value {
     scroll-padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
   }
 }
+
+/* iOS Safari zooms the page into any field with text under 16px, so on touch screens every field gets 16px. */
+@media (pointer: coarse) {
+  input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='button'], [type='submit'], [type='hidden']),
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
