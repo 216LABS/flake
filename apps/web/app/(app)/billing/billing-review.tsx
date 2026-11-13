@@ -87,7 +87,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
     <div>
       {dialog}
       {!stripeReady && rows.length ? (
-        <p className="mb-4 rounded-md bg-sky-50 p-3 text-sm text-sky-950" data-testid="stripe-not-connected">
+        <p className="mb-4 rounded-md bg-info-tint p-3 text-sm text-link" data-testid="stripe-not-connected">
           Stripe isn&apos;t connected, so approving doesn&apos;t charge anyone yet. Approved invoices wait here. Connect Stripe in <a className="underline" href="/settings?tab=payments">Settings, Payments</a>, then press Charge now on each, or bill them yourself from the QuickBooks CSV.
         </p>
       ) : null}
@@ -100,19 +100,19 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
         <label className="ml-2 flex items-center gap-2 text-sm"><input type="checkbox" data-testid="flagged-only" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.target.checked)} /> Show flagged only</label>
         {canExport ? <a className={buttonVariants({ variant: 'outline' })} data-testid="qbo" href={`/api/billing/export.csv?storm=${stormId}`}>QuickBooks CSV</a> : null}
       </div>
-      {error ? <p className="mb-3 rounded-md bg-red-50 p-3 text-sm text-red-800" role="alert">{error}</p> : null}
+      {error ? <p className="mb-3 rounded-md bg-danger-tint p-3 text-sm text-danger" role="alert">{error}</p> : null}
       {!rows.length ? <EmptyState title="No drafts yet" body="Generate drafts to price this storm's visits." /> : null}
-      {rows.length ? <p className="mb-3 text-sm text-slate-600">{flagged.length} flagged, {clean.length} clean and ready. Total {money(total)}.{showFees ? ` Flake fees ${money(fees)}.` : ''}</p> : null}
+      {rows.length ? <p className="mb-3 text-sm text-muted">{flagged.length} flagged, {clean.length} clean and ready. Total {money(total)}.{showFees ? ` Flake fees ${money(fees)}.` : ''}</p> : null}
       {rows.length && (tierCount('money') || tierCount('proof')) ? (
         <p className="mb-3 text-sm" data-testid="flag-tiers">
-          {tierCount('money') ? <><b className="text-red-800">{tierCount('money')} with money at risk</b> ({tierWhy('money')}). </> : null}
+          {tierCount('money') ? <><b className="text-danger">{tierCount('money')} with money at risk</b> ({tierWhy('money')}). </> : null}
           {tierCount('proof') ? <><b>{tierCount('proof')} missing proof</b> ({tierWhy('proof')}). Waive if you know the work was done.</> : null}
         </p>
       ) : null}
       {unplowed.length ? (
-        <Card className="mb-3 border-slate-300" data-testid="unplowed">
+        <Card className="mb-3 border-line" data-testid="unplowed">
           <p className="font-medium">{unplowedSites.length === 1 ? '1 lot was' : `${unplowedSites.length} lots were`} not plowed this storm.</p>
-          <p className="mt-1 text-sm text-slate-700">{unplowed.map((r) => r.customer).join(', ')}. Nothing is billed for {unplowedSites.length === 1 ? 'it' : 'them'}.</p>
+          <p className="mt-1 text-sm text-ink-2">{unplowed.map((r) => r.customer).join(', ')}. Nothing is billed for {unplowedSites.length === 1 ? 'it' : 'them'}.</p>
           <Button size="sm" variant="outline" className="mt-2" disabled={busy} data-testid="unplowed-skip" onClick={() => fix({ action: 'skip_all', site_ids: unplowedSites })}>Mark {unplowedSites.length === 1 ? 'it' : 'all'} skipped</Button>
         </Card>
       ) : null}
@@ -128,13 +128,13 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
                 <span className="font-semibold" data-testid="draft-total">{money(r.subtotal_cents)}</span>
               </div>
             </div>
-            {r.status_detail ? <p className="mt-1 text-sm text-amber-800" data-testid="status-detail">{r.status_detail}</p> : null}
+            {r.status_detail ? <p className="mt-1 text-sm text-warn-ink" data-testid="status-detail">{r.status_detail}</p> : null}
             <div className="mt-1 flex flex-wrap gap-2">
               {r.status === 'failed' || (r.status === 'approved' && r.status_detail && r.billing_mode !== 'manual') ? <Button size="sm" variant="outline" disabled={busy || (r.status === 'approved' && !stripeReady)} data-testid="retry" onClick={() => run(() => api('/api/billing/retry', { body: { draftId: r.id } }))}>{r.status === 'failed' ? 'Try again' : 'Charge now'}</Button> : null}
               {r.status === 'approved' || r.status === 'failed' ? <Button size="sm" variant="ghost" disabled={busy} data-testid="unapprove" onClick={() => void revise(r, 'draft')}>Back to review</Button> : null}
               {['draft', 'approved', 'failed'].includes(r.status) ? <Button size="sm" variant="ghost" disabled={busy} data-testid="void" onClick={() => void revise(r, 'void')}>Void</Button> : null}
             </div>
-            {r.pay_link ? <p className="mt-1 text-sm">Pay link sent: <a className="text-sky-800 underline" href={r.pay_link}>open</a></p> : null}
+            {r.pay_link ? <p className="mt-1 text-sm">Pay link sent: <a className="text-link underline" href={r.pay_link}>open</a></p> : null}
             {r.lines.length ? (
               <div className="mt-2"><Table>
                 <thead><tr><Th>Line</Th><Th>Qty</Th><Th>Amount</Th></tr></thead>
@@ -146,10 +146,10 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
                 {[...r.flags].sort((a, b) => TIER_ORDER.indexOf(FLAG_TIER[a.code]) - TIER_ORDER.indexOf(FLAG_TIER[b.code])).map((f) => <FlagRow key={flagKey(f)} flag={f} editable={r.status === 'draft'} busy={busy} onFix={fix} />)}
               </ul>
             ) : null}
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-faint">
               <span>{showFees ? `Only owners see this: Flake fee ${money(r.fee_cents)}. Estimated Stripe fee ${money(r.stripe_fee_cents)}. ` : ''}{r.billing_mode.replace(/_/g, ' ')}.</span>
               {r.status === 'draft' && isDraftClean(r.flags) ? <Button size="sm" variant="outline" disabled={busy} data-testid="approve-one" onClick={() => run(() => api('/api/billing/approve', { body: { draftIds: [r.id] } }))}>Approve</Button> : null}
-              {r.status === 'draft' && !isDraftClean(r.flags) ? <span className="font-medium text-amber-900" data-testid="approve-blocked">Fix or waive the flags to approve.</span> : null}
+              {r.status === 'draft' && !isDraftClean(r.flags) ? <span className="font-medium text-warn-ink" data-testid="approve-blocked">Fix or waive the flags to approve.</span> : null}
             </div>
           </Card>
         ))}
@@ -163,7 +163,7 @@ const TIER_LABEL: Record<FlagTier, string> = { money: 'Money at risk', proof: 'P
 function FlagRow({ flag, editable, busy, onFix }: { flag: BillingFlag; editable: boolean; busy: boolean; onFix: (b: Record<string, unknown>) => void }) {
   const [qty, setQty] = useState('');
   return (
-    <li className={`rounded-md p-2 text-sm ${flag.severity === 'info' || flag.waived ? 'bg-slate-50 text-slate-600' : FLAG_TIER[flag.code] === 'money' ? 'bg-red-50 text-red-950' : 'bg-amber-50 text-amber-950'}`} data-testid="flag" data-code={flag.code} data-tier={FLAG_TIER[flag.code]}>
+    <li className={`rounded-md p-2 text-sm ${flag.severity === 'info' || flag.waived ? 'bg-tint text-muted' : FLAG_TIER[flag.code] === 'money' ? 'bg-danger-tint text-danger-ink' : 'bg-warn-tint text-warn-ink'}`} data-testid="flag" data-code={flag.code} data-tier={FLAG_TIER[flag.code]}>
       {flag.severity === 'review' && !flag.waived ? <div className="text-xs font-semibold uppercase tracking-wide opacity-80">{TIER_LABEL[FLAG_TIER[flag.code]]}</div> : null}
       <div>{flag.message}{flag.waived ? ' (waived)' : ''}</div>
       {editable && flag.severity === 'review' && !flag.waived ? (

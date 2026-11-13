@@ -28,7 +28,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main className="mx-auto w-full min-w-0 max-w-[1500px] px-4 pt-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:px-8 md:py-8">
-        {ctx.role === 'viewer' ? <p className="mb-4 rounded-md bg-slate-200 p-3 text-sm text-slate-900" data-testid="view-only">You have view-only access. An owner can change that in Settings.</p> : null}
+        {ctx.role === 'viewer' ? <p className="mb-4 rounded-md bg-tint-3 p-3 text-sm text-ink" data-testid="view-only">You have view-only access. An owner can change that in Settings.</p> : null}
         {ctx.role === 'viewer' ? <ViewOnly>{children}</ViewOnly> : children}
       </main>
       <MobileTabs showDev={!isProd()} />

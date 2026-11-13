@@ -42,13 +42,13 @@ export function LoginForm({ demo }: { demo: boolean }) {
   return (
     <AuthShell>
         <h1 className="font-display text-3xl font-semibold tracking-tight">Sign in to Flake</h1>
-        <p className="mt-1 text-sm text-slate-600">We&apos;ll email you a link. There is no password to remember.</p>
+        <p className="mt-1 text-sm text-muted">We&apos;ll email you a link. There is no password to remember.</p>
         {sent ? (
           <>
             <p className="mt-3 text-sm" data-testid="link-sent">Check {email} for your sign-in link. Or type the code from that email here.</p>
             <Label className="mt-4" htmlFor="code">Code from the email</Label>
             <Input id="code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => e.key === 'Enter' && code.length >= 6 && void verify()} data-testid="otp-code" />
-            {error ? <p className="mt-2 text-sm text-red-700" role="alert" data-testid="login-error">{error}</p> : null}
+            {error ? <p className="mt-2 text-sm text-danger" role="alert" data-testid="login-error">{error}</p> : null}
             <Button variant="accent" className="mt-4 w-full" disabled={busy || code.length < 6} onClick={() => void verify()} data-testid="otp-verify">Sign in</Button>
             <Button variant="ghost" className="mt-2 w-full" disabled={busy} onClick={() => { setSent(false); setCode(''); setError(null); }}>Use a different email</Button>
           </>
@@ -56,7 +56,7 @@ export function LoginForm({ demo }: { demo: boolean }) {
           <>
             <Label className="mt-4" htmlFor="email">Email</Label>
             <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void send()} data-testid="email" />
-            {error ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
+            {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
             <Button variant="accent" className="mt-4 w-full" disabled={busy || !email.includes('@')} onClick={() => void send()} data-testid="send-link">Email me a link</Button>
           </>
         )}

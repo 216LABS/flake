@@ -57,7 +57,7 @@ export function AlertActions({ alertId, status, routeIds, siteIds, name }: { ale
           </>
         )}
       </div>
-      {error ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
     </div>
   );
 }

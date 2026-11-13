@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 
 export default function MarketingLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-dvh flex-col bg-slate-50">
+    <div className="flex min-h-dvh flex-col bg-tint">
       <header className="bg-slate-950 text-slate-200">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
           <Link href="/" className="flex items-baseline gap-2"><Wordmark /><span className="text-sm text-slate-300">by 216LABS</span></Link>

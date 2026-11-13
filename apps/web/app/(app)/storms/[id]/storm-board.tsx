@@ -200,7 +200,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
               const left = live.counts.open + live.counts.onsite;
               const ok = await ask({
                 title: 'Close this storm?',
-                body: <>{left ? <p className="mb-2 font-medium text-amber-900" data-testid="close-open-count">{left} of {live.counts.total} stops {left === 1 ? 'is' : 'are'} not done yet. {left === 1 ? 'It' : 'They'} won&apos;t be billed.</p> : null}<p>Routes and stops stop changing, and invoice drafts are made for you to review. Nothing is charged until you approve. Drivers can still send finished work for 24 hours.</p></>,
+                body: <>{left ? <p className="mb-2 font-medium text-warn-ink" data-testid="close-open-count">{left} of {live.counts.total} stops {left === 1 ? 'is' : 'are'} not done yet. {left === 1 ? 'It' : 'They'} won&apos;t be billed.</p> : null}<p>Routes and stops stop changing, and invoice drafts are made for you to review. Nothing is charged until you approve. Drivers can still send finished work for 24 hours.</p></>,
                 confirm: 'Close storm',
                 danger: true,
               });
@@ -231,20 +231,20 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
 
       {editable && canText ? (
         <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-slate-600">Ask drivers by text, reply YES or NO, plowing expected at</span>
+          <span className="text-muted">Ask drivers by text, reply YES or NO, plowing expected at</span>
           <Input aria-label="Expected start time" className="h-8 w-28" placeholder="4:00 AM" value={calloutTime} data-testid="callout-time" onChange={(e) => setCalloutTime(e.target.value)} />
           <Button size="sm" variant="outline" disabled={!calloutTime} data-testid="callout-send" onClick={() => act(async () => {
             const out = await api<{ sent: number }>(`/api/storms/${stormId}/callout`, { body: { time: calloutTime } });
             setCalloutSent(`Asked ${out.sent} driver${out.sent === 1 ? '' : 's'}. Replies show on each column.`);
           })}>Call out</Button>
-          {calloutSent ? <span className="text-slate-600" data-testid="callout-sent">{calloutSent}</span> : null}
+          {calloutSent ? <span className="text-muted" data-testid="callout-sent">{calloutSent}</span> : null}
         </div>
       ) : null}
 
-      {error ? <p className="mb-3 rounded-md bg-red-50 p-3 text-sm text-red-800" role="alert">{error}</p> : null}
-      {!closed && now - lastOk > 60_000 ? <p className="mb-3 rounded-md bg-amber-50 p-3 text-sm text-amber-950" role="status" data-testid="board-stale">This board hasn&apos;t updated for {since(new Date(lastOk).toISOString(), now)}. Check your connection; it catches up on its own.</p> : null}
+      {error ? <p className="mb-3 rounded-md bg-danger-tint p-3 text-sm text-danger" role="alert">{error}</p> : null}
+      {!closed && now - lastOk > 60_000 ? <p className="mb-3 rounded-md bg-warn-tint p-3 text-sm text-warn-ink" role="status" data-testid="board-stale">This board hasn&apos;t updated for {since(new Date(lastOk).toISOString(), now)}. Check your connection; it catches up on its own.</p> : null}
       {openStop ? <StopSheet stopId={openStop} tz={tz} onClose={() => setOpenStop(null)} /> : null}
-      {notice ? <p className="mb-3 rounded-md bg-emerald-50 p-3 text-sm text-emerald-900" role="status" data-testid="board-notice">{notice}</p> : null}
+      {notice ? <p className="mb-3 rounded-md bg-ok-tint p-3 text-sm text-ok-ink" role="status" data-testid="board-notice">{notice}</p> : null}
       {dialog}
       {closePrompt ? (
         <Card className="mb-3 border-beacon">
@@ -297,8 +297,8 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
       {live.runs.length > 1 ? (
         <nav aria-label="Trucks" className="-mx-1 mb-3 flex gap-2 overflow-x-auto px-1 pb-1 md:hidden" data-testid="truck-switcher">
           {live.runs.map((r: any) => (
-            <button key={r.id} type="button" className="min-h-10 shrink-0 rounded-full border border-slate-300 bg-white px-3 text-sm font-medium" onClick={() => columns.current[r.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
-              {r.name}{r.pass > 1 ? ` ${r.pass}` : ''} <span className="tabular text-slate-600">{r.stops.filter((x: any) => x.status === 'done' || x.status === 'skipped').length}/{r.stops.length}</span>
+            <button key={r.id} type="button" className="min-h-10 shrink-0 rounded-full border border-line bg-surface px-3 text-sm font-medium" onClick={() => columns.current[r.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+              {r.name}{r.pass > 1 ? ` ${r.pass}` : ''} <span className="tabular text-muted">{r.stops.filter((x: any) => x.status === 'done' || x.status === 'skipped').length}/{r.stops.length}</span>
             </button>
           ))}
         </nav>
@@ -311,7 +311,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
             <section
               key={r.id}
               ref={(el) => { columns.current[r.id] = el; }}
-              className={cn('w-full scroll-mt-20 rounded-md bg-slate-200/70 p-2 md:w-72 md:shrink-0 md:snap-start', dragging && 'ring-2 ring-slate-900')}
+              className={cn('w-full scroll-mt-20 rounded-md bg-slate-200/70 p-2 md:w-72 md:shrink-0 md:snap-start', dragging && 'ring-2 ring-ink')}
               data-testid="run-column"
               data-run={r.id}
               onDragOver={(e) => e.preventDefault()}
@@ -322,8 +322,8 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
               }}
             >
               <header className="mb-2 px-1">
-                <div className="flex items-baseline justify-between gap-2"><div className="font-display text-lg font-semibold leading-tight">{r.name}{r.pass > 1 ? ` (pass ${r.pass})` : ''}</div><div className="tabular shrink-0 text-xs font-medium text-slate-600" data-testid="run-progress">{runProgress(r.stops)}</div></div>
-                <div className="text-sm text-slate-600">{r.crew?.name ?? 'No driver'}{r.crew?.kind === 'sub' ? ' (sub)' : ''}{r.crew?.callout_reply ? `, replied ${r.crew.callout_reply}` : ''}</div>
+                <div className="flex items-baseline justify-between gap-2"><div className="font-display text-lg font-semibold leading-tight">{r.name}{r.pass > 1 ? ` (pass ${r.pass})` : ''}</div><div className="tabular shrink-0 text-xs font-medium text-muted" data-testid="run-progress">{runProgress(r.stops)}</div></div>
+                <div className="text-sm text-muted">{r.crew?.name ?? 'No driver'}{r.crew?.kind === 'sub' ? ' (sub)' : ''}{r.crew?.callout_reply ? `, replied ${r.crew.callout_reply}` : ''}</div>
                 {editable ? (
                   <Select aria-label={`Driver for ${r.name}`} data-testid="assign-driver" className="mt-1 h-8 py-0 text-xs" value={r.crew?.id ?? ''} onChange={(e) => e.target.value && void act(() => api(`/api/runs/${r.id}`, { method: 'PATCH', body: { crew_id: e.target.value } }))}>
                     <option value="">Choose a driver</option>
@@ -331,27 +331,27 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
                   </Select>
                 ) : null}
                 {/* Did the driver get the link? Known the moment their phone opens it, not only once they tap something (issue 86). */}
-                {r.opened_at ? <p className="mt-1 text-xs text-slate-700" data-testid="link-opened">Opened {clock(r.opened_at, tz)}</p>
-                  : r.crew && !closed ? <p className="mt-1 text-xs font-medium text-amber-800" data-testid="link-opened">Not opened yet</p> : null}
-                {r.published_at && r.link && r.crew && !r.crew.reachable ? <p className="mt-1 text-xs font-medium text-amber-800" data-testid="no-reach">We can&apos;t text or email {r.crew.name}, so they don&apos;t have this route. Show them the QR code.</p> : null}
+                {r.opened_at ? <p className="mt-1 text-xs text-ink-2" data-testid="link-opened">Opened {clock(r.opened_at, tz)}</p>
+                  : r.crew && !closed ? <p className="mt-1 text-xs font-medium text-warn-ink" data-testid="link-opened">Not opened yet</p> : null}
+                {r.published_at && r.link && r.crew && !r.crew.reachable ? <p className="mt-1 text-xs font-medium text-warn-ink" data-testid="no-reach">We can&apos;t text or email {r.crew.name}, so they don&apos;t have this route. Show them the QR code.</p> : null}
                 {r.link && !closed ? <Button size="sm" variant="ghost" className="-ml-3" data-testid="show-link" onClick={() => showLink(r)}>{r.published_at ? 'QR / copy link' : 'QR / copy link (no message sent)'}</Button> : null}
                 {editable && r.stops.length > 1 ? <RunPlan runId={r.id} onDone={() => void load()} /> : null}
               </header>
               <ul className="space-y-2">
                 {r.stops.map((s: any) => (
-                  <li key={s.id} draggable={editable && s.status !== 'onsite' && s.status !== 'done'} onDragStart={(e) => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragging(s.id); }} onDragEnd={() => setDragging(null)} data-testid="stop-card" data-status={s.status} className={cn('rounded-md border border-slate-200 bg-white p-2 text-sm', s.status === 'done' && 'opacity-70', s.status === 'onsite' && 'border-beacon ring-1 ring-beacon', s.late && 'border-red-600 bg-red-50')}>
+                  <li key={s.id} draggable={editable && s.status !== 'onsite' && s.status !== 'done'} onDragStart={(e) => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragging(s.id); }} onDragEnd={() => setDragging(null)} data-testid="stop-card" data-status={s.status} className={cn('rounded-md border border-line-faint bg-surface p-2 text-sm', s.status === 'done' && 'opacity-70', s.status === 'onsite' && 'border-beacon ring-1 ring-beacon', s.late && 'border-danger bg-danger-tint')}>
                     {/* The name opens the stop's visits and photos (issue 41); the buttons below stay their own targets. */}
-                    <button type="button" className="-m-1 block w-[calc(100%+0.5rem)] rounded p-1 text-left hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-slate-900" data-testid="stop-open" aria-label={`${s.label}: details and photos`} onClick={() => setOpenStop(s.id)}>
+                    <button type="button" className="-m-1 block w-[calc(100%+0.5rem)] rounded p-1 text-left hover:bg-tint focus-visible:outline-2 focus-visible:outline-ink" data-testid="stop-open" aria-label={`${s.label}: details and photos`} onClick={() => setOpenStop(s.id)}>
                       <span className="flex items-start justify-between gap-2">
                         <span className="font-medium">{s.seq}. {s.label}</span>
                         <Badge className="shrink-0" tone={STATUS_TONE[s.status]}>{STATUS_WORD[s.status] ?? s.status}</Badge>
                       </span>
-                      <span className="block text-xs text-slate-600">{s.customer}</span>
-                      {s.done_at ? <span className="block text-xs text-slate-700" data-testid="stop-summary">Finished {clock(s.done_at, tz)}{s.depth_in !== null ? `, ${s.depth_in}"` : ''}, {s.photos === 0 ? 'no photos' : `${s.photos === 1 ? '1 photo' : `${s.photos} photos`}${s.after_photos === 0 ? ', no after photo' : ''}`}</span> : null}
-                      {s.problem ? <span className="block text-xs font-medium text-red-800">{s.problem.kind}{s.problem.note ? `: ${s.problem.note}` : ''}</span> : null}
+                      <span className="block text-xs text-muted">{s.customer}</span>
+                      {s.done_at ? <span className="block text-xs text-ink-2" data-testid="stop-summary">Finished {clock(s.done_at, tz)}{s.depth_in !== null ? `, ${s.depth_in}"` : ''}, {s.photos === 0 ? 'no photos' : `${s.photos === 1 ? '1 photo' : `${s.photos} photos`}${s.after_photos === 0 ? ', no after photo' : ''}`}</span> : null}
+                      {s.problem ? <span className="block text-xs font-medium text-danger">{s.problem.kind}{s.problem.note ? `: ${s.problem.note}` : ''}</span> : null}
                     </button>
-                    {s.late ? <div className="text-xs font-bold text-red-700">Late</div> : null}
-                    {s.arrived_at ? <div className="text-xs text-slate-600">On site {since(s.arrived_at, now)}</div> : null}
+                    {s.late ? <div className="text-xs font-bold text-danger">Late</div> : null}
+                    {s.arrived_at ? <div className="text-xs text-muted">On site {since(s.arrived_at, now)}</div> : null}
                     {editable && !['done', 'onsite'].includes(s.status) ? (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {live.runs.length > 1 ? (
@@ -374,7 +374,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
                     <option value="">Add a site to this truck...</option>
                     {sites.filter((x) => !inStorm.has(x.id)).map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
                   </Select>
-                ) : <p className="mt-2 px-1 text-xs text-slate-600" data-testid="add-stop-none">Every site you have is already on this storm.</p>
+                ) : <p className="mt-2 px-1 text-xs text-muted" data-testid="add-stop-none">Every site you have is already on this storm.</p>
               ) : null}
             </section>
           ))}
@@ -385,13 +385,13 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
             {live.alerts.length ? (
               <ul className="mt-2 space-y-2 text-sm" data-testid="alerts-rail">
                 {live.alerts.map((a: any, i: number) => (
-                  <li key={i} className={cn('rounded-md p-2', a.kind === 'late' || a.kind === 'problem' ? 'bg-red-50 text-red-900' : 'bg-amber-50 text-amber-900')}>
+                  <li key={i} className={cn('rounded-md p-2', a.kind === 'late' || a.kind === 'problem' ? 'bg-danger-tint text-danger-ink' : 'bg-warn-tint text-warn-ink')}>
                     {a.text}
                     {a.problem_id ? <Button size="sm" variant="ghost" data-testid="resolve-problem" onClick={() => act(() => api(`/api/problems/${a.problem_id}`, { method: 'PATCH' }))}>Resolved</Button> : null}
                   </li>
                 ))}
               </ul>
-            ) : <p className="mt-2 text-sm text-slate-600">Nothing needs you right now.</p>}
+            ) : <p className="mt-2 text-sm text-muted">Nothing needs you right now.</p>}
           </Card>
         </aside>
       </div>
@@ -414,7 +414,7 @@ function NotifyPanel({ stops, onSend, onClose }: { stops: any[]; onSend: (siteId
   return (
     <Card className="mb-3" data-testid="notify-panel">
       <h2 className="font-semibold">Notify customers</h2>
-      <p className="text-sm text-slate-600">Each customer gets this once for this storm, even if you send it again.</p>
+      <p className="text-sm text-muted">Each customer gets this once for this storm, even if you send it again.</p>
       <div className="mt-2 flex flex-wrap gap-3">
         <Select aria-label="Message" className="w-48" value={template} onChange={(e) => setTemplate(e.target.value)} data-testid="notify-template">
           <option value="late">Running late</option>

@@ -31,7 +31,7 @@ export function StopActions({ token, id, status, tons, deliveryDate }: { token: 
       <Button size="sm" variant="outline" disabled={busy || !date} data-testid="supplier-schedule" onClick={() => void send({ delivery_date: date })}>{status === 'scheduled' ? 'Change date' : 'Set date'}</Button>
       <div><Label htmlFor={`t-${id}`}>Tons delivered</Label><Input id={`t-${id}`} type="number" step="0.1" className="h-9 w-28" value={delivered} onChange={(e) => setDelivered(e.target.value)} data-testid="supplier-tons" /></div>
       <Button size="sm" disabled={busy || !Number(delivered)} data-testid="supplier-delivered" onClick={() => void send({ delivered_tons: Number(delivered) })}>Mark delivered</Button>
-      {error ? <p className="w-full text-sm text-red-700" role="alert">{error}</p> : null}
+      {error ? <p className="w-full text-sm text-danger" role="alert">{error}</p> : null}
     </div>
   );
 }

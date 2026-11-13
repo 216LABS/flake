@@ -38,8 +38,8 @@ export default async function Settings({ searchParams }: { searchParams: Promise
     <>
       <PageHeader title="Settings" subtitle={`Routes are edited on the Routes page. You are the ${ctx.role}.`} />
       {/* Wraps on a phone so every section shows, instead of some hiding past the edge (issue 82). */}
-      <nav aria-label="Settings sections" data-testid="settings-tabs" className="mb-5 flex flex-wrap gap-1 whitespace-nowrap border-b border-slate-300 text-sm md:flex-nowrap md:overflow-x-auto md:overflow-y-hidden md:[scrollbar-width:thin]">
-        {TABS.filter(([k]) => owner || !OWNER_TABS.includes(k)).map(([k, label]) => <Link key={k} href={`/settings?tab=${k}`} data-testid={`tab-${k}`} aria-current={tab === k ? 'page' : undefined} className={`-mb-px border-b-2 px-3 py-2 font-medium ${tab === k ? 'border-beacon text-slate-950' : 'border-transparent text-slate-600 hover:text-slate-950'}`}>{label}</Link>)}
+      <nav aria-label="Settings sections" data-testid="settings-tabs" className="mb-5 flex flex-wrap gap-1 whitespace-nowrap border-b border-line text-sm md:flex-nowrap md:overflow-x-auto md:overflow-y-hidden md:[scrollbar-width:thin]">
+        {TABS.filter(([k]) => owner || !OWNER_TABS.includes(k)).map(([k, label]) => <Link key={k} href={`/settings?tab=${k}`} data-testid={`tab-${k}`} aria-current={tab === k ? 'page' : undefined} className={`-mb-px border-b-2 px-3 py-2 font-medium ${tab === k ? 'border-beacon text-ink' : 'border-transparent text-muted hover:text-ink'}`}>{label}</Link>)}
       </nav>
       {!allowed ? <Card className="max-w-2xl" data-testid="owner-only"><p className="text-sm">Only an owner can open this.</p></Card> : null}
       {allowed && tab === 'company' ? <CompanyForm tenant={JSON.parse(JSON.stringify(t))} /> : null}
@@ -54,12 +54,12 @@ export default async function Settings({ searchParams }: { searchParams: Promise
             <h2 className="font-semibold">Your text number</h2>
             <p className="mt-1 text-sm">Status: <Badge tone={t.sms_status === 'approved' ? 'green' : t.sms_status === 'rejected' ? 'red' : t.sms_status === 'pending' ? 'amber' : 'gray'} data-testid="sms-status">{t.sms_status}</Badge></p>
             {t.sms_sender ? <p className="mt-1 text-sm">Number: {t.sms_sender}</p> : null}
-            {t.sms_status_detail ? <p className="mt-1 text-sm text-red-700">Reason: {t.sms_status_detail}. Fix the details and resubmit.</p> : null}
-            <p className="mt-2 text-sm text-slate-600">Texts go out from your own verified toll-free number, in your legal business name. Verification takes 3 to 5 business days. Until then crew links go by email, QR and copy-link, and customer notices go by email.</p>
-            <p className="mt-2 text-sm">Your public opt-in page: <Link className="text-sky-800 underline" href={`/b/${t.slug}/sms`}>{baseUrl()}/b/{t.slug}/sms</Link></p>
+            {t.sms_status_detail ? <p className="mt-1 text-sm text-danger">Reason: {t.sms_status_detail}. Fix the details and resubmit.</p> : null}
+            <p className="mt-2 text-sm text-muted">Texts go out from your own verified toll-free number, in your legal business name. Verification takes 3 to 5 business days. Until then crew links go by email, QR and copy-link, and customer notices go by email.</p>
+            <p className="mt-2 text-sm">Your public opt-in page: <Link className="text-link underline" href={`/b/${t.slug}/sms`}>{baseUrl()}/b/{t.slug}/sms</Link></p>
             <SmsSubmit status={t.sms_status ?? 'none'} />
             <h3 className="mt-4 text-sm font-medium">Sample messages we submit</h3>
-            <ul className="mt-1 list-disc pl-5 text-xs text-slate-600">{SAMPLE_MESSAGES(t.name).map((m) => <li key={m}>{m}</li>)}</ul>
+            <ul className="mt-1 list-disc pl-5 text-xs text-muted">{SAMPLE_MESSAGES(t.name).map((m) => <li key={m}>{m}</li>)}</ul>
           </Card>
           <BusinessForm tenant={JSON.parse(JSON.stringify(t))} />
         </div>
@@ -68,8 +68,8 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       {allowed && tab === 'data' ? (
         <Card className="max-w-2xl">
           <h2 className="font-semibold">Export your data</h2>
-          <p className="mt-1 text-sm text-slate-600">One CSV per table. Records are kept 7 years by default because claims can arrive months or years later. Photos and PDFs stay available through their links.</p>
-          <ul className="mt-3 grid gap-1 text-sm sm:grid-cols-2">{EXPORTS.map((n) => <li key={n}><a className="text-sky-800 underline" href={`/api/settings/export?table=${n}`}>{n}</a></li>)}</ul>
+          <p className="mt-1 text-sm text-muted">One CSV per table. Records are kept 7 years by default because claims can arrive months or years later. Photos and PDFs stay available through their links.</p>
+          <ul className="mt-3 grid gap-1 text-sm sm:grid-cols-2">{EXPORTS.map((n) => <li key={n}><a className="text-link underline" href={`/api/settings/export?table=${n}`}>{n}</a></li>)}</ul>
         </Card>
       ) : null}
       {tab === 'system' ? await SystemTab(ctx.tenantId, tz, ctx.email, owner) : null}
@@ -107,7 +107,7 @@ async function SystemTab(tenantId: string, tz: string, email: string | null, can
         <Card className="max-w-2xl" data-testid="usage">
           <h2 className="font-semibold">Storage</h2>
           <p className="mt-1 text-sm">Photos and files: {usage.files_mb} of {usage.files_limit_mb} MB. Database: {usage.db_mb} of {usage.db_limit_mb} MB.</p>
-          {usage.near_limit ? <p className="mt-1 text-sm font-medium text-red-700">Nearly full. When files run out, photos wait on drivers&apos; phones until there is room.</p> : null}
+          {usage.near_limit ? <p className="mt-1 text-sm font-medium text-danger">Nearly full. When files run out, photos wait on drivers&apos; phones until there is room.</p> : null}
         </Card>
       ) : null}
       <Card className="max-w-2xl">
@@ -122,16 +122,16 @@ async function SystemTab(tenantId: string, tz: string, email: string | null, can
           {calls ? (
             <>
               <p className="mt-1 text-sm">{calls.failed ? `${calls.failed} of ${calls.total}` : `None of ${calls.total}`} calls from the database scheduler failed in about the last 6 hours.{calls.total && calls.failed / calls.total > 0.2 ? ' That is high: check the app is up and the Vault app_base_url is right.' : ''}</p>
-              {calls.last_error ? <p className="mt-1 text-xs text-slate-600">Last failure{calls.last_failed_at ? ` ${fmtLocal(calls.last_failed_at, tz)}` : ''}: {calls.last_error}</p> : null}
-              <p className="mt-1 text-xs text-slate-600">Every scheduled task is safe to miss once: the next call picks up the work.</p>
+              {calls.last_error ? <p className="mt-1 text-xs text-muted">Last failure{calls.last_failed_at ? ` ${fmtLocal(calls.last_failed_at, tz)}` : ''}: {calls.last_error}</p> : null}
+              <p className="mt-1 text-xs text-muted">Every scheduled task is safe to miss once: the next call picks up the work.</p>
             </>
-          ) : <p className="mt-1 text-sm text-slate-600">Not available here: the scheduler&apos;s log can&apos;t be read from this deployment.</p>}
+          ) : <p className="mt-1 text-sm text-muted">Not available here: the scheduler&apos;s log can&apos;t be read from this deployment.</p>}
         </Card>
       ) : null}
       {isPlatformAdmin(email) && (await saltOrderingReady()) ? (
         <Card className="max-w-2xl">
           <h2 className="font-semibold">216LABS</h2>
-          <p className="mt-1 text-sm"><Link className="text-sky-800 underline" href="/admin/salt" data-testid="admin-salt-link">Salt suppliers and referral fees</Link></p>
+          <p className="mt-1 text-sm"><Link className="text-link underline" href="/admin/salt" data-testid="admin-salt-link">Salt suppliers and referral fees</Link></p>
         </Card>
       ) : null}
       <h2 className="font-semibold">Recent messages</h2>

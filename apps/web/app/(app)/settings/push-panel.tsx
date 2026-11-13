@@ -69,11 +69,11 @@ export function PushPanel({ publicKey }: { publicKey: string | null }) {
   return (
     <Card className="max-w-xl" data-testid="push-panel" data-state={publicKey ? state : 'not_configured'}>
       <h2 className="font-semibold">Alerts on this device</h2>
-      <p className="mt-1 text-sm text-slate-600">Trigger alerts, late sites and driver problems as notifications, for owners and dispatchers. Email alerts keep working either way.</p>
-      {!publicKey ? <p className="mt-3 text-sm text-slate-700">Push is not set up on this deployment yet, so alerts go by email.</p> : null}
-      {publicKey && state === 'unsupported' ? <p className="mt-3 text-sm text-slate-700">This browser can&apos;t receive push notifications.</p> : null}
-      {publicKey && state === 'needs_install' ? <p className="mt-3 text-sm text-slate-700">On iPhone, tap Share, then Add to Home Screen, and open Flake from there. iOS only allows notifications for installed apps (iOS 16.4 or newer).</p> : null}
-      {publicKey && state === 'blocked' ? <p className="mt-3 text-sm text-slate-700">Notifications are blocked for this site. Allow them in your browser settings, then come back.</p> : null}
+      <p className="mt-1 text-sm text-muted">Trigger alerts, late sites and driver problems as notifications, for owners and dispatchers. Email alerts keep working either way.</p>
+      {!publicKey ? <p className="mt-3 text-sm text-ink-2">Push is not set up on this deployment yet, so alerts go by email.</p> : null}
+      {publicKey && state === 'unsupported' ? <p className="mt-3 text-sm text-ink-2">This browser can&apos;t receive push notifications.</p> : null}
+      {publicKey && state === 'needs_install' ? <p className="mt-3 text-sm text-ink-2">On iPhone, tap Share, then Add to Home Screen, and open Flake from there. iOS only allows notifications for installed apps (iOS 16.4 or newer).</p> : null}
+      {publicKey && state === 'blocked' ? <p className="mt-3 text-sm text-ink-2">Notifications are blocked for this site. Allow them in your browser settings, then come back.</p> : null}
       {publicKey && state === 'off' ? <Button className="mt-3" variant="accent" disabled={busy} data-testid="push-enable" onClick={enable}>Turn on alerts</Button> : null}
       {publicKey && state === 'on' ? (
         <div className="mt-3 flex flex-wrap gap-2">
@@ -81,7 +81,7 @@ export function PushPanel({ publicKey }: { publicKey: string | null }) {
           <Button variant="ghost" disabled={busy} data-testid="push-disable" onClick={disable}>Turn off</Button>
         </div>
       ) : null}
-      {msg ? <p className="mt-2 text-sm text-slate-600" data-testid="push-msg">{msg}</p> : null}
+      {msg ? <p className="mt-2 text-sm text-muted" data-testid="push-msg">{msg}</p> : null}
     </Card>
   );
 }

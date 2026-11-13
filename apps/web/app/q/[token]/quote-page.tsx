@@ -23,9 +23,9 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
   const [reason, setReason] = useState('');
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <p className="font-display text-lg font-semibold text-slate-900">{quote.company}</p>
+      <p className="font-display text-lg font-semibold text-ink">{quote.company}</p>
       <h1 className="mt-1 text-4xl font-semibold leading-tight tracking-tight">Snow service for {quote.site.label}</h1>
-      <p className="text-sm text-slate-600">{quote.site.address}{quote.site.area_sqft ? `. About ${Number(quote.site.area_sqft).toLocaleString()} sq ft.` : ''}</p>
+      <p className="text-sm text-muted">{quote.site.address}{quote.site.area_sqft ? `. About ${Number(quote.site.area_sqft).toLocaleString()} sq ft.` : ''}</p>
       <Card className="mt-4">
         <h2 className="font-semibold">Scope and price, season {quote.contract.season}</h2>
         <ul className="mt-2 space-y-1 text-sm">
@@ -33,16 +33,16 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
             <li key={i} data-testid="scope-line"><b className="capitalize">{s.service}</b>: {s.service === 'salt' && quote.contract.salt_pricing ? `${money(quote.contract.salt_pricing.amount_cents)} per ${quote.contract.salt_pricing.unit === 'bag50lb' ? '50 lb bag' : quote.contract.salt_pricing.unit}` : priceText(s.pricing)}{s.trigger_in === 0 ? '. Starts with any measurable snow.' : s.trigger_in != null ? `. Starts at ${s.trigger_in}" of snow.` : ''}</li>
           ))}
         </ul>
-        {quote.contract.terms_md ? <><h3 className="mt-3 text-sm font-semibold">Terms</h3><p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{quote.contract.terms_md}</p></> : null}
+        {quote.contract.terms_md ? <><h3 className="mt-3 text-sm font-semibold">Terms</h3><p className="mt-1 whitespace-pre-wrap text-sm text-ink-2">{quote.contract.terms_md}</p></> : null}
       </Card>
       {declined && !accepted ? (
-        <Card className="mt-4 border-slate-300 bg-slate-50" data-testid="declined">
+        <Card className="mt-4 border-line bg-tint" data-testid="declined">
           <p className="font-medium">You declined this quote. {quote.company} has been told.</p>
-          <p className="mt-1 text-sm text-slate-700">Changed your mind? You can still accept it below while the link works.</p>
+          <p className="mt-1 text-sm text-ink-2">Changed your mind? You can still accept it below while the link works.</p>
         </Card>
       ) : null}
       {accepted ? (
-        <Card className="mt-4 border-emerald-300 bg-emerald-50" data-testid="accepted"><p className="font-medium">Accepted{quote.contract.accepted_name ? ` by ${quote.contract.accepted_name}` : ''}. Thank you.</p></Card>
+        <Card className="mt-4 border-ok-line bg-ok-tint" data-testid="accepted"><p className="font-medium">Accepted{quote.contract.accepted_name ? ` by ${quote.contract.accepted_name}` : ''}. Thank you.</p></Card>
       ) : (
         <Card className="mt-4">
           <h2 className="font-semibold">Accept</h2>
@@ -53,7 +53,7 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
           <label className="mt-2 flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={sms} onChange={(e) => setSms(e.target.checked)} data-testid="consent-sms" /> {quote.consent_text}</label>
           {sms ? <div className="mt-2"><Label htmlFor="ph">Mobile number</Label><Input id="ph" value={phone} type="tel" placeholder="216-555-0123" onChange={(e) => setPhone(e.target.value)} /></div> : null}
           <label className="mt-2 flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={emailOk} onChange={(e) => setEmailOk(e.target.checked)} data-testid="consent-email" /> Email me service updates.</label>
-          {error ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
+          {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
           <Button variant="accent" className="mt-4 w-full" disabled={sending || !agree || name.trim().length < 2} data-testid="accept" onClick={async () => {
             setError(null);
             setSending(true);
@@ -69,9 +69,9 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
           {/* Saying no is a real answer, so the office isn't left waiting (issue 59). */}
           {!declined ? (
             declining ? (
-              <div className="mt-6 border-t border-slate-200 pt-4">
+              <div className="mt-6 border-t border-line-faint pt-4">
                 <Label htmlFor="decline-reason">Anything you&apos;d like {quote.company} to know? (optional)</Label>
-                <textarea id="decline-reason" maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} className="mt-1 block w-full rounded-md border border-slate-300 p-2 text-base" rows={3} data-testid="decline-reason" />
+                <textarea id="decline-reason" maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} className="mt-1 block w-full rounded-md border border-line p-2 text-base" rows={3} data-testid="decline-reason" />
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button variant="outline" disabled={sending} data-testid="decline-send" onClick={async () => {
                     setError(null);
@@ -96,7 +96,7 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
       {accepted && quote.payments_ready && quote.customer.billing_mode !== 'manual' ? (
         paid ? <Card className="mt-4" data-testid="payment-saved"><p className="text-sm">Payment method saved. You&apos;re only charged after a storm, for the service you got.</p></Card> : <PaymentSetup token={token} onSaved={() => setPaid(true)} />
       ) : null}
-      <p className="mt-8 text-center text-xs text-slate-600">Quotes and service records by Flake</p>
+      <p className="mt-8 text-center text-xs text-muted">Quotes and service records by Flake</p>
     </main>
   );
 }
@@ -115,11 +115,11 @@ function PaymentSetup({ token, onSaved }: { token: string; onSaved: () => void }
   return (
     <Card className="mt-4">
       <h2 className="font-semibold">Card or bank account on file</h2>
-      <p className="mt-1 text-sm text-slate-600">Bank account is often cheapest for the company. You&apos;re charged only after each storm.</p>
+      <p className="mt-1 text-sm text-muted">Bank account is often cheapest for the company. You&apos;re charged only after each storm.</p>
       {!si ? <Button className="mt-3" onClick={() => void start()} data-testid="add-payment">Add payment method</Button> : si.mock ? <MockElement token={token} onSaved={onSaved} /> : (
         <Elements stripe={loadStripe(si.publishableKey!, { stripeAccount: si.stripeAccount })} options={{ clientSecret: si.clientSecret }}><LiveElement onSaved={onSaved} /></Elements>
       )}
-      {error ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
     </Card>
   );
 }
@@ -137,8 +137,8 @@ function MockElement({ token, onSaved }: { token: string; onSaved: () => void })
     }
   };
   return (
-    <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3">
-      <p className="text-xs text-amber-900">Mock payment form. No real card is used. A number ending 0002 will decline later.</p>
+    <div className="mt-3 rounded-md border border-warn-line bg-warn-tint p-3">
+      <p className="text-xs text-warn-ink">Mock payment form. No real card is used. A number ending 0002 will decline later.</p>
       <Label className="mt-2" htmlFor="card">Test card number</Label>
       <Input id="card" value={card} onChange={(e) => setCard(e.target.value)} data-testid="mock-card" />
       <div className="mt-2 flex gap-2">
@@ -157,7 +157,7 @@ function LiveElement({ onSaved }: { onSaved: () => void }) {
   return (
     <div className="mt-3">
       <PaymentElement />
-      {error ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
       <Button className="mt-3" disabled={!stripe || busy} onClick={async () => {
         if (!stripe || !elements) return;
         setBusy(true);

@@ -49,12 +49,12 @@ export function NewStorm({ routes, crew, defaultName }: { routes: { id: string; 
             </Select>
           </div>
         ))}
-        {!routes.length ? <p className="text-sm text-slate-600">No routes yet.</p> : null}
+        {!routes.length ? <p className="text-sm text-muted">No routes yet.</p> : null}
       </div>
-      {noDriver.length && routes.length ? <p className="mt-2 text-xs text-slate-600" data-testid="no-driver-note">{noDriver.map((r) => r.name).join(', ')} {noDriver.length === 1 ? 'has' : 'have'} no driver. Pick one on the storm board before you publish.</p> : null}
-      {error ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
+      {noDriver.length && routes.length ? <p className="mt-2 text-xs text-muted" data-testid="no-driver-note">{noDriver.map((r) => r.name).join(', ')} {noDriver.length === 1 ? 'has' : 'have'} no driver. Pick one on the storm board before you publish.</p> : null}
+      {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
       {busySites ? (
-        <div className="mt-2 rounded-md bg-amber-50 p-3 text-sm text-amber-950" role="alert" data-testid="busy-sites">
+        <div className="mt-2 rounded-md bg-warn-tint p-3 text-sm text-warn-ink" role="alert" data-testid="busy-sites">
           <p>{busySites}</p>
           <Button size="sm" variant="outline" className="mt-2" disabled={busy} data-testid="start-without-busy" onClick={() => void submit(true)}>Start without those lots</Button>
         </div>

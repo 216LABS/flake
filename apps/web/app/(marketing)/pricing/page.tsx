@@ -10,20 +10,20 @@ const PRO = ['Unlimited sites', 'Subcontractor pay statements', 'QuickBooks Onli
 export default function Pricing() {
   return (
     <section className="mx-auto max-w-4xl px-4 py-14">
-      <h1 className="text-3xl font-bold text-slate-900">Pricing</h1>
-      <p className="mt-2 text-slate-700">Stripe&apos;s own processing fees go to Stripe and are separate: card 2.9% + 30¢, bank (ACH) 0.8% capped at $5.</p>
-      <Card className="mt-4 border-sky-300 bg-sky-50"><b>Free first season.</b> Early testers pay no Pro charge through April 30, 2027, and Pro features are on, including unlimited sites. After that the free plan covers 25 sites. The 1% payment fee still applies. It&apos;s how Flake makes money.</Card>
+      <h1 className="text-3xl font-bold text-ink">Pricing</h1>
+      <p className="mt-2 text-ink-2">Stripe&apos;s own processing fees go to Stripe and are separate: card 2.9% + 30¢, bank (ACH) 0.8% capped at $5.</p>
+      <Card className="mt-4 border-info-line bg-info-tint"><b>Free first season.</b> Early testers pay no Pro charge through April 30, 2027, and Pro features are on, including unlimited sites. After that the free plan covers 25 sites. The 1% payment fee still applies. It&apos;s how Flake makes money.</Card>
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         <Card>
           <h2 className="text-xl font-semibold">Free</h2>
           <p className="mt-1 text-3xl font-bold">$0</p>
-          <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-slate-700">{FREE.map((x) => <li key={x}>{x}</li>)}</ul>
+          <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-ink-2">{FREE.map((x) => <li key={x}>{x}</li>)}</ul>
         </Card>
         <Card>
           <h2 className="text-xl font-semibold">Pro</h2>
-          <p className="mt-1 text-3xl font-bold">$79<span className="text-base font-normal text-slate-600">/mo</span></p>
-          <p className="text-sm text-slate-600">or $790 a year</p>
-          <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-slate-700">{PRO.map((x) => <li key={x}>{x}</li>)}</ul>
+          <p className="mt-1 text-3xl font-bold">$79<span className="text-base font-normal text-muted">/mo</span></p>
+          <p className="text-sm text-muted">or $790 a year</p>
+          <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-ink-2">{PRO.map((x) => <li key={x}>{x}</li>)}</ul>
         </Card>
       </div>
       <Link href="/login" className={`${buttonVariants({ variant: 'accent', size: 'lg' })} mt-6`}>Start free</Link>

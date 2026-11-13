@@ -26,9 +26,9 @@ export function sendRoutesBody(runs: RunReach[]): ReactNode {
           <ul className="mt-1 list-disc pl-5">{sent.map((r, i) => <li key={i}>{r.crew!.name}, {label(r)}, {how(r)}</li>)}</ul>
         </>
       ) : <p>Nobody can be messaged, so nothing is sent.</p>}
-      {unreachable.length ? <p className="mt-2 text-amber-900">No text or email for {unreachable.map((r) => `${r.crew!.name} (${label(r)})`).join(', ')}. Show them the QR code instead.</p> : null}
-      {noDriver.length ? <p className="mt-2 text-amber-900">{noDriver.map(label).join(', ')} {noDriver.length === 1 ? 'has' : 'have'} no driver yet. Assign one first; nothing is sent until every truck has one.</p> : null}
-      <p className="mt-2 text-slate-600">To hand out links without messaging anyone, use QR / copy link on each truck instead.</p>
+      {unreachable.length ? <p className="mt-2 text-warn-ink">No text or email for {unreachable.map((r) => `${r.crew!.name} (${label(r)})`).join(', ')}. Show them the QR code instead.</p> : null}
+      {noDriver.length ? <p className="mt-2 text-warn-ink">{noDriver.map(label).join(', ')} {noDriver.length === 1 ? 'has' : 'have'} no driver yet. Assign one first; nothing is sent until every truck has one.</p> : null}
+      <p className="mt-2 text-muted">To hand out links without messaging anyone, use QR / copy link on each truck instead.</p>
     </div>
   );
 }

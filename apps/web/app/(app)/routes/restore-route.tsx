@@ -24,7 +24,7 @@ export function RestoreRoute({ id, name }: { id: string; name: string }) {
           setBusy(false);
         }
       }}>Restore</Button>
-      {error ? <span className="text-sm text-red-800" role="alert">{error}</span> : null}
+      {error ? <span className="text-sm text-danger" role="alert">{error}</span> : null}
     </div>
   );
 }

@@ -85,11 +85,11 @@ export function SaltOrder({ initial, defaultAddress, canOrder, truckloadHint = 2
   return (
     <Card className="mt-4" data-testid="salt-order">
       <h3 className="font-semibold" id="salt">Order bulk salt</h3>
-      <p className="mt-1 text-sm text-slate-600">
+      <p className="mt-1 text-sm text-muted">
         From a partner supplier, delivered to your yard. A full truckload (about {truckloadHint} tons) ships on its own. Less than that shares a load with other companies nearby, so you pay the bulk price, not bag prices. The supplier bills you directly.
       </p>
       {a.storms_left !== null ? (
-        <p className={`mt-3 rounded-md p-3 text-sm ${a.low ? 'bg-amber-50 text-amber-950' : 'bg-slate-50 text-slate-700'}`} data-testid="salt-advice">
+        <p className={`mt-3 rounded-md p-3 text-sm ${a.low ? 'bg-warn-tint text-warn-ink' : 'bg-tint text-ink-2'}`} data-testid="salt-advice">
           {a.low
             ? `About ${a.storms_left} storms of salt left at ${data.per_storm_tons} tons a storm. ${a.suggest_tons} tons gets you back to five storms.`
             : `About ${a.storms_left} storms of salt on hand at ${data.per_storm_tons} tons a storm.`}
@@ -103,7 +103,7 @@ export function SaltOrder({ initial, defaultAddress, canOrder, truckloadHint = 2
           <div className="sm:col-span-2"><Label htmlFor="salt-address">Deliver to</Label><Input id="salt-address" value={address} onChange={(e) => { setAddress(e.target.value); setQ(null); }} placeholder="Your yard's street address" data-testid="salt-address" /></div>
           <div><Label htmlFor="salt-contact">Contact at the yard (optional)</Label><Input id="salt-contact" value={contact} onChange={(e) => setContact(e.target.value)} /></div>
           <div><Label htmlFor="salt-phone">Their phone (optional)</Label><Input id="salt-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
-          {!(Number(tons) > 0) || address.trim().length < 5 ? <p className="text-sm text-slate-600 sm:col-span-2" data-testid="salt-order-needs">{!(Number(tons) > 0) ? 'Enter how many tons, 1 or more.' : 'Enter the street address to deliver to.'}</p> : null}
+          {!(Number(tons) > 0) || address.trim().length < 5 ? <p className="text-sm text-muted sm:col-span-2" data-testid="salt-order-needs">{!(Number(tons) > 0) ? 'Enter how many tons, 1 or more.' : 'Enter the street address to deliver to.'}</p> : null}
           <div className="flex gap-2 sm:col-span-2">
             <Button variant="outline" disabled={busy || !Number(tons) || address.trim().length < 5} data-testid="salt-quote" onClick={() => run(async () => setQ(await api<Quote>('/api/salt/quote', { body: { address, tons: Number(tons) } })))}>Check price</Button>
             {q?.covered ? (
@@ -132,35 +132,35 @@ export function SaltOrder({ initial, defaultAddress, canOrder, truckloadHint = 2
       ) : null}
 
       {q ? (
-        <div className="mt-3 rounded-md border border-slate-200 p-3 text-sm" data-testid="salt-quote-result">
+        <div className="mt-3 rounded-md border border-line-faint p-3 text-sm" data-testid="salt-quote-result">
           {!q.covered ? (
             <p>No partner supplier delivers to {q.address} yet. Ask for one and we&apos;ll tell you when one does.</p>
           ) : (
             <>
               <p><b>{q.supplier}</b>, {q.miles} miles away: {money(q.price_per_ton_cents)} a ton delivered{q.path.kind !== 'direct' && q.stop_fee_cents ? `, plus ${money(q.stop_fee_cents)} for each stop on a shared load` : ''}.</p>
               <p className="mt-1">About <b className="tabular">{money(q.total_cents)}</b> before tax, billed by {q.supplier}.</p>
-              <p className="mt-1 text-slate-600">
+              <p className="mt-1 text-muted">
                 {plan(q.path, q.truckload_tons)}
               </p>
             </>
           )}
         </div>
       ) : null}
-      {msg ? <p className="mt-3 text-sm text-emerald-800" role="status" data-testid="salt-msg">{msg}</p> : null}
-      {error ? <p className="mt-3 text-sm text-red-700" role="alert">{error}</p> : null}
+      {msg ? <p className="mt-3 text-sm text-ok-ink" role="status" data-testid="salt-msg">{msg}</p> : null}
+      {error ? <p className="mt-3 text-sm text-danger" role="alert">{error}</p> : null}
 
       {data.orders.length ? (
         <ul className="mt-4 space-y-2" data-testid="salt-orders">
           {data.orders.map((o) => (
-            <li key={o.id} className="rounded-md border border-slate-200 p-3 text-sm" data-testid="salt-order-row" data-status={o.status}>
+            <li key={o.id} className="rounded-md border border-line-faint p-3 text-sm" data-testid="salt-order-row" data-status={o.status}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span><b className="tabular">{t1(o.tons)} tons</b> from {o.supplier}</span>
                 <Badge tone={STATUS[o.status]?.tone ?? 'gray'}>{STATUS[o.status]?.label ?? o.status}</Badge>
               </div>
-              <div className="mt-1 text-slate-600">
+              <div className="mt-1 text-muted">
                 {o.status === 'pooling' && o.pool_tons !== null ? (
                   <>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100" aria-hidden="true"><div className="h-full bg-amber-400" style={{ width: `${Math.min(100, (o.pool_tons / (o.pool_truckload_tons ?? truckloadHint)) * 100)}%` }} /></div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-tint-2" aria-hidden="true"><div className="h-full bg-amber-400" style={{ width: `${Math.min(100, (o.pool_tons / (o.pool_truckload_tons ?? truckloadHint)) * 100)}%` }} /></div>
                     <span className="tabular">{t1(o.pool_tons)} of {t1(o.pool_truckload_tons ?? truckloadHint)} tons in this load so far.</span>
                   </>
                 ) : o.status === 'ordered' ? `${o.supplier} has it and will set a delivery date. ${o.address}` : o.status === 'scheduled' ? `Delivery on ${o.delivery_date}.` : o.status === 'delivered' ? `Delivered ${t1(o.delivered_tons ?? o.tons)} tons${o.delivery_date ? ` on ${o.delivery_date}` : ''}. Added to your salt count.` : o.address}

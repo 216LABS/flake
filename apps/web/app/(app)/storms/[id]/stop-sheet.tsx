@@ -64,31 +64,31 @@ export function StopSheet({ stopId, tz, onClose }: { stopId: string; tz: string;
   const photos = d?.visits.flatMap((v) => v.photos) ?? [];
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/50 sm:items-stretch sm:justify-end" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={sheet} role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid="stop-sheet" className="flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-xl bg-white shadow-2xl sm:max-h-none sm:max-w-md sm:rounded-none">
-        <div className="flex items-start gap-3 border-b border-slate-200 p-4">
+      <div ref={sheet} role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid="stop-sheet" className="flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-xl bg-surface shadow-2xl sm:max-h-none sm:max-w-md sm:rounded-none">
+        <div className="flex items-start gap-3 border-b border-line-faint p-4">
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="font-display text-lg font-semibold leading-tight">{d ? d.site.label : 'Stop'}</h2>
-            {d ? <p className="text-sm text-slate-600">{d.customer.name}{d.site.address ? `, ${d.site.address}` : ''}</p> : null}
+            {d ? <p className="text-sm text-muted">{d.customer.name}{d.site.address ? `, ${d.site.address}` : ''}</p> : null}
           </div>
           <Button ref={closeBtn} variant="ghost" size="sm" className="h-10 w-10 shrink-0 p-0" aria-label="Close" data-testid="stop-sheet-close" onClick={onClose}><X size={20} aria-hidden="true" /></Button>
         </div>
         <div className="overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-sm">
-          {error ? <p className="rounded-md bg-red-50 p-3 text-red-800" role="alert">{error}</p> : null}
-          {!d && !error ? <p className="text-slate-600">Loading...</p> : null}
+          {error ? <p className="rounded-md bg-danger-tint p-3 text-danger" role="alert">{error}</p> : null}
+          {!d && !error ? <p className="text-muted">Loading...</p> : null}
           {d ? (
             <>
               <div className="flex flex-wrap items-center gap-2">
                 <Badge tone={d.status === 'done' ? 'green' : d.status === 'problem' ? 'red' : 'gray'} data-testid="stop-sheet-status">{STATUS_WORD[d.status] ?? d.status}</Badge>
-                <span className="text-slate-600">Stop {d.seq} on {d.run.name}{d.run.pass > 1 ? ` (pass ${d.run.pass})` : ''}{d.run.crew ? `, ${d.run.crew}` : ''}</span>
+                <span className="text-muted">Stop {d.seq} on {d.run.name}{d.run.pass > 1 ? ` (pass ${d.run.pass})` : ''}{d.run.crew ? `, ${d.run.crew}` : ''}</span>
               </div>
-              {d.site.open_by ? <p className="mt-1 text-slate-600">Open by {d.site.open_by}</p> : null}
+              {d.site.open_by ? <p className="mt-1 text-muted">Open by {d.site.open_by}</p> : null}
 
               {d.problems.length ? (
                 <section className="mt-4">
                   <h3 className="font-semibold">Problems reported</h3>
                   <ul className="mt-1 space-y-1">
                     {d.problems.map((p) => (
-                      <li key={p.id} className="rounded-md bg-red-50 p-2 text-red-900" data-testid="stop-sheet-problem">
+                      <li key={p.id} className="rounded-md bg-danger-tint p-2 text-danger-ink" data-testid="stop-sheet-problem">
                         <b>{p.kind}</b>{p.note ? `: ${p.note}` : ''}
                         <span className="block text-xs">{when(p.at, tz)}{p.resolved_at ? `, resolved ${when(p.resolved_at, tz)}` : ''}</span>
                       </li>
@@ -99,23 +99,23 @@ export function StopSheet({ stopId, tz, onClose }: { stopId: string; tz: string;
 
               <section className="mt-4">
                 <h3 className="font-semibold">Visits</h3>
-                {!d.visits.length ? <p className="mt-1 text-slate-600" data-testid="stop-sheet-no-visits">No visit logged yet.</p> : null}
+                {!d.visits.length ? <p className="mt-1 text-muted" data-testid="stop-sheet-no-visits">No visit logged yet.</p> : null}
                 <ul className="mt-1 space-y-3">
                   {d.visits.map((v) => (
-                    <li key={v.id} className="rounded-md border border-slate-200 p-3" data-testid="stop-sheet-visit">
+                    <li key={v.id} className="rounded-md border border-line-faint p-3" data-testid="stop-sheet-visit">
                       <div className="flex flex-wrap justify-between gap-2">
                         <span className="font-medium">{v.crew ?? 'Driver'}{v.replow ? ' (plowed again)' : ''}</span>
                         {v.voided ? <Badge tone="gray">Voided</Badge> : null}
                       </div>
                       <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
-                        <dt className="text-slate-600">Arrived</dt><dd>{when(v.arrived_at, tz)}</dd>
-                        <dt className="text-slate-600">Finished</dt><dd>{when(v.departed_at, tz) ?? 'Still on site'}</dd>
-                        <dt className="text-slate-600">Services</dt><dd>{v.services.length ? v.services.join(', ') : 'None ticked'}</dd>
-                        <dt className="text-slate-600">Depth</dt><dd>{v.depth_in !== null ? `${v.depth_in} in` : 'Not logged'}</dd>
-                        {v.salt?.length ? <><dt className="text-slate-600">Salt</dt><dd>{v.salt.map((x) => `${x.qty} ${SALT_UNIT[x.unit] ?? x.unit}`).join(', ')}</dd></> : null}
-                        <dt className="text-slate-600">GPS</dt>
-                        <dd>{v.gps ? <>{v.gps.lat.toFixed(5)}, {v.gps.lon.toFixed(5)}{v.gps.accuracy_m !== null ? `, within ${feet(v.gps.accuracy_m)}` : ''}{v.gps.matched === false ? <span className="block text-xs font-medium text-amber-800">Not at the lot&apos;s mapped spot</span> : null}</> : 'Not shared'}</dd>
-                        {v.notes ? <><dt className="text-slate-600">Note</dt><dd>{v.notes}</dd></> : null}
+                        <dt className="text-muted">Arrived</dt><dd>{when(v.arrived_at, tz)}</dd>
+                        <dt className="text-muted">Finished</dt><dd>{when(v.departed_at, tz) ?? 'Still on site'}</dd>
+                        <dt className="text-muted">Services</dt><dd>{v.services.length ? v.services.join(', ') : 'None ticked'}</dd>
+                        <dt className="text-muted">Depth</dt><dd>{v.depth_in !== null ? `${v.depth_in} in` : 'Not logged'}</dd>
+                        {v.salt?.length ? <><dt className="text-muted">Salt</dt><dd>{v.salt.map((x) => `${x.qty} ${SALT_UNIT[x.unit] ?? x.unit}`).join(', ')}</dd></> : null}
+                        <dt className="text-muted">GPS</dt>
+                        <dd>{v.gps ? <>{v.gps.lat.toFixed(5)}, {v.gps.lon.toFixed(5)}{v.gps.accuracy_m !== null ? `, within ${feet(v.gps.accuracy_m)}` : ''}{v.gps.matched === false ? <span className="block text-xs font-medium text-warn-ink">Not at the lot&apos;s mapped spot</span> : null}</> : 'Not shared'}</dd>
+                        {v.notes ? <><dt className="text-muted">Note</dt><dd>{v.notes}</dd></> : null}
                       </dl>
                     </li>
                   ))}
@@ -128,14 +128,14 @@ export function StopSheet({ stopId, tz, onClose }: { stopId: string; tz: string;
                   <ul className="mt-2 grid grid-cols-2 gap-2" data-testid="stop-sheet-photos">
                     {photos.map((p) => (
                       <li key={p.id}>
-                        <button type="button" className="block w-full overflow-hidden rounded-md border border-slate-200 text-left" onClick={() => setBig(p)} data-testid="stop-sheet-photo">
-                          <img src={`/api/photos/${p.id}?thumb`} alt={`${PHASE[p.phase ?? ''] ?? 'Photo'} photo`} className="aspect-[4/3] w-full bg-slate-100 object-cover" loading="lazy" />
+                        <button type="button" className="block w-full overflow-hidden rounded-md border border-line-faint text-left" onClick={() => setBig(p)} data-testid="stop-sheet-photo">
+                          <img src={`/api/photos/${p.id}?thumb`} alt={`${PHASE[p.phase ?? ''] ?? 'Photo'} photo`} className="aspect-[4/3] w-full bg-tint-2 object-cover" loading="lazy" />
                           <span className="block px-2 py-1 text-xs"><b>{PHASE[p.phase ?? ''] ?? 'Photo'}</b> {when(p.taken_at ?? p.received_at, tz)}</span>
                         </button>
                       </li>
                     ))}
                   </ul>
-                ) : <p className="mt-1 text-slate-600" data-testid="stop-sheet-no-photos">No photos for this stop{d.visits.length ? '' : ' yet'}.</p>}
+                ) : <p className="mt-1 text-muted" data-testid="stop-sheet-no-photos">No photos for this stop{d.visits.length ? '' : ' yet'}.</p>}
               </section>
             </>
           ) : null}

@@ -25,7 +25,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
           <div className="min-w-0"><Label htmlFor="to">To</Label><Input id="to" name="to" type="date" defaultValue={p.backward.to} /></div>
           <button type="submit" className={buttonVariants({ variant: 'outline', className: 'h-11 sm:h-10' })} data-testid="period-show">Show</button>
         </form>
-        <p className="rounded-md bg-red-50 p-3 text-sm text-red-800" role="alert" data-testid="period-backward">
+        <p className="rounded-md bg-danger-tint p-3 text-sm text-danger" role="alert" data-testid="period-backward">
           The From date ({fmtLocal(`${p.backward.from}T12:00:00Z`, 'UTC', { month: 'short', day: 'numeric', year: 'numeric' })}) is after the To date ({fmtLocal(`${p.backward.to}T12:00:00Z`, 'UTC', { month: 'short', day: 'numeric', year: 'numeric' })}). Fix one of them, or{' '}
           <a className="font-semibold underline" href={`/reports?from=${p.backward.to}&to=${p.backward.from}`} data-testid="period-swap">show {p.backward.to} to {p.backward.from}</a>.
         </p>
@@ -57,7 +57,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
           <Eyebrow id="hours-title">Crew hours</Eyebrow>
           {hours.length ? <a href={`/api/reports/hours.csv?from=${p.from}&to=${p.to}`} className={buttonVariants({ variant: 'outline', size: 'sm' })} data-testid="hours-csv">Download for payroll (CSV)</a> : null}
         </div>
-        <p className="mb-3 max-w-2xl text-sm text-slate-600">
+        <p className="mb-3 max-w-2xl text-sm text-muted">
           From each driver&apos;s first tap on their route link to their last, using their phone&apos;s taps and GPS. A quiet gap of two hours or more starts a new shift. Check anything with a note before you pay.
         </p>
         {hours.length ? (
@@ -71,18 +71,18 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
               </tbody>
             </Table>
             <details className="mt-3">
-              <summary className="cursor-pointer text-sm font-semibold text-slate-700">Every shift</summary>
+              <summary className="cursor-pointer text-sm font-semibold text-ink-2">Every shift</summary>
               <Table stack className="mt-2" data-testid="hours-shifts">
                 <thead><tr><Th>Name</Th><Th>Storm</Th><Th>Clock in</Th><Th>Clock out</Th><Th className="text-right">Hours</Th><Th>Note</Th></tr></thead>
                 <tbody>
                   {hours.map((h, i) => (
-                    <tr key={i}><Td className="font-medium">{h.crew}</Td><Td label="Storm">{h.storm}</Td><Td label="Clock in" className="tabular">{h.clockIn}</Td><Td label="Clock out" className="tabular">{h.clockOut}</Td><Td label="Hours" className="tabular text-right">{h.hours.toFixed(2)}</Td><Td className="text-amber-800">{h.note}</Td></tr>
+                    <tr key={i}><Td className="font-medium">{h.crew}</Td><Td label="Storm">{h.storm}</Td><Td label="Clock in" className="tabular">{h.clockIn}</Td><Td label="Clock out" className="tabular">{h.clockOut}</Td><Td label="Hours" className="tabular text-right">{h.hours.toFixed(2)}</Td><Td className="text-warn-ink">{h.note}</Td></tr>
                   ))}
                 </tbody>
               </Table>
             </details>
           </>
-        ) : <Card className="text-sm text-slate-600">No driver activity between these dates.</Card>}
+        ) : <Card className="text-sm text-muted">No driver activity between these dates.</Card>}
       </section>
 
       <section aria-labelledby="salt-title">
@@ -94,14 +94,14 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
           <Card><Stat label="Storms left" value={salt.stormsLeft ?? '-'} note="At your average use per storm" /></Card>
           <Card><Stat label="Used these dates" value={tons(usedTons)} note={`${saltedVisits} salted visit${saltedVisits === 1 ? '' : 's'}`} /></Card>
         </div>
-        {salt.stock.tons < 0 ? <p className="mb-4 rounded-md bg-amber-50 p-3 text-sm text-amber-950" data-testid="salt-negative">Drivers logged more salt than was delivered. Add the deliveries you are missing, or a count of the pile.</p> : null}
+        {salt.stock.tons < 0 ? <p className="mb-4 rounded-md bg-warn-tint p-3 text-sm text-warn-ink" data-testid="salt-negative">Drivers logged more salt than was delivered. Add the deliveries you are missing, or a count of the pile.</p> : null}
         {salt.storms.length ? (
           <Table stack className="mb-4" data-testid="salt-storms">
             <thead><tr><Th>Storm</Th><Th>Salted visits</Th><Th className="text-right">Tons</Th><Th className="text-right">Applications</Th></tr></thead>
             <tbody>{salt.storms.map((s) => <tr key={s.storm}><Td className="font-medium">{s.storm}</Td><Td label="Salted visits" className="tabular">{s.visits}</Td><Td label="Tons" className="tabular text-right">{s.tons.toFixed(2)}</Td><Td label="Applications" className="tabular text-right">{s.applications || '-'}</Td></tr>)}</tbody>
           </Table>
         ) : null}
-        <p className="mb-3 max-w-2xl text-xs text-slate-600">Bags count as 50 lb. Salt logged as &quot;applications&quot; has no weight, so it is listed but not taken off the pile.</p>
+        <p className="mb-3 max-w-2xl text-xs text-muted">Bags count as 50 lb. Salt logged as &quot;applications&quot; has no weight, so it is listed but not taken off the pile.</p>
         <SaltStockForm canEdit={ctx.role !== 'viewer'} entries={salt.entries.map((e) => ({ ...e, when: fmtLocal(e.at, tz, { month: 'short', day: 'numeric', year: 'numeric' }) }))} />
         {ordering ? <SaltOrder initial={JSON.parse(JSON.stringify(ordering))} defaultAddress={yard} canOrder={ctx.role !== 'viewer'} /> : null}
       </section>

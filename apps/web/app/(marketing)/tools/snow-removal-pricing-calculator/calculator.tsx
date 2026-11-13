@@ -41,7 +41,7 @@ export function Calculator() {
         <div><Label htmlFor="walks">Walks (feet)</Label><Input id="walks" type="number" min={0} value={walks} onChange={(e) => setWalks(e.target.value)} /></div>
         <div><Label htmlFor="em">Email (optional)</Label><Input id="em" type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
       </div>
-      <fieldset className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3">
+      <fieldset className="mt-4 rounded-md border border-warn-line bg-warn-tint p-3">
         <legend className="px-1"><Badge tone="amber">Your assumptions, not market data</Badge></legend>
         <div className="grid gap-3 sm:grid-cols-2">
           <div><Label htmlFor="rate">Cents per sq ft, per push</Label><Input id="rate" type="number" step="0.01" min={0} max={100} value={rate} onChange={(e) => setRate(e.target.value)} /></div>
@@ -51,17 +51,17 @@ export function Calculator() {
         </div>
       </fieldset>
       <Button variant="accent" className="mt-4" disabled={(!sqft && !address) || Boolean(problem)} onClick={() => void run()} data-testid="calc-run">Estimate</Button>
-      {problem && (sqft || address) ? <p className="mt-2 text-sm text-red-700" data-testid="calc-problem">{problem}</p> : null}
-      {error && error !== problem ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
+      {problem && (sqft || address) ? <p className="mt-2 text-sm text-danger" data-testid="calc-problem">{problem}</p> : null}
+      {error && error !== problem ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
       {out ? (
-        <div className="mt-4 rounded-md bg-slate-50 p-4" data-testid="calc-result">
-          <p className="text-sm text-slate-600">{Number(out.sqft).toLocaleString()} sq ft{out.measured ? ', an estimate from public map data for the address you entered. Confirm it on site.' : ''}</p>
+        <div className="mt-4 rounded-md bg-tint p-4" data-testid="calc-result">
+          <p className="text-sm text-muted">{Number(out.sqft).toLocaleString()} sq ft{out.measured ? ', an estimate from public map data for the address you entered. Confirm it on site.' : ''}</p>
           <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-3">
-            <div><dt className="text-slate-600">Per push</dt><dd className="text-xl font-semibold" data-testid="calc-push">{money(out.estimate.per_push_cents)}</dd></div>
-            <div><dt className="text-slate-600">Per event</dt><dd className="text-xl font-semibold">{money(out.estimate.per_event_cents)}</dd></div>
-            <div><dt className="text-slate-600">Seasonal</dt><dd className="text-xl font-semibold">{money(out.estimate.seasonal_cents)}</dd></div>
+            <div><dt className="text-muted">Per push</dt><dd className="text-xl font-semibold" data-testid="calc-push">{money(out.estimate.per_push_cents)}</dd></div>
+            <div><dt className="text-muted">Per event</dt><dd className="text-xl font-semibold">{money(out.estimate.per_event_cents)}</dd></div>
+            <div><dt className="text-muted">Seasonal</dt><dd className="text-xl font-semibold">{money(out.estimate.seasonal_cents)}</dd></div>
           </dl>
-          <p className="mt-3 text-sm">Turn this into a signed quote: <Link className="text-sky-800 underline" href="/login">run it in Flake free</Link>.</p>
+          <p className="mt-3 text-sm">Turn this into a signed quote: <Link className="text-link underline" href="/login">run it in Flake free</Link>.</p>
         </div>
       ) : null}
     </Card>

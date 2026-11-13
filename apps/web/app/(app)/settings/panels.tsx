@@ -39,7 +39,7 @@ export function RateCardForm({ card }: { card: RateCard }) {
   return (
     <Card className="max-w-xl">
       <h2 className="font-semibold">Rate card</h2>
-      <p className="mt-1 text-sm text-slate-600">These are your numbers, and they set suggested prices on new quotes. The starting values are placeholders, not market data.</p>
+      <p className="mt-1 text-sm text-muted">These are your numbers, and they set suggested prices on new quotes. The starting values are placeholders, not market data.</p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         {field('rate', 'Cents per sq ft, per push', { step: '0.01', min: 0, max: 100 }, 'rate-sqft')}
         {field('min', 'Minimum push ($)', { step: '0.01', min: 0, max: 100000 })}
@@ -47,10 +47,10 @@ export function RateCardForm({ card }: { card: RateCard }) {
         {field('salt', 'Salt per 50 lb bag ($)', { step: '0.01', min: 0, max: 100000 })}
         {field('pushes', 'Pushes per season', { step: '1', min: 1, max: 100 })}
       </div>
-      {problem ? <p className="mt-3 text-sm text-red-700" role="alert" data-testid="rate-problem">{problem}</p> : null}
+      {problem ? <p className="mt-3 text-sm text-danger" role="alert" data-testid="rate-problem">{problem}</p> : null}
       <div className="mt-4 flex items-center gap-2">
         <Button disabled={busy || Boolean(problem)} data-testid="rate-save" onClick={() => { setShown(true); void run(() => api('/api/settings/rate-card', { method: 'PUT', body: { ...card, per_sqft_cents_per_push: Number(f.rate), min_push_cents: dollarsToCents(f.min), walks_per_lf_cents: Number(f.walk), salt_bag_cents: dollarsToCents(f.salt), season_pushes: Number(f.pushes) } })); }}>Save</Button>
-        {msg && shown ? <span className={msg === 'Saved' ? 'text-sm font-medium text-emerald-800' : 'text-sm text-red-700'} role={msg === 'Saved' ? 'status' : 'alert'} data-testid="rate-msg">{msg}</span> : null}
+        {msg && shown ? <span className={msg === 'Saved' ? 'text-sm font-medium text-ok-ink' : 'text-sm text-danger'} role={msg === 'Saved' ? 'status' : 'alert'} data-testid="rate-msg">{msg}</span> : null}
       </div>
     </Card>
   );
@@ -82,7 +82,7 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
           <thead><tr><Th>Name</Th><Th>Kind</Th><Th>Contact</Th><Th>Language</Th><Th>Joined</Th><Th><span className="sr-only">Actions</span></Th></tr></thead>
           <tbody>
             {crew.map((c) => (
-              <tr key={c.id} className={c.active ? '' : 'bg-slate-50 text-slate-600'} data-testid="crew-row">
+              <tr key={c.id} className={c.active ? '' : 'bg-tint text-muted'} data-testid="crew-row">
                 <Td className="font-medium">{c.name}{c.active ? null : <span className="ml-2 text-xs font-medium">(no longer on the crew)</span>}</Td>
                 <Td label="Kind"><Badge>{c.kind}</Badge></Td>
                 <Td label="Contact"><div className="whitespace-nowrap">{phone(c.phone_e164)}</div><div>{c.email ?? ''}</div></Td>
@@ -107,14 +107,14 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
       </div>
       <Card>
         <h2 className="font-semibold">{editing ? 'Edit crew member' : 'Invite crew'}</h2>
-        <p className="mt-1 text-sm text-slate-600">{editing ? 'Texts stay opt-in. A changed number needs a new opt-in from the invite link.' : 'They choose on the join page whether to get texts.'}</p>
+        <p className="mt-1 text-sm text-muted">{editing ? 'Texts stay opt-in. A changed number needs a new opt-in from the invite link.' : 'They choose on the join page whether to get texts.'}</p>
         <div className="mt-2 space-y-2">
           <div><Label htmlFor="crew-name">Name</Label><Input id="crew-name" data-testid="crew-name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
           <div><Label htmlFor="crew-phone">Mobile</Label><Input id="crew-phone" value={f.phone_e164} onChange={(e) => setF({ ...f, phone_e164: e.target.value })} /></div>
           <div>
             <Label htmlFor="crew-email">Email</Label>
             <Input id="crew-email" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} aria-describedby="crew-email-hint" />
-            {!canText ? <p id="crew-email-hint" className="mt-1 text-xs text-amber-800" data-testid="crew-email-hint">Texting isn&apos;t approved yet, so route links go by email. Add it here, or the driver adds it when they join.</p> : null}
+            {!canText ? <p id="crew-email-hint" className="mt-1 text-xs text-warn-ink" data-testid="crew-email-hint">Texting isn&apos;t approved yet, so route links go by email. Add it here, or the driver adds it when they join.</p> : null}
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div><Label htmlFor="crew-kind">Kind</Label><Select id="crew-kind" value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}><option value="employee">Employee</option><option value="sub">Subcontractor</option></Select></div>
@@ -140,7 +140,7 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
             router.refresh();
           }, 'Invited')}>Invite</Button>
         )}
-        {msg ? <p className="mt-2 text-sm text-slate-600" data-testid="crew-msg">{msg}</p> : null}
+        {msg ? <p className="mt-2 text-sm text-muted" data-testid="crew-msg">{msg}</p> : null}
         {invite ? <div className="mt-2"><Label>Invite link</Label><Input readOnly value={invite} data-testid="invite-url" /></div> : null}
       </Card>
     </div>
@@ -176,7 +176,7 @@ export function TeamPanel({ members, me }: { members: { user_id: string; email: 
                       void run(async () => { await api(`/api/settings/team/${m.user_id}`, { method: 'DELETE' }); router.refresh(); }, 'Removed');
                     }}>Remove</Button>
                   </div>
-                ) : <span className="text-xs text-slate-500">You</span>}</Td>
+                ) : <span className="text-xs text-faint">You</span>}</Td>
               </tr>
             ))}
           </tbody>
@@ -184,13 +184,13 @@ export function TeamPanel({ members, me }: { members: { user_id: string; email: 
       </div>
       <Card>
         <h2 className="font-semibold">Add someone to the office</h2>
-        <p className="mt-1 text-sm text-slate-600">Dispatchers run storms and billing. Viewers can only look. They sign in with an email link, with no password.</p>
+        <p className="mt-1 text-sm text-muted">Dispatchers run storms and billing. Viewers can only look. They sign in with an email link, with no password.</p>
         <Label className="mt-3" htmlFor="team-email">Email</Label>
         <Input id="team-email" type="email" data-testid="team-email" value={email} onChange={(e) => setEmail(e.target.value)} />
         <Label className="mt-2" htmlFor="team-role">Role</Label>
         <Select id="team-role" data-testid="team-role" value={role} onChange={(e) => setRole(e.target.value)}><option value="dispatcher">Dispatcher</option><option value="viewer">Viewer</option><option value="owner">Owner</option></Select>
         <Button className="mt-3 w-full" disabled={busy || !email.includes('@')} data-testid="team-add" onClick={() => run(async () => { await api('/api/settings/team', { body: { email, role } }); setEmail(''); router.refresh(); }, 'Added. We emailed them a sign-in link.')}>Add</Button>
-        {msg ? <p className="mt-2 text-sm text-slate-600" data-testid="team-msg">{msg}</p> : null}
+        {msg ? <p className="mt-2 text-sm text-muted" data-testid="team-msg">{msg}</p> : null}
       </Card>
     </div>
   );
@@ -202,9 +202,9 @@ export function PaymentsPanel({ connected, enabled }: { connected: boolean; enab
     <Card className="max-w-xl">
       <h2 className="font-semibold">Stripe</h2>
       <p className="mt-1 text-sm">Status: <Badge tone={enabled ? 'green' : connected ? 'amber' : 'gray'} data-testid="stripe-status">{enabled ? 'Charges enabled' : connected ? 'Finish onboarding' : 'Not connected'}</Badge></p>
-      <p className="mt-2 text-sm text-slate-600">Payments go straight to your own Stripe account. You pay Stripe&apos;s fees, Stripe handles disputes and losses, and you log in to your own Stripe Dashboard. Flake takes a small application fee on each payment, shown on every billing review. You can skip this and use Flake without online payments.</p>
+      <p className="mt-2 text-sm text-muted">Payments go straight to your own Stripe account. You pay Stripe&apos;s fees, Stripe handles disputes and losses, and you log in to your own Stripe Dashboard. Flake takes a small application fee on each payment, shown on every billing review. You can skip this and use Flake without online payments.</p>
       <Button className="mt-3" variant="accent" disabled={busy || enabled} data-testid="stripe-connect" onClick={() => run(async () => { window.location.href = (await api('/api/settings/stripe', { method: 'POST' })).url; }, 'Opening Stripe...')}>{connected ? 'Continue onboarding' : 'Connect Stripe'}</Button>
-      {msg ? <p className="mt-2 text-sm text-slate-600">{msg}</p> : null}
+      {msg ? <p className="mt-2 text-sm text-muted">{msg}</p> : null}
     </Card>
   );
 }
@@ -219,7 +219,7 @@ export function SmsSubmit({ status }: { status: string }) {
       <Label htmlFor="ein">EIN (sent to Twilio for verification; we keep only the last 4 digits)</Label>
       <Input id="ein" value={ein} placeholder="12-3456789" onChange={(e) => setEin(e.target.value)} data-testid="ein" />
       <Button className="mt-2" variant="accent" disabled={busy || status === 'pending' || !/^\d{2}-?\d{7}$/.test(ein)} data-testid="sms-submit" onClick={() => run(async () => { await api('/api/settings', { body: { ein } }); router.refresh(); }, 'Submitted')}>{status === 'rejected' ? 'Resubmit' : 'Submit for verification'}</Button>
-      {msg ? <p className="mt-2 text-sm text-slate-600" data-testid="sms-msg">{msg}</p> : null}
+      {msg ? <p className="mt-2 text-sm text-muted" data-testid="sms-msg">{msg}</p> : null}
     </div>
   );
 }
@@ -254,9 +254,9 @@ export function CompanyForm({ tenant }: { tenant: any }) {
   return (
     <Card className="max-w-2xl">
       <h2 className="font-semibold">Company</h2>
-      <p className="mt-1 text-sm text-slate-600">Your name goes on every quote, invoice and text. Customer replies go to the email, and drivers see the phone on their route.</p>
+      <p className="mt-1 text-sm text-muted">Your name goes on every quote, invoice and text. Customer replies go to the email, and drivers see the phone on their route.</p>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        <div><Label htmlFor="co-name">Company name</Label><Input id="co-name" data-testid="co-name" maxLength={120} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />{f.name.trim().length < 2 ? <p className="mt-1 text-xs text-red-700" data-testid="co-name-needed">Enter your company name, at least 2 letters. It goes on every quote, invoice and text.</p> : null}</div>
+        <div><Label htmlFor="co-name">Company name</Label><Input id="co-name" data-testid="co-name" maxLength={120} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />{f.name.trim().length < 2 ? <p className="mt-1 text-xs text-danger" data-testid="co-name-needed">Enter your company name, at least 2 letters. It goes on every quote, invoice and text.</p> : null}</div>
         <div>
           <Label htmlFor="co-tz">Time zone</Label>
           <Select id="co-tz" data-testid="co-tz" value={f.timezone} onChange={(e) => setF({ ...f, timezone: e.target.value })}>
@@ -268,13 +268,13 @@ export function CompanyForm({ tenant }: { tenant: any }) {
         <div className="sm:col-span-2">
           <Label htmlFor="co-yard">Yard address (optional)</Label>
           <Input id="co-yard" data-testid="co-yard" maxLength={300} autoComplete="off" placeholder="Where your trucks start and end a storm" value={f.yard_address} onChange={(e) => { setF({ ...f, yard_address: e.target.value }); setYardPoint(null); setYardMissed(false); }} />
-          {yardMissed ? <p className="mt-1 text-sm text-amber-900" data-testid="co-yard-missed">That exact address isn't on the map. Pick the closest match{yardHits.length ? ' below' : ', or try the street number next door'}.</p> : null}
+          {yardMissed ? <p className="mt-1 text-sm text-warn-ink" data-testid="co-yard-missed">That exact address isn't on the map. Pick the closest match{yardHits.length ? ' below' : ', or try the street number next door'}.</p> : null}
           {yardHits.length ? (
-            <ul className="mt-1 divide-y divide-slate-100 rounded-md border border-slate-200 bg-white" data-testid="co-yard-hits">
-              {yardHits.map((h) => <li key={h.label}><button type="button" className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-slate-50" data-testid="co-yard-hit" onClick={() => { setF({ ...f, yard_address: h.label }); setYardPoint({ lat: h.lat, lon: h.lon }); setYardHits([]); setYardMissed(false); }}>{h.label}</button></li>)}
+            <ul className="mt-1 divide-y divide-line-faint rounded-md border border-line-faint bg-surface" data-testid="co-yard-hits">
+              {yardHits.map((h) => <li key={h.label}><button type="button" className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-tint" data-testid="co-yard-hit" onClick={() => { setF({ ...f, yard_address: h.label }); setYardPoint({ lat: h.lat, lon: h.lon }); setYardHits([]); setYardMissed(false); }}>{h.label}</button></li>)}
             </ul>
           ) : null}
-          <p className="mt-1 text-xs text-slate-600">With a yard, Suggest order starts and ends each route there. Turn that off for a route on the Routes page.</p>
+          <p className="mt-1 text-xs text-muted">With a yard, Suggest order starts and ends each route there. Turn that off for a route on the Routes page.</p>
         </div>
       </div>
       <div className="mt-3 flex items-center gap-2">
@@ -292,7 +292,7 @@ export function CompanyForm({ tenant }: { tenant: any }) {
           }
           router.refresh();
         })}>Save</Button>
-        {msg ? <span className="text-sm text-slate-600" role="status" data-testid="co-msg">{msg}</span> : null}
+        {msg ? <span className="text-sm text-muted" role="status" data-testid="co-msg">{msg}</span> : null}
       </div>
     </Card>
   );
@@ -328,7 +328,7 @@ export function BusinessForm({ tenant }: { tenant: any }) {
           await api('/api/settings', { method: 'PATCH', body: { business_legal_name: f.business_legal_name, contact_email: f.contact_email, contact_phone: f.contact_phone, contact_name: f.contact_name, website: f.website, expected_monthly_volume: Number(f.expected_monthly_volume), address: f.line1 ? { line1: f.line1, city: f.city, state: f.state, zip: f.zip } : null } });
           router.refresh();
         })}>Save</Button>
-        {msg ? <span className="text-sm text-slate-600" data-testid="business-msg">{msg}</span> : null}
+        {msg ? <span className="text-sm text-muted" data-testid="business-msg">{msg}</span> : null}
       </div>
     </Card>
   );
@@ -341,8 +341,8 @@ export function PlanPanel({ plan, freeUntil, inSeason }: { plan: string; freeUnt
       <h2 className="font-semibold">Plan</h2>
       <p className="mt-1 text-sm">Current: <Badge tone={plan === 'pro' ? 'green' : 'gray'} data-testid="plan">{plan}</Badge></p>
       {/* The free first season lifts the site cap with the other Pro features, so the copy says so (issue 51). */}
-      {inSeason && plan !== 'pro' ? <p className="mt-2 text-sm text-slate-700" data-testid="free-season">Free first season through {freeUntil ? new Date(`${freeUntil}T12:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : 'the end of the season'}: <b>unlimited sites</b> and every Pro feature, with no Pro charge. The 1% payment fee still applies. After that, the free plan covers {FREE_SITE_LIMIT} sites; sites you already have stay, and adding more needs Pro.</p> : null}
-      <ul className="mt-3 list-disc pl-5 text-sm text-slate-700">
+      {inSeason && plan !== 'pro' ? <p className="mt-2 text-sm text-ink-2" data-testid="free-season">Free first season through {freeUntil ? new Date(`${freeUntil}T12:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : 'the end of the season'}: <b>unlimited sites</b> and every Pro feature, with no Pro charge. The 1% payment fee still applies. After that, the free plan covers {FREE_SITE_LIMIT} sites; sites you already have stay, and adding more needs Pro.</p> : null}
+      <ul className="mt-3 list-disc pl-5 text-sm text-ink-2">
         <li>Free{inSeason ? ', after the first season' : ''}: up to {FREE_SITE_LIMIT} sites, all core features, 1% fee on payments (min {money(50)}, max {money(2500)})</li>
         <li>Pro: {money(7900)}/mo or {money(79000)}/yr, unlimited sites, sub pay statements, QuickBooks export, 0.5% fee</li>
       </ul>
@@ -352,7 +352,7 @@ export function PlanPanel({ plan, freeUntil, inSeason }: { plan: string; freeUnt
           <Button variant="outline" disabled={busy} onClick={() => run(async () => { window.location.href = (await api('/api/settings/plan', { body: { interval: 'yearly' } })).url; }, 'Opening checkout...')}>Go Pro yearly</Button>
         </div>
       ) : null}
-      {msg ? <p className="mt-2 text-sm text-slate-600">{msg}</p> : null}
+      {msg ? <p className="mt-2 text-sm text-muted">{msg}</p> : null}
     </Card>
   );
 }
@@ -371,7 +371,7 @@ export function RetryJob({ id }: { id: number }) {
           setError((e as Error).message);
         }
       }}>Retry</Button>
-      {error ? <p className="text-sm text-red-700" role="alert">{error}</p> : null}
+      {error ? <p className="text-sm text-danger" role="alert">{error}</p> : null}
     </>
   );
 }

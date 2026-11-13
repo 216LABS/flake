@@ -25,7 +25,7 @@ export function InboundForm() {
         <Input id="from" className="w-48" value={from} onChange={(e) => setFrom(e.target.value)} />
         {['STOP', 'START', 'HELP', 'YES', 'NO'].map((w) => <Button key={w} variant="outline" onClick={() => void send(w)}>{w}</Button>)}
       </div>
-      {result ? <p className="mt-2 text-sm text-slate-600">{result}</p> : null}
+      {result ? <p className="mt-2 text-sm text-muted">{result}</p> : null}
     </Card>
   );
 }

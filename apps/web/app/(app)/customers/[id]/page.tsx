@@ -34,7 +34,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
           <h2 className="font-semibold">Notices and payment</h2>
           <p className="mt-1 text-sm">Texts: {c.notify_sms ? 'yes' : 'no'}. Emails: {c.notify_email ? 'yes' : 'no'}.</p>
           <p className="text-sm">Payment on file: {c.stripe_payment_method_id ? 'yes' : 'no'}</p>
-          <p className="mt-2 text-xs text-slate-500">Customers choose texts and add a payment method themselves on their quote page.</p>
+          <p className="mt-2 text-xs text-faint">Customers choose texts and add a payment method themselves on their quote page.</p>
         </Card>
         {ctx.role === 'viewer' ? null : <PortalCard customerId={c.id} email={c.email} />}
       </div>
@@ -46,8 +46,8 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
             // The newest contract that's still in force or on offer; a void one says nothing about today.
             const k = contracts.find((x) => x.site_id === s.id && x.status !== 'void');
             return (
-              <tr key={s.id} className={s.active ? '' : 'text-slate-500'} data-testid="site-row" data-active={String(Boolean(s.active))}>
-                <Td><Link className="text-sky-800 underline" href={`/sites/${s.id}`}>{s.label}</Link>{s.active ? null : <Badge className="ml-2">retired</Badge>}</Td>
+              <tr key={s.id} className={s.active ? '' : 'text-faint'} data-testid="site-row" data-active={String(Boolean(s.active))}>
+                <Td><Link className="text-link underline" href={`/sites/${s.id}`}>{s.label}</Link>{s.active ? null : <Badge className="ml-2">retired</Badge>}</Td>
                 <Td label="Address">{s.address}</Td>
                 <Td label="Area">{s.area_confirmed_sqft ? `${Number(s.area_confirmed_sqft).toLocaleString()} sq ft` : s.area_estimate_sqft ? `~${Number(s.area_estimate_sqft).toLocaleString()} sq ft` : 'unavailable'}</Td>
                 <Td label="Contract"><Badge tone={k?.status === 'accepted' ? 'green' : 'amber'}>{k?.status === 'sent' ? 'quote sent' : k?.status ?? 'none'}</Badge></Td>

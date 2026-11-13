@@ -43,7 +43,7 @@ export function PortalCard({ customerId, email }: { customerId: string; email: s
   return (
     <Card data-testid="portal-card">
       <h2 className="font-semibold">Records page</h2>
-      <p className="mt-1 text-sm text-slate-600">A private page where this customer sees every visit with times and photos, and their invoices. It needs no login.</p>
+      <p className="mt-1 text-sm text-muted">A private page where this customer sees every visit with times and photos, and their invoices. It needs no login.</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Button variant="outline" size="sm" onClick={copy} data-testid="portal-copy">Copy link</Button>
         <Button variant="outline" size="sm" onClick={send} disabled={!email} title={email ? undefined : 'Add an email first'} data-testid="portal-email">Email it to them</Button>
@@ -54,9 +54,9 @@ export function PortalCard({ customerId, email }: { customerId: string; email: s
           </>
         ) : <Button variant="ghost" size="sm" onClick={() => setConfirmReset(true)} data-testid="portal-reset">Make a new link</Button>}
       </div>
-      {url ? <input readOnly value={url} aria-label="Records page link" onFocus={(e) => e.currentTarget.select()} className="mt-3 w-full rounded-md border border-slate-300 bg-slate-50 px-2 py-1 text-xs" data-testid="portal-url" /> : null}
-      {note ? <p className="mt-2 text-sm text-emerald-800" role="status">{note}</p> : null}
-      {error ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
+      {url ? <input readOnly value={url} aria-label="Records page link" onFocus={(e) => e.currentTarget.select()} className="mt-3 w-full rounded-md border border-line bg-tint px-2 py-1 text-xs" data-testid="portal-url" /> : null}
+      {note ? <p className="mt-2 text-sm text-ok-ink" role="status">{note}</p> : null}
+      {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
     </Card>
   );
 }

@@ -55,7 +55,7 @@ export function SaltAdmin({ initial }: { initial: Data }) {
       {dialog}
       <Card>
         <h2 className="font-semibold">Suppliers</h2>
-        <p className="mt-1 text-sm text-slate-600">Referral fees earned on delivered salt: <b className="tabular" data-testid="fees-earned">{money(total)}</b>. Invoice each supplier for theirs.</p>
+        <p className="mt-1 text-sm text-muted">Referral fees earned on delivered salt: <b className="tabular" data-testid="fees-earned">{money(total)}</b>. Invoice each supplier for theirs.</p>
         {data.suppliers.length ? (
           <div className="mt-3 overflow-x-auto">
             <Table>
@@ -67,14 +67,14 @@ export function SaltAdmin({ initial }: { initial: Data }) {
                   <tr key={s.id} data-testid="supplier-row">
                     <Td>
                       <div className="font-medium">{s.name}</div>
-                      <div className="text-xs text-slate-600">{s.email}, {s.radius_mi} mi, {s.truckload_tons} t loads</div>
+                      <div className="text-xs text-muted">{s.email}, {s.radius_mi} mi, {s.truckload_tons} t loads</div>
                       {s.active ? null : <Badge tone="gray">Off</Badge>}
                     </Td>
                     <Td className="tabular text-right">{money(s.price_per_ton_cents)}</Td>
                     <Td className="tabular text-right">{money(s.referral_fee_per_ton_cents)}</Td>
                     <Td className="text-right">
                       <div className="tabular">{t1(s.open_tons)} t</div>
-                      {s.open_since ? <div className="text-xs text-slate-600" data-testid="open-age">waiting {days(s.open_since)}{s.open_needed_by ? `, needed by ${s.open_needed_by}` : ''}</div> : null}
+                      {s.open_since ? <div className="text-xs text-muted" data-testid="open-age">waiting {days(s.open_since)}{s.open_needed_by ? `, needed by ${s.open_needed_by}` : ''}</div> : null}
                       {s.open_tons > 0 ? <Button size="sm" variant="ghost" className="mt-1" disabled={busy} data-testid="send-now" onClick={async () => { if (await ask({ title: `Send ${t1(s.open_tons)} tons to ${s.name} now?`, body: "It's short of a full truck. Check they'll run a partial load first.", confirm: 'Send now' })) void run(async () => { const r = await api<{ sent: number | null }>(`/api/admin/salt/suppliers/${s.id}`, { method: 'PATCH', body: { send_now: true } }); setMsg(r.sent ? `Sent ${r.sent} tons to ${s.name}. The companies in it were told.` : 'Nothing was waiting.'); }); }}>Send now</Button> : null}
                     </Td>
                     <Td className="tabular text-right">{t1(s.delivered_tons)} t</Td>
@@ -92,8 +92,8 @@ export function SaltAdmin({ initial }: { initial: Data }) {
               </tbody>
             </Table>
           </div>
-        ) : <p className="mt-2 text-sm text-slate-600">No suppliers yet. Add the first one below.</p>}
-        {msg ? <p className="mt-2 break-all text-sm text-slate-700" role="status" data-testid="admin-msg">{msg}</p> : null}
+        ) : <p className="mt-2 text-sm text-muted">No suppliers yet. Add the first one below.</p>}
+        {msg ? <p className="mt-2 break-all text-sm text-ink-2" role="status" data-testid="admin-msg">{msg}</p> : null}
       </Card>
 
       <Card>
@@ -115,17 +115,17 @@ export function SaltAdmin({ initial }: { initial: Data }) {
           setF(blank);
           setMsg('Supplier added. Copy their link and send it to them.');
         })}>Add supplier</Button>
-        {error ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
+        {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
       </Card>
 
       <Card>
         <h2 className="font-semibold">Asked for salt where no supplier delivers</h2>
-        <p className="mt-1 text-sm text-slate-600">Where to sign the next supplier.</p>
+        <p className="mt-1 text-sm text-muted">Where to sign the next supplier.</p>
         {data.waitlist.length ? (
           <ul className="mt-2 space-y-1 text-sm" data-testid="waitlist">
-            {data.waitlist.map((w, i) => <li key={i}>{w.tenant}: {w.tons} tons to {w.address} <span className="text-slate-500">({w.at.slice(0, 10)})</span></li>)}
+            {data.waitlist.map((w, i) => <li key={i}>{w.tenant}: {w.tons} tons to {w.address} <span className="text-faint">({w.at.slice(0, 10)})</span></li>)}
           </ul>
-        ) : <p className="mt-2 text-sm text-slate-600">None yet.</p>}
+        ) : <p className="mt-2 text-sm text-muted">None yet.</p>}
       </Card>
     </div>
   );

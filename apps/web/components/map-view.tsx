@@ -175,6 +175,6 @@ export function MapView({ layers, base = 'streets', center, zoom = 17, pins = []
     });
   }, [pins, ready]);
 
-  if (failed) return <div className={`flex items-center justify-center rounded-md border bg-slate-100 p-6 text-sm text-slate-600 ${className ?? 'h-72'}`}>The map could not load on this device. You can still type the area.</div>;
+  if (failed) return <div className={`flex items-center justify-center rounded-md border bg-tint-2 p-6 text-sm text-muted ${className ?? 'h-72'}`}>The map could not load on this device. You can still type the area.</div>;
   return <div ref={box} data-testid="map" className={`rounded-md border ${className ?? 'h-72'}`} />;
 }

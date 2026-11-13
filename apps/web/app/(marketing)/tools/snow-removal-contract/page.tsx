@@ -20,11 +20,11 @@ export default function Page() {
   return (
     <section className="mx-auto max-w-3xl px-4 py-12">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <h1 className="text-3xl font-bold text-slate-900">Free snow removal contract builder</h1>
-      <p className="mt-2 text-slate-700">Fill this in and download a PDF. There&apos;s no account, and the email is optional. This is a starting template and not legal advice, so have an attorney review it for your state.</p>
+      <h1 className="text-3xl font-bold text-ink">Free snow removal contract builder</h1>
+      <p className="mt-2 text-ink-2">Fill this in and download a PDF. There&apos;s no account, and the email is optional. This is a starting template and not legal advice, so have an attorney review it for your state.</p>
       <ContractBuilder />
       <h2 className="mt-10 text-xl font-semibold">What a snow plowing contract should cover</h2>
-      <p className="mt-2 text-slate-700">Write down what triggers service, how it&apos;s priced, how salt is billed, who carries which insurance, and when payment is due. Most disputes after a storm come from one of those five being vague.</p>
+      <p className="mt-2 text-ink-2">Write down what triggers service, how it&apos;s priced, how salt is billed, who carries which insurance, and when payment is due. Most disputes after a storm come from one of those five being vague.</p>
     </section>
   );
 }

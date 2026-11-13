@@ -21,7 +21,7 @@ export default async function Customers({ searchParams }: { searchParams: Promis
             {customers.map((c) => (
               <tr key={c.id} className="max-md:relative" data-testid="customer-row">
                 {/* On a phone the whole card opens the customer (issue 47). */}
-                <Td className="max-md:text-base"><Link className="font-semibold text-slate-950 underline-offset-2 hover:underline max-md:after:absolute max-md:after:inset-0" href={`/customers/${c.id}`}>{c.name}</Link></Td>
+                <Td className="max-md:text-base"><Link className="font-semibold text-ink underline-offset-2 hover:underline max-md:after:absolute max-md:after:inset-0" href={`/customers/${c.id}`}>{c.name}</Link></Td>
                 <Td label="Kind"><Badge>{c.kind}</Badge></Td>
                 <Td label="Sites">{sites.filter((s) => s.customer_id === c.id && s.active).length}</Td>
                 <Td label="Billing">{c.billing_mode.replace(/_/g, ' ')}</Td>
@@ -31,8 +31,8 @@ export default async function Customers({ searchParams }: { searchParams: Promis
           </tbody>
         </Table>
       ) : showArchived ? <EmptyState title="No archived customers" /> : <EmptyState title="No customers yet" body="Most operators add one in a few minutes." action={<Link href="/customers/new" className={buttonVariants({ variant: 'accent' })}>Add your first customer</Link>} />}
-      {showArchived ? <Link className="mt-4 inline-block text-sm text-sky-800 underline" href="/customers">Back to customers</Link>
-        : archived.length ? <Link className="mt-4 inline-block text-sm text-sky-800 underline" href="/customers?archived=1" data-testid="show-archived">Archived customers ({archived.length})</Link> : null}
+      {showArchived ? <Link className="mt-4 inline-block text-sm text-link underline" href="/customers">Back to customers</Link>
+        : archived.length ? <Link className="mt-4 inline-block text-sm text-link underline" href="/customers?archived=1" data-testid="show-archived">Archived customers ({archived.length})</Link> : null}
     </>
   );
 }

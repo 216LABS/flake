@@ -24,8 +24,8 @@ export default async function Storms() {
               {data.storms.map((s) => (
                 <li key={s.id}>
                   <Link href={`/storms/${s.id}`}>
-                    <Card className="flex items-center justify-between transition-colors hover:border-slate-900">
-                      <div><div className="font-display text-lg font-semibold leading-tight">{s.name}</div><div className="text-sm text-slate-600">{fmtLocal(s.started_at, ctx.tenant.timezone)}</div></div>
+                    <Card className="flex items-center justify-between transition-colors hover:border-ink">
+                      <div><div className="font-display text-lg font-semibold leading-tight">{s.name}</div><div className="text-sm text-muted">{fmtLocal(s.started_at, ctx.tenant.timezone)}</div></div>
                       <Badge tone={s.status === 'active' ? 'blue' : s.status === 'billed' ? 'green' : 'amber'}>{s.status}</Badge>
                     </Card>
                   </Link>

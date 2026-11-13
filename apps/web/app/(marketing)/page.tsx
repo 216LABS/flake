@@ -27,16 +27,16 @@ function PhoneSample() {
 
 function RecordSample() {
   return (
-    <figure className="rounded-md border border-slate-300 bg-white p-5 text-sm">
-      <figcaption className="font-display text-xs font-semibold uppercase tracking-wider text-slate-600">Sample service record</figcaption>
+    <figure className="rounded-md border border-line bg-surface p-5 text-sm">
+      <figcaption className="font-display text-xs font-semibold uppercase tracking-wider text-muted">Sample service record</figcaption>
       <p className="font-display mt-2 text-xl font-semibold">Madison Ave Retail Lot</p>
       <dl className="tabular mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-        <dt className="text-slate-600">Arrived</dt><dd>Dec 13, 3:30 AM</dd>
-        <dt className="text-slate-600">Departed</dt><dd>Dec 13, 3:52 AM</dd>
-        <dt className="text-slate-600">Depth reported</dt><dd>3&quot;</dd>
-        <dt className="text-slate-600">GPS at arrival</dt><dd>41.4819, -81.7982</dd>
-        <dt className="text-slate-600">Photos</dt><dd>Before and after</dd>
-        <dt className="text-slate-600">Weather on file</dt><dd>NWS forecast, archived with a hash</dd>
+        <dt className="text-muted">Arrived</dt><dd>Dec 13, 3:30 AM</dd>
+        <dt className="text-muted">Departed</dt><dd>Dec 13, 3:52 AM</dd>
+        <dt className="text-muted">Depth reported</dt><dd>3&quot;</dd>
+        <dt className="text-muted">GPS at arrival</dt><dd>41.4819, -81.7982</dd>
+        <dt className="text-muted">Photos</dt><dd>Before and after</dd>
+        <dt className="text-muted">Weather on file</dt><dd>NWS forecast, archived with a hash</dd>
       </dl>
     </figure>
   );
@@ -66,29 +66,29 @@ export default function Home() {
         <ol className="mt-6 grid gap-8 md:grid-cols-3">
           {STEPS.map((s, i) => (
             <li key={s.title}>
-              <div className="font-display tabular text-5xl font-bold text-slate-400" aria-hidden="true">{i + 1}</div>
+              <div className="font-display tabular text-5xl font-bold text-faint" aria-hidden="true">{i + 1}</div>
               <Progress className="mt-2" value={i + 1} max={3} label={`Step ${i + 1} of 3`} />
               <h3 className="font-display mt-3 text-xl font-semibold leading-tight">{s.title}</h3>
-              <p className="mt-2 text-sm text-slate-600">{s.body}</p>
+              <p className="mt-2 text-sm text-muted">{s.body}</p>
             </li>
           ))}
         </ol>
       </section>
-      <section className="border-y border-slate-200 bg-white">
+      <section className="border-y border-line-faint bg-surface">
         <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 py-14 md:grid-cols-2">
           <div>
             <h2 className="font-display text-3xl font-semibold tracking-tight">Built for the claim that arrives two years later</h2>
-            <p className="mt-3 text-slate-600">Every visit keeps its time, GPS, photos and salt. Every forecast you relied on is archived with a hash. Records can&apos;t be edited after the fact; corrections are added beside them. One click produces a proof packet for any site and date range.</p>
+            <p className="mt-3 text-muted">Every visit keeps its time, GPS, photos and salt. Every forecast you relied on is archived with a hash. Records can&apos;t be edited after the fact; corrections are added beside them. One click produces a proof packet for any site and date range.</p>
           </div>
           <RecordSample />
         </div>
       </section>
       <section className="mx-auto max-w-6xl px-4 py-14">
         <h2 className="font-display text-3xl font-semibold tracking-tight">In early testing</h2>
-        <p className="mt-3 max-w-2xl text-slate-600">Flake is new. We&apos;re running it with a small number of operators around Cleveland this winter, and we won&apos;t quote customers we don&apos;t have. If you want to try it on one route, sign up, or use the free tools first.</p>
+        <p className="mt-3 max-w-2xl text-muted">Flake is new. We&apos;re running it with a small number of operators around Cleveland this winter, and we won&apos;t quote customers we don&apos;t have. If you want to try it on one route, sign up, or use the free tools first.</p>
         <div className="mt-4 flex flex-wrap gap-4 text-sm font-medium">
-          <Link className="text-sky-800 underline underline-offset-2" href="/tools/snow-removal-contract">Snow removal contract builder</Link>
-          <Link className="text-sky-800 underline underline-offset-2" href="/tools/snow-removal-pricing-calculator">Snow removal pricing calculator</Link>
+          <Link className="text-link underline underline-offset-2" href="/tools/snow-removal-contract">Snow removal contract builder</Link>
+          <Link className="text-link underline underline-offset-2" href="/tools/snow-removal-pricing-calculator">Snow removal pricing calculator</Link>
         </div>
       </section>
     </>

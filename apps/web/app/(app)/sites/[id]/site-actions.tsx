@@ -71,16 +71,16 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [] 
         <div><Label htmlFor="q-type">Pricing</Label><Select id="q-type" value={type} data-testid="q-type" onChange={(e) => setType(e.target.value as PricingType)}><option value="per_push">Per push</option><option value="per_inch_tier">Per inch tiers (price is the first tier)</option><option value="per_event">Per event</option><option value="seasonal">Seasonal (5 installments)</option><option value="hourly">Hourly</option></Select></div>
         <div><Label htmlFor="q-price">Price ($)</Label><Input id="q-price" type="number" step="0.01" min="0.01" max="100000" value={price} data-testid="q-price" onChange={(e) => setPrice(e.target.value)} /></div>
         <div><Label htmlFor="q-trigger">Trigger depth (in)</Label><Input id="q-trigger" type="number" step="0.5" min="0" max="48" value={trigger} data-testid="q-trigger" onChange={(e) => setTrigger(e.target.value)} /></div>
-        {zero ? <p className="text-xs text-amber-900" data-testid="q-zero-warning">0 inches means any measurable snow starts service{type === 'seasonal' ? '.' : ', so every dusting is billable.'}</p> : null}
+        {zero ? <p className="text-xs text-warn-ink" data-testid="q-zero-warning">0 inches means any measurable snow starts service{type === 'seasonal' ? '.' : ', so every dusting is billable.'}</p> : null}
         <div><Label htmlFor="q-season">Season</Label><Input id="q-season" value={season} maxLength={40} onChange={(e) => setSeason(e.target.value)} /></div>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={salt} onChange={(e) => setSalt(e.target.checked)} /> Include salt per 50 lb bag</label>
-        {replaces ? <p className="rounded-md bg-amber-50 p-2 text-xs text-amber-950" data-testid="q-replaces">This lot already has a signed contract for {season.trim()}. If the customer accepts this quote, it replaces that one. Seasonal installments already billed carry over.</p> : null}
+        {replaces ? <p className="rounded-md bg-warn-tint p-2 text-xs text-warn-ink" data-testid="q-replaces">This lot already has a signed contract for {season.trim()}. If the customer accepts this quote, it replaces that one. Seasonal installments already billed carry over.</p> : null}
       </div>
-      {price !== '' && problem ? <p className="mt-2 text-sm text-red-700" data-testid="q-problem">{problem}</p> : null}
+      {price !== '' && problem ? <p className="mt-2 text-sm text-danger" data-testid="q-problem">{problem}</p> : null}
       <Button className="mt-3 w-full" disabled={busy || Boolean(problem) || !season.trim()} data-testid="q-send" onClick={() => void make(true)}>Send quote</Button>
       {/* For a quote handed over in person or sent from the office's own phone: nothing is emailed or texted (issue 92). */}
       <Button variant="outline" className="mt-2 w-full" disabled={busy || Boolean(problem) || !season.trim()} data-testid="q-link-only" onClick={() => void make(false)}>Get link only, don&apos;t send</Button>
-      {error ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
       {url ? <div className="mt-2"><Label>{sent ? 'Quote link. Share it if the customer has no email on file.' : 'Quote link. Nothing was sent, so share it with the customer.'}</Label><Input readOnly value={url} data-testid="q-url" /></div> : null}
     </Card>
   );
@@ -115,11 +115,11 @@ export function ContractList({ contracts, canEdit, pdf }: { contracts: ContractR
       <h2 className="font-semibold">Contracts</h2>
       <ul className="mt-2 space-y-3 text-sm">
         {contracts.map((k) => (
-          <li key={k.id} data-testid="contract-row" data-status={k.status} className={k.status === 'void' ? 'text-slate-500' : ''}>
+          <li key={k.id} data-testid="contract-row" data-status={k.status} className={k.status === 'void' ? 'text-faint' : ''}>
             <div className="flex flex-wrap items-center gap-2"><Badge tone={TONE[k.status] ?? 'gray'}>{k.status === 'sent' ? 'quote sent' : k.status}</Badge><span className="font-medium">{k.season}</span></div>
-            <ul className="mt-1 text-slate-700">{k.services.map((s, i) => <li key={i}>{scopeLine(s, k.salt_pricing)}</li>)}</ul>
-            {k.status === 'declined' ? <div className="text-slate-700" data-testid="declined-note">Declined by the customer{k.decline_reason ? `: "${k.decline_reason}"` : '.'} Send a new quote to try again.</div> : null}
-            {k.accepted_name ? <div className="text-slate-600">Signed by {k.accepted_name}{k.installments_billed ? `. ${k.installments_billed} installment${k.installments_billed === 1 ? '' : 's'} billed.` : '.'}</div> : null}
+            <ul className="mt-1 text-ink-2">{k.services.map((s, i) => <li key={i}>{scopeLine(s, k.salt_pricing)}</li>)}</ul>
+            {k.status === 'declined' ? <div className="text-ink-2" data-testid="declined-note">Declined by the customer{k.decline_reason ? `: "${k.decline_reason}"` : '.'} Send a new quote to try again.</div> : null}
+            {k.accepted_name ? <div className="text-muted">Signed by {k.accepted_name}{k.installments_billed ? `. ${k.installments_billed} installment${k.installments_billed === 1 ? '' : 's'} billed.` : '.'}</div> : null}
             {links[k.id] ? <Input readOnly value={links[k.id]} className="mt-1" data-testid="resent-url" aria-label="New quote link" />
               : k.quote_url ? <Input readOnly value={k.quote_url} className="mt-1" data-testid="quote-link" aria-label="Quote link" onFocus={(e) => e.target.select()} /> : null}
             {canEdit && k.status !== 'void' ? (
@@ -142,10 +142,10 @@ export function ContractList({ contracts, canEdit, pdf }: { contracts: ContractR
             ) : null}
           </li>
         ))}
-        {!contracts.length ? <li className="text-slate-600">None.</li> : null}
+        {!contracts.length ? <li className="text-muted">None.</li> : null}
       </ul>
-      {pdf ? <a className="mt-2 block text-sm text-sky-800 underline" href={pdf}>Signed contract PDF</a> : null}
-      {error ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
+      {pdf ? <a className="mt-2 block text-sm text-link underline" href={pdf}>Signed contract PDF</a> : null}
+      {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
     </Card>
   );
 }
@@ -157,7 +157,7 @@ export function RetireSite({ siteId, customerId, active, canEdit = true }: { sit
   if (!active) {
     return (
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <p className="text-slate-600" data-testid="site-retired">This site is retired. Its records stay on file, and it won&apos;t join new storms or quotes.</p>
+        <p className="text-muted" data-testid="site-retired">This site is retired. Its records stay on file, and it won&apos;t join new storms or quotes.</p>
         {canEdit ? <Button size="sm" variant="outline" data-testid="restore-site" onClick={async () => {
           setRetireError(null);
           try {
@@ -167,7 +167,7 @@ export function RetireSite({ siteId, customerId, active, canEdit = true }: { sit
             setRetireError((e as Error).message);
           }
         }}>Restore</Button> : null}
-        {retireError ? <p className="w-full text-sm text-red-700" role="alert">{retireError}</p> : null}
+        {retireError ? <p className="w-full text-sm text-danger" role="alert">{retireError}</p> : null}
       </div>
     );
   }
@@ -178,7 +178,7 @@ export function RetireSite({ siteId, customerId, active, canEdit = true }: { sit
       <span>It comes off its routes and any storm still running, and leaves new storms. Its records stay on file.</span>
       <Button variant="danger" size="sm" data-testid="retire-confirm" onClick={async () => { setRetireError(null); try { await api(`/api/sites/${siteId}`, { method: 'DELETE' }); router.push(`/customers/${customerId}`); router.refresh(); } catch (e) { setRetireError((e as Error).message); } }}>Retire</Button>
       <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
-      {retireError ? <p className="mt-2 text-sm text-red-700" role="alert">{retireError}</p> : null}
+      {retireError ? <p className="mt-2 text-sm text-danger" role="alert">{retireError}</p> : null}
     </div>
   );
 }

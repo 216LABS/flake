@@ -20,11 +20,11 @@ export default function Page() {
   return (
     <section className="mx-auto max-w-3xl px-4 py-12">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <h1 className="text-3xl font-bold text-slate-900">Free snow removal pricing calculator</h1>
-      <p className="mt-2 text-slate-700">Enter a lot size or measure one by address, then set your own rates. The rates start at placeholder assumptions. They are not market data, so change them to match your costs.</p>
+      <h1 className="text-3xl font-bold text-ink">Free snow removal pricing calculator</h1>
+      <p className="mt-2 text-ink-2">Enter a lot size or measure one by address, then set your own rates. The rates start at placeholder assumptions. They are not market data, so change them to match your costs.</p>
       <Calculator />
       <h2 className="mt-10 text-xl font-semibold">How to charge for snow removal</h2>
-      <p className="mt-2 text-slate-700">Most operators price by push, by storm, by inch tier or by the season. Work from your cost per hour and how fast you clear a lot. A calculator gives you a starting number, and your market and your equipment set the final one.</p>
+      <p className="mt-2 text-ink-2">Most operators price by push, by storm, by inch tier or by the season. Work from your cost per hour and how fast you clear a lot. A calculator gives you a starting number, and your market and your equipment set the final one.</p>
     </section>
   );
 }

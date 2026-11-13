@@ -41,7 +41,7 @@ export function CustomerEditor({ customer }: { customer: { id: string; name: str
             setBusy(false);
           }
         }}>Save</Button>
-        {msg ? <span className={msg.ok ? 'text-sm font-medium text-emerald-800' : 'text-sm text-red-700'} role={msg.ok ? 'status' : 'alert'} data-testid="customer-msg">{msg.text}</span> : null}
+        {msg ? <span className={msg.ok ? 'text-sm font-medium text-ok-ink' : 'text-sm text-danger'} role={msg.ok ? 'status' : 'alert'} data-testid="customer-msg">{msg.text}</span> : null}
       </div>
     </Card>
   );
@@ -82,7 +82,7 @@ export function ArchiveCustomer({ id, name, archived }: { id: string; name: stri
           setError((e as Error).message);
         }
       }}>{archived ? 'Restore customer' : 'Archive'}</Button>
-      {error ? <p className="w-full text-sm text-red-700" role="alert">{error}</p> : null}
+      {error ? <p className="w-full text-sm text-danger" role="alert">{error}</p> : null}
     </>
   );
 }

@@ -105,17 +105,17 @@ export function ProofForm({ sites, packets, preselect, tz }: { sites: { id: stri
           <div className="mt-2"><Label htmlFor="claim">Claim date</Label><Input id="claim" type="date" value={claim} onChange={(e) => setClaim(e.target.value)} /></div>
         )}
         {preview ? (
-          <p className={preview.visits && !preview.photos ? 'mt-3 rounded-md bg-amber-50 p-2 text-sm text-amber-950' : 'mt-3 text-sm text-slate-600'} data-testid="proof-preview">
+          <p className={preview.visits && !preview.photos ? 'mt-3 rounded-md bg-warn-tint p-2 text-sm text-warn-ink' : 'mt-3 text-sm text-muted'} data-testid="proof-preview">
             {!preview.visits ? 'No visits at this site in these dates. The packet will show the contract and weather only.'
               : `${preview.visits} visit${preview.visits === 1 ? '' : 's'}, ${preview.photos} photo${preview.photos === 1 ? '' : 's'}.${!preview.photos ? ' None of these visits has photos; the packet will say so.' : preview.visits_with_photos < preview.visits ? ` ${preview.visits - preview.visits_with_photos} visit${preview.visits - preview.visits_with_photos === 1 ? ' has' : 's have'} no photos.` : ''}`}
           </p>
         ) : null}
         <Button variant="accent" className="mt-4 w-full" disabled={!siteId || state === 'working' || (mode === 'claim' && !claim)} data-testid="proof-generate" onClick={() => void generate()}>{state === 'working' ? 'Generating...' : 'Generate'}</Button>
-        {error ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
+        {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
         {result ? (
-          <div className="mt-3 rounded-md bg-emerald-50 p-3 text-sm" data-testid="proof-ready">
-            <a className="font-medium text-sky-800 underline" data-testid="proof-download" href={result.url}>Download PDF</a>
-            <p className="mt-1 break-all text-xs text-slate-600">Manifest SHA-256: <span data-testid="manifest-hash">{result.manifest_sha256}</span></p>
+          <div className="mt-3 rounded-md bg-ok-tint p-3 text-sm" data-testid="proof-ready">
+            <a className="font-medium text-link underline" data-testid="proof-download" href={result.url}>Download PDF</a>
+            <p className="mt-1 break-all text-xs text-muted">Manifest SHA-256: <span data-testid="manifest-hash">{result.manifest_sha256}</span></p>
           </div>
         ) : null}
       </Card>

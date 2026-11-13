@@ -179,8 +179,8 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
     return (
       <Card className="mx-auto max-w-xl" data-testid="quote-sent">
         <h1 className="text-3xl font-semibold tracking-tight">Quote ready</h1>
-        <p className="mt-1 text-sm text-slate-600" data-testid="quote-note">{emailed ? 'We are emailing the customer this link. You can also share it directly.' : 'Nothing was emailed, so share this link with the customer.'}</p>
-        {photoNote ? <p className="mt-1 text-sm text-amber-800">{photoNote}</p> : null}
+        <p className="mt-1 text-sm text-muted" data-testid="quote-note">{emailed ? 'We are emailing the customer this link. You can also share it directly.' : 'Nothing was emailed, so share this link with the customer.'}</p>
+        {photoNote ? <p className="mt-1 text-sm text-warn-ink">{photoNote}</p> : null}
         <Input readOnly className="mt-3" value={quoteUrl} data-testid="quote-url" />
         <div className="mt-4 flex gap-2">
           <Button variant="accent" onClick={() => router.push('/customers')}>Done</Button>
@@ -209,7 +209,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
             <div><Label htmlFor="contact">Contact name</Label><Input id="contact" value={c.contact_name} onChange={(e) => setC({ ...c, contact_name: e.target.value })} /></div>
             <div><Label htmlFor="email">Email</Label><Input id="email" type="email" data-testid="c-email" value={c.email} onChange={(e) => setC({ ...c, email: e.target.value })} /></div>
             <div><Label htmlFor="phone">Mobile</Label><Input id="phone" type="tel" autoComplete="off" placeholder="216-555-0123" value={c.phone_e164} onChange={(e) => setC({ ...c, phone_e164: e.target.value })} /></div>
-            {customerIssue && (c.name || c.email || c.phone_e164) ? <p className="text-sm text-red-700 sm:col-span-2" data-testid="customer-problem">{customerIssue}</p> : null}
+            {customerIssue && (c.name || c.email || c.phone_e164) ? <p className="text-sm text-danger sm:col-span-2" data-testid="customer-problem">{customerIssue}</p> : null}
           </div>
         ) : null}
         {step === 1 ? (
@@ -217,28 +217,28 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
             <Label htmlFor="address">Address</Label>
             <div className="flex gap-2"><Input id="address" data-testid="address" value={address} placeholder="14701 Detroit Ave, Lakewood, OH" onChange={(e) => { setAddress(e.target.value); setChoices([]); }} onKeyDown={(e) => e.key === 'Enter' && void find()} autoComplete="off" /><Button disabled={busy || address.trim().length < 3} data-testid="find" onClick={() => void find()}>Find</Button></div>
             {suggestions.length ? (
-              <ul className="mt-1 rounded-md border border-slate-200 bg-white shadow-xs" aria-label="Address suggestions">
-                {suggestions.map((s) => <li key={s.label}><button type="button" className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-slate-50" data-testid="address-suggestion" onClick={() => choose(s)}>{s.label}</button></li>)}
-                <li className="px-3 py-1 text-xs text-slate-500">Suggestions © OpenStreetMap contributors</li>
+              <ul className="mt-1 rounded-md border border-line-faint bg-surface shadow-xs" aria-label="Address suggestions">
+                {suggestions.map((s) => <li key={s.label}><button type="button" className="block min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-tint" data-testid="address-suggestion" onClick={() => choose(s)}>{s.label}</button></li>)}
+                <li className="px-3 py-1 text-xs text-faint">Suggestions © OpenStreetMap contributors</li>
               </ul>
             ) : null}
             {choices.length ? (
-              <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm" data-testid="address-choices">
-                <p className="font-medium text-amber-950">{choices.length === 1 ? 'We found a different street than you typed. Is this the place?' : 'We found more than one match. Which is the place?'}</p>
+              <div className="mt-2 rounded-md border border-warn-line bg-warn-tint p-3 text-sm" data-testid="address-choices">
+                <p className="font-medium text-warn-ink">{choices.length === 1 ? 'We found a different street than you typed. Is this the place?' : 'We found more than one match. Which is the place?'}</p>
                 <ul className="mt-2 space-y-1">
-                  {choices.map((s) => <li key={s.label}><button type="button" className="block min-h-11 w-full rounded-sm bg-white px-3 py-2 text-left hover:bg-slate-50" data-testid="address-choice" onClick={() => void measure(s, address)}>{s.label}</button></li>)}
+                  {choices.map((s) => <li key={s.label}><button type="button" className="block min-h-11 w-full rounded-sm bg-surface px-3 py-2 text-left hover:bg-tint" data-testid="address-choice" onClick={() => void measure(s, address)}>{s.label}</button></li>)}
                 </ul>
-                <p className="mt-2 text-xs text-slate-600">None of these? Fix the street name or add the city and ZIP, then Find again.</p>
+                <p className="mt-2 text-xs text-muted">None of these? Fix the street name or add the city and ZIP, then Find again.</p>
               </div>
             ) : null}
             {hit ? (
               <div className="mt-3">
-                <p className="mb-2 text-sm" data-testid="address-saved">Address on file: <b>{hit.label.replace(' (mock geocode)', '')}</b>{sameStreet(address, hit.label) ? null : <span className="ml-1 text-amber-800">(not the street you typed)</span>}</p>
+                <p className="mb-2 text-sm" data-testid="address-saved">Address on file: <b>{hit.label.replace(' (mock geocode)', '')}</b>{sameStreet(address, hit.label) ? null : <span className="ml-1 text-warn-ink">(not the street you typed)</span>}</p>
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <Badge tone="amber" data-testid="estimate-label">Estimate, drag to adjust</Badge>
                   <span data-testid="sqft">{sqft === null ? 'Area unavailable. Draw it or type it.' : `${sqft.toLocaleString()} sq ft`}</span>
-                  {estimate?.method === 'osm_parking' ? <span className="text-slate-500">from mapped parking</span> : null}
-                  {estimate?.method === 'parcel_ratio' ? <span className="text-slate-500">from parcel size</span> : null}
+                  {estimate?.method === 'osm_parking' ? <span className="text-faint">from mapped parking</span> : null}
+                  {estimate?.method === 'parcel_ratio' ? <span className="text-faint">from parcel size</span> : null}
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Button size="sm" variant={mapMode === 'edit' ? 'accent' : 'outline'} onClick={() => setMapMode(mapMode === 'edit' ? 'view' : 'edit')}>Draw / edit area</Button>
@@ -253,7 +253,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
                   <div className="sm:col-span-3"><Label htmlFor="label">Site label</Label><Input id="label" value={label} onChange={(e) => setLabel(e.target.value)} /></div>
                   <div className="sm:col-span-3"><Label htmlFor="notes">Notes for the driver</Label><Input id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
                 </div>
-                {estimate?.attribution.length ? <p className="mt-2 text-xs text-slate-500">Data: {estimate.attribution.join('; ')}</p> : null}
+                {estimate?.attribution.length ? <p className="mt-2 text-xs text-faint">Data: {estimate.attribution.join('; ')}</p> : null}
               </div>
             ) : null}
           </div>
@@ -275,16 +275,16 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
             <div>
               <Label htmlFor="trigger">Trigger depth (in)</Label>
               <Input id="trigger" type="number" min={0} max={48} step="0.5" value={trigger} onChange={(e) => setTrigger(Math.min(48, Math.max(0, Number(e.target.value))))} aria-describedby="trigger-hint" />
-              <p id="trigger-hint" className={trigger === 0 ? 'mt-1 text-xs text-amber-900' : 'mt-1 text-xs text-slate-600'} data-testid="trigger-hint">{trigger === 0 ? `Zero tolerance: any measurable snow starts service${pricingType === 'seasonal' ? '' : ', so every dusting is billable'}.` : 'Set 0 for zero tolerance, any measurable snow.'}</p>
+              <p id="trigger-hint" className={trigger === 0 ? 'mt-1 text-xs text-warn-ink' : 'mt-1 text-xs text-muted'} data-testid="trigger-hint">{trigger === 0 ? `Zero tolerance: any measurable snow starts service${pricingType === 'seasonal' ? '' : ', so every dusting is billable'}.` : 'Set 0 for zero tolerance, any measurable snow.'}</p>
             </div>
             <div><Label htmlFor="season">Season</Label><Input id="season" value={season} onChange={(e) => setSeason(e.target.value)} /></div>
             <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" checked={withSalt} onChange={(e) => setWithSalt(e.target.checked)} /> Salt, {money(suggestion.salt_bag_cents)} per 50 lb bag</label>
-            {priceIssue ? <p className="text-sm text-red-700 sm:col-span-2" data-testid="price-problem">{priceIssue}</p> : null}
+            {priceIssue ? <p className="text-sm text-danger sm:col-span-2" data-testid="price-problem">{priceIssue}</p> : null}
           </div>
         ) : null}
         {step === 3 ? (
           <div>
-            <p className="mb-2 text-sm text-slate-600">Optional. Pick a type, then tap the map to drop a pin drivers will see.</p>
+            <p className="mb-2 text-sm text-muted">Optional. Pick a type, then tap the map to drop a pin drivers will see.</p>
             <div className="mb-2 flex flex-wrap gap-2">
               {PIN_KINDS.map((k) => <Button key={k} size="sm" variant={pinKind === k ? 'accent' : 'outline'} onClick={() => setPinKind(k)}>{k}</Button>)}
               <Button size="sm" variant="outline" data-testid="add-pin" onClick={() => hit && setPins([...pins, { kind: pinKind, lat: hit.lat, lon: hit.lon, note: '' }])}>Add at center</Button>
@@ -292,7 +292,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
             {hit ? <MapView layers={layers} base="satellite" center={{ lat: hit.lat, lon: hit.lon }} zoom={18} polygon={polygon} mode="pin" pins={pins.map((p, i) => ({ id: String(i), lat: p.lat, lon: p.lon, label: p.kind }))} onPin={(lat, lon) => setPins((list) => [...list, { kind: pinKind, lat, lon, note: '' }])} /> : null}
             <ul className="mt-2 space-y-1 text-sm">
               {pins.map((p, i) => (
-                <li key={i} className="flex items-center gap-2"><Badge>{p.kind}</Badge><Input aria-label="Pin note" placeholder="Note" value={p.note} onChange={(e) => setPins(pins.map((x, j) => (j === i ? { ...x, note: e.target.value } : x)))} /><label className="cursor-pointer whitespace-nowrap text-sky-800 underline">{p.file ? 'Photo added' : 'Add photo'}<input type="file" accept="image/*" className="sr-only" data-testid="wizard-pin-photo" onChange={(e) => { const file = e.target.files?.[0]; if (file) setPins((list) => list.map((x, j) => (j === i ? { ...x, file } : x))); }} /></label><Button size="sm" variant="ghost" onClick={() => setPins(pins.filter((_, j) => j !== i))}>Remove</Button></li>
+                <li key={i} className="flex items-center gap-2"><Badge>{p.kind}</Badge><Input aria-label="Pin note" placeholder="Note" value={p.note} onChange={(e) => setPins(pins.map((x, j) => (j === i ? { ...x, note: e.target.value } : x)))} /><label className="cursor-pointer whitespace-nowrap text-link underline">{p.file ? 'Photo added' : 'Add photo'}<input type="file" accept="image/*" className="sr-only" data-testid="wizard-pin-photo" onChange={(e) => { const file = e.target.files?.[0]; if (file) setPins((list) => list.map((x, j) => (j === i ? { ...x, file } : x))); }} /></label><Button size="sm" variant="ghost" onClick={() => setPins(pins.filter((_, j) => j !== i))}>Remove</Button></li>
               ))}
             </ul>
           </div>
@@ -310,10 +310,10 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
             <p><b>{c.name}</b>, {label || address}</p>
             <p>{sqft ? `${sqft.toLocaleString()} sq ft` : 'Area not set'}{walkLf ? `, ${walkLf} ft of walks` : ''}</p>
             <p>{pricingType.replace(/_/g, ' ')}{pricingType !== 'per_inch_tier' ? `: $${price}` : ''}, {trigger === 0 ? 'zero tolerance' : <>{trigger}&quot; trigger</>}{withSalt ? ', plus salt' : ''}</p>
-            <p className="mt-2 text-slate-600">Sending goes to {c.email || 'no email yet, so you will get a link to share'}. The customer sees the scope, price and terms, signs, and can put a card or bank account on file.</p>
+            <p className="mt-2 text-muted">Sending goes to {c.email || 'no email yet, so you will get a link to share'}. The customer sees the scope, price and terms, signs, and can put a card or bank account on file.</p>
           </div>
         ) : null}
-        {error ? <p className="mt-3 text-sm text-red-700" role="alert">{error}</p> : null}
+        {error ? <p className="mt-3 text-sm text-danger" role="alert">{error}</p> : null}
         <div className="mt-6 flex justify-between">
           {step > firstStep ? <Button variant="ghost" onClick={() => setStep(step - 1)}>Back</Button> : <span />}
           {step < STEPS.length - 1 ? <Button variant="accent" disabled={!canNext} data-testid="next" onClick={() => setStep(step + 1)}>Next</Button> : (

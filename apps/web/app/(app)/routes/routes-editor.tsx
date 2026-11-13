@@ -59,7 +59,7 @@ export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]
   return (
     <div>
       {dialog}
-      {error ? <p className="mb-3 text-sm text-red-700" role="alert">{error}</p> : null}
+      {error ? <p className="mb-3 text-sm text-danger" role="alert">{error}</p> : null}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {list.map((r) => (
           <Card key={r.id} data-testid="route-card">
@@ -72,11 +72,11 @@ export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]
               <option value="">None</option>
               {crew.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
-            {!r.site_ids.length ? <p className="mt-3 text-sm text-slate-600" data-testid="route-empty">No sites yet. Add them below; an empty route is left out of storms.</p> : null}
+            {!r.site_ids.length ? <p className="mt-3 text-sm text-muted" data-testid="route-empty">No sites yet. Add them below; an empty route is left out of storms.</p> : null}
             <ol className="mt-3 space-y-1">
               {r.site_ids.map((id, i) => (
-                <li key={id} draggable onDragStart={(e) => { e.dataTransfer.setData('text/plain', id); setDrag({ route: r.id, index: i }); }} onDragOver={(e) => e.preventDefault()} onDrop={() => { if (drag?.route === r.id) moveTo(r, drag.index, i); setDrag(null); }} className="flex flex-wrap items-center gap-1 rounded-sm border bg-slate-50 px-2 py-1 text-sm">
-                  <span className="min-w-0 flex-1">{i + 1}. {label(id)}{elsewhere(id, r.id).length ? <span className="block text-xs text-amber-800">Also on {elsewhere(id, r.id).join(', ')}</span> : null}</span>
+                <li key={id} draggable onDragStart={(e) => { e.dataTransfer.setData('text/plain', id); setDrag({ route: r.id, index: i }); }} onDragOver={(e) => e.preventDefault()} onDrop={() => { if (drag?.route === r.id) moveTo(r, drag.index, i); setDrag(null); }} className="flex flex-wrap items-center gap-1 rounded-sm border bg-tint px-2 py-1 text-sm">
+                  <span className="min-w-0 flex-1">{i + 1}. {label(id)}{elsewhere(id, r.id).length ? <span className="block text-xs text-warn-ink">Also on {elsewhere(id, r.id).join(', ')}</span> : null}</span>
                   <Button size="sm" variant="ghost" className="h-10 min-w-11 md:h-8" aria-label={`Move ${label(id)} up`} data-testid="route-up" disabled={i === 0} onClick={() => moveTo(r, i, i - 1)}>Up</Button>
                   <Button size="sm" variant="ghost" className="h-10 min-w-11 md:h-8" aria-label={`Move ${label(id)} down`} data-testid="route-down" disabled={i === r.site_ids.length - 1} onClick={() => moveTo(r, i, i + 1)}>Down</Button>
                   <Button size="sm" variant="ghost" className="h-10 md:h-8" aria-label={`Remove ${label(id)}`} onClick={() => update({ ...r, site_ids: r.site_ids.filter((x) => x !== id) })}>Remove</Button>
@@ -102,7 +102,7 @@ export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]
             ) : null}
             <SuggestOrder key={`${r.id}:${r.yard_trip}`} routeId={r.id} siteIds={r.site_ids} label={label} yard={yard && r.yard_trip ? yard : null} onAccept={(ids) => { setUndo({ routeId: r.id, ids: r.site_ids }); update({ ...r, site_ids: ids }); }} />
             {undo?.routeId === r.id ? (
-              <p className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-emerald-50 p-2 text-sm text-emerald-900" role="status" data-testid="suggest-undo-bar">
+              <p className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-ok-tint p-2 text-sm text-ok-ink" role="status" data-testid="suggest-undo-bar">
                 New order saved.
                 <Button size="sm" variant="outline" data-testid="suggest-undo" onClick={() => { update({ ...r, site_ids: undo.ids }); setUndo(null); }}>Undo</Button>
               </p>
@@ -140,7 +140,7 @@ export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]
             setError((e as Error).message);
           }
         }}>Add</Button>
-        {name.trim() && nameTaken(name) ? <p className="w-full text-sm text-red-700" data-testid="route-name-taken">There&apos;s already a route called {name.trim()}.</p> : null}
+        {name.trim() && nameTaken(name) ? <p className="w-full text-sm text-danger" data-testid="route-name-taken">There&apos;s already a route called {name.trim()}.</p> : null}
       </Card>
     </div>
   );

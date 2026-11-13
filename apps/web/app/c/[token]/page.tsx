@@ -32,7 +32,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
   const span = (from: string, to: string | null) => (to && time(to) !== time(from) ? `${time(from)} to ${time(to)}` : to ? `at ${time(from)}` : time(from));
   const photo = (id: string, thumb = false) => `/api/c/${token}/photo/${id}${thumb ? '?thumb=1' : ''}`;
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-tint">
       <header className="bg-slate-950 text-white">
         <div className="mx-auto max-w-3xl px-4 py-6">
           <p className="font-display text-lg font-semibold">{data.company.name}</p>
@@ -43,12 +43,12 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
       </header>
       <main className="mx-auto max-w-3xl space-y-6 px-4 py-6">
         {due.length ? (
-          <Card className="border-amber-300 bg-amber-50" data-testid="portal-due">
+          <Card className="border-warn-line bg-warn-tint" data-testid="portal-due">
             <h2 className="font-semibold">{due.length === 1 ? 'An invoice is waiting' : `${due.length} invoices are waiting`}</h2>
             <ul className="mt-2 space-y-1 text-sm">
-              {due.map((i) => <li key={i.id}>{i.storm}: <b className="tabular">{money(i.total_cents)}</b>{i.status === 'failed' ? ' (the last payment did not go through)' : ''}. {i.pay_link ? <a className="font-semibold text-sky-800 underline" href={i.pay_link}>View and pay</a> : <a className="font-semibold text-sky-800 underline" href={`#invoice-${i.id}`}>See what it&apos;s for</a>}</li>)}
+              {due.map((i) => <li key={i.id}>{i.storm}: <b className="tabular">{money(i.total_cents)}</b>{i.status === 'failed' ? ' (the last payment did not go through)' : ''}. {i.pay_link ? <a className="font-semibold text-link underline" href={i.pay_link}>View and pay</a> : <a className="font-semibold text-link underline" href={`#invoice-${i.id}`}>See what it&apos;s for</a>}</li>)}
             </ul>
-            {due.some((i) => !i.pay_link) ? <p className="mt-2 text-sm text-slate-700" data-testid="portal-pay-offline">Online payment isn&apos;t set up for {due.every((i) => !i.pay_link) ? 'these' : 'some of these'}. Pay {contact} the way you usually do, by check or over the phone.</p> : null}
+            {due.some((i) => !i.pay_link) ? <p className="mt-2 text-sm text-ink-2" data-testid="portal-pay-offline">Online payment isn&apos;t set up for {due.every((i) => !i.pay_link) ? 'these' : 'some of these'}. Pay {contact} the way you usually do, by check or over the phone.</p> : null}
           </Card>
         ) : null}
 
@@ -62,11 +62,11 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
                 <div className="flex flex-wrap items-center gap-2">
                   {s.contract?.status === 'accepted' ? <Badge tone="green">Season {s.contract.season}</Badge> : null}
                   {s.quote ? (s.quote.url
-                    ? <a href={s.quote.url} className="rounded-sm bg-amber-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-900 underline" data-testid="portal-quote-link">Quote waiting: review and sign</a>
+                    ? <a href={s.quote.url} className="rounded-sm bg-warn-tint px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-warn-ink underline" data-testid="portal-quote-link">Quote waiting: review and sign</a>
                     : <Badge tone="amber" title="The quote link is in the email it came in.">Quote waiting, see your email</Badge>) : null}
                 </div>
               </div>
-              <p className="mb-3 text-sm text-slate-600">{s.address}</p>
+              <p className="mb-3 text-sm text-muted">{s.address}</p>
               <div className="mb-3 grid grid-cols-2 gap-3">
                 <Card><Stat label="Visits" value={done.length} note="Last 18 months" /></Card>
                 <Card><Stat label="Last service" value={last ? day(last.departed!) : '-'} note={last ? `Finished ${time(last.departed!)}` : 'No visits yet'} /></Card>
@@ -75,12 +75,12 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
                 <ol className="space-y-2">
                   {s.visits.map((v, n) => {
                     const row = (
-                      <li key={v.id} className="rounded-md border border-slate-200 bg-white p-3" data-testid="portal-visit">
+                      <li key={v.id} className="rounded-md border border-line-faint bg-surface p-3" data-testid="portal-visit">
                         <div>
                           <p className="font-semibold">{day(v.arrived)}, {span(v.arrived, v.departed)}</p>
-                          <p className="text-xs text-slate-600">{v.storm}</p>
+                          <p className="text-xs text-muted">{v.storm}</p>
                         </div>
-                        <p className="mt-0.5 text-sm text-slate-700">
+                        <p className="mt-0.5 text-sm text-ink-2">
                           {[
                             (v.departed ? (v.services.length ? v.services.map((x) => SERVICE[x] ?? x).join(', ') : 'Visit') : v.on_site_now ? 'Crew on site now' : 'Crew arrived. No finish time was recorded') + (v.replow ? ' (second pass)' : ''),
                             v.depth !== null ? `${v.depth}" of snow` : null,
@@ -90,8 +90,8 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
                         {v.photos.length ? (
                           <div className="mt-2 flex flex-wrap gap-2">
                             {v.photos.map((p) => (
-                              <a key={p.id} href={photo(p.id)} target="_blank" rel="noopener" className="block text-xs text-slate-600">
-                                <img src={photo(p.id, true)} alt={`${p.phase === 'before' ? 'Before' : 'After'} photo, ${day(v.arrived)}`} loading="lazy" className="h-24 w-32 rounded-sm border border-slate-200 bg-slate-100 object-cover" />
+                              <a key={p.id} href={photo(p.id)} target="_blank" rel="noopener" className="block text-xs text-muted">
+                                <img src={photo(p.id, true)} alt={`${p.phase === 'before' ? 'Before' : 'After'} photo, ${day(v.arrived)}`} loading="lazy" className="h-24 w-32 rounded-sm border border-line-faint bg-tint-2 object-cover" />
                                 <span className="mt-0.5 block">{p.phase === 'before' ? 'Before' : 'After'}</span>
                               </a>
                             ))}
@@ -102,15 +102,15 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
                     return n < 10 ? row : null;
                   })}
                 </ol>
-              ) : <Card className="text-sm text-slate-600">No visits yet. They show here as soon as the crew finishes.</Card>}
+              ) : <Card className="text-sm text-muted">No visits yet. They show here as soon as the crew finishes.</Card>}
               {s.visits.length > 10 ? (
                 <details className="mt-2">
-                  <summary className="cursor-pointer text-sm font-semibold text-slate-700">All {s.visits.length} visits</summary>
+                  <summary className="cursor-pointer text-sm font-semibold text-ink-2">All {s.visits.length} visits</summary>
                   <Table className="mt-2">
                     <thead><tr><Th>Date</Th><Th>Time</Th><Th>Done</Th><Th>Photos</Th></tr></thead>
                     <tbody>
                       {s.visits.slice(10).map((v) => (
-                        <tr key={v.id}><Td>{day(v.arrived)}</Td><Td className="tabular">{span(v.arrived, v.departed)}</Td><Td>{v.services.map((x) => SERVICE[x] ?? x).join(', ')}</Td><Td>{v.photos.map((p, i) => <a key={p.id} className="mr-2 text-sky-800 underline" href={photo(p.id)} target="_blank" rel="noopener">{i + 1}</a>)}</Td></tr>
+                        <tr key={v.id}><Td>{day(v.arrived)}</Td><Td className="tabular">{span(v.arrived, v.departed)}</Td><Td>{v.services.map((x) => SERVICE[x] ?? x).join(', ')}</Td><Td>{v.photos.map((p, i) => <a key={p.id} className="mr-2 text-link underline" href={photo(p.id)} target="_blank" rel="noopener">{i + 1}</a>)}</Td></tr>
                       ))}
                     </tbody>
                   </Table>
@@ -119,7 +119,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
               {s.packets.length ? (
                 <p className="mt-3 text-sm" data-testid="portal-packets">
                   Signed service records (PDF):{' '}
-                  {s.packets.map((p, i) => <span key={p.id}>{i ? ', ' : ''}<a className="text-sky-800 underline" href={`/api/c/${token}/packet/${p.id}`}>{fmtLocal(p.from, tz, { month: 'short', day: 'numeric', year: 'numeric' })} to {fmtLocal(p.to, tz, { month: 'short', day: 'numeric', year: 'numeric' })}</a></span>)}
+                  {s.packets.map((p, i) => <span key={p.id}>{i ? ', ' : ''}<a className="text-link underline" href={`/api/c/${token}/packet/${p.id}`}>{fmtLocal(p.from, tz, { month: 'short', day: 'numeric', year: 'numeric' })} to {fmtLocal(p.to, tz, { month: 'short', day: 'numeric', year: 'numeric' })}</a></span>)}
                 </p>
               ) : null}
             </section>
@@ -132,19 +132,19 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
             <ul className="space-y-2" data-testid="portal-invoices">
               {data.invoices.map((i) => (
                 <li key={i.id} id={`invoice-${i.id}`} className="scroll-mt-4">
-                  <details className="rounded-md border border-slate-200 bg-white" open={i.due} data-testid="portal-invoice">
+                  <details className="rounded-md border border-line-faint bg-surface" open={i.due} data-testid="portal-invoice">
                     <summary className="flex min-h-12 cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
                       <span className="font-medium">{i.storm}</span>
                       <Badge tone={STATUS[i.status ?? '']?.tone ?? 'blue'}>{STATUS[i.status ?? '']?.label ?? i.status}</Badge>
                       <b className="tabular ml-auto">{money(i.total_cents)}</b>
                     </summary>
-                    <div className="border-t border-slate-100 px-3 py-2">
-                      <ul className="divide-y divide-slate-100 text-sm" data-testid="portal-invoice-lines">
+                    <div className="border-t border-line-faint px-3 py-2">
+                      <ul className="divide-y divide-line-faint text-sm" data-testid="portal-invoice-lines">
                         {i.lines.map((l, n) => <li key={n} className="flex justify-between gap-3 py-1.5"><span>{l.description}{l.quantity > 1 ? ` (${l.quantity})` : ''}</span><span className="tabular shrink-0">{money(l.amount_cents)}</span></li>)}
                       </ul>
                       <p className="mt-2 flex justify-between text-sm font-semibold"><span>Total</span><span className="tabular">{money(i.total_cents)}</span></p>
-                      {i.pay_link ? <a className="mt-2 inline-block font-semibold text-sky-800 underline" href={i.pay_link}>View and pay</a>
-                        : i.due ? <p className="mt-2 text-sm text-slate-700">Pay {contact} by check or over the phone. Online payment isn&apos;t set up for this invoice.</p> : null}
+                      {i.pay_link ? <a className="mt-2 inline-block font-semibold text-link underline" href={i.pay_link}>View and pay</a>
+                        : i.due ? <p className="mt-2 text-sm text-ink-2">Pay {contact} by check or over the phone. Online payment isn&apos;t set up for this invoice.</p> : null}
                     </div>
                   </details>
                 </li>
@@ -155,10 +155,10 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
 
         <RequestVisit token={token} company={data.company.name} sites={data.sites.filter((x) => x.active).map((x) => ({ id: x.id, label: x.label }))} />
 
-        <footer className="border-t border-slate-200 pt-4 text-sm text-slate-600">
-          <p>Questions about a visit or a bill? Contact {data.company.name}{data.company.phone ? ` at ${phone(data.company.phone)}` : ''}{data.company.email ? <> or <a className="text-sky-800 underline" href={`mailto:${data.company.email}`}>{data.company.email}</a></> : null}.</p>
+        <footer className="border-t border-line-faint pt-4 text-sm text-muted">
+          <p>Questions about a visit or a bill? Contact {data.company.name}{data.company.phone ? ` at ${phone(data.company.phone)}` : ''}{data.company.email ? <> or <a className="text-link underline" href={`mailto:${data.company.email}`}>{data.company.email}</a></> : null}.</p>
           <p className="mt-1 text-xs">This link is private to {data.customer.name}. Anyone with it can see these records, so share it only with people who should.</p>
-          <div className="mt-4 flex items-center gap-2 text-xs text-slate-500">Records kept by <Wordmark inverse={false} className="text-base" /></div>
+          <div className="mt-4 flex items-center gap-2 text-xs text-faint">Records kept by <Wordmark inverse={false} className="text-base" /></div>
         </footer>
       </main>
     </div>

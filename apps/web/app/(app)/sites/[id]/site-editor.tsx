@@ -58,12 +58,12 @@ export function SiteEditor({ site, pins, layers }: { site: any; pins: any[]; lay
         <div><Label htmlFor="sqft">Confirmed area (sq ft)</Label><Input id="sqft" type="number" min={0} max={50000000} value={sqft ?? ''} onChange={(e) => { setMsg(null); setSqft(e.target.value ? Number(e.target.value) : null); }} /></div>
         <div><Label htmlFor="prio">Priority (1 is first)</Label><Input id="prio" type="number" min={1} max={5} step={1} value={priority} onChange={(e) => { setMsg(null); setPriority(e.target.value); }} /></div>
         <div><Label htmlFor="open">Open by</Label><Input id="open" type="time" value={openBy} onChange={(e) => setOpenBy(e.target.value)} /></div>
-        <div><Label htmlFor="notbefore">Not before (optional)</Label><Input id="notbefore" type="time" value={notBefore} onChange={(e) => setNotBefore(e.target.value)} data-testid="not-before" /><p className="mt-1 text-xs text-slate-600">Suggest order won&apos;t plan this lot earlier. For a lot in use until a set time.</p></div>
+        <div><Label htmlFor="notbefore">Not before (optional)</Label><Input id="notbefore" type="time" value={notBefore} onChange={(e) => setNotBefore(e.target.value)} data-testid="not-before" /><p className="mt-1 text-xs text-muted">Suggest order won&apos;t plan this lot earlier. For a lot in use until a set time.</p></div>
         <div className="sm:col-span-3"><Label htmlFor="n">Notes for the driver</Label><Input id="n" maxLength={4000} value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button disabled={busy} data-testid="site-save" onClick={() => void save()}>{busy ? 'Saving...' : 'Save'}</Button>
-        {msg ? <span className={msg.ok ? 'text-sm font-medium text-emerald-800' : 'text-sm text-red-700'} role={msg.ok ? 'status' : 'alert'} data-testid="site-msg">{msg.text}</span> : null}
+        {msg ? <span className={msg.ok ? 'text-sm font-medium text-ok-ink' : 'text-sm text-danger'} role={msg.ok ? 'status' : 'alert'} data-testid="site-msg">{msg.text}</span> : null}
       </div>
       {pins.length ? (
         <ul className="mt-3 space-y-2">
@@ -72,7 +72,7 @@ export function SiteEditor({ site, pins, layers }: { site: any; pins: any[]; lay
               <Badge>{p.kind}</Badge>
               <span>{p.note}</span>
               {p.photo_path ? <img src={`/api/pins/${p.id}/photo?v=${encodeURIComponent(p.photo_path)}`} alt={p.note ?? p.kind} width={64} height={64} className="h-16 w-16 rounded-sm object-cover" data-testid={`pin-thumb-${p.id}`} /> : null}
-              <label className="cursor-pointer text-sky-800 underline">
+              <label className="cursor-pointer text-link underline">
                 {p.photo_path ? 'Replace photo' : 'Add photo'}
                 <input type="file" accept="image/*" className="sr-only" data-testid={`pin-photo-${p.id}`} onChange={async (e) => {
                   const file = e.target.files?.[0];

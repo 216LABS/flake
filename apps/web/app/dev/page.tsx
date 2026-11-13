@@ -14,7 +14,7 @@ export default async function DevHome() {
         <ul className="mt-2 space-y-1 text-sm">
           {runs.map(({ run, storm: s, crew }) => {
             const link = runLink(run);
-            return <li key={run.id}>{s.name}, {crew?.name ?? 'no driver'}: {link ? <a className="text-sky-800 underline" data-testid="impersonate" href={link}>open route</a> : 'no link'}</li>;
+            return <li key={run.id}>{s.name}, {crew?.name ?? 'no driver'}: {link ? <a className="text-link underline" data-testid="impersonate" href={link}>open route</a> : 'no link'}</li>;
           })}
           {!runs.length ? <li>No active storm. Start one first.</li> : null}
         </ul>

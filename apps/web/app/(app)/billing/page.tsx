@@ -35,7 +35,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
       <PageHeader title="Billing review" subtitle={`${data.selected.name}, ${fmtLocal(data.selected.started_at, tz)}.${owner ? ` Your fee rate: ${(tenantFeeRate(ctx.tenant) * 100).toFixed(1)}%.` : ''}`} />
       <StormPicker storms={data.storms} selected={data.selected.id} />
       {missed.length ? (
-        <p className="mb-4 rounded-md bg-amber-50 p-3 text-sm text-amber-950" data-testid="missed-visits">
+        <p className="mb-4 rounded-md bg-warn-tint p-3 text-sm text-warn-ink" data-testid="missed-visits">
           {missed.length} visit{missed.length === 1 ? '' : 's'} synced after these drafts were made and {missed.length === 1 ? 'is' : 'are'} on no invoice: {[...new Set(missed.map((m) => m.site))].join(', ')}.{' '}
           {missed.some((m) => m.in_review) ? 'Regenerate drafts to pick up the ones still in review. ' : ''}
           {missed.some((m) => !m.in_review) ? 'Any invoice already approved stays as it was, so bill those separately.' : ''}

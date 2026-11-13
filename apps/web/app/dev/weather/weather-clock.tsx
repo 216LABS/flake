@@ -34,11 +34,11 @@ export function WeatherClock({ fixtures, fixture, clock }: { fixtures: string[];
         {[1, 6, 12].map((h) => <Button key={h} variant="outline" data-testid={`advance-${h}`} onClick={() => void post({ advanceHours: h })}>+{h} h</Button>)}
         <Button variant="accent" data-testid="poll" onClick={() => void post({ poll: true })}>Run poll now</Button>
       </div>
-      {error ? <p className="mt-2 text-sm text-red-700" role="alert">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
       {polls ? <p className="mt-3 text-sm" data-testid="polled">Polls run: {polls}</p> : null}
       {out?.header ? <p className="mt-3 text-sm" data-testid="wx">Next 12 h: {String(out.header.forecast_in)}&quot;. Elapsed: {String(out.header.elapsed_in)}&quot;. Source: {out.header.source}.</p> : null}
       {out?.created?.length ? (
-        <ul className="mt-2 text-sm" data-testid="created-alerts">{out.created.map((id: string) => <li key={id}><Link className="text-sky-800 underline" href={`/alerts/${id}`}>Alert created: review</Link></li>)}</ul>
+        <ul className="mt-2 text-sm" data-testid="created-alerts">{out.created.map((id: string) => <li key={id}><Link className="text-link underline" href={`/alerts/${id}`}>Alert created: review</Link></li>)}</ul>
       ) : null}
     </Card>
   );

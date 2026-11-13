@@ -37,25 +37,25 @@ export function RunPlan({ runId, onDone }: { runId: string; onDone: () => void }
     return (
       <>
         <Button size="sm" variant="ghost" className="-ml-3" disabled={busy} data-testid="replan" onClick={() => void load()}>Re-plan from truck</Button>
-        {error ? <p className="text-xs text-red-700" role="alert">{error}</p> : null}
+        {error ? <p className="text-xs text-danger" role="alert">{error}</p> : null}
       </>
     );
   }
   const s = plan.suggested;
   const saved = s && plan.current ? plan.current.drive_min - s.drive_min : 0;
   return (
-    <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs" data-testid="replan-panel">
+    <div className="mt-2 rounded-md border border-warn-line bg-warn-tint p-2 text-xs" data-testid="replan-panel">
       {!plan.from ? <p data-testid="replan-no-position">No position from this truck yet. The phone shares it after the driver taps Arrive and allows location, and it updates about once a minute while the route is open.</p>
         : !s ? <p>Fewer than two stops left to order.</p>
         : !plan.changed ? <p data-testid="replan-summary">The current order is already the shortest from {where(plan)}.</p>
         : (
           <>
-            {plan.from === 'last_done' ? <p className="mb-1 text-amber-900" data-testid="replan-fallback">This truck hasn't shared a location and nobody is on a lot, so this starts from the last lot it finished.</p> : null}
+            {plan.from === 'last_done' ? <p className="mb-1 text-warn-ink" data-testid="replan-fallback">This truck hasn't shared a location and nobody is on a lot, so this starts from the last lot it finished.</p> : null}
             <p className="font-medium" data-testid="replan-summary">From {where(plan)}: {saved > 0 ? `saves about ${saved} min of driving` : `${(plan.current?.late ?? 0) - s.late} fewer late stops`}.</p>
             <ol className="mt-1 space-y-0.5">
               {s.stops.map((x, i) => <li key={x.id} className="flex justify-between gap-2"><span>{i + 1}. {x.label}</span><span className="tabular-nums">{clock(x.arrive)}{x.late ? ' late' : ''}</span></li>)}
             </ol>
-            {plan.times_label ? <p className="mt-1 text-slate-600" data-testid="replan-times">{plan.times_label}</p> : null}
+            {plan.times_label ? <p className="mt-1 text-muted" data-testid="replan-times">{plan.times_label}</p> : null}
           </>
         )}
       <div className="mt-2 flex gap-2">
@@ -73,7 +73,7 @@ export function RunPlan({ runId, onDone }: { runId: string; onDone: () => void }
         }}>Use this order</Button> : null}
         <Button size="sm" variant="ghost" onClick={() => setPlan(null)}>{plan.changed ? 'Keep' : 'Close'}</Button>
       </div>
-      {error ? <p className="mt-1 text-red-700" role="alert">{error}</p> : null}
+      {error ? <p className="mt-1 text-danger" role="alert">{error}</p> : null}
     </div>
   );
 }

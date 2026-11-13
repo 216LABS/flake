@@ -56,17 +56,17 @@ export function SaltStockForm({ canEdit, entries }: { canEdit: boolean; entries:
           <Button onClick={save} disabled={busy} data-testid="salt-save">{busy ? 'Saving' : 'Save'}</Button>
         </div>
       ) : null}
-      {error ? <p role="alert" className="mb-3 text-sm text-red-700">{error}</p> : null}
+      {error ? <p role="alert" className="mb-3 text-sm text-danger">{error}</p> : null}
       {entries.length ? (
-        <ul className="divide-y divide-slate-100 text-sm" data-testid="salt-entries">
+        <ul className="divide-y divide-line-faint text-sm" data-testid="salt-entries">
           {entries.map((e) => (
             <li key={e.id} className="flex items-center justify-between gap-3 py-2">
-              <span><span className="font-semibold">{e.kind === 'delivery' ? `+${e.tons} t delivered` : `Counted ${e.tons} t`}</span> <span className="text-slate-600">{e.when}{e.note ? `, ${e.note}` : ''}</span></span>
+              <span><span className="font-semibold">{e.kind === 'delivery' ? `+${e.tons} t delivered` : `Counted ${e.tons} t`}</span> <span className="text-muted">{e.when}{e.note ? `, ${e.note}` : ''}</span></span>
               {canEdit ? <Button variant="ghost" size="sm" onClick={() => remove(e.id)} aria-label={`Remove ${e.kind} from ${e.when}`}>Remove</Button> : null}
             </li>
           ))}
         </ul>
-      ) : <p className="text-sm text-slate-600">No deliveries or counts yet.</p>}
+      ) : <p className="text-sm text-muted">No deliveries or counts yet.</p>}
     </Card>
   );
 }

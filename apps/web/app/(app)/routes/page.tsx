@@ -30,7 +30,7 @@ export default async function Routes({ searchParams }: { searchParams: Promise<{
                 <Card className="flex flex-wrap items-center justify-between gap-2" data-testid="archived-route">
                   <div>
                     <div className="font-semibold">{r.name}</div>
-                    <div className="text-sm text-slate-600">{data.stops.filter((s) => s.route_id === r.id).length} stops</div>
+                    <div className="text-sm text-muted">{data.stops.filter((s) => s.route_id === r.id).length} stops</div>
                   </div>
                   {ctx.role !== 'viewer' ? <RestoreRoute id={r.id} name={r.name} /> : null}
                 </Card>
@@ -38,7 +38,7 @@ export default async function Routes({ searchParams }: { searchParams: Promise<{
             ))}
           </ul>
         ) : <EmptyState title="No archived routes" />}
-        <Link className="mt-4 inline-block text-sm text-sky-800 underline" href="/routes">Back to routes</Link>
+        <Link className="mt-4 inline-block text-sm text-link underline" href="/routes">Back to routes</Link>
       </>
     );
   }
@@ -46,7 +46,7 @@ export default async function Routes({ searchParams }: { searchParams: Promise<{
     <>
       <PageHeader title="Routes" subtitle="Master routes. Each storm snapshots these, so changes here never disturb a running storm." />
       <RoutesEditor yard={ctx.tenant.yard?.address ?? null} sites={data.sites.map((s) => ({ ...s, active: Boolean(s.active) }))} crew={data.crew} routes={data.routes.map((r) => ({ id: r.id, name: r.name, default_crew_id: r.default_crew_id, yard_trip: r.yard_trip, site_ids: data.stops.filter((s) => s.route_id === r.id).map((s) => s.site_id) }))} />
-      {data.archived.length ? <Link className="mt-4 inline-block text-sm text-sky-800 underline" href="/routes?archived=1" data-testid="show-archived-routes">Archived routes ({data.archived.length})</Link> : null}
+      {data.archived.length ? <Link className="mt-4 inline-block text-sm text-link underline" href="/routes?archived=1" data-testid="show-archived-routes">Archived routes ({data.archived.length})</Link> : null}
     </>
   );
 }

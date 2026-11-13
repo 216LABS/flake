@@ -28,13 +28,13 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
   return (
     <>
       <PageHeader title={a.detail.headline} subtitle={`${a.kind === 'nws_alert' ? 'National Weather Service alert' : 'Trigger alert'}, ${fmtLocal(a.created_at!, ctx.tenant.timezone)}`} actions={<Badge tone={a.status === 'open' ? 'amber' : 'gray'}>{a.status}</Badge>} />
-      <p className="mb-4 text-sm text-slate-600">Flake never dispatches by itself. Nothing happens until you tap Start storm.</p>
+      <p className="mb-4 text-sm text-muted">Flake never dispatches by itself. Nothing happens until you tap Start storm.</p>
       <AlertActions alertId={a.id} status={a.status!} routeIds={grouped.map((g) => g.route.id)} siteIds={a.site_ids} name={`Storm ${fmtLocal(new Date(), ctx.tenant.timezone, { month: 'short', day: 'numeric' })}`} />
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         {grouped.map((g) => (
           <Card key={g.route.id}>
             <h2 className="font-semibold">{g.route.name}</h2>
-            <p className="text-sm text-slate-600">Suggested crew: {g.crew?.name ?? 'none assigned'}</p>
+            <p className="text-sm text-muted">Suggested crew: {g.crew?.name ?? 'none assigned'}</p>
             <ul className="mt-2 space-y-1 text-sm">
               {g.sites.map((s) => {
                 const d = siteDetail.find((x) => x.site_id === s.id);
@@ -45,12 +45,12 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
         ))}
         {unrouted.length ? (
           <Card>
-            <h2 className="font-semibold text-amber-800">Not on any route</h2>
+            <h2 className="font-semibold text-warn-ink">Not on any route</h2>
             <ul className="mt-2 space-y-1 text-sm">{unrouted.map((s) => <li key={s.id}>{s.label}</li>)}</ul>
           </Card>
         ) : null}
       </div>
-      <p className="mt-6 text-xs text-slate-500">Forecast snapshots attached: {a.snapshot_ids.length}. They go on the storm record when you start it.</p>
+      <p className="mt-6 text-xs text-faint">Forecast snapshots attached: {a.snapshot_ids.length}. They go on the storm record when you start it.</p>
     </>
   );
 }
