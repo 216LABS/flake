@@ -1,4 +1,5 @@
 import { and, crew_member, customer, eq, isNotNull, proof_packet, visit_correction, run_stop, serviceDb, site, sql, storm, storm_run, tenant, visit, visit_photo, weather_snapshot } from '@flake/db';
+import { photoOrder } from '@flake/core/proof';
 import { fmtLocal, isLate } from '@flake/core/time';
 import { billInstallments, chargeDraft, redraftAfterLatePhoto } from './billing';
 import { getBlob, putBlob } from './blob';
@@ -50,7 +51,7 @@ async function completionReport(tenantId: string, visitId: string) {
   const when = (iso: string) => fmtLocal(iso, tz);
   const photos = await db.select().from(visit_photo).where(and(eq(visit_photo.tenant_id, tenantId), eq(visit_photo.visit_id, visitId)));
   const links: string[] = [];
-  for (const p of photos) links.push(`${p.phase}: ${await shortLink(tenantId, `photo:${p.id}`)}`);
+  for (const p of photos.sort(photoOrder)) links.push(`${p.phase}: ${await shortLink(tenantId, `photo:${p.id}`)}`);
   const salt = (row.visit.salt ?? []).map((s) => `${s.qty} ${s.unit}`).join(', ') || 'none recorded';
   const text = [
     `Service record for ${row.site.label}`,

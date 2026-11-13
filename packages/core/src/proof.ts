@@ -89,3 +89,15 @@ export function buildManifest(input: ProofInput): { manifest: ProofManifest; has
   };
   return { manifest, hash: createHash('sha256').update(canonicalJson(manifest)).digest('hex') };
 }
+
+const PHASE_RANK: Record<string, number> = { before: 0, after: 1, issue: 2 };
+
+/**
+ * The order photos are shown in anywhere a person reads them (records page, proof packet, completion email): before,
+ * then after, then issue photos, each by when it was taken. The database returns them in no particular order.
+ */
+export function photoOrder<P extends { phase: string | null; taken_device_at?: string | Date | null; id: string }>(a: P, b: P): number {
+  const rank = (p: P) => PHASE_RANK[p.phase ?? ''] ?? 3;
+  const time = (p: P) => (p.taken_device_at ? new Date(p.taken_device_at).getTime() : Number.MAX_SAFE_INTEGER);
+  return rank(a) - rank(b) || time(a) - time(b) || a.id.localeCompare(b.id);
+}

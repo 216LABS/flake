@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { photoOrder } from '@flake/core/proof';
 import { and, app_setting, contract, customer, desc, eq, gte, inArray, invoice_draft, proof_packet, serviceDb, site, sql, storm, tenant, visit, visit_correction, visit_photo, visitNotVoided } from '@flake/db';
 import { required } from './env';
 import { quoteUrl } from './quotes';
@@ -66,7 +67,7 @@ export async function portalData(customerId: string, tenantId: string) {
       .where(and(eq(visit.tenant_id, tenantId), inArray(visit.site_id, siteIds), gte(visit.arrived_device_at, since), visitNotVoided)).orderBy(desc(visit.arrived_device_at)).limit(400)
     : [];
   const visitIds = visits.map((x) => x.v.id);
-  const photos = visitIds.length ? await db.select({ id: visit_photo.id, visit_id: visit_photo.visit_id, phase: visit_photo.phase }).from(visit_photo).where(and(eq(visit_photo.tenant_id, tenantId), inArray(visit_photo.visit_id, visitIds))) : [];
+  const photos = visitIds.length ? await db.select({ id: visit_photo.id, visit_id: visit_photo.visit_id, phase: visit_photo.phase, taken_device_at: visit_photo.taken_device_at }).from(visit_photo).where(and(eq(visit_photo.tenant_id, tenantId), inArray(visit_photo.visit_id, visitIds))) : [];
   const corrections = visitIds.length ? await db.select().from(visit_correction).where(and(eq(visit_correction.tenant_id, tenantId), inArray(visit_correction.visit_id, visitIds), eq(visit_correction.field, 'salt'))).orderBy(visit_correction.created_at) : [];
   const invoices = await db.select({ d: invoice_draft, stormName: storm.name }).from(invoice_draft).innerJoin(storm, eq(storm.id, invoice_draft.storm_id))
     .where(and(eq(invoice_draft.tenant_id, tenantId), eq(invoice_draft.customer_id, customerId), inArray(invoice_draft.status, ['charged', 'sent', 'paid', 'failed']))).orderBy(desc(invoice_draft.created_at)).limit(100);
@@ -85,7 +86,7 @@ export async function portalData(customerId: string, tenantId: string) {
         quote: waiting ? { season: waiting.season, url: quoteUrl(waiting) } : null,
         visits: visits.filter((x) => x.v.site_id === s.id).map(({ v, stormName, stormOn }) => ({
           id: v.id, storm: stormName, on_site_now: !v.departed_device_at && stormOn, arrived: v.arrived_device_at, departed: v.departed_device_at, services: v.services, depth: v.depth_in === null ? null : Number(v.depth_in), salt: saltOf(v.id, v.salt), replow: Boolean(v.is_replow),
-          photos: photos.filter((p) => p.visit_id === v.id && p.phase !== 'issue').map((p) => ({ id: p.id, phase: p.phase })),
+          photos: photos.filter((p) => p.visit_id === v.id && p.phase !== 'issue').sort(photoOrder).map((p) => ({ id: p.id, phase: p.phase })),
         })),
         packets: packets.filter((p) => p.site_id === s.id),
       };

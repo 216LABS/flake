@@ -1,4 +1,5 @@
 import { and, asc, contract, crew_member, customer, desc, eq, gte, inArray, lte, message_log, proof_packet, serviceDb, site, sql, storm, tenant, visit, visit_correction, visit_photo, weather_snapshot } from '@flake/db';
+import { photoOrder } from '@flake/core/proof';
 import { buildManifest, type ProofInput, type ProofSnapshot, type ProofVisit } from '@flake/core/proof';
 import { getBlob, putBlob } from './blob';
 import { sha256Hex } from './tokens';
@@ -34,7 +35,7 @@ export async function assembleProof(tenantId: string, siteId: string, from: stri
   const proofVisits: ProofVisit[] = visits.map(({ visit: v, crew }) => ({
     id: v.id, storm_id: v.storm_id, crew_name: crew.name, arrived_device_at: v.arrived_device_at, arrived_received_at: v.arrived_received_at, departed_device_at: v.departed_device_at, departed_received_at: v.departed_received_at,
     arrive_lat: v.arrive_lat, arrive_lon: v.arrive_lon, arrive_acc_m: v.arrive_acc_m, services: v.services, salt: v.salt, depth_in: v.depth_in === null ? null : Number(v.depth_in), is_replow: Boolean(v.is_replow), gps_match: v.gps_match,
-    photos: photos.filter((p) => p.visit_id === v.id).map((p) => ({ id: p.id, phase: p.phase ?? 'other', storage_path: p.storage_path, sha256: p.sha256, taken_device_at: p.taken_device_at, received_at: p.received_at! })),
+    photos: photos.filter((p) => p.visit_id === v.id).sort(photoOrder).map((p) => ({ id: p.id, phase: p.phase ?? 'other', storage_path: p.storage_path, sha256: p.sha256, taken_device_at: p.taken_device_at, received_at: p.received_at! })),
   }));
 
   return {
