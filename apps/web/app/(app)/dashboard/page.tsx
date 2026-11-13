@@ -58,7 +58,7 @@ export default async function Dashboard() {
           <Stat label="Next 12 h" value={fmt(w.forecast_in)} />
           <Stat label="Elapsed this event" value={fmt(w.elapsed_in)} />
           <Stat label="Temperature" value={fmt(w.temp_f, ' F')} />
-          <p className="ml-auto text-xs text-slate-300">{w.reason ? `${w.reason} ` : ''}Live forecast. Source: {w.source}{w.fetched_at ? `, ${fmtLocal(w.fetched_at, tz)}` : ''}</p>
+          <p className="ml-auto text-xs text-slate-300">{w.reason ? `${w.reason} ` : ''}{w.source === 'unavailable' ? '' : `Live forecast. Source: ${w.source}${w.fetched_at ? `, ${fmtLocal(w.fetched_at, tz)}` : ''}`}</p>
         </div>
       </section>
       <div className={`mt-6 grid grid-cols-1 gap-6 ${setup.some((s) => !s.done) ? 'lg:grid-cols-3' : ''}`}>
@@ -107,7 +107,7 @@ export default async function Dashboard() {
                   );
                 })}
               </div>
-            ) : <EmptyState title="No storm is running" body="Start one by hand, or wait for a trigger alert." />}
+            ) : <EmptyState title="No storm is running" body={canEdit ? 'Start one by hand, or wait for a trigger alert.' : 'The office starts one when snow is coming.'} />}
           </section>
         </div>
         {setup.some((s) => !s.done) ? (

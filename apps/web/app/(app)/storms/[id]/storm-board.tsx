@@ -268,9 +268,9 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
 
       {notify ? <NotifyPanel stops={allStops} onClose={() => setNotify(false)} onSend={(siteIds, template, time) => act(async () => {
         setNotice(null);
-        const out = await api<{ queued: number }>(`/api/storms/${stormId}/notify`, { body: { siteIds, template, time } });
+        const out = await api<{ queued: number; unreachable: string[] }>(`/api/storms/${stormId}/notify`, { body: { siteIds, template, time } });
         setNotify(false);
-        setNotice(`Sending to ${out.queued} customer${out.queued === 1 ? '' : 's'}. Anyone already sent this message for this storm isn't sent it twice. Delivery shows in Settings, System, Recent messages.`);
+        setNotice(`${out.queued ? `Sending to ${out.queued} customer${out.queued === 1 ? '' : 's'}. Anyone already sent this message for this storm isn't sent it twice. Delivery shows in Settings, System, Recent messages.` : 'Nobody was sent this.'}${out.unreachable.length ? ` Not sent to ${out.unreachable.join(', ')}: no texts or email turned on for ${out.unreachable.length === 1 ? 'that customer' : 'those customers'}.` : ''}`);
       })} /> : null}
 
       {linkFor ? (

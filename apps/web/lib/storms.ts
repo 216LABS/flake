@@ -311,17 +311,21 @@ export async function notifyRouteChanged(tenantId: string, runId: string, key: s
 
 /** Each site gets one message per template per storm, however many times the button is pressed. */
 export async function notifyCustomers(ctx: Ctx, stormId: string, input: z.infer<typeof stormNotify>) {
-  await withUser(ctx.userId, async (tx) => {
+  const unreachable = await withUser(ctx.userId, async (tx) => {
     await requireActiveStorm(tx, { stormId });
     // Only lots on this storm: a stray id must not tell some other customer their plow is late.
     const onStorm = await tx.select({ site_id: run_stop.site_id }).from(run_stop).innerJoin(storm_run, eq(storm_run.id, run_stop.storm_run_id)).where(and(eq(storm_run.storm_id, stormId), inArray(run_stop.site_id, input.siteIds)));
     const ok = new Set(onStorm.map((x) => x.site_id));
     if (input.siteIds.some((id) => !ok.has(id))) throw new HttpError(422, 'Some of those sites are not on this storm.', 'not_on_storm');
+    // The same test the send uses: texts turned on with a phone, or email turned on with an address. Anyone else gets
+    // nothing, and the office should know that instead of reading "sending" (found in a QA pass).
+    const who = await tx.select({ label: site.label, customer }).from(site).innerJoin(customer, eq(customer.id, site.customer_id)).where(inArray(site.id, input.siteIds));
+    return who.filter(({ customer: c }) => !((c.notify_sms && c.phone_e164) || (c.email && c.notify_email !== false))).map((x) => x.label);
   });
   for (const siteId of input.siteIds) {
     await enqueue('notify.customer', { tenantId: ctx.tenantId, siteId, stormId, template: input.template, time: input.time ?? 'soon', key: `${input.template}:${stormId}:${siteId}` }, { dedupeKey: `notify:${input.template}:${stormId}:${siteId}` });
   }
-  return { queued: input.siteIds.length };
+  return { queued: input.siteIds.length - unreachable.length, unreachable };
 }
 
 export async function notifyCustomer(p: { tenantId: string; siteId: string; template: 'late' | 'on_the_way' | 'done'; time?: string; link?: string; key: string; stormId?: string; visitId?: string }) {
