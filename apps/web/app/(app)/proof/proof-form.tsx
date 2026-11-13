@@ -1,7 +1,7 @@
 'use client';
 
 import { addDays, fmtLocal, todayIn, zonedDayEnd, zonedDayStart } from '@flake/core/time';
-import { Button, Card, Input, Label, Select, Table, Td, Th } from '@flake/ui';
+import { Button, Card, Input, Label, Segmented, Select, Table, Td, Th } from '@flake/ui';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/client';
 
@@ -92,10 +92,7 @@ export function ProofForm({ sites, packets, preselect, tz }: { sites: { id: stri
       <Card>
         <Label htmlFor="site">Site</Label>
         <Select id="site" value={siteId} data-testid="proof-site" onChange={(e) => setSiteId(e.target.value)}>{sites.map((s) => <option key={s.id} value={s.id}>{s.label} ({s.customer})</option>)}</Select>
-        <div className="mt-3 flex gap-3 text-sm">
-          <label className="flex items-center gap-1"><input type="radio" checked={mode === 'range'} onChange={() => setMode('range')} /> Date range</label>
-          <label className="flex items-center gap-1"><input type="radio" checked={mode === 'claim'} onChange={() => setMode('claim')} /> Claim date ± 48 h</label>
-        </div>
+        <Segmented className="mt-3" label="Which dates" name="proof-mode" testId="proof-mode" value={mode} options={[['range', 'Date range'], ['claim', 'Claim date ± 48 h']] as const} onChange={setMode} />
         {mode === 'range' ? (
           <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div className="min-w-0"><Label htmlFor="from">From</Label><Input id="from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>

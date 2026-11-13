@@ -52,7 +52,7 @@ function ConfirmDialog({ title, body, confirm, cancel = 'Cancel', danger, onAnsw
   }, [onAnswer]);
   return (
     <div className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-950/50 p-4 sm:items-center" onClick={(e) => e.target === e.currentTarget && onAnswer(false)}>
-      <div ref={box} role="alertdialog" aria-modal="true" aria-labelledby={titleId} className="w-full max-w-md rounded-lg bg-surface p-5 shadow-xl" data-testid="confirm-dialog">
+      <div ref={box} role="alertdialog" aria-modal="true" aria-labelledby={titleId} className="w-full max-w-md rounded-popup bg-surface p-5 shadow-popup" data-testid="confirm-dialog">
         <h2 id={titleId} className="font-display text-lg font-semibold">{title}</h2>
         {body ? <div className="mt-2 text-sm text-ink-2">{body}</div> : null}
         <div className="mt-4 flex flex-wrap justify-end gap-2">

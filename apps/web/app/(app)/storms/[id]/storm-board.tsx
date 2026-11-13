@@ -1,6 +1,7 @@
 'use client';
 
 import { Badge, Button, Card, Input, Select, cn, Progress } from '@flake/ui';
+import { ArrowDown, ArrowUp } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { RunPlan } from './run-plan';
 import QRCode from 'qrcode';
@@ -311,7 +312,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
             <section
               key={r.id}
               ref={(el) => { columns.current[r.id] = el; }}
-              className={cn('w-full scroll-mt-20 rounded-md bg-slate-200/70 p-2 md:w-72 md:shrink-0 md:snap-start', dragging && 'ring-2 ring-ink')}
+              className={cn('w-full scroll-mt-20 rounded-surface bg-tint-2 p-2 md:w-72 md:shrink-0 md:snap-start', dragging && 'ring-2 ring-ink')}
               data-testid="run-column"
               data-run={r.id}
               onDragOver={(e) => e.preventDefault()}
@@ -339,7 +340,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
               </header>
               <ul className="space-y-2">
                 {r.stops.map((s: any) => (
-                  <li key={s.id} draggable={editable && s.status !== 'onsite' && s.status !== 'done'} onDragStart={(e) => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragging(s.id); }} onDragEnd={() => setDragging(null)} data-testid="stop-card" data-status={s.status} className={cn('rounded-md border border-line-faint bg-surface p-2 text-sm', s.status === 'done' && 'opacity-70', s.status === 'onsite' && 'border-beacon ring-1 ring-beacon', s.late && 'border-danger bg-danger-tint')}>
+                  <li key={s.id} draggable={editable && s.status !== 'onsite' && s.status !== 'done'} onDragStart={(e) => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragging(s.id); }} onDragEnd={() => setDragging(null)} data-testid="stop-card" data-status={s.status} className={cn('rounded-row border border-line-faint bg-surface p-2 text-sm shadow-drop', (s.status === 'done' || s.status === 'skipped') && 'border-transparent bg-tint shadow-none', s.status === 'onsite' && 'border-beacon bg-warn-tint ring-2 ring-beacon', s.late && 'border-danger bg-danger-tint')}>
                     {/* The name opens the stop's visits and photos (issue 41); the buttons below stay their own targets. */}
                     <button type="button" className="-m-1 block w-[calc(100%+0.5rem)] rounded p-1 text-left hover:bg-tint focus-visible:outline-2 focus-visible:outline-ink" data-testid="stop-open" aria-label={`${s.label}: details and photos`} onClick={() => setOpenStop(s.id)}>
                       <span className="flex items-start justify-between gap-2">
@@ -353,16 +354,17 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
                     {s.late ? <div className="text-xs font-bold text-danger">Late</div> : null}
                     {s.arrived_at ? <div className="text-xs text-muted">On site {since(s.arrived_at, now)}</div> : null}
                     {editable && !['done', 'onsite'].includes(s.status) ? (
-                      <div className="mt-1 flex flex-wrap gap-1">
+                      <div className="mt-1.5 flex items-center gap-1">
+                        {Math.min(...r.stops.map((x: any) => x.seq)) < s.seq ? <Button size="sm" variant="ghost" className="h-10 w-10 shrink-0 p-0 md:h-8 md:w-8" aria-label={`Move ${s.label} earlier`} data-testid="move-up" onClick={() => void shift(r, s.id, -1)}><ArrowUp size={18} aria-hidden="true" /></Button> : null}
+                        {Math.max(...r.stops.map((x: any) => x.seq)) > s.seq ? <Button size="sm" variant="ghost" className="h-10 w-10 shrink-0 p-0 md:h-8 md:w-8" aria-label={`Move ${s.label} later`} data-testid="move-down" onClick={() => void shift(r, s.id, 1)}><ArrowDown size={18} aria-hidden="true" /></Button> : null}
                         {live.runs.length > 1 ? (
-                          <Select aria-label={`Move ${s.label}`} data-testid="move-to" className="h-10 py-0 text-xs md:h-8" value="" onChange={(e) => e.target.value && void move(s.id, e.target.value)}>
+                          <Select aria-label={`Move ${s.label} to another truck`} data-testid="move-to" className="h-10 min-w-0 flex-1 py-0 text-xs md:h-8" value="" onChange={(e) => e.target.value && void move(s.id, e.target.value)}>
                             <option value="">Move to...</option>
                             {live.runs.filter((x: any) => x.id !== r.id).map((x: any) => <option key={x.id} value={x.id}>{x.name} ({x.crew?.name ?? 'no driver'})</option>)}
                           </Select>
-                        ) : null}
-                        {Math.min(...r.stops.map((x: any) => x.seq)) < s.seq ? <Button size="sm" variant="ghost" className="h-10 min-w-11 md:h-8" aria-label={`Move ${s.label} earlier`} data-testid="move-up" onClick={() => void shift(r, s.id, -1)}>Up</Button> : null}
-                        {Math.max(...r.stops.map((x: any) => x.seq)) > s.seq ? <Button size="sm" variant="ghost" className="h-10 min-w-11 md:h-8" aria-label={`Move ${s.label} later`} data-testid="move-down" onClick={() => void shift(r, s.id, 1)}>Down</Button> : null}
-                        <Button size="sm" variant="ghost" className="h-10 min-w-11 md:h-8" data-testid="skip-toggle" onClick={() => void skip(s)}>{s.status === 'skipped' ? 'Reopen' : 'Skip'}</Button>
+                        ) : <span className="flex-1" />}
+                        {/* Named for its stop, so a screen reader hears "Skip Lot 3", not ten buttons called Skip. */}
+                        <Button size="sm" variant="ghost" className="h-10 shrink-0 px-3 md:h-8" aria-label={`${s.status === 'skipped' ? 'Reopen' : 'Skip'} ${s.label}`} data-testid="skip-toggle" onClick={() => void skip(s)}>{s.status === 'skipped' ? 'Reopen' : 'Skip'}</Button>
                       </div>
                     ) : null}
                   </li>

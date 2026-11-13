@@ -67,6 +67,17 @@
   --color-ok-ink: var(--ok-ink);
   --color-ok-tint: var(--ok-tint);
   --color-ok-line: var(--ok-line);
+
+  /* Depth in three steps: a drop under buttons, a float for cards and tables, a deep one for dialogs and sheets. */
+  --shadow-drop: 0 1px 2px -1px var(--shadow-color), 0 1px 1px var(--shadow-faint);
+  --shadow-float: 0 1px 2px var(--shadow-faint), 0 4px 12px -6px var(--shadow-color);
+  --shadow-popup: 0 4px 8px -2px var(--shadow-faint), 0 22px 46px -12px var(--shadow-deep);
+
+  /* Corners by role, so a field inside a card inside a sheet nests cleanly. */
+  --radius-row: 0.4375rem;
+  --radius-control: 0.5rem;
+  --radius-surface: 0.625rem;
+  --radius-popup: 0.75rem;
 }
 
 :root {
@@ -96,6 +107,47 @@
   --ok-ink: oklch(43.2% 0.095 166.913);
   --ok-tint: oklch(97.9% 0.021 166.113);
   --ok-line: oklch(84.5% 0.143 164.978);
+  --shadow-faint: rgb(19 32 43 / 0.05);
+  --shadow-color: rgb(19 32 43 / 0.14);
+  --shadow-deep: rgb(19 32 43 / 0.28);
+}
+
+/*
+ * Dark follows the phone or computer's setting. Cold like a night cab, a step lighter than the header and tab bar so
+ * those still read as the frame. Fields, scrollbars and date pickers follow color-scheme on their own.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #0f1a22;
+    --surface: #16232d;
+    --tint: #1a2934;
+    --tint-2: #20303c;
+    --tint-3: #2b3d4a;
+    --ink: #eef1f3;
+    --ink-2: #c8d0d6;
+    --muted: #a3aeb6;
+    --faint: #8a959d;
+    --line-faint: #26363f;
+    --line: #374955;
+    --line-strong: #5c6e7a;
+    --link: #8fcdea;
+    --info-tint: #12303f;
+    --info-line: #2a6f92;
+    --danger: #ff8a80;
+    --danger-ink: #ffc9c4;
+    --danger-tint: #3b1a1c;
+    --warn-ink: #f8d57e;
+    --warn-tint: #33280f;
+    --warn-strong: #5a4512;
+    --warn-line: #8a6b1c;
+    --ok-ink: #8ee0bd;
+    --ok-tint: #0f2f25;
+    --ok-line: #2f7a5c;
+    --shadow-faint: rgb(0 0 0 / 0.3);
+    --shadow-color: rgb(0 0 0 / 0.45);
+    --shadow-deep: rgb(0 0 0 / 0.6);
+  }
 }
 @layer base {
   *,

@@ -1,0 +1,82 @@
+import { expect, test, type Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { closeRunningStorms, login, sql, startStorm } from './helpers';
+
+/** The look: dark mode that still reads, small choices as one-tap segments, and storm stops that stay compact. */
+
+const axeSource = readFileSync(createRequire(import.meta.url).resolve('axe-core/axe.min.js'), 'utf8');
+
+async function seriousProblems(page: Page) {
+  await page.evaluate(axeSource);
+  return page.evaluate(async () => {
+    const { violations } = await (window as unknown as { axe: { run: (d: Document, o: object) => Promise<{ violations: { id: string; impact: string | null; nodes: { target: string[] }[] }[] }> } }).axe.run(document, { runOnly: ['wcag2a', 'wcag2aa', 'wcag21aa'] });
+    return violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => `${v.id}: ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join(', ')}`);
+  });
+}
+
+test('in dark mode every screen turns dark and still passes contrast', async ({ page, browser, baseURL }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  for (const url of ['/', '/pricing', '/login']) {
+    await page.goto(url);
+    expect(await seriousProblems(page), `${url} in dark`).toEqual([]);
+  }
+  await login(page);
+  const { id } = await startStorm(page.request, `Dark ${Date.now()}`, ['West Lakewood', 'Rocky River']);
+  for (const url of ['/dashboard', '/storms', `/storms/${id}`, '/customers', '/customers/new', '/routes', '/billing', '/proof', '/reports', '/settings?tab=rate', '/settings?tab=crew', '/settings?tab=team', '/settings?tab=system']) {
+    await page.goto(url);
+    await page.waitForLoadState('networkidle');
+    // The page really is dark, not a light page with a dark header.
+    const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    expect(bg, url).toBe('rgb(15, 26, 34)');
+    expect(await seriousProblems(page), `${url} in dark`).toEqual([]);
+  }
+  const [c] = await sql`select c.id from customer c join tenant t on t.id = c.tenant_id where t.slug = 'lakeshore-demo' limit 1`;
+  const { url } = await (await page.request.get(`/api/customers/${c!.id}/portal`)).json();
+  const guest = await browser.newContext({ baseURL, colorScheme: 'dark' });
+  const g = await guest.newPage();
+  await g.goto(url);
+  expect(await seriousProblems(g), 'records page in dark').toEqual([]);
+  await guest.close();
+  await closeRunningStorms();
+});
+
+test('a light setting keeps the office light', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await login(page);
+  await page.goto('/dashboard');
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(246, 245, 241)');
+});
+
+test('kind is one tap, and the arrow keys move between kinds', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 667 });
+  await login(page);
+  await page.goto('/customers/new');
+  const kind = page.getByTestId('kind');
+  await expect(kind.getByRole('radio', { name: 'Commercial' })).toBeChecked();
+  await kind.getByText('Residential').click();
+  await expect(kind.getByRole('radio', { name: 'Residential' })).toBeChecked();
+  await page.keyboard.press('ArrowRight');
+  await expect(kind.getByRole('radio', { name: 'HOA' })).toBeChecked();
+  // All three fit side by side on a small phone.
+  const boxes = await kind.locator('label').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
+  expect(new Set(boxes.map(Math.round)).size).toBe(1);
+});
+
+for (const width of [390, 375]) {
+  test(`storm stops keep their controls on one row, each named for its stop, at ${width} wide`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await login(page);
+    const { id, runs } = await startStorm(page.request, `Rows ${width} ${Date.now()}`, ['West Lakewood', 'Rocky River']);
+    await page.goto(`/storms/${id}`);
+    const open = page.locator('[data-testid="stop-card"][data-status="open"]');
+    await expect(open.first()).toBeVisible();
+    for (const card of (await open.all()).slice(0, 4)) {
+      const tops = await card.locator('[data-testid="move-up"], [data-testid="move-down"], [data-testid="move-to"], [data-testid="skip-toggle"]').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+      expect(new Set(tops).size, 'controls wrapped onto a second row').toBe(1);
+    }
+    const label = runs[0]!.stops[0]!.label;
+    await expect(page.getByRole('button', { name: `Skip ${label}`, exact: true })).toHaveCount(1);
+    await closeRunningStorms();
+  });
+}

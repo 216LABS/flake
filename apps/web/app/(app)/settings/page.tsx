@@ -39,7 +39,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       <PageHeader title="Settings" subtitle={`Routes are edited on the Routes page. You are the ${ctx.role}.`} />
       {/* Wraps on a phone so every section shows, instead of some hiding past the edge (issue 82). */}
       <nav aria-label="Settings sections" data-testid="settings-tabs" className="mb-5 flex flex-wrap gap-1 whitespace-nowrap border-b border-line text-sm md:flex-nowrap md:overflow-x-auto md:overflow-y-hidden md:[scrollbar-width:thin]">
-        {TABS.filter(([k]) => owner || !OWNER_TABS.includes(k)).map(([k, label]) => <Link key={k} href={`/settings?tab=${k}`} data-testid={`tab-${k}`} aria-current={tab === k ? 'page' : undefined} className={`-mb-px border-b-2 px-3 py-2 font-medium ${tab === k ? 'border-beacon text-ink' : 'border-transparent text-muted hover:text-ink'}`}>{label}</Link>)}
+        {TABS.filter(([k]) => owner || !OWNER_TABS.includes(k)).map(([k, label]) => <Link key={k} href={`/settings?tab=${k}`} data-testid={`tab-${k}`} aria-current={tab === k ? 'page' : undefined} className={`-mb-px border-b-2 px-3 py-2 font-medium ${tab === k ? 'border-ink font-semibold text-ink' : 'border-transparent text-muted hover:text-ink'}`}>{label}</Link>)}
       </nav>
       {!allowed ? <Card className="max-w-2xl" data-testid="owner-only"><p className="text-sm">Only an owner can open this.</p></Card> : null}
       {allowed && tab === 'company' ? <CompanyForm tenant={JSON.parse(JSON.stringify(t))} /> : null}

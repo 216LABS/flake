@@ -2,7 +2,7 @@
 
 import { currentSeason } from '@flake/core/time';
 import { suggestPrice, type RateCard } from '@flake/core/quote';
-import { Badge, Button, Card, Input, Label, PageHeader, Select, Progress } from '@flake/ui';
+import { Badge, Button, Card, Input, Label, PageHeader, Segmented, Select, Progress } from '@flake/ui';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -200,9 +200,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
         {step === 0 ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2"><Label htmlFor="name">Name</Label><Input id="name" data-testid="c-name" value={c.name} onChange={(e) => setC({ ...c, name: e.target.value })} /></div>
-            <div><Label htmlFor="kind">Kind</Label>
-              <Select id="kind" value={c.kind} onChange={(e) => setC({ ...c, kind: e.target.value })}><option value="commercial">Commercial</option><option value="residential">Residential</option><option value="hoa">HOA</option></Select>
-            </div>
+            <Segmented label="Kind" name="kind" testId="kind" value={c.kind as 'commercial' | 'residential' | 'hoa'} options={[['commercial', 'Commercial'], ['residential', 'Residential'], ['hoa', 'HOA']] as const} onChange={(kind) => setC({ ...c, kind })} />
             <div><Label htmlFor="billing">Billing</Label>
               <Select id="billing" value={c.billing_mode} onChange={(e) => setC({ ...c, billing_mode: e.target.value })}><option value="card_on_file">Card on file</option><option value="ach_on_file">Bank (ACH) on file</option><option value="invoice_net30">Net-30 invoice</option><option value="manual">Manual</option></Select>
             </div>

@@ -13,7 +13,7 @@ function PhoneSample() {
     <div aria-hidden="true" className="w-64 shrink-0 rounded-2xl border-4 border-slate-700 bg-slate-950 p-3 text-white">
       <div className="flex items-center justify-between text-xs"><span className="font-display font-bold">Tuesday lake effect</span><span className="rounded-full bg-emerald-400 px-2 py-0.5 font-bold text-black">Synced</span></div>
       <div className="mt-2 text-xs text-slate-300">4 of 9 done</div>
-      <div className="mt-2 rounded-lg bg-slate-800 p-3">
+      <div className="mt-2 rounded-popup bg-slate-800 p-3">
         <div className="font-display text-xs font-bold uppercase tracking-wider text-beacon">Next stop</div>
         <div className="font-display mt-1 text-2xl font-bold leading-tight">Madison Ave Retail Lot</div>
         <div className="mt-1 text-xs text-slate-300">Keep clear of the loading dock.</div>

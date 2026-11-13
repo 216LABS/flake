@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Card, Input, Label, Select } from '@flake/ui';
+import { Button, Card, Input, Label, Segmented, Select } from '@flake/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useConfirm } from '@/components/confirm';
@@ -23,7 +23,7 @@ export function CustomerEditor({ customer }: { customer: { id: string; name: str
         {text('contact_name', 'Contact')}
         {text('email', 'Email', 'email')}
         {text('phone_e164', 'Mobile', 'tel')}
-        <div><Label htmlFor="kind">Kind</Label><Select id="kind" value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}><option value="commercial">Commercial</option><option value="residential">Residential</option><option value="hoa">HOA</option></Select></div>
+        <Segmented label="Kind" name="kind" testId="kind" value={f.kind as 'commercial' | 'residential' | 'hoa'} options={[['commercial', 'Commercial'], ['residential', 'Residential'], ['hoa', 'HOA']] as const} onChange={(kind) => setF({ ...f, kind })} />
         <div><Label htmlFor="billing">Billing</Label><Select id="billing" value={f.billing_mode} onChange={(e) => setF({ ...f, billing_mode: e.target.value })}><option value="card_on_file">Card on file</option><option value="ach_on_file">Bank (ACH) on file</option><option value="invoice_net30">Net-30 invoice</option><option value="manual">Manual</option></Select></div>
       </div>
       <div className="mt-3 flex items-center gap-2">

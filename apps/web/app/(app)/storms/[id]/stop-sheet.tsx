@@ -64,7 +64,7 @@ export function StopSheet({ stopId, tz, onClose }: { stopId: string; tz: string;
   const photos = d?.visits.flatMap((v) => v.photos) ?? [];
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/50 sm:items-stretch sm:justify-end" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={sheet} role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid="stop-sheet" className="flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-xl bg-surface shadow-2xl sm:max-h-none sm:max-w-md sm:rounded-none">
+      <div ref={sheet} role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid="stop-sheet" className="flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-popup bg-surface shadow-popup sm:max-h-none sm:max-w-md sm:rounded-none">
         <div className="flex items-start gap-3 border-b border-line-faint p-4">
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="font-display text-lg font-semibold leading-tight">{d ? d.site.label : 'Stop'}</h2>
