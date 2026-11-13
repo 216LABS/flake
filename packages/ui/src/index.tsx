@@ -87,7 +87,7 @@ const tones = {
   red: 'bg-danger-tint text-danger-ink',
 } as const;
 export function Badge({ tone = 'gray', className, ...props }: HTMLAttributes<HTMLSpanElement> & { tone?: keyof typeof tones }) {
-  return <span className={cn('font-display inline-flex items-center rounded-sm px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide', tones[tone], className)} {...props} />;
+  return <span className={cn('font-display inline-flex shrink-0 items-center whitespace-nowrap rounded-sm px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide', tones[tone], className)} {...props} />;
 }
 
 export function PageHeader({ title, subtitle, actions }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode }) {

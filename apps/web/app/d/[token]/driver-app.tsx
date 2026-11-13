@@ -492,8 +492,8 @@ export function DriverApp({ token }: { token: string }) {
           <div className="text-base text-slate-200" data-testid="progress">{skippedCount ? t('of_done_skipped', { d: doneCount, s: skippedCount, n: stops.length }) : t('of_done', { d: doneCount, n: stops.length })}</div>
         </div>
         <div className="flex items-center gap-2">
-          <span data-testid="sync-badge" data-state={sync} className={cn('rounded-full px-3 py-2 text-sm font-bold', sync === 'synced' ? 'bg-emerald-400 text-black' : sync === 'sending' ? 'bg-sky-300 text-black' : 'bg-amber-300 text-black')}>{badge}</span>
-          {run.office_phone ? <a href={`tel:${run.office_phone}`} className="inline-flex min-h-[60px] items-center rounded-xl bg-slate-700 px-4 text-base font-bold text-white" data-testid="call-office">{t('call_office')}</a> : null}
+          <span data-testid="sync-badge" data-state={sync} className={cn('shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold', sync === 'synced' ? 'bg-emerald-400 text-black' : sync === 'sending' ? 'bg-sky-300 text-black' : 'bg-amber-300 text-black')}>{badge}</span>
+          {run.office_phone ? <a href={`tel:${run.office_phone}`} className="inline-flex min-h-[60px] items-center rounded-xl bg-slate-700 px-4 text-center text-base font-bold text-white [overflow-wrap:normal]" data-testid="call-office">{t('call_office')}</a> : null}
         </div>
       </header>
 
