@@ -99,6 +99,9 @@ export function currentSeason(now = new Date(), tz?: string): string {
   return `${start}-${String(start + 1).slice(2)}`;
 }
 
+/** A season written YYYY-YY that starts after `now`. Seasons written some other way are never "later". */
+export const isLaterSeason = (season: string, now: string) => /^\d{4}-\d{2}$/.test(season) && season > now;
+
 /**
  * The signed contract in force at a moment, from a lot's contracts listed newest first. The one for that season wins.
  * A renewal already signed for a later season never prices or triggers today's work. Seasons written some other way
@@ -108,8 +111,7 @@ export function liveContract<T extends { season: string }>(newestFirst: T[], at:
   const now = currentSeason(new Date(at), tz);
   const exact = newestFirst.find((c) => c.season === now);
   if (exact) return exact;
-  const later = (s: string) => /^\d{4}-\d{2}$/.test(s) && s > now;
-  return newestFirst.find((c) => !later(c.season));
+  return newestFirst.find((c) => !isLaterSeason(c.season, now));
 }
 
 /** liveContract for each lot, from contracts listed newest first. */
@@ -119,5 +121,25 @@ export function liveContracts<T extends { season: string; site_id: string }>(new
   return [...bySite.values()].flatMap((list) => {
     const c = liveContract(list, at, tz);
     return c ? [c] : [];
+  });
+}
+
+/**
+ * The agreement each lot was under when a storm started (issue 109). A customer who re-signs mid-season at a new price
+ * isn't repriced for work done before: their earlier signature counts until the moment the new one replaced it.
+ *
+ * `newestFirst` holds a lot's accepted contracts and its voided ones. A voided contract counts only if it was signed
+ * and a later signature for the same lot and season replaced it; one the office voided with nothing after it doesn't.
+ */
+export function contractsInForce<T extends { season: string; site_id: string; status: string; accepted_at: string | null }>(newestFirst: T[], at: Date | string | number, tz?: string): T[] {
+  const signedAt = (c: T) => (c.accepted_at ? Date.parse(c.accepted_at) : -Infinity);
+  const usable = newestFirst.filter((c) => c.status === 'accepted'
+    || (c.status === 'void' && c.accepted_at && newestFirst.some((n) => n.status === 'accepted' && n.site_id === c.site_id && n.season === c.season && signedAt(n) > signedAt(c))));
+  const when = new Date(at).getTime();
+  return liveContracts(usable, at, tz).map((live) => {
+    const sameSeason = usable.filter((c) => c.site_id === live.site_id && c.season === live.season);
+    const before = sameSeason.filter((c) => signedAt(c) <= when).sort((a, b) => signedAt(b) - signedAt(a))[0];
+    // Signed before the storm: that one. Signed only after it started (agreed mid-storm): the current one.
+    return before ?? sameSeason.find((c) => c.status === 'accepted') ?? live;
   });
 }

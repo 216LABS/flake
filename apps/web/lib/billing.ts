@@ -3,7 +3,7 @@ import { applyCorrections, draftInvoices, flagKey, isDraftClean, type BillingCon
 import { applicationFeeCents, feeRate, proFeaturesEnabled, type Plan } from '@flake/core/fees';
 import { seasonalInstallments, type ContractService, type Pricing, type SaltPricing, type StormDepthContext } from '@flake/core/pricing';
 import { qboCsv, type QboRow } from '@flake/core/qbo';
-import { fmtLocal, liveContracts, localHm, todayIn } from '@flake/core/time';
+import { contractsInForce, currentSeason, fmtLocal, isLaterSeason, localHm, todayIn } from '@flake/core/time';
 import { sumOverlap } from '@flake/core/trigger';
 import type { StripeEventLike } from '@flake/providers';
 import { z } from 'zod';
@@ -56,8 +56,9 @@ async function loadBillingInput(tx: Tx, stormId: string) {
   const visits = await tx.select().from(visit).where(eq(visit.storm_id, stormId));
   const siteIds = [...new Set([...stops.map((x) => x.site_id), ...visits.map((v) => v.site_id)])];
   const sites = siteIds.length ? await tx.select().from(site).where(inArray(site.id, siteIds)) : [];
-  // The contract for the storm's season: a renewal signed for next winter doesn't price this storm.
-  const contracts = liveContracts(siteIds.length ? await tx.select().from(contract).where(and(inArray(contract.site_id, siteIds), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)) : [], s.started_at, t?.timezone);
+  // The contract in force when the storm started (issue 109): the storm's season, so next winter's renewal doesn't price
+  // it, and the signature before the storm, so a mid-season re-sign doesn't reprice work already done.
+  const contracts = contractsInForce(siteIds.length ? await tx.select().from(contract).where(and(inArray(contract.site_id, siteIds), inArray(contract.status, ['accepted', 'void']))).orderBy(desc(contract.created_at)) : [], s.started_at, t?.timezone);
   const visitIds = visits.map((v) => v.id);
   const photos = visitIds.length ? await tx.select({ visit_id: visit_photo.visit_id, phase: visit_photo.phase }).from(visit_photo).where(inArray(visit_photo.visit_id, visitIds)) : [];
   const corrections = visitIds.length ? await tx.select().from(visit_correction).where(inArray(visit_correction.visit_id, visitIds)).orderBy(visit_correction.created_at) : [];
@@ -469,6 +470,9 @@ export async function billInstallments(tenantId?: string, now = new Date()) {
     const key = `${r.site.id}:${r.contract.season}`;
     if (seen.has(key)) continue;
     seen.add(key);
+    // A renewal for next winter starts billing when its season starts, not the month it was signed, so nobody pays two
+    // seasons at once (issue 110). An earlier season's unfinished balance is still owed and keeps billing.
+    if (isLaterSeason(r.contract.season, currentSeason(now, r.tenant.timezone))) continue;
     const pricing = (r.contract.services as ContractService[]).find((s) => s.pricing?.type === 'seasonal')?.pricing;
     if (pricing?.type !== 'seasonal') continue;
     try {

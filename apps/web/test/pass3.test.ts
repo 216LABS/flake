@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
-import { and, closeDb, contract, crew_member, eq, run_stop, serviceDb, site, storm } from '@flake/db';
+import { and, closeDb, contract, crew_member, eq, installment_invoice, run_stop, serviceDb, site, storm } from '@flake/db';
 import { proofRequest } from '@flake/contracts';
 import { currentSeason } from '@flake/core/time';
 import { billInstallments, generateDrafts } from '@/lib/billing';
@@ -31,10 +31,13 @@ describe('seasonal installments', () => {
     expect(await billInstallments(x.tenantId)).toBe(1);
   });
 
-  it('a renewal for next season does not stop this season', async () => {
+  it('a renewal for next season neither stops this season nor bills early (issue 110)', async () => {
     const x = await makeWorld();
     await serviceDb().insert(contract).values({ tenant_id: x.tenantId, site_id: x.siteIds[3]!, season: '2099-00', status: 'accepted', services: seasonal });
-    expect(await billInstallments(x.tenantId)).toBe(2);
+    // Only this season's installment goes out this month; the 2099-00 renewal waits for its own season.
+    expect(await billInstallments(x.tenantId)).toBe(1);
+    const rows = await serviceDb().select({ season: contract.season }).from(installment_invoice).innerJoin(contract, eq(contract.id, installment_invoice.contract_id)).where(eq(contract.tenant_id, x.tenantId));
+    expect(rows.map((r) => r.season)).not.toContain('2099-00');
   });
 });
 
