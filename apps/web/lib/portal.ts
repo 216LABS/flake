@@ -77,7 +77,8 @@ export async function portalData(customerId: string, tenantId: string) {
     company: { name: row.t.name, phone: row.t.contact_phone, email: row.t.contact_email, timezone: row.t.timezone },
     customer: { name: row.c.name },
     sites: sites.map((s) => {
-      const k = contracts.find((x) => x.site_id === s.id);
+      // The signed agreement, even when a newer quote (a renewal, a price change) is waiting beside it.
+      const k = contracts.find((x) => x.site_id === s.id && x.status === 'accepted');
       // A quote waiting to be signed, with its link, even when a signed contract is also in force.
       const waiting = contracts.find((x) => x.site_id === s.id && x.status === 'sent');
       return {

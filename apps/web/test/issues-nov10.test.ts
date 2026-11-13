@@ -204,6 +204,8 @@ describe('issues 22 and 37: a waiting quote can be opened again', () => {
     await expect(acceptQuote(q.token, { name: 'Old link', agree: true, consentSms: false, consentEmail: true, phone_e164: null }, null)).rejects.toMatchObject({ status: 404 });
     const portal = await portalData(w.customerIds[0]!, w.tenantId);
     expect(portal!.sites[0]!.quote?.url).toBe(again.url);
+    // The renewal waiting beside it doesn't hide the agreement already signed for this season.
+    expect(portal!.sites[0]!.contract).toEqual({ season: '2026-27', status: 'accepted' });
   });
 });
 

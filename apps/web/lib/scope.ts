@@ -26,10 +26,11 @@ export function scopeLine(s: { service: string; trigger_in?: number | null; pric
  * How the customer pays, said on the quote and in the signed agreement, so nobody signs without knowing (the terms
  * otherwise said only "as stated on each invoice").
  */
-export function paymentText(mode: string, company: string): string {
+export function paymentText(mode: string, company: string, online = true): string {
+  // Before the company turns on online payments there's no card form after accepting, so it doesn't promise one.
   switch (mode) {
-    case 'card_on_file': return 'Charged to a card on file after each storm. You add the card after accepting.';
-    case 'ach_on_file': return 'Paid from a bank account on file after each storm. You add the account after accepting.';
+    case 'card_on_file': return online ? 'Charged to a card on file after each storm. You add the card after accepting.' : `Charged to a card on file after each storm. ${company} will send you a secure link to add your card.`;
+    case 'ach_on_file': return online ? 'Paid from a bank account on file after each storm. You add the account after accepting.' : `Paid from a bank account on file after each storm. ${company} will send you a secure link to add the account.`;
     case 'invoice_net30': return 'Invoiced after each storm, due within 30 days.';
     default: return `Invoiced by ${company} after each storm.`;
   }

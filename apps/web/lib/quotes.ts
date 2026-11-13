@@ -1,4 +1,4 @@
-import { and, asService, contract, customer, eq, inArray, ne, notInArray, serviceDb, site, sms_consent, tenant, withUser } from '@flake/db';
+import { and, asService, contract, customer, eq, gt, inArray, ne, notInArray, serviceDb, site, sms_consent, tenant, withUser } from '@flake/db';
 import { paymentText } from './scope';
 import { CUSTOMER_CONSENT_TEXT } from '@flake/core/messages';
 import { quoteAccept, quoteCreate, quoteDecline } from '@flake/contracts';
@@ -20,11 +20,15 @@ export async function createQuote(ctx: Ctx, input: z.infer<typeof quoteCreate>) 
     const [st] = await tx.select().from(site).where(eq(site.id, input.site_id));
     if (!st) throw new HttpError(404, 'Site not found');
     if (!st.active) throw new HttpError(409, 'This site was retired. Add it again to quote it.', 'site_retired');
-    // Only the server writes a quote's token hash and, later, its acceptance (issue 8).
-    const [c] = await asService(tx, ctx.tenantId, () => tx.insert(contract).values({
+    // Only the server writes a quote's token hash and, later, its acceptance (issue 8). A new quote for a lot and season
+    // takes the place of any earlier one still waiting for an answer, so the customer can't sign an older, different price.
+    const [c] = await asService(tx, ctx.tenantId, async () => {
+      await tx.update(contract).set({ status: 'void' }).where(and(eq(contract.tenant_id, ctx.tenantId), eq(contract.site_id, input.site_id), eq(contract.season, input.season), inArray(contract.status, ['draft', 'sent'])));
+      return tx.insert(contract).values({
       tenant_id: ctx.tenantId, site_id: input.site_id, season: input.season, services: input.services, salt_pricing: input.salt_pricing ?? null,
       terms_md: input.terms_md ?? DEFAULT_TERMS, status: input.send ? 'sent' : 'draft', quote_token_hash: hashToken(token), quote_token_enc: encryptToken(token),
-    }).returning());
+      }).returning();
+    });
     const [cust] = await tx.select().from(customer).where(eq(customer.id, st.customer_id));
     const [t] = await tx.select().from(tenant).where(eq(tenant.id, ctx.tenantId));
     return { contract: c!, customer: cust!, tenant: t! };
@@ -41,8 +45,19 @@ async function byToken(token: string) {
   const [row] = await serviceDb().select({ contract, site, customer, tenant }).from(contract)
     .innerJoin(site, eq(site.id, contract.site_id)).innerJoin(customer, eq(customer.id, site.customer_id)).innerJoin(tenant, eq(tenant.id, contract.tenant_id))
     .where(eq(contract.quote_token_hash, hashToken(token)));
-  if (!row || row.contract.status === 'void') throw new HttpError(404, 'This quote is no longer available', 'quote_dead');
+  if (!row) throw new HttpError(404, 'This quote is no longer available', 'quote_dead');
+  if (row.contract.status === 'void' || (row.contract.status !== 'accepted' && (await newerQuote(row.contract)))) {
+    if (await newerQuote(row.contract)) throw new HttpError(410, `${row.tenant.name} sent you a newer quote for ${row.site.label}. Open the link in their latest message.`, 'quote_replaced');
+    throw new HttpError(404, 'This quote is no longer available', 'quote_dead');
+  }
   return row;
+}
+
+/** A later quote or agreement for the same lot and season that is still live. An older link then can't be signed. */
+async function newerQuote(c: typeof contract.$inferSelect) {
+  const [n] = await serviceDb().select({ id: contract.id }).from(contract)
+    .where(and(eq(contract.tenant_id, c.tenant_id), eq(contract.site_id, c.site_id), eq(contract.season, c.season), ne(contract.status, 'void'), gt(contract.created_at, c.created_at!))).limit(1);
+  return Boolean(n);
 }
 
 /** What the customer page shows. Nothing here is Flake's fee or anything internal. */
@@ -66,7 +81,7 @@ export async function acceptQuote(token: string, input: z.infer<typeof quoteAcce
   const db = serviceDb();
   const at = new Date().toISOString();
   const { renderContractPdf } = await import('@flake/providers/pdf');
-  const pdf = await renderContractPdf({ company: r.tenant.name, customer: r.customer.name, site: `${r.site.label}, ${r.site.address}`, season: r.contract.season, services: r.contract.services, payment: paymentText(r.customer.billing_mode, r.tenant.name), terms: r.contract.terms_md, acceptance: { name: input.name, at, ip } });
+  const pdf = await renderContractPdf({ company: r.tenant.name, customer: r.customer.name, site: `${r.site.label}, ${r.site.address}`, season: r.contract.season, services: r.contract.services, payment: paymentText(r.customer.billing_mode, r.tenant.name, Boolean(r.tenant.stripe_account_id && r.tenant.stripe_charges_enabled)), terms: r.contract.terms_md, acceptance: { name: input.name, at, ip } });
   // Its own file per acceptance, so a second tap that loses the race below can't overwrite the signed copy.
   const pdfPath = `${r.tenant.id}/${r.contract.id}-${Date.parse(at)}.pdf`;
   await putBlob('contracts', pdfPath, pdf, 'application/pdf', { upsert: true });

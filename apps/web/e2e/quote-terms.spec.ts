@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { login } from './helpers';
+import { login, sql } from './helpers';
 
 /** A customer signs knowing how they'll pay, and a quote page doesn't pull in Stripe until a card form opens. */
 test('the quote says how the customer pays, and viewing or declining it loads nothing from Stripe', async ({ page, browser, baseURL }) => {
@@ -28,5 +28,50 @@ test('the quote says how the customer pays, and viewing or declining it loads no
     await g.waitForLoadState('networkidle');
     expect(stripe, 'Stripe loaded on a quote with no card form open').toEqual([]);
     await guest.close();
+  }
+});
+
+/** An older quote link, after the office sent a new one, says so instead of offering the old price (issue 113). */
+test('a replaced quote link tells the customer a newer quote was sent, and cannot be signed', async ({ page, browser, baseURL }) => {
+  await login(page);
+  const tag = randomUUID().slice(0, 6);
+  const c = await (await page.request.post('/api/customers', { data: { name: `Requote ${tag}`, kind: 'commercial', billing_mode: 'invoice_net30', email: `${tag}@example.com` } })).json();
+  const s = await (await page.request.post('/api/sites', { data: { customer_id: c.id, label: `Lot ${tag}`, address: '2 Requote St, Lakewood, OH', lat: 41.48, lon: -81.8 } })).json();
+  const quote = async (cents: number) => (await page.request.post('/api/quotes', { data: { site_id: s.id, season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: cents } }], send: false } })).json();
+  const old = await quote(6500);
+  const current = await quote(9000);
+  const guest = await browser.newContext({ baseURL, viewport: { width: 375, height: 667 } });
+  const g = await guest.newPage();
+  await g.goto(old.url);
+  await expect(g.getByTestId('quote-replaced')).toContainText(`sent you a newer quote for Lot ${tag}`);
+  await expect(g.getByTestId('accept')).toHaveCount(0);
+  const token = new URL(old.url).pathname.split('/').pop();
+  expect((await g.request.post(`/api/q/${token}/accept`, { data: { name: 'Pat Example', agree: true, consentSms: false, consentEmail: true, phone_e164: null } })).status()).toBe(410);
+  await g.goto(current.url);
+  await expect(g.getByText('$90.00').first()).toBeVisible();
+  await guest.close();
+});
+
+/** Before a company turns on online payments, a card customer isn't promised a card form that never shows up. */
+test('with payments not set up yet, a card quote says a secure link comes later, and shows no card form after accepting', async ({ page, browser, baseURL }) => {
+  await login(page);
+  const tag = randomUUID().slice(0, 6);
+  const c = await (await page.request.post('/api/customers', { data: { name: `NoStripe ${tag}`, kind: 'residential', billing_mode: 'card_on_file', email: `${tag}@example.com` } })).json();
+  const s = await (await page.request.post('/api/sites', { data: { customer_id: c.id, label: `Drive ${tag}`, address: '3 Card St, Lakewood, OH', lat: 41.48, lon: -81.8 } })).json();
+  const q = await (await page.request.post('/api/quotes', { data: { site_id: s.id, season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 4500 } }], send: false } })).json();
+  await sql`update tenant set stripe_charges_enabled = false where slug = 'lakeshore-demo'`;
+  try {
+    const guest = await browser.newContext({ baseURL, viewport: { width: 375, height: 667 } });
+    const g = await guest.newPage();
+    await g.goto(q.url);
+    await expect(g.getByTestId('payment-line')).toHaveText('Payment: Charged to a card on file after each storm. Lakeshore Plow Co. (Demo) will send you a secure link to add your card.');
+    await g.getByTestId('sign-name').fill('Pat Example');
+    await g.getByTestId('agree').check();
+    await g.getByTestId('accept').click();
+    await expect(g.getByTestId('accepted')).toBeVisible();
+    await expect(g.getByText('Card or bank account on file')).toHaveCount(0);
+    await guest.close();
+  } finally {
+    await sql`update tenant set stripe_charges_enabled = true where slug = 'lakeshore-demo'`;
   }
 });
