@@ -321,6 +321,8 @@ export const tenantSettings = z.object({
   contact_phone: emptyToNull(e164),
   website: emptyToNull(z.url()),
   contact_name: emptyToNull(z.string().max(120)),
+  /** How customers pay a bill the company collects itself: checks to, mail to, Zelle or Venmo. */
+  pay_instructions: emptyToNull(z.string().trim().max(500)),
   expected_monthly_volume: z.number().int().min(1).max(1000000).optional(),
   /** The yard's street address; the server finds it on the map. Empty clears it (issue 64). */
   yard_address: z.string().trim().max(300).nullish(),

@@ -51,7 +51,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       {tab === 'crew' ? <fieldset disabled={readOnly} className="contents"><CrewPanel canText={canTextFrom(ctx.tenant)} crew={JSON.parse(JSON.stringify(await asUser(ctx, (tx) => tx.select().from(crew_member).orderBy(crew_member.name))))} /></fieldset> : null}
       {tab === 'alerts' ? <PushPanel publicKey={(await getProviders()).push.publicKey} /> : null}
       {allowed && tab === 'team' ? <TeamPanel members={await listTeam(ctx.tenantId)} me={ctx.userId} /> : null}
-      {allowed && tab === 'payments' ? <PaymentsPanel connected={Boolean(t.stripe_account_id)} enabled={await chargesEnabled(t)} /> : null}
+      {allowed && tab === 'payments' ? <PaymentsPanel connected={Boolean(t.stripe_account_id)} enabled={await chargesEnabled(t)} payInstructions={t.pay_instructions} /> : null}
       {allowed && tab === 'sms' ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card>

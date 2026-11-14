@@ -80,7 +80,7 @@ export async function portalData(customerId: string, tenantId: string) {
   const owedOffline = row.c.billing_mode === 'manual' || !row.t.stripe_account_id || !row.t.stripe_charges_enabled;
   const saltOf = (id: string, own: { unit: string; qty: number }[] | null) => (corrections.filter((c) => c.visit_id === id).pop()?.new_value as typeof own | undefined) ?? own;
   return {
-    company: { name: row.t.name, phone: row.t.contact_phone, email: row.t.contact_email, timezone: row.t.timezone },
+    company: { name: row.t.name, phone: row.t.contact_phone, email: row.t.contact_email, timezone: row.t.timezone, pay_instructions: row.t.pay_instructions },
     customer: { name: row.c.name },
     sites: sites.map((s) => {
       // The signed agreement, even when a newer quote (a renewal, a price change) is waiting beside it.

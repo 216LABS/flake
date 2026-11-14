@@ -29,6 +29,8 @@ export const tenant = pgTable('tenant', {
   yard: jsonb('yard').$type<{ address: string; lat: number; lon: number } | null>(),
   contact_email: text('contact_email'),
   contact_phone: text('contact_phone'),
+  /** How customers pay a bill the company collects itself, shown on their records page. */
+  pay_instructions: text('pay_instructions'),
   rate_card: jsonb('rate_card').notNull().default(sql`'{}'::jsonb`),
   created_at: createdAt(),
 });
