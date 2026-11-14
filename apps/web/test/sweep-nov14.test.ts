@@ -111,7 +111,10 @@ describe('quote and site input that would bill wrongly (issues 125, 126)', () =>
     }
     const site = { customer_id: base.site_id, label: 'L', address: '1 Main St', lat: 41.48, lon: -81.8 };
     expect(siteCreate.safeParse({ ...site, service_window: { open_by: '06:00', not_before: '09:00' } }).success).toBe(false);
-    expect(siteCreate.safeParse({ ...site, service_window: { days: ['mon', 'xyz'] } }).success).toBe(false);
+    const days = siteCreate.safeParse({ ...site, service_window: { days: ['mon', 'xyz'] } });
+    expect(days.success).toBe(false);
+    const { readableIssue } = await import('@/lib/issues');
+    expect(readableIssue(days.error!.issues[0]!)).toBe('Days have to be mon, tue, wed, thu, fri, sat or sun.');
     expect(siteCreate.safeParse({ ...site, service_window: { open_by: '09:00', not_before: '06:00', days: ['mon', 'sat'] } }).success).toBe(true);
   });
 });

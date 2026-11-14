@@ -8,13 +8,19 @@ const run = (cmd, stdio = 'inherit') => execSync(cmd, { stdio, encoding: 'utf8' 
 const parseEnv = (text, re) =>
   Object.fromEntries(text.split(/\r?\n/).map((l) => l.match(re)).filter(Boolean).map((m) => [m[1], m[2]]));
 
-// Right after Docker restarts, the containers can still be coming back, so give it a second try.
-try {
-  run('pnpm --filter @flake/db exec supabase start');
-} catch {
-  console.log('Supabase was not ready. Trying once more in 10 seconds.');
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10000);
-  run('pnpm --filter @flake/db exec supabase start');
+// Right after Docker restarts the containers can still be coming back, and on a CI runner a 553xx port can be briefly
+// taken by an outgoing connection (it's inside Linux's ephemeral range). Either way a clean stop and another start
+// clears it, so try up to three times before failing the run.
+for (let attempt = 1; ; attempt++) {
+  try {
+    run('pnpm --filter @flake/db exec supabase start');
+    break;
+  } catch (err) {
+    if (attempt === 3) throw err;
+    console.log(`Supabase did not start (try ${attempt} of 3). Stopping what started, then trying again in ${attempt * 10} seconds.`);
+    try { run('pnpm --filter @flake/db exec supabase stop'); } catch { /* nothing was running */ }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, attempt * 10000);
+  }
 }
 const raw = run('pnpm --silent --filter @flake/db exec supabase status -o env', 'pipe');
 const status = parseEnv(raw, /^([A-Z_]+)="?([^"]*)"?$/);
