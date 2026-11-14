@@ -86,7 +86,7 @@ for (const size of SIZES) {
       await expect(page.getByTestId('stripe-status')).toBeVisible();
       expect(await page.getByTestId('settings-section').inputValue()).toBe('payments');
       // The section's own heading starts within the first screen, under the header.
-      expect((await page.getByRole('heading', { name: 'Stripe' }).boundingBox())!.y).toBeLessThan(400);
+      expect((await page.getByRole('heading', { name: 'How customers pay you' }).boundingBox())!.y).toBeLessThan(400);
     });
 
     test('customers are cards the whole of which opens the customer', async ({ page }) => {

@@ -78,3 +78,12 @@ Made by the engineering agent at Sam's request ("make all the decisions"). Each 
 - **Payments not connected:** approved bills wait with what to do next, seasonal installments are recorded monthly as "Bill it yourself", and the office records checks and cash with Mark paid. The customer's records page shows those bills as due with "pay by check or phone".
 - **New quotes from April to June** default to next winter's season. Seasons are written like 2026-27.
 - **The installment job runs daily** (it bills at most one installment per lot per local month), so the first installment goes out the day after signing.
+
+## D11. Calls made Nov 14, 2026 (issues 119 to 124)
+Same basis as D10. **[J]**
+- **A visit the office records** (no visit came from the phone) carries one info note, "recorded by the office", instead of location and photo flags. Recording it is the office's sign-off; the correction log keeps who and why for proof packets.
+- **Seasonal quotes state the plan**: the season total, the monthly amount, and when the first installment is billed (the month signed, or July for a season signed ahead). The payment line follows how each lot is billed.
+- **Records page**: a $0.00 bill shows "No charge" and is never due. Seasonal installments are listed, and unpaid ones count in what's owed.
+- **How customers pay you** (Settings, Payments) is free text the company writes once: checks to, mail to, Zelle. It replaces the generic "pay by check or over the phone" on the records page.
+- **Storms list**: Live and Ready to bill storms always show, plus the 5 newest billed ones; older billed storms sit behind Show older. Every storm stays reachable in the billing picker, grouped by status.
+- **Late alerts** only show while a storm is live, once per lot across passes.
