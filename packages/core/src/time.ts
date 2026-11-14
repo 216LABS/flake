@@ -99,6 +99,18 @@ export function currentSeason(now = new Date(), tz?: string): string {
   return `${start}-${String(start + 1).slice(2)}`;
 }
 
+/**
+ * The season a new quote is for. Snow is over by April, so a quote written April to June is for next winter: a seasonal
+ * contract dated last winter would start billing installments for a winter already gone.
+ */
+export function quotingSeason(now = new Date(), tz?: string): string {
+  const month = tz ? Number(localHm(now, tz).date.split('-')[1]) : now.getMonth() + 1;
+  const season = currentSeason(now, tz);
+  if (month < 4 || month > 6) return season;
+  const start = Number(season.slice(0, 4)) + 1;
+  return `${start}-${String(start + 1).slice(2)}`;
+}
+
 /** A season written YYYY-YY that starts after `now`. Seasons written some other way are never "later". */
 export const isLaterSeason = (season: string, now: string) => /^\d{4}-\d{2}$/.test(season) && season > now;
 

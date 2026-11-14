@@ -16,7 +16,7 @@ Sources and rationale: DECISIONS D5.
 - **Card or ACH on file:** `/q/[token]` → SetupIntent on the connected account (`payment_method_types: card, us_bank_account`, `usage: off_session`) using the Payment Element. On `setup_intent.succeeded`, store the customer + PM.
 - **Charge after storm:** approved draft → PaymentIntent (`off_session: true, confirm: true, application_fee_amount`, `idempotency_key = draft.id`). On `requires_action`/failure → create a Stripe hosted invoice or Payment Link and email it.
 - **Net-30 commercial:** Stripe Invoice on the connected account, `collection_method=send_invoice`, `days_until_due=30`, `application_fee_amount`, lines from the draft with a description that includes the storm and visit times. Invoicing adds 0.4%/paid invoice [V]. ACH (bank transfer) is the preferred method.
-- **Seasonal contracts:** installment invoices on a schedule (Stripe Invoice per installment created by a monthly job), not Stripe Subscriptions, to keep fee logic uniform.
+- **Seasonal contracts:** installment invoices on a schedule (one Stripe Invoice per installment, at most one per lot per month, from a daily job), not Stripe Subscriptions, to keep fee logic uniform. Without payments connected, each installment is recorded as "Bill it yourself" and marked paid by the office.
 - **Refunds/disputes:** the owner issues them in their own Stripe Dashboard. Flake mirrors status via webhooks and links the disputed invoice to its proof packet ("Generate evidence").
 - **Pro plan:** a normal Stripe Billing subscription on the **platform** account for the tenant (price ids in env).
 

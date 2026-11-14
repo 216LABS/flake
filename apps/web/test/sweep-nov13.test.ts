@@ -133,3 +133,39 @@ describe('an archived route stays out of new storms', () => {
     await expect(createStorm(ctxOf(w), { name: 'Old route', routeIds: [w.routeId, w.route2Id], crewAssignments: {} })).rejects.toMatchObject({ status: 409, code: 'route_archived' });
   });
 });
+
+describe('the installment job runs each day, not once per UTC month', () => {
+  it('a run on the evening of Nov 30 (Dec 1 in UTC) does not use up December', async () => {
+    const { vi } = await import('vitest');
+    const { job } = await import('@flake/db');
+    const { queueMissedReports } = await import('@/lib/handlers');
+    const keys = async () => (await serviceDb().select({ k: job.dedupe_key }).from(job).where(eq(job.kind, 'billing.installments'))).map((r) => r.k);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2031-12-01T04:30:00Z'));
+      await queueMissedReports();
+      vi.setSystemTime(new Date('2031-12-15T15:00:00Z'));
+      await queueMissedReports();
+    } finally {
+      vi.useRealTimers();
+    }
+    const mine = (await keys()).filter((k) => k?.includes('2031-12'));
+    expect(mine.length).toBe(2);
+  });
+});
+
+describe('the board and billing agree on which lots have a contract', () => {
+  it('a lot whose only signature is next winter\'s renewal shows as having no contract on this storm\'s board', async () => {
+    const { contract } = await import('@flake/db');
+    const { stormLive } = await import('@/lib/storms');
+    const { createStorm } = await import('./helpers');
+    const w = await makeWorld();
+    const ctx = ctxOf(w);
+    await serviceDb().update(contract).set({ season: '2099-00' }).where(eq(contract.site_id, w.siteIds[0]!));
+    const out = await createStorm(ctx, { name: 'Renewal only', routeIds: [w.routeId], crewAssignments: {}, siteIds: [w.siteIds[0]!, w.siteIds[1]!] });
+    const live = await stormLive({ ...ctx, timezone: 'America/New_York', role: 'owner' }, out.storm.id);
+    const stops = live.runs.flatMap((r: any) => r.stops);
+    expect(stops.find((s: any) => s.site_id === w.siteIds[0])!.no_contract).toBe(true);
+    expect(stops.find((s: any) => s.site_id === w.siteIds[1])!.no_contract).toBe(false);
+  });
+});

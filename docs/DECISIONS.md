@@ -69,3 +69,12 @@ These are locked decisions for the v1 build, made on Flip's instruction ("you ma
 
 ## D9. Things deliberately NOT decided by research (only real plow customers can answer)
 See PLAN.md §9 "Open questions for prospects."
+
+## D10. Billing and quoting calls made Nov 13, 2026 (issues 101, 112)
+Made by the engineering agent at Sam's request ("make all the decisions"). Each is easy to change if a pilot says otherwise. **[J]**
+- **One quote per customer and season.** A lot quoted while another of the customer's quotes for that season is waiting joins its link. One signature accepts every lot; each lot still gets its own contract and signed PDF.
+- **A re-sign mid-season** bills what is left of the new total over the installments left, so the season adds up to the price signed. A re-sign below what was already billed bills nothing more.
+- **A lot with no contract for the storm's season** is priced from last season's contract, with an info note on the draft. A seasonal lot with no contract this season needs a decision (new quote, or waive to plow it free).
+- **Payments not connected:** approved bills wait with what to do next, seasonal installments are recorded monthly as "Bill it yourself", and the office records checks and cash with Mark paid. The customer's records page shows those bills as due with "pay by check or phone".
+- **New quotes from April to June** default to next winter's season. Seasons are written like 2026-27.
+- **The installment job runs daily** (it bills at most one installment per lot per local month), so the first installment goes out the day after signing.

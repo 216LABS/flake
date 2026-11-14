@@ -94,9 +94,15 @@ export const pinCreate = z.object({
   note: emptyToNull(z.string().max(1000)),
 });
 
+/** A winter written like 2026-27, so renewals, installments and last-season prices can tell seasons apart. */
+const season = z.string().trim().refine((v) => {
+  const m = /^(\d{4})-(\d{2})$/.exec(v);
+  return Boolean(m && Number(m[2]) === (Number(m[1]) + 1) % 100);
+}, { message: 'Write the season like 2026-27.' });
+
 export const contractCreate = z.object({
   site_id: uuid,
-  season: z.string().min(1).max(40),
+  season,
   services: z.array(contractServiceSchema).min(1).max(10),
   salt_pricing: saltPricingSchema.nullable().optional(),
   terms_md: emptyToNull(z.string().max(20000)),

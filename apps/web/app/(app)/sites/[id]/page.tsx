@@ -1,4 +1,4 @@
-import { currentSeason } from '@flake/core/time';
+import { quotingSeason } from '@flake/core/time';
 import { contract, customer, desc, eq, site, site_pin } from '@flake/db';
 import { Badge, buttonVariants, PageHeader } from '@flake/ui';
 import Link from 'next/link';
@@ -37,7 +37,7 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
         <div className="space-y-4">
         <ContractList contracts={JSON.parse(JSON.stringify(contracts.map((k) => ({ id: k.id, status: k.status, season: k.season, services: k.services, salt_pricing: k.salt_pricing, accepted_name: k.accepted_name, accepted_at: k.accepted_at, created_at: k.created_at, installments_billed: k.installments_billed, quote_url: quoteUrl(k), decline_reason: k.decline_reason }))))} canEdit={canEdit} pdf={pdf} />
         {/* A retired lot can't be quoted; restore it first. */}
-        {s.active && canEdit ? <NewQuote siteId={s.id} defaultSeason={contracts[0]?.season ?? currentSeason(new Date(), ctx.tenant.timezone)} saltCents={((ctx.tenant.rate_card as { salt_bag_cents?: number }).salt_bag_cents) ?? 1800} signedSeasons={contracts.filter((k) => k.status === 'accepted').map((k) => k.season)} /> : null}
+        {s.active && canEdit ? <NewQuote siteId={s.id} defaultSeason={quotingSeason(new Date(), ctx.tenant.timezone)} saltCents={((ctx.tenant.rate_card as { salt_bag_cents?: number }).salt_bag_cents) ?? 1800} signedSeasons={contracts.filter((k) => k.status === 'accepted').map((k) => k.season)} /> : null}
         </div>
       </div>
     </>

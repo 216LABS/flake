@@ -31,3 +31,14 @@ describe('the contract in force', () => {
     expect(currentSeason(new Date('2027-07-01T12:00:00'))).toBe('2027-28');
   });
 });
+
+describe('quotingSeason', () => {
+  it('a quote written April to June is for next winter; the rest of the year, this one', async () => {
+    const { quotingSeason } = await import('../src/time');
+    expect(quotingSeason(new Date('2026-11-13T15:00:00Z'), 'America/New_York')).toBe('2026-27');
+    expect(quotingSeason(new Date('2027-02-10T15:00:00Z'), 'America/New_York')).toBe('2026-27');
+    expect(quotingSeason(new Date('2027-05-10T15:00:00Z'), 'America/New_York')).toBe('2027-28');
+    expect(quotingSeason(new Date('2027-07-02T15:00:00Z'), 'America/New_York')).toBe('2027-28');
+    expect(quotingSeason(new Date(2027, 3, 15))).toBe('2027-28');
+  });
+});

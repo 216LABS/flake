@@ -1,5 +1,5 @@
 import { and, asc, asService, contract, crew_member, customer, desc, driver_position, eq, inArray, invoice_draft, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, visit_photo, visitNotVoided, withUser, sms_consent, type Tx } from '@flake/db';
-import { isLate, localHm } from '@flake/core/time';
+import { isLate, liveContracts, localHm } from '@flake/core/time';
 import { replanFrom } from '@flake/core/routing';
 import { z } from 'zod';
 import { stormCreate, runStopPatch, stormNotify } from '@flake/contracts';
@@ -467,7 +467,8 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     const positions = runIds.length ? await tx.selectDistinctOn([driver_position.storm_run_id]).from(driver_position).where(inArray(driver_position.storm_run_id, runIds)).orderBy(driver_position.storm_run_id, desc(driver_position.device_at)) : [];
     const pins = stops.length ? await tx.select().from(site_pin).where(inArray(site_pin.site_id, stops.map((x) => x.site.id))) : [];
     const crew = await tx.select({ id: crew_member.id, name: crew_member.name, kind: crew_member.kind }).from(crew_member).where(eq(crew_member.active, true)).orderBy(asc(crew_member.name));
-    const contracted = stops.length ? new Set((await tx.select({ site_id: contract.site_id }).from(contract).where(and(eq(contract.status, 'accepted'), inArray(contract.site_id, stops.map((x) => x.site.id))))).map((c) => c.site_id)) : new Set<string>();
+    // The same rule billing uses: a renewal signed only for next winter doesn't cover this storm.
+    const contracted = stops.length ? new Set(liveContracts(await tx.select({ site_id: contract.site_id, season: contract.season }).from(contract).where(and(eq(contract.status, 'accepted'), inArray(contract.site_id, stops.map((x) => x.site.id)))).orderBy(desc(contract.created_at)), s!.started_at, ctx.timezone).map((c) => c.site_id)) : new Set<string>();
     return { s: s!, runs, stops, visits, photoCounts, problems, positions, pins, crew, contracted };
   });
   const now = Date.now();

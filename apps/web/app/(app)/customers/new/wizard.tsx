@@ -1,6 +1,6 @@
 'use client';
 
-import { currentSeason } from '@flake/core/time';
+import { quotingSeason } from '@flake/core/time';
 import { suggestPrice, type RateCard } from '@flake/core/quote';
 import { Badge, Button, Card, Input, Label, PageHeader, Segmented, Select, Progress } from '@flake/ui';
 import { useRouter } from 'next/navigation';
@@ -46,7 +46,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
   // A price the office typed stays put when the lot size changes; picking another pricing type suggests again (issue 19).
   const [priceTyped, setPriceTyped] = useState(false);
   const [choices, setChoices] = useState<{ label: string; lat: number; lon: number }[]>([]);
-  const [season, setSeason] = useState(() => currentSeason());
+  const [season, setSeason] = useState(() => quotingSeason());
   const [pins, setPins] = useState<{ kind: string; lat: number; lon: number; note: string; file?: File }[]>([]);
   const [suggestions, setSuggestions] = useState<{ label: string; lat: number; lon: number }[]>([]);
   const [photoNote, setPhotoNote] = useState<string | null>(null);
