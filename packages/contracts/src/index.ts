@@ -35,7 +35,7 @@ const hm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const serviceWindow = z.object({
   open_by: hm.optional(),
   not_before: hm.optional(),
-  days: z.array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])).max(7).transform((d) => [...new Set(d)]).optional(),
+  days: z.array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'], { message: 'Days have to be mon, tue, wed, thu, fri, sat or sun.' })).max(7).transform((d) => [...new Set(d)]).optional(),
 }).refine((w) => !w.open_by || !w.not_before || w.not_before < w.open_by, { message: 'Not before has to be earlier than Open by.', path: ['not_before'] });
 
 /**

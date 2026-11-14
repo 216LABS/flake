@@ -72,7 +72,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
                 <div className="flex flex-wrap items-center gap-2">
                   {s.contract?.status === 'accepted' ? <Badge tone="green">Season {s.contract.season}</Badge> : null}
                   {s.quote ? (s.quote.url
-                    ? <a href={s.quote.url} className="rounded-sm bg-warn-tint px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-warn-ink underline" data-testid="portal-quote-link">Quote waiting: review and sign</a>
+                    ? <a href={s.quote.url} className="inline-block rounded-sm bg-warn-tint px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-warn-ink underline" data-testid="portal-quote-link">Quote waiting: review and sign</a>
                     : <Badge tone="amber" title="The quote link is in the email it came in.">Quote waiting, see your email</Badge>) : null}
                 </div>
               </div>

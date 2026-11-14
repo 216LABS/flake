@@ -302,14 +302,33 @@ input::-webkit-date-and-time-value {
 
 /*
  * On a touch screen a text link in a list or table is at least 24 px tall (WCAG 2.5.8, issue 127), so a row that looks
- * tappable is. In the base layer, so a link styled as a block or a button keeps its own padding.
+ * tappable is, and an inline link in a banner line too (issue 138). In the base layer, so a link styled as a block or a button keeps its own padding.
  */
 @layer base {
   @media (pointer: coarse) {
     main li a,
-    main td a {
+    main td a,
+    main p a,
+    main a.inline-block {
       display: inline-block;
       padding-block: 0.375rem;
     }
+  }
+}
+
+/*
+ * Checkboxes and radios are 20 px, and the label row around one is at least 24 px, so they're easy to hit on a phone
+ * (issue 138). A size utility on the input still wins.
+ */
+@layer base {
+  input[type='checkbox'],
+  input[type='radio'] {
+    width: 1.25rem;
+    height: 1.25rem;
+    flex-shrink: 0;
+  }
+  label:has(> input[type='checkbox']),
+  label:has(> input[type='radio']) {
+    min-height: 1.5rem;
   }
 }

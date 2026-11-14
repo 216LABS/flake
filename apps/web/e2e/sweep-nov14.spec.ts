@@ -62,6 +62,9 @@ test('skip link, tap targets of at least 24 px on list links, and a tappable fla
   await expect(page.locator('#main')).toBeFocused();
   const heights = await page.getByTestId('customer-row').first().getByRole('link').first().evaluate((a) => a.getBoundingClientRect().height);
   expect(heights).toBeGreaterThanOrEqual(24);
+  // Issue 138: inline links in a banner line, and standalone links, are as tall as list links.
+  await page.goto('/dashboard');
+  for (const h of await page.locator('main p a, main a.inline-block').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))) expect(h).toBeGreaterThanOrEqual(24);
   await page.goto('/billing');
   const label = page.getByTestId('flagged-only').locator('xpath=..');
   if (await label.count()) expect((await label.boundingBox())!.height).toBeGreaterThanOrEqual(24);
