@@ -16,7 +16,9 @@ export function ImportForm() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const parsed = text.trim() ? customersFromCsv(text) : null;
+  // A chosen file is checked even when it's empty, so a 0-byte file says so instead of nothing (issue 136).
+  const [fromFile, setFromFile] = useState(false);
+  const parsed = text.trim() || fromFile ? customersFromCsv(text) : null;
   const ready = parsed?.rows.filter((r) => !r.problem) ?? [];
   const run = async () => {
     setBusy(true);
@@ -59,9 +61,9 @@ export function ImportForm() {
     <Card>
       <p className="text-sm text-ink-2">Save your list as CSV from Excel or Google Sheets, with a first row naming the columns. <b>name</b> and <b>address</b> are needed; <b>label</b> (lot name), <b>email</b>, <b>phone</b>, <b>kind</b> (residential, commercial or HOA) and <b>billing</b> (card, bank, invoice or manual) are optional. Rows with the same name become one customer with several lots.</p>
       <Label className="mt-3" htmlFor="csv-file">CSV file</Label>
-      <input id="csv-file" type="file" accept=".csv,text/csv" className="mt-1 block text-base" data-testid="csv-file" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setText((await f.text()) || ' '); }} />
+      <input id="csv-file" type="file" accept=".csv,text/csv" className="mt-1 block text-base" data-testid="csv-file" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { setFromFile(true); setText(await f.text()); } }} />
       <Label className="mt-3" htmlFor="csv-text">Or paste it here</Label>
-      <textarea id="csv-text" rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder={SAMPLE} className="mt-1 block w-full rounded-md border border-line p-2 font-mono text-base" data-testid="csv-text" />
+      <textarea id="csv-text" rows={8} value={text} onChange={(e) => { setFromFile(false); setText(e.target.value); }} placeholder={SAMPLE} className="mt-1 block w-full rounded-md border border-line p-2 font-mono text-base" data-testid="csv-text" />
       {parsed?.empty ? <p className="mt-2 text-sm text-danger" role="alert" data-testid="csv-empty">This file has no rows. The first row names the columns, and each row after it is one lot.</p> : null}
       {parsed?.missing.length ? <p className="mt-2 text-sm text-danger" role="alert" data-testid="csv-missing">The first row needs a column called {parsed.missing.join(' and ')}.</p> : null}
       {parsed && !parsed.empty && !parsed.missing.length ? (
@@ -73,7 +75,7 @@ export function ImportForm() {
               <tbody>
                 {parsed.rows.slice(0, 200).map((r, i) => (
                   <tr key={i} data-testid="csv-row">
-                    <Td>{r.name || '-'}</Td>
+                    <Td><span className="tabular text-muted" data-testid="csv-row-number">#{i + 1}</span> {r.name || '-'}</Td>
                     <Td label="Address">{r.address || '-'}</Td>
                     <Td label="Lot">{r.label || '-'}</Td>
                     <Td label="Check" className={r.problem ? 'text-danger' : 'text-ok-ink'}>{r.problem ?? 'Ready'}</Td>

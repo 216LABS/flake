@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { login, sql } from './helpers';
+import { SEASON, login, sql } from './helpers';
 
 /** Archived things stay archived: no new lots for an archived customer, no archived route on a new storm. */
 test('an archived customer gets no new lots, and an archived route is not offered or accepted for a storm', async ({ page }) => {
@@ -34,7 +34,7 @@ test('a quote season must be written like 2026-27', async ({ page }) => {
     expect(r.status()).toBe(422);
     expect((await r.json()).error).toContain('like 2026-27');
   }
-  expect((await quote('2026-27')).status()).toBe(201);
+  expect((await quote(SEASON)).status()).toBe(201);
 });
 
 /** Issue 124: a season of billed storms waits behind Show older, and the billing picker puts storms to bill first. */

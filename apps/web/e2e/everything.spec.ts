@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
-import { finishStops, login, routeByName, sql, startStorm, type LiveRun } from './helpers';
+import { SEASON, finishStops, login, routeByName, sql, startStorm, type LiveRun } from './helpers';
 
 /**
  * The controls a one-press crawl can't reach: anything that needs earlier steps first, and every way back out of a
@@ -329,7 +329,7 @@ test('driver: arriving near a stop offers one big button to check in', async ({ 
 test('customer quote: opting out of email, a declined card, a bank account, and a good card', async ({ page, browser, baseURL }) => {
   await login(page);
   const { site } = await newCustomerSite(page, `Pay ${Date.now()}`);
-  const q = await (await page.request.post('/api/quotes', { data: { site_id: site.id, season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 7500 } }], send: false } })).json();
+  const q = await (await page.request.post('/api/quotes', { data: { site_id: site.id, season: SEASON, services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 7500 } }], send: false } })).json();
   const ctx = await browser.newContext({ baseURL });
   const customer = await ctx.newPage();
   await customer.goto(q.url);

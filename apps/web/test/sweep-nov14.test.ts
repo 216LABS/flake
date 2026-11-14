@@ -59,7 +59,7 @@ describe('import preview edge cases (issue 123)', () => {
     expect(customersFromCsv('').empty).toBe(true);
     expect(customersFromCsv('name,address\n').empty).toBe(true);
     const dup = customersFromCsv('name,address\nQA dupe,1 Main St Lakewood OH\nqa dupe,1 main st  lakewood oh\nQA dupe,2 Main St Lakewood OH').rows;
-    expect(dup.map((r) => r.problem)).toEqual([null, 'Same lot as row 2.', null]);
+    expect(dup.map((r) => r.problem)).toEqual([null, 'Same lot as #1.', null]);
     const semi = customersFromCsv('Name;Address;Kind\n"Smith; Jo";12 Elm St, Lakewood OH;HOA');
     expect(semi.missing).toEqual([]);
     expect(semi.rows[0]).toMatchObject({ name: 'Smith; Jo', address: '12 Elm St, Lakewood OH', kind: 'HOA', problem: null });
@@ -124,5 +124,22 @@ describe('error wording for fields people never see the name of (issue 135)', ()
     expect(say(quoteAccept.safeParse({ name: 'Pat', agree: false }))).toContain('Tick the box to agree to the terms.');
     expect(say(contractCreate.safeParse({ site_id: '00000000-0000-4000-8000-000000000001', season: '2026-27', services: [{ service: 'plow' }], terms_md: 'x'.repeat(20001) }))).toContain('The terms must be 20,000 characters or fewer.');
     expect(say(crewCreate.safeParse({ name: 'S', kind: 'sub', sub_rate_card: { per_visit_cents: -1 } }))).toContain('Pay per visit must be at least $0.00.');
+  });
+});
+
+describe('crew join links expire after two weeks (issue 137)', () => {
+  it('a new link carries its time and stops working after 14 days; an old link without one still works', async () => {
+    const { crew_member } = await import('@flake/db');
+    const { hashToken, newInviteToken, inviteExpired } = await import('@/lib/tokens');
+    const { jsonReq } = await import('./helpers');
+    const { POST: join } = await import('@/app/api/join/[token]/route');
+    const now = Date.now();
+    expect(inviteExpired(newInviteToken(now - 13 * 86_400_000), now)).toBe(false);
+    expect(inviteExpired(newInviteToken(now - 15 * 86_400_000), now)).toBe(true);
+    expect(inviteExpired('legacyTokenWithoutTime_abc', now)).toBe(false);
+    const w = await makeWorld();
+    const old = newInviteToken(now - 15 * 86_400_000);
+    await serviceDb().update(crew_member).set({ invite_token_hash: hashToken(old), joined_at: null }).where(eq(crew_member.id, w.crewId));
+    expect((await join(jsonReq(`/api/join/${old}`, { consent: false }), { params: Promise.resolve({ token: old }) })).status).toBe(410);
   });
 });

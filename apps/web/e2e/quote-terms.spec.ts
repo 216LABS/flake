@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { login, sql } from './helpers';
+import { NEXT_SEASON, SEASON, login, sql } from './helpers';
 
 /** A customer signs knowing how they'll pay, and a quote page doesn't pull in Stripe until a card form opens. */
 test('the quote says how the customer pays, and viewing or declining it loads nothing from Stripe', async ({ page, browser, baseURL }) => {
@@ -13,7 +13,7 @@ test('the quote says how the customer pays, and viewing or declining it loads no
     const tag = randomUUID().slice(0, 6);
     const c = await (await page.request.post('/api/customers', { data: { name: `Terms ${tag}`, kind: 'hoa', billing_mode: mode, email: `${tag}@example.com` } })).json();
     const s = await (await page.request.post('/api/sites', { data: { customer_id: c.id, label: `Drive ${tag}`, address: '1 Terms St, Lakewood, OH', lat: 41.48, lon: -81.8 } })).json();
-    const q = await (await page.request.post('/api/quotes', { data: { site_id: s.id, season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_event', amount_cents: 40000 } }], send: false } })).json();
+    const q = await (await page.request.post('/api/quotes', { data: { site_id: s.id, season: SEASON, services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_event', amount_cents: 40000 } }], send: false } })).json();
     const guest = await browser.newContext({ baseURL });
     const stripe: string[] = [];
     guest.on('request', (r) => { if (/stripe\.(com|network)/.test(r.url())) stripe.push(r.url()); });
@@ -37,7 +37,7 @@ test('a replaced quote link tells the customer a newer quote was sent, and canno
   const tag = randomUUID().slice(0, 6);
   const c = await (await page.request.post('/api/customers', { data: { name: `Requote ${tag}`, kind: 'commercial', billing_mode: 'invoice_net30', email: `${tag}@example.com` } })).json();
   const s = await (await page.request.post('/api/sites', { data: { customer_id: c.id, label: `Lot ${tag}`, address: '2 Requote St, Lakewood, OH', lat: 41.48, lon: -81.8 } })).json();
-  const quote = async (cents: number) => (await page.request.post('/api/quotes', { data: { site_id: s.id, season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: cents } }], send: false } })).json();
+  const quote = async (cents: number) => (await page.request.post('/api/quotes', { data: { site_id: s.id, season: SEASON, services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: cents } }], send: false } })).json();
   const old = await quote(6500);
   const current = await quote(9000);
   const guest = await browser.newContext({ baseURL, viewport: { width: 375, height: 667 } });
@@ -58,7 +58,7 @@ test('with payments not set up yet, a card quote says a secure link comes later,
   const tag = randomUUID().slice(0, 6);
   const c = await (await page.request.post('/api/customers', { data: { name: `NoStripe ${tag}`, kind: 'residential', billing_mode: 'card_on_file', email: `${tag}@example.com` } })).json();
   const s = await (await page.request.post('/api/sites', { data: { customer_id: c.id, label: `Drive ${tag}`, address: '3 Card St, Lakewood, OH', lat: 41.48, lon: -81.8 } })).json();
-  const q = await (await page.request.post('/api/quotes', { data: { site_id: s.id, season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 4500 } }], send: false } })).json();
+  const q = await (await page.request.post('/api/quotes', { data: { site_id: s.id, season: SEASON, services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 4500 } }], send: false } })).json();
   await sql`update tenant set stripe_charges_enabled = false where slug = 'lakeshore-demo'`;
   try {
     const guest = await browser.newContext({ baseURL, viewport: { width: 375, height: 667 } });
@@ -83,7 +83,7 @@ test('a customer with two lots sees both on one quote and accepts both with one 
   const c = await (await page.request.post('/api/customers', { data: { name: `HOA ${tag}`, kind: 'hoa', billing_mode: 'invoice_net30', email: `${tag}@example.com` } })).json();
   const lot = async (label: string) => (await page.request.post('/api/sites', { data: { customer_id: c.id, label: `${label} ${tag}`, address: '4 Board St, Lakewood, OH', lat: 41.48, lon: -81.8 } })).json();
   const [south, north] = [await lot('South drive'), await lot('North drive')];
-  const quote = async (siteId: string, cents: number) => (await page.request.post('/api/quotes', { data: { site_id: siteId, season: '2027-28', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: cents } }], send: false } })).json();
+  const quote = async (siteId: string, cents: number) => (await page.request.post('/api/quotes', { data: { site_id: siteId, season: NEXT_SEASON, services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: cents } }], send: false } })).json();
   const first = await quote(south.id, 7000);
   const second = await quote(north.id, 5500);
   expect(second.url).toBe(first.url);
@@ -116,7 +116,7 @@ test('a seasonal quote shows its installments and how they are billed, beside a 
   const c = await (await page.request.post('/api/customers', { data: { name: `Seasonal ${tag}`, kind: 'hoa', billing_mode: 'invoice_net30', email: `${tag}@example.com` } })).json();
   const lot = async (label: string) => (await page.request.post('/api/sites', { data: { customer_id: c.id, label: `${label} ${tag}`, address: '3 Season St, Lakewood, OH', lat: 41.48, lon: -81.8 } })).json();
   const south = await lot('South');
-  const q = await (await page.request.post('/api/quotes', { data: { site_id: south.id, season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'seasonal', total_cents: 90000, installments: 5 } }], send: false } })).json();
+  const q = await (await page.request.post('/api/quotes', { data: { site_id: south.id, season: SEASON, services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'seasonal', total_cents: 90000, installments: 5 } }], send: false } })).json();
   const guest = await browser.newContext({ baseURL, viewport: { width: 375, height: 800 } });
   const g = await guest.newPage();
   await g.goto(q.url);
@@ -124,7 +124,7 @@ test('a seasonal quote shows its installments and how they are billed, beside a 
   await expect(g.getByTestId('payment-line')).toHaveText('Payment: Each installment is invoiced, due within 30 days.');
   // A per-push lot joins the same link: the payment line now covers both.
   const north = await lot('North');
-  await page.request.post('/api/quotes', { data: { site_id: north.id, season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 6500 } }], send: false } });
+  await page.request.post('/api/quotes', { data: { site_id: north.id, season: SEASON, services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 6500 } }], send: false } });
   await g.reload();
   await expect(g.getByTestId('quote-lot')).toHaveCount(2);
   await expect(g.getByTestId('payment-line')).toHaveText('Payment: Invoiced after each storm, due within 30 days. Seasonal prices are billed by monthly installment instead.');

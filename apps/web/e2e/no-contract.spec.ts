@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { closeRunningStorms, login, sql } from './helpers';
+import { SEASON, closeRunningStorms, login, sql } from './helpers';
 
 /** A lot whose customer declined or never signed bills nothing, so the office sees that before a truck goes out. */
 test('a lot with no accepted contract is marked on Routes and on the storm board', async ({ page }) => {
@@ -11,7 +11,7 @@ test('a lot with no accepted contract is marked on Routes and on the storm board
   const lot = async (name: string, signed: boolean) => {
     const c = await (await page.request.post('/api/customers', { data: { name: `${name} ${tag}`, kind: 'residential', billing_mode: 'card_on_file' } })).json();
     const s = await (await page.request.post('/api/sites', { data: { customer_id: c.id, label: `${name} drive ${tag}`, address: '1 Sign St, Lakewood, OH', lat: 41.48, lon: -81.8 } })).json();
-    const k = await (await page.request.post('/api/contracts', { data: { site_id: s.id, season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 5000 } }] } })).json();
+    const k = await (await page.request.post('/api/contracts', { data: { site_id: s.id, season: SEASON, services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 5000 } }] } })).json();
     await sql`update contract set status = ${signed ? 'accepted' : 'declined'} where id = ${k.id}`;
     return { c, s };
   };

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { login, sql, startStorm } from './helpers';
+import { NEXT_SEASON, login, sql, startStorm } from './helpers';
 
 /** Issues 62 and 63, and the paths people guess (issue 39 follow-up), at iPhone size. */
 test.use({ viewport: { width: 390, height: 844 } });
@@ -23,7 +23,7 @@ test('a backward date range on Reports says so, keeps the dates, offers a swap, 
 test('the quote API refuses a $0 price, as the form does', async ({ page }) => {
   await login(page);
   const [s] = await sql`select id from site where active and tenant_id = (select tenant_id from route where name = 'Rocky River' limit 1) limit 1`;
-  const zero = await page.request.post('/api/quotes', { data: { site_id: s!.id, season: '2027-28', services: [{ service: 'plow', pricing: { type: 'per_push', amount_cents: 0 } }], send: false } });
+  const zero = await page.request.post('/api/quotes', { data: { site_id: s!.id, season: NEXT_SEASON, services: [{ service: 'plow', pricing: { type: 'per_push', amount_cents: 0 } }], send: false } });
   expect(zero.status()).toBe(422);
   expect(await zero.text()).toContain('The price must be more than $0.00.');
 });

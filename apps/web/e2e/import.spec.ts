@@ -33,3 +33,16 @@ test('New customer with a name already in use offers to add the lot to that cust
   await expect(page.getByTestId('customer-twin')).toHaveCount(0);
   await page.request.delete(`/api/customers/${c.id}`);
 });
+
+/** Issue 136: an empty file says so, and a repeated lot points at the row number shown in the preview. */
+test('a 0-byte file says it has no rows, and a repeated lot names the preview row it repeats', async ({ page }) => {
+  await login(page);
+  await page.goto('/customers/import');
+  await page.getByTestId('csv-file').setInputFiles({ name: 'empty.csv', mimeType: 'text/csv', buffer: Buffer.from('') });
+  await expect(page.getByTestId('csv-empty')).toBeVisible();
+  await expect(page.getByTestId('csv-import')).toBeDisabled();
+  await page.getByTestId('csv-text').fill('name,address\nQA dupe x,1 Main St Lakewood OH\nQA dupe x,1 Main St Lakewood OH\nQA other y,2 Main St Lakewood OH');
+  await expect(page.getByTestId('csv-empty')).toHaveCount(0);
+  await expect(page.getByTestId('csv-row').nth(1)).toContainText('#2');
+  await expect(page.getByTestId('csv-row').nth(1)).toContainText('Same lot as #1.');
+});

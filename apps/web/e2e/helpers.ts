@@ -1,8 +1,12 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { quotableSeasons } from '@flake/contracts';
 import postgres from 'postgres';
 import { randomUUID } from 'node:crypto';
 
 export const sql = postgres(process.env.DATABASE_URL!, { prepare: false, max: 2, onnotice: () => {} });
+
+/** The seasons a new quote can be for today, so tests don't stop passing when the season turns (issue 137). */
+export const [SEASON, NEXT_SEASON] = quotableSeasons();
 
 export async function login(page: Page) {
   const res = await page.request.post('/api/dev/login', { data: { email: 'demo@flake.test' } });

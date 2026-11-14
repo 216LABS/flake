@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { closeRunningStorms, login, sql } from './helpers';
+import { SEASON, closeRunningStorms, login, sql } from './helpers';
 
 /** A 1" storm on 2" contracts: billing asks first, and the office can bill it anyway or leave it off. */
 test('a lot plowed under its trigger is flagged, and Bill it anyway or Don\'t bill each settle it', async ({ page }) => {
@@ -11,7 +11,7 @@ test('a lot plowed under its trigger is flagged, and Bill it anyway or Don\'t bi
   const lot = async (name: string, lat: number) => {
     const c = await (await page.request.post('/api/customers', { data: { name: `${name} ${tag}`, kind: 'commercial', billing_mode: 'invoice_net30' } })).json();
     const s = await (await page.request.post('/api/sites', { data: { customer_id: c.id, label: `${name} lot ${tag}`, address: '1 Trigger St, Lakewood, OH', lat, lon: -81.8 } })).json();
-    const k = await (await page.request.post('/api/contracts', { data: { site_id: s.id, season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 12000 } }] } })).json();
+    const k = await (await page.request.post('/api/contracts', { data: { site_id: s.id, season: SEASON, services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 12000 } }] } })).json();
     await sql`update contract set status = 'accepted' where id = ${k.id}`;
     return { c, s };
   };

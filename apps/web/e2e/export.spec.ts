@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { closeRunningStorms, finishStops, login, sql, type LiveRun } from './helpers';
+import { SEASON, closeRunningStorms, finishStops, login, sql, type LiveRun } from './helpers';
 
 /**
  * The QuickBooks file is what goes into the books: only invoices someone approved, and a card on file is due on
@@ -13,7 +13,7 @@ test('QuickBooks export has approved invoices only, with terms that match how ea
   const make = async (name: string, billing_mode: string, lat: number) => {
     const c = await (await page.request.post('/api/customers', { data: { name: `${name} ${tag}`, kind: 'commercial', billing_mode, email: `${name.toLowerCase()}-${tag}@example.com` } })).json();
     const s = await (await page.request.post('/api/sites', { data: { customer_id: c.id, label: `${name} lot ${tag}`, address: '1 Books St, Lakewood, OH', lat, lon: -81.8 } })).json();
-    const k = await (await page.request.post('/api/contracts', { data: { site_id: s.id, season: '2026-27', services: [{ service: 'plow', trigger_in: 1, pricing: { type: 'per_push', amount_cents: 10000 } }] } })).json();
+    const k = await (await page.request.post('/api/contracts', { data: { site_id: s.id, season: SEASON, services: [{ service: 'plow', trigger_in: 1, pricing: { type: 'per_push', amount_cents: 10000 } }] } })).json();
     await sql`update contract set status = 'accepted' where id = ${k.id}`;
     return { c, s };
   };

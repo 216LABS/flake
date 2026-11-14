@@ -24,3 +24,17 @@ export function decryptToken(enc: string): string {
 
 export const shortCode = () => randomBytes(6).toString('base64url');
 export const sha256Hex = (data: Uint8Array | string) => createHash('sha256').update(data).digest('hex');
+
+/** How long a crew join link works (issue 137). */
+export const INVITE_DAYS = 14;
+
+/**
+ * A crew join link carries when it was made, so it can expire without a column: "<base36 ms>.<random>". The whole token
+ * is hashed, so the time can't be changed without breaking the hash. Links made before this have no time and still work.
+ */
+export const newInviteToken = (now = Date.now()) => `${now.toString(36)}.${newToken()}`;
+export function inviteExpired(token: string, now = Date.now()): boolean {
+  const m = /^([0-9a-z]{6,12})\./.exec(token);
+  if (!m) return false;
+  return now - parseInt(m[1]!, 36) > INVITE_DAYS * 86_400_000;
+}

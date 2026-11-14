@@ -98,7 +98,8 @@ export function customersFromCsv(text: string): { rows: (CsvCustomer & { problem
     const key = `${r.name.toLowerCase()}|${r.address.toLowerCase().replace(/\s+/g, ' ')}`;
     const first = seen.get(key);
     if (first === undefined) seen.set(key, i);
-    else r.problem = `Same lot as row ${first + 2}.`;
+    // Numbered the way the preview table numbers rows, from 1 under the header (issue 136).
+    else r.problem = `Same lot as #${first + 1}.`;
   });
   return { rows, missing };
 }

@@ -15,6 +15,8 @@ test('a new company sees a first-run card, an empty Proof page that explains its
   await page.waitForURL('**/dashboard');
   await expect(page.getByTestId('first-run')).toContainText('Add your first customer');
   await expect(page.getByTestId('conditions')).toHaveCount(0);
+  // Nothing to plow yet, so no Start a storm up top.
+  await expect(page.getByRole('main').getByRole('link', { name: 'Start a storm' })).toHaveCount(0);
   await expect(page.getByText('unavailable')).toHaveCount(0);
   await page.goto('/proof');
   await expect(page.getByText('No lots yet')).toBeVisible();

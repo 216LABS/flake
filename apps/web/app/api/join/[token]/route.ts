@@ -1,7 +1,7 @@
 import { crewJoin } from '@flake/contracts';
 import { and, crew_member, eq, isNull, serviceDb, sms_consent } from '@flake/db';
 import { clientIp, HttpError, parseJson, rateLimit, route } from '@/lib/http';
-import { hashToken } from '@/lib/tokens';
+import { hashToken, inviteExpired, INVITE_DAYS } from '@/lib/tokens';
 
 /** The consent box starts unchecked. Saying no still joins the crew; links then come by email or QR. */
 export const POST = route<{ params: Promise<{ token: string }> }>(async (req, { params }) => {
@@ -11,6 +11,7 @@ export const POST = route<{ params: Promise<{ token: string }> }>(async (req, { 
   const db = serviceDb();
   const [c] = await db.select().from(crew_member).where(eq(crew_member.invite_token_hash, hashToken(token)));
   if (!c || !c.active) throw new HttpError(404, 'This invite is no longer active');
+  if (inviteExpired(token)) throw new HttpError(410, `This invite is more than ${INVITE_DAYS} days old. Ask the office for a new link.`, 'invite_expired');
   // A join link gets forwarded in group chats. Once the driver has joined, it can't change where their route links go
   // (issue 133): the office edits the email in Settings, or sends a new link.
   if (c.joined_at) throw new HttpError(409, 'You already joined. To change your email, ask the office for a new link.', 'already_joined');
