@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { closeDb, eq, invoice_draft, serviceDb, sql, storm } from '@flake/db';
+import { and, closeDb, eq, invoice_draft, serviceDb, sql, storm } from '@flake/db';
 import { ctxOf, drain, makeWorld } from './helpers';
 
 afterAll(async () => {
@@ -203,5 +203,26 @@ describe('a storm with nothing left to bill is billed', () => {
     expect(await statusOf(stormId)).toBe('closed');
     await reviseDraft(ctx, d!.draft.id, 'void');
     expect(await statusOf(stormId)).toBe('billed');
+  });
+});
+
+describe('a bill the company collects itself can be sent to the customer', () => {
+  it('Send bill emails the customer a link to their records, notes it on the bill, and refuses a bill still in review', async () => {
+    const { customer, message_log } = await import('@flake/db');
+    const { sendBill } = await import('@/lib/billing');
+    const w = await makeWorld({ connected: false });
+    const ctx = ctxOf(w);
+    const db = serviceDb();
+    await db.update(customer).set({ email: 'billme@example.com', notify_sms: false }).where(eq(customer.id, w.customerIds[0]!));
+    const [s] = await db.insert(storm).values({ tenant_id: w.tenantId, name: 'Send it', started_at: new Date().toISOString(), status: 'billed' }).returning();
+    const draft = async (i: number, status: 'approved' | 'draft') => (await db.insert(invoice_draft).values({ tenant_id: w.tenantId, storm_id: s!.id, customer_id: w.customerIds[i]!, lines: [], subtotal_cents: 8800, flags: [], status }).returning())[0]!;
+    const ok = await draft(0, 'approved');
+    const review = await draft(1, 'draft');
+    expect(await sendBill(ctx, ok.id)).toEqual({ sent_to: 'billme@example.com' });
+    await drain();
+    const [m] = await db.select().from(message_log).where(and(eq(message_log.tenant_id, w.tenantId), eq(message_log.template, 'invoice'), eq(message_log.to_addr, 'billme@example.com')));
+    expect(m!.body).toContain('$88.00');
+    expect((await db.select().from(invoice_draft).where(eq(invoice_draft.id, ok.id)))[0]!.status_detail).toContain('Bill sent to billme@example.com');
+    await expect(sendBill(ctx, review.id)).rejects.toMatchObject({ status: 409 });
   });
 });

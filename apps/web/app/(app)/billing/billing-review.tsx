@@ -87,12 +87,18 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
         : { title: `Take ${r.customer}'s invoice back to review?`, body: 'Nothing is charged until you approve it again.', confirm: 'Back to review' });
     if (ok) await run(() => api('/api/billing/revise', { body: { draftId: r.id, to } }));
   };
+  // A bill nobody charges through Stripe goes to the customer from here, with a link to their records page.
+  const sendBill = async (r: DraftRow) => {
+    if (await ask({ title: `Send ${r.customer} this bill?`, body: 'They get an email (and a text, if they agreed to texts) with the total and a link to their records page, which lists every line and how to pay you.', confirm: 'Send bill' })) {
+      await run(() => api('/api/billing/send', { body: { draftId: r.id } }));
+    }
+  };
   return (
     <div>
       {dialog}
       {!stripeReady && rows.length ? (
         <p className="mb-4 rounded-md bg-info-tint p-3 text-sm text-link" data-testid="stripe-not-connected">
-          Stripe isn&apos;t connected, so approving doesn&apos;t charge anyone yet. Approved invoices wait here. Connect Stripe in <a className="underline" href="/settings?tab=payments">Settings, Payments</a>, then press Charge now on each. Or bill them yourself (the QuickBooks CSV has every line) and press Mark paid when the money comes in.
+          Stripe isn&apos;t connected, so approving doesn&apos;t charge anyone yet. Approved invoices wait here. Connect Stripe in <a className="underline" href="/settings?tab=payments">Settings, Payments</a>, then press Charge now on each. Or press Send bill to email each customer their bill, and Mark paid when the money comes in.
         </p>
       ) : null}
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -137,6 +143,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
             {r.status_detail ? <p className="mt-1 text-sm text-warn-ink" data-testid="status-detail">{r.status_detail}</p> : null}
             <div className="mt-1 flex flex-wrap gap-2">
               {r.status === 'failed' || (r.status === 'approved' && r.status_detail && r.billing_mode !== 'manual') ? <Button size="sm" variant="outline" disabled={busy || (r.status === 'approved' && !stripeReady)} data-testid="retry" onClick={() => run(() => api('/api/billing/retry', { body: { draftId: r.id } }))}>{r.status === 'failed' ? 'Try again' : 'Charge now'}</Button> : null}
+              {r.status === 'approved' && (r.billing_mode === 'manual' || !stripeReady) ? <Button size="sm" variant="outline" disabled={busy} data-testid="send-bill" onClick={() => void sendBill(r)}>Send bill</Button> : null}
               {r.status === 'approved' || r.status === 'failed' ? <Button size="sm" variant="outline" disabled={busy} data-testid="mark-paid" onClick={() => void revise(r, 'paid')}>Mark paid</Button> : null}
               {r.status === 'approved' || r.status === 'failed' ? <Button size="sm" variant="ghost" disabled={busy} data-testid="unapprove" onClick={() => void revise(r, 'draft')}>Back to review</Button> : null}
               {['draft', 'approved', 'failed'].includes(r.status) ? <Button size="sm" variant="ghost" disabled={busy} data-testid="void" onClick={() => void revise(r, 'void')}>Void</Button> : null}

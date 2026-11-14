@@ -11,7 +11,7 @@ import { flagFix } from '@flake/contracts';
 import { HttpError } from './http';
 import { enqueue } from './jobs';
 import { log } from './log';
-import { queueNotify } from './messaging';
+import { queueNotify, shortLink } from './messaging';
 import { getProviders } from './providers';
 import { seriesFromSummary } from './weather';
 import type { Ctx } from './storms';
@@ -307,6 +307,32 @@ async function sendPayLink(row: NonNullable<Awaited<ReturnType<typeof loadDraft>
 }
 
 /**
+ * A bill the company collects itself (manual billing, or payments not connected): the customer gets it by email, and
+ * by text if they agreed to texts, with a link to their records page, which lists every line and how to pay. Each press
+ * sends it again, at most once a minute.
+ */
+export async function sendBill(ctx: Ctx, draftId: string) {
+  const [mine] = await withUser(ctx.userId, (tx) => tx.select({ id: invoice_draft.id }).from(invoice_draft).where(eq(invoice_draft.id, draftId)));
+  const row = mine ? await loadDraft(ctx.tenantId, draftId) : null;
+  if (!row) throw new HttpError(404, 'Invoice not found');
+  if (row.draft.status !== 'approved') throw new HttpError(409, row.draft.status === 'draft' ? 'Approve this invoice first.' : 'This invoice is already being collected.', 'not_sendable');
+  const phone = row.customer.notify_sms ? row.customer.phone_e164 : null;
+  if (!row.customer.email && !phone) throw new HttpError(422, 'Add an email for this customer first.', 'no_contact');
+  const { portalToken } = await import('./portal');
+  const link = await shortLink(ctx.tenantId, `/c/${await portalToken(row.customer.id)}`);
+  const amount = dollars(row.draft.subtotal_cents);
+  await queueNotify(row.tenant.id, { phone, email: row.customer.email }, {
+    template: 'invoice', vars: { storm: row.storm.name, amount, link },
+    subject: `${row.tenant.name}: invoice for ${row.storm.name}, $${amount}`,
+    key: `bill:${draftId}:${Math.floor(Date.now() / 60_000)}`, related: { draft_id: draftId },
+  });
+  const to = row.customer.email ?? 'their phone';
+  const on = fmtLocal(new Date(), row.tenant.timezone, { month: 'short', day: 'numeric' });
+  await serviceDb().update(invoice_draft).set({ status_detail: `Bill sent to ${to} on ${on}. Press Mark paid when it is paid.` }).where(and(eq(invoice_draft.id, draftId), eq(invoice_draft.status, 'approved')));
+  return { sent_to: to };
+}
+
+/**
  * Charges again after a failure or after Stripe gets connected. The status gate means one retry per press, and a
  * failed attempt gets a fresh Stripe idempotency key, because Stripe would otherwise replay the same decline.
  */
@@ -391,8 +417,8 @@ async function chargeDraftLocked(tenantId: string, draftId: string, attempt?: nu
   const setStatus = (status: typeof draft.status, detail: string | null, extra: Partial<typeof invoice_draft.$inferInsert> = {}) => db.update(invoice_draft).set({ status, status_detail: detail, ...extra }).where(eq(invoice_draft.id, draftId));
 
   if (draft.subtotal_cents <= 0) return void (await setStatus('void', 'Nothing to charge'));
-  if (c.billing_mode === 'manual') return void (await setStatus('approved', 'Manual billing: send the customer a bill, then press Mark paid when it is paid.'));
-  if (!t.stripe_account_id || !t.stripe_charges_enabled) return void (await setStatus('approved', 'Payments are not connected: bill the customer yourself and press Mark paid, or connect Stripe in Settings and press Charge now.'));
+  if (c.billing_mode === 'manual') return void (await setStatus('approved', 'Manual billing: press Send bill to email it to the customer, then Mark paid when it is paid.'));
+  if (!t.stripe_account_id || !t.stripe_charges_enabled) return void (await setStatus('approved', 'Payments are not connected: press Send bill to email it to the customer and Mark paid when it is paid, or connect Stripe in Settings and press Charge now.'));
 
   const { payments } = await getProviders();
   const fee = applicationFeeCents(draft.subtotal_cents, tenantFeeRate(t));

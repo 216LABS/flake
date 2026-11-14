@@ -29,6 +29,9 @@ test('a bill paid by check is owed on the portal and customer page until the off
 
   await page.goto(`/billing?storm=${s!.id}`);
   const row = page.locator('[data-testid="draft"]', { hasText: `Check ${tag}` });
+  await row.getByTestId('send-bill').click();
+  await page.getByTestId('confirm-yes').click();
+  await expect(row).toContainText(`Bill sent to ${tag}@example.com`);
   await row.getByTestId('mark-paid').click();
   await page.getByTestId('confirm-yes').click();
   await expect(row.getByTestId('draft-status')).toHaveText('Paid');

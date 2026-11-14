@@ -166,6 +166,7 @@ export const stormCallOut = z.object({ time: z.string().max(40) });
 
 export const billingRetry = z.object({ draftId: uuid });
 export const billingRevise = z.object({ draftId: uuid, to: z.enum(['draft', 'void', 'paid']) });
+export const billingSend = z.object({ draftId: uuid });
 export const billingApprove = z.object({ draftIds: z.array(uuid).min(1).max(500) });
 export const flagFix = z.discriminatedUnion('action', [
   z.object({ action: z.literal('waive'), storm_id: uuid, flag_key: z.string().max(200) }),
