@@ -104,7 +104,7 @@ export async function generateDrafts(ctx: Ctx, stormId: string) {
     const depth = await depthContext(s, sites);
     const newestBySite = new Map<string, typeof contract.$inferSelect>();
     for (const c of contracts) if (!newestBySite.has(c.site_id)) newestBySite.set(c.site_id, c);
-    const billingContracts: BillingContract[] = [...newestBySite.values()].map((c) => ({ site_id: c.site_id, services: c.services as ContractService[], salt_pricing: c.salt_pricing as SaltPricing | null }));
+    const billingContracts: BillingContract[] = [...newestBySite.values()].map((c) => ({ site_id: c.site_id, services: c.services as ContractService[], salt_pricing: c.salt_pricing as SaltPricing | null, season: c.season }));
     const drafts = draftInvoices({
       sites: sites.map((x) => ({ id: x.id, customer_id: x.customer_id, label: x.label, lat: x.lat, lon: x.lon, polygons: x.polygons as any })),
       contracts: billingContracts,
@@ -113,6 +113,7 @@ export async function generateDrafts(ctx: Ctx, stormId: string) {
       corrections: corrections.map((c) => ({ visit_id: c.visit_id, field: c.field, new_value: c.new_value })),
       depth,
       waived: s.waived_flags,
+      season: currentSeason(new Date(s.started_at), t!.timezone),
     });
     const rate = tenantFeeRate(t!);
     // The engine prices; this says where and when, so a customer with several sites can read the invoice.
@@ -532,7 +533,13 @@ async function billInstallment(r: InstallmentRow, pricing: Extract<Pricing, { ty
   } else {
     const seq = r.contract.installments_billed + 1;
     if (seq > pricing.installments) return false;
-    const amount = seasonalInstallments(pricing.total_cents, pricing.installments)[seq - 1]!;
+    // A re-sign mid-season (issue 112): what was already billed for this lot and season counts, and the rest of the
+    // new total is spread over the installments left, so the season adds up to the price signed.
+    const [{ billed }] = await db.select({ billed: sql<number>`coalesce(sum(${installment_invoice.amount_cents}), 0)::int` }).from(installment_invoice)
+      .innerJoin(contract, eq(contract.id, installment_invoice.contract_id))
+      .where(and(eq(contract.site_id, r.site.id), eq(contract.season, r.contract.season))) as [{ billed: number }];
+    const amount = seasonalInstallments(Math.max(0, pricing.total_cents - billed), pricing.installments - seq + 1)[0]!;
+    if (amount <= 0) return false;
     [row] = await db.insert(installment_invoice).values({ tenant_id: r.tenant.id, contract_id: r.contract.id, seq, amount_cents: amount, status: 'pending', period }).onConflictDoNothing().returning();
     if (!row) return false; // another run took this one
   }

@@ -55,6 +55,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
   const [position, setPosition] = useState('');
   const [quoteUrl, setQuoteUrl] = useState<string | null>(null);
   const [emailed, setEmailed] = useState(false);
+  const [lots, setLots] = useState(1);
   const saved = useRef<{ customerId?: string; siteId?: string; pins: number; routed: boolean }>({ customerId: existing?.id, pins: 0, routed: false });
 
   const suggestion = useMemo(() => suggestPrice({ sqft: sqft ?? 0, walks_lf: walkLf }, rateCard), [sqft, walkLf, rateCard]);
@@ -168,6 +169,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
       ];
       const out = await api('/api/quotes', { body: { site_id: siteId, season, services, salt_pricing: withSalt ? { unit: 'bag50lb', amount_cents: suggestion.salt_bag_cents } : null, send } });
       setEmailed(send && Boolean(out.emailed && c.email));
+      setLots(out.lots ?? 1);
       setQuoteUrl(out.url);
     } catch (e) {
       setError((e as Error).message);
@@ -182,6 +184,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
         <h1 className="text-3xl font-semibold tracking-tight">Quote ready</h1>
         <p className="mt-1 text-sm text-muted" data-testid="quote-note">{emailed ? 'We are emailing the customer this link. You can also share it directly.' : 'Nothing was emailed, so share this link with the customer.'}</p>
         {photoNote ? <p className="mt-1 text-sm text-warn-ink">{photoNote}</p> : null}
+        {lots > 1 ? <p className="mt-1 text-sm" data-testid="quote-lots">This is the same link as their other quote{lots > 2 ? 's' : ''} waiting for a signature. It now covers all {lots} properties, and one signature accepts them all.</p> : null}
         <Input readOnly className="mt-3" value={quoteUrl} data-testid="quote-url" />
         <div className="mt-4 flex gap-2">
           <Button variant="accent" onClick={() => router.push('/customers')}>Done</Button>

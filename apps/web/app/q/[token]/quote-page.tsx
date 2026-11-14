@@ -15,27 +15,37 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
   // The customer opts in; nothing is ticked for them (issue 94).
   const [emailOk, setEmailOk] = useState(false);
   const [phone, setPhone] = useState(quote.customer.phone ?? '');
-  const [accepted, setAccepted] = useState(quote.contract.status === 'accepted');
+  // Every lot on this link (issue 101): one signature covers them all.
+  const lots: { site: any; contract: any }[] = quote.lots ?? [{ site: quote.site, contract: quote.contract }];
+  const many = lots.length > 1;
+  const [accepted, setAccepted] = useState(lots.every((l) => l.contract.status === 'accepted'));
   const [error, setError] = useState<string | null>(null);
   const [paid, setPaid] = useState(quote.has_payment_method);
   const [sending, setSending] = useState(false);
-  const [declined, setDeclined] = useState(quote.contract.status === 'declined');
+  const [declined, setDeclined] = useState(lots.some((l) => l.contract.status === 'declined'));
   const [declining, setDeclining] = useState(false);
   const [reason, setReason] = useState('');
+  const terms = [...new Set(lots.map((l) => l.contract.terms_md).filter(Boolean))] as string[];
+  const acceptedName = lots.find((l) => l.contract.accepted_name)?.contract.accepted_name;
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <p className="font-display text-lg font-semibold text-ink">{quote.company}</p>
-      <h1 className="mt-1 text-4xl font-semibold leading-tight tracking-tight">Snow service for {quote.site.label}</h1>
-      <p className="text-sm text-muted">{quote.site.address}{quote.site.area_sqft ? `. About ${Number(quote.site.area_sqft).toLocaleString()} sq ft.` : ''}</p>
+      <h1 className="mt-1 text-4xl font-semibold leading-tight tracking-tight">Snow service for {many ? `${lots.length} properties` : lots[0]!.site.label}</h1>
+      {many ? <p className="text-sm text-muted">Season {lots[0]!.contract.season}. One signature below covers every property listed.</p> : <p className="text-sm text-muted">{lots[0]!.site.address}{lots[0]!.site.area_sqft ? `. About ${Number(lots[0]!.site.area_sqft).toLocaleString()} sq ft.` : ''}</p>}
       <Card className="mt-4">
-        <h2 className="font-semibold">Scope and price, season {quote.contract.season}</h2>
-        <ul className="mt-2 space-y-1 text-sm">
-          {quote.contract.services.map((s: any, i: number) => (
-            <li key={i} data-testid="scope-line"><b className="capitalize">{s.service}</b>: {s.service === 'salt' && quote.contract.salt_pricing ? `${money(quote.contract.salt_pricing.amount_cents)} per ${quote.contract.salt_pricing.unit === 'bag50lb' ? '50 lb bag' : quote.contract.salt_pricing.unit}` : priceText(s.pricing)}{s.trigger_in === 0 ? '. Starts with any measurable snow.' : s.trigger_in != null ? `. Starts at ${s.trigger_in}" of snow.` : ''}</li>
-          ))}
-        </ul>
-        <p className="mt-2 text-sm" data-testid="payment-line"><b>Payment</b>: {paymentText(quote.customer.billing_mode, quote.company, quote.payments_ready)}</p>
-        {quote.contract.terms_md ? <><h3 className="mt-3 text-sm font-semibold">Terms</h3><p className="mt-1 whitespace-pre-wrap text-sm text-ink-2">{quote.contract.terms_md}</p></> : null}
+        {lots.map((l, n) => (
+          <section key={l.contract.id} className={n ? 'mt-4 border-t border-line-faint pt-4' : ''} data-testid="quote-lot">
+            {many ? <><h2 className="font-semibold">{l.site.label}</h2><p className="text-sm text-muted">{l.site.address}{l.site.area_sqft ? `. About ${Number(l.site.area_sqft).toLocaleString()} sq ft.` : ''}</p></> : <h2 className="font-semibold">Scope and price, season {l.contract.season}</h2>}
+            <ul className="mt-2 space-y-1 text-sm">
+              {l.contract.services.map((s: any, i: number) => (
+                <li key={i} data-testid="scope-line"><b className="capitalize">{s.service}</b>: {s.service === 'salt' && l.contract.salt_pricing ? `${money(l.contract.salt_pricing.amount_cents)} per ${l.contract.salt_pricing.unit === 'bag50lb' ? '50 lb bag' : l.contract.salt_pricing.unit}` : priceText(s.pricing)}{s.trigger_in === 0 ? '. Starts with any measurable snow.' : s.trigger_in != null ? `. Starts at ${s.trigger_in}" of snow.` : ''}</li>
+              ))}
+            </ul>
+            {many && l.contract.status === 'accepted' ? <p className="mt-1 text-sm text-ok-ink">Signed.</p> : null}
+          </section>
+        ))}
+        <p className="mt-4 text-sm" data-testid="payment-line"><b>Payment</b>: {paymentText(quote.customer.billing_mode, quote.company, quote.payments_ready)}</p>
+        {terms.map((t, i) => <div key={i}><h3 className="mt-3 text-sm font-semibold">Terms{terms.length > 1 ? ` (${lots.filter((l) => l.contract.terms_md === t).map((l) => l.site.label).join(', ')})` : ''}</h3><p className="mt-1 whitespace-pre-wrap text-sm text-ink-2">{t}</p></div>)}
       </Card>
       {declined && !accepted ? (
         <Card className="mt-4 border-line bg-tint" data-testid="declined">
@@ -44,7 +54,7 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
         </Card>
       ) : null}
       {accepted ? (
-        <Card className="mt-4 border-ok-line bg-ok-tint" data-testid="accepted"><p className="font-medium">Accepted{quote.contract.accepted_name ? ` by ${quote.contract.accepted_name}` : ''}. Thank you.</p></Card>
+        <Card className="mt-4 border-ok-line bg-ok-tint" data-testid="accepted"><p className="font-medium">Accepted{acceptedName ? ` by ${acceptedName}` : ''}. Thank you.</p></Card>
       ) : (
         <Card className="mt-4">
           <h2 className="font-semibold">Accept</h2>
@@ -67,7 +77,7 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
             } finally {
               setSending(false);
             }
-          }}>{sending ? 'Saving your signature...' : 'Accept quote'}</Button>
+          }}>{sending ? 'Saving your signature...' : many ? `Accept all ${lots.length}` : 'Accept quote'}</Button>
           {/* Saying no is a real answer, so the office isn't left waiting (issue 59). */}
           {!declined ? (
             declining ? (

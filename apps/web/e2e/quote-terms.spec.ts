@@ -75,3 +75,32 @@ test('with payments not set up yet, a card quote says a secure link comes later,
     await sql`update tenant set stripe_charges_enabled = true where slug = 'lakeshore-demo'`;
   }
 });
+
+/** An HOA with two drives signs once (issue 101): the second lot's quote joins the first one's link. */
+test('a customer with two lots sees both on one quote and accepts both with one signature', async ({ page, browser, baseURL }) => {
+  await login(page);
+  const tag = randomUUID().slice(0, 6);
+  const c = await (await page.request.post('/api/customers', { data: { name: `HOA ${tag}`, kind: 'hoa', billing_mode: 'invoice_net30', email: `${tag}@example.com` } })).json();
+  const lot = async (label: string) => (await page.request.post('/api/sites', { data: { customer_id: c.id, label: `${label} ${tag}`, address: '4 Board St, Lakewood, OH', lat: 41.48, lon: -81.8 } })).json();
+  const [south, north] = [await lot('South drive'), await lot('North drive')];
+  const quote = async (siteId: string, cents: number) => (await page.request.post('/api/quotes', { data: { site_id: siteId, season: '2027-28', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: cents } }], send: false } })).json();
+  const first = await quote(south.id, 7000);
+  const second = await quote(north.id, 5500);
+  expect(second.url).toBe(first.url);
+  expect(second.lots).toBe(2);
+  const guest = await browser.newContext({ baseURL, viewport: { width: 375, height: 667 } });
+  const g = await guest.newPage();
+  await g.goto(first.url);
+  await expect(g.getByRole('heading', { level: 1 })).toHaveText('Snow service for 2 properties');
+  await expect(g.getByTestId('quote-lot')).toHaveCount(2);
+  await expect(g.getByText('$70.00').first()).toBeVisible();
+  await expect(g.getByText('$55.00').first()).toBeVisible();
+  await g.getByTestId('sign-name').fill('Pat Board');
+  await g.getByTestId('agree').check();
+  await expect(g.getByTestId('accept')).toHaveText('Accept all 2');
+  await g.getByTestId('accept').click();
+  await expect(g.getByTestId('accepted')).toBeVisible();
+  await g.reload();
+  await expect(g.getByTestId('accepted')).toContainText('Pat Board');
+  await guest.close();
+});

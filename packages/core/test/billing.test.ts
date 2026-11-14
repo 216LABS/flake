@@ -60,6 +60,20 @@ describe('draftInvoices flags', () => {
     const contracts: BillingContract[] = [{ site_id: 's1', services: [{ service: 'plow', pricing: { type: 'seasonal', total_cents: 100, installments: 5 } }] }];
     expect(draftInvoices(input({ contracts }))).toEqual([]);
   });
+  it('a lot priced from last season says so; a seasonal lot with no contract this season needs a decision (issue 112)', () => {
+    const per = input({});
+    const old = { ...per, season: '2026-27', contracts: per.contracts.map((c) => ({ ...c, season: '2025-26' })) };
+    const f = draftInvoices(old)[0]!.flags.find((x) => x.code === 'prior_season');
+    expect(f).toMatchObject({ severity: 'info' });
+    expect(f!.message).toContain('priced from the 2025-26 contract');
+    expect(draftInvoices({ ...per, season: '2025-26', contracts: old.contracts })[0]!.flags.some((x) => x.code === 'prior_season')).toBe(false);
+    const seasonal = { ...old, contracts: old.contracts.map((c) => ({ ...c, services: [{ service: 'plow' as const, pricing: { type: 'seasonal' as const, total_cents: 300000, installments: 5 } }] })) };
+    const d = draftInvoices(seasonal)[0]!;
+    expect(d.flags.find((x) => x.code === 'prior_season')).toMatchObject({ severity: 'review' });
+    expect(isDraftClean(d.flags)).toBe(false);
+    // Not reached yet: nothing to decide about pay.
+    expect(draftInvoices({ ...seasonal, visits: [], stops: [{ site_id: 's1', status: 'pending' }] })[0]!.flags.some((x) => x.code === 'prior_season')).toBe(false);
+  });
   it('seasonal_info stays informational on a draft that also has a charge', () => {
     const contracts: BillingContract[] = [{ site_id: 's1', services: [{ service: 'plow', pricing: { type: 'seasonal', total_cents: 100, installments: 5 } }, { service: 'walks', pricing: { type: 'per_push', amount_cents: 2500 } }] }];
     const [d] = draftInvoices(input({ contracts, visits: [v('s1', { services: ['plow', 'walks'] })] }));

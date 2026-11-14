@@ -112,6 +112,26 @@ describe('issue 10: re-signing a seasonal contract keeps its place in the schedu
     expect(await billInstallments(w.tenantId, new Date('2027-01-15T15:00:00Z'))).toBe(1);
     expect((await installments(w.tenantId)).filter((r) => r.contract_id === q.contract.id).map((r) => r.seq)).toEqual([3]);
   });
+  it('the season adds up to the new price: what is left is spread over the installments left (issue 112)', async () => {
+    const w = await makeWorld();
+    await billInstallments(w.tenantId, NOV);
+    await billInstallments(w.tenantId, DEC);
+    const q = await createQuote(ctxOf(w), { site_id: w.siteIds[3]!, season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'seasonal', total_cents: 320000, installments: 5 } }], send: false });
+    await acceptQuote(q.token, { name: 'Pat Resign', agree: true, consentSms: false, consentEmail: true, phone_e164: null }, null);
+    for (const m of ['2027-01-15', '2027-02-15', '2027-03-15', '2027-04-15']) await billInstallments(w.tenantId, new Date(`${m}T15:00:00Z`));
+    const rows = await installments(w.tenantId);
+    // $3,000 in 5, two billed ($1,200), re-signed at $3,200: the last three are $2,000 between them.
+    expect(rows.filter((r) => r.contract_id === q.contract.id).map((r) => r.amount_cents)).toEqual([66668, 66666, 66666]);
+    expect(rows.reduce((n, r) => n + r.amount_cents, 0)).toBe(320000);
+  });
+  it('a re-sign below what was already billed bills nothing more', async () => {
+    const w = await makeWorld();
+    await billInstallments(w.tenantId, NOV);
+    await billInstallments(w.tenantId, DEC);
+    const q = await createQuote(ctxOf(w), { site_id: w.siteIds[3]!, season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'seasonal', total_cents: 100000, installments: 5 } }], send: false });
+    await acceptQuote(q.token, { name: 'Pat Resign', agree: true, consentSms: false, consentEmail: true, phone_e164: null }, null);
+    expect(await billInstallments(w.tenantId, new Date('2027-01-15T15:00:00Z'))).toBe(0);
+  });
 });
 
 describe('issue 14: a salt delivery counts once', () => {

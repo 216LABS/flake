@@ -7,6 +7,6 @@ import { createQuote } from '@/lib/quotes';
 
 export const POST = route(async (req) => {
   const ctx = await requireApi('dispatcher');
-  const { contract, url } = await createQuote(ctx, await parseJson(req, quoteCreate));
-  return NextResponse.json({ contract_id: contract.id, url, emailed: emailConfigured() }, { status: 201 });
+  const { contract, url, lots } = await createQuote(ctx, await parseJson(req, quoteCreate));
+  return NextResponse.json({ contract_id: contract.id, url, lots, emailed: emailConfigured() }, { status: 201 });
 });

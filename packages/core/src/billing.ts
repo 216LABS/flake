@@ -1,6 +1,7 @@
 import type { MultiPolygon, Polygon } from 'geojson';
 import { distanceMeters, distanceToPolygonMeters, gpsMatches } from './geo';
 import { usDistanceText } from './units';
+import { isLaterSeason } from './time';
 import { priceSiteForStorm, stormDepthIn, type ContractService, type InvoiceLine, type PricedVisit, type SaltPricing, type StormDepthContext } from './pricing';
 
 export const DUPLICATE_WINDOW_MS = 60 * 60 * 1000;
@@ -12,6 +13,7 @@ export type FlagCode =
   | 'no_after_photo'
   | 'missing_salt_qty'
   | 'seasonal_info'
+  | 'prior_season'
   | 'missing_depth'
   | 'no_contract'
   | 'odd_duration'
@@ -28,7 +30,7 @@ export const FLAG_TIER: Record<FlagCode, FlagTier> = {
   no_contract: 'money', no_service: 'money', missing_salt_qty: 'money', salt_unit: 'money', missing_depth: 'money', duplicate: 'money', odd_duration: 'money', below_trigger: 'money',
   no_after_photo: 'proof', no_gps_match: 'proof',
   missing_visit: 'not_done',
-  seasonal_info: 'info',
+  seasonal_info: 'info', prior_season: 'money',
 };
 export const TIER_ORDER: FlagTier[] = ['money', 'proof', 'not_done', 'info'];
 
@@ -37,7 +39,7 @@ const TIER_REASON: Record<FlagCode, string> = {
   no_contract: 'no price', no_service: 'nothing ticked', missing_salt_qty: 'salt missing', salt_unit: 'salt missing',
   missing_depth: 'depth missing', duplicate: 'a possible duplicate', odd_duration: 'an odd time on site', below_trigger: 'under the trigger',
   no_after_photo: 'no after photo', no_gps_match: 'no or far-off location',
-  missing_visit: 'not reached', seasonal_info: 'seasonal',
+  missing_visit: 'not reached', seasonal_info: 'seasonal', prior_season: 'no contract this season',
 };
 
 /**
@@ -76,6 +78,8 @@ export interface BillingContract {
   site_id: string;
   services: ContractService[];
   salt_pricing?: SaltPricing | null;
+  /** The season it was signed for, like 2025-26. */
+  season?: string;
 }
 
 export interface BillingVisit extends PricedVisit {
@@ -106,6 +110,8 @@ export interface DraftInput {
   depth: Record<string, StormDepthContext>;
   /** Flag keys the owner already waived for this storm. */
   waived?: string[];
+  /** The storm's season. A lot priced from an earlier season's contract is named (issue 112). */
+  season?: string;
 }
 
 export const flagKey = (f: Pick<BillingFlag, 'code' | 'site_id' | 'visit_id'>) => `${f.code}:${f.site_id}:${f.visit_id ?? ''}`;
@@ -210,6 +216,14 @@ export function draftInvoices(input: DraftInput): DraftInvoice[] {
     const lines = contract && !noBill ? priceSiteForStorm(contract.services, contract.salt_pricing, visits, depthCtx) : [];
     const flags = flagsForSite(site, contract, statuses, visits, stormDepthIn(visits.map((v) => v.depth_in), depthCtx))
       .map((f) => (noBill && f.code === 'below_trigger' ? { ...f, message: `${f.message} Not billed for this storm.`, waived: true } : f));
+    // No contract signed for this season yet: last season's prices carry on (most plow contracts renew), but the
+    // office sees it so a price change isn't missed.
+    // A seasonal lot whose season was paid in full would be plowed free, so that one needs a decision.
+    if (contract?.season && input.season && isLaterSeason(input.season, contract.season)) {
+      const seasonal = contract.services.some((s) => s.pricing?.type === 'seasonal');
+      if (seasonal && visits.length) flags.push({ code: 'prior_season', site_id: site.id, severity: 'review', message: `${site.label} is on the ${contract.season} seasonal contract and has none for ${input.season}, so this work isn't paid for. Send a new quote, or waive to plow it free.` });
+      else if (lines.length) flags.push({ code: 'prior_season', site_id: site.id, severity: 'info', message: `${site.label} has no contract for ${input.season} yet, so it was priced from the ${contract.season} contract.` });
+    }
     for (const l of lines) {
       if (l.needs_depth) {
         flags.push({ code: 'missing_depth', site_id: site.id, severity: 'review', message: `${site.label}: storm depth is unavailable, so the tier price could not be set.` });
