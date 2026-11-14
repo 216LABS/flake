@@ -88,6 +88,8 @@ test('a customer with two lots sees both on one quote and accepts both with one 
   const second = await quote(north.id, 5500);
   expect(second.url).toBe(first.url);
   expect(second.lots).toBe(2);
+  await page.goto('/customers?waiting=1');
+  await expect(page.locator('[data-testid="customer-row"]', { hasText: `HOA ${tag}` }).getByTestId('quote-waiting')).toBeVisible();
   const guest = await browser.newContext({ baseURL, viewport: { width: 375, height: 667 } });
   const g = await guest.newPage();
   await g.goto(first.url);
@@ -103,4 +105,6 @@ test('a customer with two lots sees both on one quote and accepts both with one 
   await g.reload();
   await expect(g.getByTestId('accepted')).toContainText('Pat Board');
   await guest.close();
+  await page.reload();
+  await expect(page.getByText(`HOA ${tag}`)).toHaveCount(0);
 });

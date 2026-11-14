@@ -404,9 +404,10 @@ export async function reopenStorm(ctx: Ctx, stormId: string) {
     const [s] = await tx.select().from(storm).where(eq(storm.id, stormId)).for('update');
     if (!s) throw new HttpError(404, 'Storm not found');
     if (s.status === 'active') return s;
-    if (s.status === 'billed') throw new HttpError(409, 'This storm is billed. Start a new storm for more work.', 'billed');
+    // Billed with a bill past review can't take more work. Billed with nothing ever approved (only seasonal lots, say,
+    // or every bill voided) can: nothing went out yet.
     const drafts = await tx.select({ status: invoice_draft.status }).from(invoice_draft).where(eq(invoice_draft.storm_id, stormId));
-    if (drafts.some((d) => d.status !== 'draft' && d.status !== 'void')) throw new HttpError(409, 'Invoices from this storm were already approved. Start a new storm for more work.', 'approved');
+    if (drafts.some((d) => d.status !== 'draft' && d.status !== 'void')) throw new HttpError(409, s.status === 'billed' ? 'This storm is billed. Start a new storm for more work.' : 'Invoices from this storm were already approved. Start a new storm for more work.', s.status === 'billed' ? 'billed' : 'approved');
     const runs = await tx.select({ id: storm_run.id }).from(storm_run).where(eq(storm_run.storm_id, stormId));
     const stops = runs.length ? await tx.select({ site_id: run_stop.site_id }).from(run_stop).where(inArray(run_stop.storm_run_id, runs.map((r) => r.id))) : [];
     // The same rule as starting a storm: a lot can be live on one storm at a time.

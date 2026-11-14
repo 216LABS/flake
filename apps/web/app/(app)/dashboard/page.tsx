@@ -103,7 +103,7 @@ export default async function Dashboard() {
             <section data-testid="waiting-on">
               <Eyebrow className="mb-2">Waiting on customers</Eyebrow>
               <div className="rounded-md border border-line-faint bg-surface p-3 text-sm">
-                {data.pendingQuotes[0]!.n ? <p data-testid="quotes-waiting">{data.pendingQuotes[0]!.n === 1 ? '1 quote is' : `${data.pendingQuotes[0]!.n} quotes are`} waiting for a signature. <Link className="text-link underline" href="/customers">Customers</Link></p> : null}
+                {data.pendingQuotes[0]!.n ? <p data-testid="quotes-waiting">{data.pendingQuotes[0]!.n === 1 ? '1 quote is' : `${data.pendingQuotes[0]!.n} quotes are`} waiting for a signature. <Link className="text-link underline" href="/customers?waiting=1">See which</Link></p> : null}
                 {owedTotal ? (
                   <>
                     <p className={data.pendingQuotes[0]!.n ? 'mt-2' : ''} data-testid="owed-total">Still owed: <b className="tabular">{money(owedTotal)}</b></p>

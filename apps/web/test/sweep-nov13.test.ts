@@ -169,3 +169,39 @@ describe('the board and billing agree on which lots have a contract', () => {
     expect(stops.find((s: any) => s.site_id === w.siteIds[1])!.no_contract).toBe(false);
   });
 });
+
+describe('a storm with nothing left to bill is billed', () => {
+  async function closedWith(siteIdx: number[]) {
+    const { run_stop } = await import('@flake/db');
+    const { processActions, resolveToken } = await import('@/lib/driver');
+    const { publishStorm, closeStorm } = await import('@/lib/storms');
+    const { decryptToken } = await import('@/lib/tokens');
+    const { createStorm, stopActions } = await import('./helpers');
+    const w = await makeWorld();
+    const ctx = ctxOf(w);
+    const out = await createStorm(ctx, { name: 'Settle', routeIds: [w.routeId], crewAssignments: {}, siteIds: siteIdx.map((i) => w.siteIds[i]!) });
+    await publishStorm(ctx, out.storm.id);
+    const r = await resolveToken(decryptToken(out.runs[0]!.link_token_enc!));
+    const stops = await serviceDb().select().from(run_stop).where(eq(run_stop.storm_run_id, out.runs[0]!.id));
+    for (const [i, s] of stops.entries()) await processActions(r, stopActions(s.id, new Date(Date.now() - 3600_000 + i * 1500_000), { depth: 3, gps: { lat: 41.48, lon: -81.8 } }).actions as never);
+    await closeStorm(ctx, out.storm.id, true);
+    return { w, ctx, stormId: out.storm.id };
+  }
+  const statusOf = async (id: string) => (await serviceDb().select().from(storm).where(eq(storm.id, id)))[0]!.status;
+  it('only a seasonal lot: no bill to make, so the storm is billed, and it can still be reopened', async () => {
+    const { generateDrafts } = await import('@/lib/billing');
+    const { reopenStorm } = await import('@/lib/storms');
+    const { ctx, stormId } = await closedWith([3]);
+    expect(await generateDrafts(ctx, stormId)).toHaveLength(0);
+    expect(await statusOf(stormId)).toBe('billed');
+    expect((await reopenStorm(ctx, stormId)).status).toBe('active');
+  });
+  it('voiding the last bill in review finishes the storm', async () => {
+    const { generateDrafts, reviseDraft } = await import('@/lib/billing');
+    const { ctx, stormId } = await closedWith([0]);
+    const [d] = await generateDrafts(ctx, stormId);
+    expect(await statusOf(stormId)).toBe('closed');
+    await reviseDraft(ctx, d!.draft.id, 'void');
+    expect(await statusOf(stormId)).toBe('billed');
+  });
+});

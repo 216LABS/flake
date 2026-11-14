@@ -141,11 +141,21 @@ export async function generateDrafts(ctx: Ctx, stormId: string) {
       }
       if (stale.length) await tx.delete(invoice_draft).where(and(inArray(invoice_draft.id, stale.map((d) => d.id)), eq(invoice_draft.tenant_id, ctx.tenantId), eq(invoice_draft.status, 'draft')));
     });
+    await settleStorm(tx, stormId);
     return tx.select({ draft: invoice_draft, customer }).from(invoice_draft).innerJoin(customer, eq(customer.id, invoice_draft.customer_id)).where(eq(invoice_draft.storm_id, stormId));
   });
 }
 
 export const draftClean = (flags: unknown) => isDraftClean(flags as BillingFlag[]);
+
+/**
+ * A closed storm with nothing left in review is billed, whether its last bill was approved or voided, or it had none
+ * to make (only seasonal or skipped lots). Otherwise it would sit on "Ready to bill" for good.
+ */
+async function settleStorm(tx: Tx, stormId: string) {
+  const [open] = await tx.select({ id: invoice_draft.id }).from(invoice_draft).where(and(eq(invoice_draft.storm_id, stormId), eq(invoice_draft.status, 'draft'))).limit(1);
+  if (!open) await tx.update(storm).set({ status: 'billed' }).where(and(eq(storm.id, stormId), eq(storm.status, 'closed')));
+}
 
 /**
  * A late after photo (issue 75): remake the storm's drafts still in review so their photo flags match what the office
@@ -261,10 +271,7 @@ export async function approveDrafts(ctx: Ctx, draftIds: string[]) {
   const stormIds = [...new Set(approved.map((d) => d.storm_id))];
   if (stormIds.length) {
     await withUser(ctx.userId, async (tx) => {
-      for (const id of stormIds) {
-        const remaining = await tx.select({ id: invoice_draft.id }).from(invoice_draft).where(and(eq(invoice_draft.storm_id, id), eq(invoice_draft.status, 'draft')));
-        if (!remaining.length) await tx.update(storm).set({ status: 'billed' }).where(and(eq(storm.id, id), eq(storm.status, 'closed')));
-      }
+      for (const id of stormIds) await settleStorm(tx, id);
     });
   }
   return { approved: approved.length };
@@ -338,8 +345,10 @@ export async function reviseDraft(ctx: Ctx, draftId: string, to: 'draft' | 'void
     if (!now || !from.includes(now.status!)) throw new HttpError(409, NOT_REVISABLE[now?.status ?? 'void'] ?? 'This invoice can no longer be changed.', 'not_revisable');
     const detail = { void: 'Voided by the office', draft: 'Taken back for review', paid: 'Paid outside Stripe, marked by the office' }[to];
     await asService(tx, ctx.tenantId, () => tx.update(invoice_draft).set({ status: to, status_detail: detail }).where(and(eq(invoice_draft.id, draftId), eq(invoice_draft.tenant_id, ctx.tenantId))));
-    // A storm counts as billed once nothing is left in review, so taking one back reopens its billing.
+    // A storm counts as billed once nothing is left in review, so taking one back reopens its billing, and voiding the
+    // last one in review finishes it.
     if (to === 'draft') await tx.update(storm).set({ status: 'closed' }).where(and(eq(storm.id, mine.storm_id), eq(storm.status, 'billed')));
+    else await settleStorm(tx, mine.storm_id);
     return { ok: true, status: to };
   });
 }

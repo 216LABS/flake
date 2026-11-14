@@ -27,7 +27,7 @@ const TONE: Record<string, 'gray' | 'blue' | 'green' | 'amber' | 'red'> = { draf
 
 const SALT_UNIT: Record<string, string> = { bag50lb: 'bags', lb: 'lb', ton: 'tons', application: 'applications' };
 
-export function BillingReview({ stormId, initial, canExport, showFees, stormActive = false, stripeReady = true }: { stormId: string; initial: DraftRow[]; canExport: boolean; showFees: boolean; stormActive?: boolean; stripeReady?: boolean }) {
+export function BillingReview({ stormId, initial, canExport, showFees, stormActive = false, stripeReady = true, nothingToBill = false }: { stormId: string; initial: DraftRow[]; canExport: boolean; showFees: boolean; stormActive?: boolean; stripeReady?: boolean; nothingToBill?: boolean }) {
   const router = useRouter();
   const [ask, dialog] = useConfirm();
   const [rows, setRows] = useState(initial);
@@ -105,7 +105,9 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
         {canExport ? <a className={buttonVariants({ variant: 'outline' })} data-testid="qbo" href={`/api/billing/export.csv?storm=${stormId}`}>QuickBooks CSV (approved)</a> : null}
       </div>
       {error ? <p className="mb-3 rounded-md bg-danger-tint p-3 text-sm text-danger" role="alert">{error}</p> : null}
-      {!rows.length ? <EmptyState title="No drafts yet" body="Generate drafts to price this storm's visits." /> : null}
+      {!rows.length ? (nothingToBill
+        ? <EmptyState title="Nothing to bill for this storm" body="Its lots are on seasonal contracts, or were skipped, so no invoice was needed. Seasonal installments bill on their own each month." />
+        : <EmptyState title="No drafts yet" body="Generate drafts to price this storm's visits." />) : null}
       {rows.length ? <p className="mb-3 text-sm text-muted">{flagged.length} flagged, {clean.length} clean and ready. Total {money(total)}.{showFees ? ` Flake fees ${money(fees)}.` : ''}</p> : null}
       {rows.length && (tierCount('money') || tierCount('proof')) ? (
         <p className="mb-3 text-sm" data-testid="flag-tiers">
