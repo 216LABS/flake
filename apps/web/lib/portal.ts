@@ -70,8 +70,9 @@ export async function portalData(customerId: string, tenantId: string) {
   const photos = visitIds.length ? await db.select({ id: visit_photo.id, visit_id: visit_photo.visit_id, phase: visit_photo.phase, taken_device_at: visit_photo.taken_device_at }).from(visit_photo).where(and(eq(visit_photo.tenant_id, tenantId), inArray(visit_photo.visit_id, visitIds))) : [];
   const corrections = visitIds.length ? await db.select().from(visit_correction).where(and(eq(visit_correction.tenant_id, tenantId), inArray(visit_correction.visit_id, visitIds), eq(visit_correction.field, 'salt'))).orderBy(visit_correction.created_at) : [];
   const invoices = await db.select({ d: invoice_draft, stormName: storm.name }).from(invoice_draft).innerJoin(storm, eq(storm.id, invoice_draft.storm_id))
-    .where(and(eq(invoice_draft.tenant_id, tenantId), eq(invoice_draft.customer_id, customerId), inArray(invoice_draft.status, ['charged', 'sent', 'paid', 'failed']))).orderBy(desc(invoice_draft.created_at)).limit(100);
+    .where(and(eq(invoice_draft.tenant_id, tenantId), eq(invoice_draft.customer_id, customerId), inArray(invoice_draft.status, ['approved', 'charged', 'sent', 'paid', 'failed']))).orderBy(desc(invoice_draft.created_at)).limit(100);
   const packets = siteIds.length ? await db.select({ id: proof_packet.id, site_id: proof_packet.site_id, from: proof_packet.from_ts, to: proof_packet.to_ts, created_at: proof_packet.created_at }).from(proof_packet).where(and(eq(proof_packet.tenant_id, tenantId), inArray(proof_packet.site_id, siteIds))).orderBy(desc(proof_packet.created_at)).limit(50) : [];
+  const owedOffline = row.c.billing_mode === 'manual' || !row.t.stripe_account_id || !row.t.stripe_charges_enabled;
   const saltOf = (id: string, own: { unit: string; qty: number }[] | null) => (corrections.filter((c) => c.visit_id === id).pop()?.new_value as typeof own | undefined) ?? own;
   return {
     company: { name: row.t.name, phone: row.t.contact_phone, email: row.t.contact_email, timezone: row.t.timezone },
@@ -93,9 +94,11 @@ export async function portalData(customerId: string, tenantId: string) {
       };
     }),
     // What each invoice is for, line by line, so a Due invoice is readable without a payment link (issue 60).
-    invoices: invoices.map(({ d, stormName }) => ({
+    // An approved invoice nobody will charge (manual billing, or payments not connected) is owed by check; one about to
+    // be charged in a moment isn't shown, so a card customer isn't told to mail a check.
+    invoices: invoices.filter(({ d }) => d.status !== 'approved' || owedOffline).map(({ d, stormName }) => ({
       id: d.id, storm: stormName, total_cents: d.subtotal_cents, status: d.status, created_at: d.created_at,
-      due: d.status === 'sent' || d.status === 'failed',
+      due: d.status === 'sent' || d.status === 'failed' || d.status === 'approved',
       pay_link: d.status === 'sent' || d.status === 'failed' ? d.pay_link : null,
       lines: (d.lines as { description: string; quantity: number; amount_cents: number }[]).map((l) => ({ description: l.description, quantity: l.quantity, amount_cents: l.amount_cents })),
     })),

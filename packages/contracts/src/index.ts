@@ -159,7 +159,7 @@ export const stormClose = z.object({ force: z.boolean().default(false) });
 export const stormCallOut = z.object({ time: z.string().max(40) });
 
 export const billingRetry = z.object({ draftId: uuid });
-export const billingRevise = z.object({ draftId: uuid, to: z.enum(['draft', 'void']) });
+export const billingRevise = z.object({ draftId: uuid, to: z.enum(['draft', 'void', 'paid']) });
 export const billingApprove = z.object({ draftIds: z.array(uuid).min(1).max(500) });
 export const flagFix = z.discriminatedUnion('action', [
   z.object({ action: z.literal('waive'), storm_id: uuid, flag_key: z.string().max(200) }),
@@ -170,6 +170,8 @@ export const flagFix = z.discriminatedUnion('action', [
   z.object({ action: z.literal('salt'), storm_id: uuid, visit_id: uuid, unit: saltUnit, qty: z.number().positive().max(10000) }),
   z.object({ action: z.literal('depth'), storm_id: uuid, site_id: uuid, depth_in: z.number().min(0).max(120) }),
   z.object({ action: z.literal('services'), storm_id: uuid, visit_id: uuid, services: z.array(serviceKind).min(1).max(4) }),
+  /** A visit with an Arrive and no Done: the office enters how long the driver was there. */
+  z.object({ action: z.literal('finish'), storm_id: uuid, visit_id: uuid, minutes: z.number().int().min(1).max(720), services: z.array(serviceKind).min(1).max(4) }),
 ]);
 
 /** One packet covers up to two seasons. A wider range is a mistake, and its photos would not fit in one PDF. */

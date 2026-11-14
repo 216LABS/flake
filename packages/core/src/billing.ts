@@ -63,6 +63,8 @@ export interface BillingFlag {
   unit?: string;
   /** For no_service: the contract's priced services, which a fix can add to the visit. */
   services?: string[];
+  /** For missing_visit: the driver's visit that has an Arrive and no Done, which the office can finish. */
+  open_visit_id?: string;
 }
 
 export interface BillingSite {
@@ -134,14 +136,17 @@ export function applyCorrections(visits: BillingVisit[], corrections: VisitCorre
 /** Longer than this on one hourly lot is unusual enough for a person to look before it bills. */
 const LONG_VISIT_MINUTES = 4 * 60;
 
-function flagsForSite(site: BillingSite, contract: BillingContract | undefined, statuses: string[], visits: BillingVisit[], depthIn: number | null): BillingFlag[] {
+function flagsForSite(site: BillingSite, contract: BillingContract | undefined, statuses: string[], visits: BillingVisit[], depthIn: number | null, open?: BillingVisit): BillingFlag[] {
   const flags: BillingFlag[] = [];
-  const add = (code: FlagCode, message: string, visit_id?: string, severity: BillingFlag['severity'] = 'review', extra: Pick<BillingFlag, 'unit' | 'services'> = {}) =>
+  const add = (code: FlagCode, message: string, visit_id?: string, severity: BillingFlag['severity'] = 'review', extra: Pick<BillingFlag, 'unit' | 'services' | 'open_visit_id'> = {}) =>
     flags.push({ code, site_id: site.id, message, severity, ...(visit_id ? { visit_id } : {}), ...extra });
   const saltUnit = contract?.salt_pricing?.unit;
 
   if (!visits.length && statuses.some((s) => s !== 'skipped')) {
-    add('missing_visit', `${site.label} was in this storm's runs but has no completed visit.`);
+    // The driver arrived and never tapped Done (a dead phone, or forgot): the office can finish it to bill the work.
+    const services = [...new Set((contract?.services ?? []).map((s) => s.service as string).filter((s) => s !== 'salt'))];
+    if (open) add('missing_visit', `${site.label}: the driver arrived but never tapped Done, so the visit isn't finished. Enter how long they were there to bill it, or mark it skipped.`, undefined, 'review', { open_visit_id: open.id, services: services.length ? services : ['plow'] });
+    else add('missing_visit', `${site.label} was in this storm's runs but has no completed visit.`);
   }
   const sorted = [...visits].sort((a, b) => Date.parse(a.arrived_at) - Date.parse(b.arrived_at));
   sorted.forEach((v, i) => {
@@ -200,7 +205,8 @@ function flagsForSite(site: BillingSite, contract: BillingContract | undefined, 
 /** One draft per customer with priced lines and flags. A draft with only info or waived flags is clean. */
 export function draftInvoices(input: DraftInput): DraftInvoice[] {
   const waived = new Set(input.waived ?? []);
-  const effective = applyCorrections(input.visits, input.corrections).filter((v) => v.departed_at !== null);
+  const corrected = applyCorrections(input.visits, input.corrections);
+  const effective = corrected.filter((v) => v.departed_at !== null);
   const byCustomer = new Map<string, DraftInvoice>();
 
   for (const site of input.sites) {
@@ -214,7 +220,7 @@ export function draftInvoices(input: DraftInput): DraftInvoice[] {
     // "Don't bill" on a lot under its trigger: its work stays on record, its charge comes off this storm's bill.
     const noBill = waived.has(noBillKey(site.id));
     const lines = contract && !noBill ? priceSiteForStorm(contract.services, contract.salt_pricing, visits, depthCtx) : [];
-    const flags = flagsForSite(site, contract, statuses, visits, stormDepthIn(visits.map((v) => v.depth_in), depthCtx))
+    const flags = flagsForSite(site, contract, statuses, visits, stormDepthIn(visits.map((v) => v.depth_in), depthCtx), corrected.find((v) => v.site_id === site.id && v.departed_at === null))
       .map((f) => (noBill && f.code === 'below_trigger' ? { ...f, message: `${f.message} Not billed for this storm.`, waived: true } : f));
     // No contract signed for this season yet: last season's prices carry on (most plow contracts renew), but the
     // office sees it so a price change isn't missed.

@@ -18,6 +18,12 @@ export const STORM_STATUS: Record<string, { word: string; tone: 'blue' | 'amber'
 };
 export const stormStatus = (status: string) => STORM_STATUS[status] ?? { word: status, tone: 'amber' as const };
 
+/** An invoice's status, in words. */
+export const INVOICE_STATUS: Record<string, string> = {
+  draft: 'In review', approved: 'Approved', charged: 'Charged', sent: 'Invoice sent', paid: 'Paid', failed: 'Payment failed', void: 'Void',
+};
+export const invoiceStatus = (status: string) => INVOICE_STATUS[status] ?? status;
+
 export const PRICING_LABEL: Record<string, string> = { per_push: 'Per push', per_inch_tier: 'Per inch tiers', per_event: 'Per event', seasonal: 'Seasonal', hourly: 'Hourly' };
 export const pricingLabel = (type: string) => PRICING_LABEL[type] ?? type.replace(/_/g, ' ');
 

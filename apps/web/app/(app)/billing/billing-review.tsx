@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useConfirm } from '@/components/confirm';
 import { api, money } from '@/lib/client';
-import { billingLabel } from '@/lib/labels';
+import { billingLabel, invoiceStatus } from '@/lib/labels';
 
 export interface DraftRow {
   id: string;
@@ -78,10 +78,12 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
 
   if (stormActive) return <EmptyState title="This storm is still going" body="Close it on the storm board when the work is done. Its invoices are drafted here after that, so nothing still coming in is missed." />;
 
-  const revise = async (r: DraftRow, to: 'draft' | 'void') => {
+  const revise = async (r: DraftRow, to: 'draft' | 'void' | 'paid') => {
     const ok = await ask(to === 'void'
       ? { title: `Void ${r.customer}'s invoice?`, body: <>Nothing more is charged for it. {r.pay_link ? 'A pay link already went to the customer: deactivate it in your Stripe dashboard too.' : ''}</>, confirm: 'Void invoice', danger: true }
-      : { title: `Take ${r.customer}'s invoice back to review?`, body: 'Nothing is charged until you approve it again.', confirm: 'Back to review' });
+      : to === 'paid'
+        ? { title: `Mark ${r.customer}'s invoice paid?`, body: <>For a check, cash or other payment you already have. Nothing is charged for it. {r.pay_link ? 'A pay link already went to the customer: deactivate it in your Stripe dashboard so they don\'t pay twice.' : ''}</>, confirm: 'Mark paid' }
+        : { title: `Take ${r.customer}'s invoice back to review?`, body: 'Nothing is charged until you approve it again.', confirm: 'Back to review' });
     if (ok) await run(() => api('/api/billing/revise', { body: { draftId: r.id, to } }));
   };
   return (
@@ -89,7 +91,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
       {dialog}
       {!stripeReady && rows.length ? (
         <p className="mb-4 rounded-md bg-info-tint p-3 text-sm text-link" data-testid="stripe-not-connected">
-          Stripe isn&apos;t connected, so approving doesn&apos;t charge anyone yet. Approved invoices wait here. Connect Stripe in <a className="underline" href="/settings?tab=payments">Settings, Payments</a>, then press Charge now on each, or bill them yourself from the QuickBooks CSV.
+          Stripe isn&apos;t connected, so approving doesn&apos;t charge anyone yet. Approved invoices wait here. Connect Stripe in <a className="underline" href="/settings?tab=payments">Settings, Payments</a>, then press Charge now on each. Or bill them yourself (the QuickBooks CSV has every line) and press Mark paid when the money comes in.
         </p>
       ) : null}
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -125,13 +127,14 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
               <div className="font-semibold">{r.customer}</div>
               <div className="flex items-center gap-2">
                 {r.disputed ? <Badge tone="red">Disputed: generate a proof packet</Badge> : null}
-                <Badge tone={TONE[r.status]} data-testid="draft-status">{r.status}</Badge>
+                <Badge tone={TONE[r.status]} data-testid="draft-status">{invoiceStatus(r.status)}</Badge>
                 <span className="font-semibold" data-testid="draft-total">{money(r.subtotal_cents)}</span>
               </div>
             </div>
             {r.status_detail ? <p className="mt-1 text-sm text-warn-ink" data-testid="status-detail">{r.status_detail}</p> : null}
             <div className="mt-1 flex flex-wrap gap-2">
               {r.status === 'failed' || (r.status === 'approved' && r.status_detail && r.billing_mode !== 'manual') ? <Button size="sm" variant="outline" disabled={busy || (r.status === 'approved' && !stripeReady)} data-testid="retry" onClick={() => run(() => api('/api/billing/retry', { body: { draftId: r.id } }))}>{r.status === 'failed' ? 'Try again' : 'Charge now'}</Button> : null}
+              {r.status === 'approved' || r.status === 'failed' ? <Button size="sm" variant="outline" disabled={busy} data-testid="mark-paid" onClick={() => void revise(r, 'paid')}>Mark paid</Button> : null}
               {r.status === 'approved' || r.status === 'failed' ? <Button size="sm" variant="ghost" disabled={busy} data-testid="unapprove" onClick={() => void revise(r, 'draft')}>Back to review</Button> : null}
               {['draft', 'approved', 'failed'].includes(r.status) ? <Button size="sm" variant="ghost" disabled={busy} data-testid="void" onClick={() => void revise(r, 'void')}>Void</Button> : null}
             </div>
@@ -169,6 +172,13 @@ function FlagRow({ flag, editable, busy, onFix }: { flag: BillingFlag; editable:
       <div>{flag.message}{flag.waived ? ' (waived)' : ''}</div>
       {editable && flag.severity === 'review' && !flag.waived ? (
         <div className="mt-1 flex flex-wrap items-center gap-2">
+          {flag.code === 'missing_visit' && flag.open_visit_id ? (
+            <>
+              <Input aria-label="Minutes on site" className="h-8 w-20" type="number" min={1} max={720} step={1} value={qty} onChange={(e) => setQty(e.target.value)} data-testid="finish-minutes" />
+              <span className="text-xs">min on site</span>
+              <Button size="sm" variant="outline" disabled={busy || !(Number.isInteger(Number(qty)) && Number(qty) >= 1 && Number(qty) <= 720)} data-testid="fix-finish" onClick={() => onFix({ action: 'finish', visit_id: flag.open_visit_id, minutes: Number(qty), services: flag.services ?? ['plow'] })}>Finish visit</Button>
+            </>
+          ) : null}
           {flag.code === 'missing_visit' ? <Button size="sm" variant="outline" disabled={busy} data-testid="fix-skip" onClick={() => onFix({ action: 'skip', site_id: flag.site_id })}>Mark skipped</Button> : null}
           {flag.code === 'duplicate' && flag.visit_id ? <Button size="sm" variant="outline" disabled={busy} data-testid="fix-replow" onClick={() => onFix({ action: 'replow', visit_id: flag.visit_id })}>Mark re-plow</Button> : null}
           {(flag.code === 'missing_salt_qty' || flag.code === 'salt_unit') && flag.visit_id ? (

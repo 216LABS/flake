@@ -74,6 +74,16 @@ describe('draftInvoices flags', () => {
     // Not reached yet: nothing to decide about pay.
     expect(draftInvoices({ ...seasonal, visits: [], stops: [{ site_id: 's1', status: 'pending' }] })[0]!.flags.some((x) => x.code === 'prior_season')).toBe(false);
   });
+  it('an Arrive with no Done names the open visit so the office can finish it', () => {
+    const open = v('s1', { departed_at: null });
+    const f = draftInvoices(input({ visits: [open], stops: [{ site_id: 's1', status: 'onsite' }] }))[0]!.flags[0]!;
+    expect(f).toMatchObject({ code: 'missing_visit', open_visit_id: open.id, services: ['plow'] });
+    expect(f.visit_id).toBeUndefined();
+    // No contract: still finishable, as a plow visit.
+    expect(draftInvoices(input({ contracts: [], visits: [open], stops: [{ site_id: 's1', status: 'onsite' }] }))[0]!.flags.find((x) => x.code === 'missing_visit')!.services).toEqual(['plow']);
+    // Nobody arrived: nothing to finish.
+    expect(draftInvoices(input({ visits: [], stops: [{ site_id: 's1', status: 'open' }] }))[0]!.flags[0]!.open_visit_id).toBeUndefined();
+  });
   it('seasonal_info stays informational on a draft that also has a charge', () => {
     const contracts: BillingContract[] = [{ site_id: 's1', services: [{ service: 'plow', pricing: { type: 'seasonal', total_cents: 100, installments: 5 } }, { service: 'walks', pricing: { type: 'per_push', amount_cents: 2500 } }] }];
     const [d] = draftInvoices(input({ contracts, visits: [v('s1', { services: ['plow', 'walks'] })] }));

@@ -203,7 +203,7 @@ export async function patchRunStop(ctx: Ctx, stopId: string, patch: z.infer<type
     if (patch.storm_run_id && patch.storm_run_id !== stop.storm_run_id) {
       if (stop.status === 'onsite') throw new HttpError(409, 'The driver is on site. Wait until they finish.', 'onsite');
       // A finished stop stays with the truck that did it, so pay and records credit the right driver.
-      if (stop.status === 'done') throw new HttpError(409, 'That stop is already done. Reopen it to send a truck back.', 'done');
+      if (stop.status === 'done') throw new HttpError(409, 'That stop is already done. Add a pass to send a truck back.', 'done');
       const [target] = await tx.select().from(storm_run).where(eq(storm_run.id, patch.storm_run_id));
       const [source] = await tx.select().from(storm_run).where(eq(storm_run.id, stop.storm_run_id));
       if (!target || target.storm_id !== source!.storm_id) throw new HttpError(422, 'That run is not in this storm');
@@ -220,6 +220,10 @@ export async function patchRunStop(ctx: Ctx, stopId: string, patch: z.infer<type
     // a finished visit that still bills (found testing the storm rules).
     if (patch.status === 'skipped' && stop.status === 'onsite') throw new HttpError(409, 'The driver is on site. Wait until they finish.', 'onsite');
     if (patch.status === 'skipped' && stop.status === 'done') throw new HttpError(409, 'That stop is already done.', 'done');
+    // Reopen is for a skipped lot. A done one already has its visit, so a driver arriving again would be refused as a
+    // second visit; a new pass is how trucks go back.
+    if (patch.status === 'open' && stop.status === 'onsite') throw new HttpError(409, 'The driver is on site. Wait until they finish.', 'onsite');
+    if (patch.status === 'open' && stop.status === 'done') throw new HttpError(409, 'That stop is already done. Add a pass to send a truck back.', 'done');
     if (patch.status) set.status = patch.status;
     const [updated] = await tx.update(run_stop).set(set).where(eq(run_stop.id, stopId)).returning();
     return { stop: updated!, moved };

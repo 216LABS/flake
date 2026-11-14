@@ -14,6 +14,7 @@ const STATUS: Record<string, { label: string; tone: 'green' | 'amber' | 'red' | 
   paid: { label: 'Paid', tone: 'green' },
   charged: { label: 'Charged to card on file', tone: 'green' },
   sent: { label: 'Due', tone: 'amber' },
+  approved: { label: 'Due', tone: 'amber' },
   failed: { label: 'Payment failed', tone: 'red' },
 };
 

@@ -1,4 +1,4 @@
-import { and, or, asc, asService, contract, customer, membership, desc, eq, inArray, installment_invoice, invoice_draft, notInArray, isNotNull, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
+import { and, or, asc, asService, contract, customer, membership, desc, eq, inArray, installment_invoice, invoice_draft, notInArray, isNotNull, isNull, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
 import { applyCorrections, draftInvoices, flagKey, isDraftClean, type BillingContract, type BillingFlag, type BillingVisit } from '@flake/core/billing';
 import { applicationFeeCents, feeRate, proFeaturesEnabled, type Plan } from '@flake/core/fees';
 import { seasonalInstallments, type ContractService, type Pricing, type SaltPricing, type StormDepthContext } from '@flake/core/pricing';
@@ -176,7 +176,25 @@ export async function applyFlagFix(ctx: Ctx, fix: z.infer<typeof flagFix>) {
       }
       case 'skip': {
         const runs = await tx.select({ id: storm_run.id }).from(storm_run).where(eq(storm_run.storm_id, fix.storm_id));
-        if (runs.length) await tx.update(run_stop).set({ status: 'skipped', updated_at: new Date().toISOString() }).where(and(inArray(run_stop.storm_run_id, runs.map((r) => r.id)), eq(run_stop.site_id, fix.site_id), inArray(run_stop.status, ['open', 'enroute', 'problem'])));
+        // A driver left on site (no Done) counts too: their half-open visit is voided, as when a driver skips after arriving.
+        if (runs.length) await tx.update(run_stop).set({ status: 'skipped', updated_at: new Date().toISOString() }).where(and(inArray(run_stop.storm_run_id, runs.map((r) => r.id)), eq(run_stop.site_id, fix.site_id), inArray(run_stop.status, ['open', 'enroute', 'problem', 'onsite'])));
+        const open = await tx.select({ id: visit.id }).from(visit).where(and(eq(visit.storm_id, fix.storm_id), eq(visit.site_id, fix.site_id), isNull(visit.departed_device_at)));
+        for (const v of open) await tx.insert(visit_correction).values({ tenant_id: ctx.tenantId, visit_id: v.id, field: 'voided', old_value: false, new_value: true, reason: 'Marked skipped in billing review', by_user: ctx.userId });
+        break;
+      }
+      case 'finish': {
+        const [v] = await tx.select().from(visit).where(and(eq(visit.id, fix.visit_id), eq(visit.storm_id, fix.storm_id)));
+        if (!v) throw new HttpError(404, 'Visit not found');
+        if (v.departed_device_at) break;
+        const [s] = await tx.select({ status: storm.status }).from(storm).where(eq(storm.id, fix.storm_id));
+        if (s?.status === 'active') throw new HttpError(409, 'This storm is still running, so the driver can still tap Done. Close the storm first.', 'storm_active');
+        const now = new Date().toISOString();
+        // Completing the visit is the one change the visit table allows. The note says who entered the time.
+        await asService(tx, ctx.tenantId, async () => {
+          await tx.update(visit).set({ departed_device_at: new Date(Date.parse(v.arrived_device_at) + fix.minutes * 60000).toISOString(), departed_received_at: now, services: fix.services, notes: v.notes ?? 'Done time entered by the office' })
+            .where(and(eq(visit.id, v.id), eq(visit.tenant_id, ctx.tenantId), isNull(visit.departed_device_at)));
+          if (v.run_stop_id) await tx.update(run_stop).set({ status: 'done', updated_at: now }).where(and(eq(run_stop.id, v.run_stop_id), eq(run_stop.tenant_id, ctx.tenantId)));
+        });
         break;
       }
       case 'skip_all': {
@@ -304,10 +322,11 @@ const NOT_REVISABLE: Record<string, string> = {
 };
 
 /**
- * Takes an approved or failed invoice back to review, or voids it. Waits for a charge already running on it, then
- * decides from where that charge left it, so a void can't land on top of a payment that just went through.
+ * Takes an approved or failed invoice back to review, voids it, or marks it paid when the customer paid some other way
+ * (a check, cash, or before Stripe was connected). Waits for a charge already running on it, then decides from where
+ * that charge left it, so a void can't land on top of a payment that just went through.
  */
-export async function reviseDraft(ctx: Ctx, draftId: string, to: 'draft' | 'void') {
+export async function reviseDraft(ctx: Ctx, draftId: string, to: 'draft' | 'void' | 'paid') {
   return withUser(ctx.userId, async (tx) => {
     const [mine] = await tx.select({ id: invoice_draft.id, storm_id: invoice_draft.storm_id }).from(invoice_draft).where(eq(invoice_draft.id, draftId));
     if (!mine) throw new HttpError(404, 'Invoice not found');
@@ -315,7 +334,8 @@ export async function reviseDraft(ctx: Ctx, draftId: string, to: 'draft' | 'void
     const [now] = await tx.select({ status: invoice_draft.status }).from(invoice_draft).where(eq(invoice_draft.id, draftId));
     const from = to === 'void' ? ['draft', 'approved', 'failed'] : ['approved', 'failed'];
     if (!now || !from.includes(now.status!)) throw new HttpError(409, NOT_REVISABLE[now?.status ?? 'void'] ?? 'This invoice can no longer be changed.', 'not_revisable');
-    await asService(tx, ctx.tenantId, () => tx.update(invoice_draft).set({ status: to, status_detail: to === 'void' ? 'Voided by the office' : 'Taken back for review' }).where(and(eq(invoice_draft.id, draftId), eq(invoice_draft.tenant_id, ctx.tenantId))));
+    const detail = { void: 'Voided by the office', draft: 'Taken back for review', paid: 'Paid outside Stripe, marked by the office' }[to];
+    await asService(tx, ctx.tenantId, () => tx.update(invoice_draft).set({ status: to, status_detail: detail }).where(and(eq(invoice_draft.id, draftId), eq(invoice_draft.tenant_id, ctx.tenantId))));
     // A storm counts as billed once nothing is left in review, so taking one back reopens its billing.
     if (to === 'draft') await tx.update(storm).set({ status: 'closed' }).where(and(eq(storm.id, mine.storm_id), eq(storm.status, 'billed')));
     return { ok: true, status: to };
