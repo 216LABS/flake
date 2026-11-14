@@ -52,6 +52,7 @@ export async function createStorm(ctx: Ctx, raw: z.input<typeof stormCreate>) {
     for (const routeId of input.routeIds) {
       const [r] = await tx.select().from(route).where(eq(route.id, routeId));
       if (!r) throw new HttpError(404, 'Route not found');
+      if (r.archived_at) throw new HttpError(409, `${r.name} is archived. Restore it on Routes to use it in a storm.`, 'route_archived');
       // Retired sites stay on old storms but don't join new ones.
       const stops = await tx.select({ site_id: route_stop.site_id }).from(route_stop).innerJoin(site, eq(site.id, route_stop.site_id)).where(and(eq(route_stop.route_id, routeId), eq(site.active, true))).orderBy(asc(route_stop.seq));
       // A lot on two of the chosen routes goes on the first one only, so it isn't plowed twice (issue 26).

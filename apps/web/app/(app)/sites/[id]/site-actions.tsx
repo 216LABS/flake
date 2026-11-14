@@ -40,6 +40,7 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [] 
   const [season, setSeason] = useState(defaultSeason);
   const [salt, setSalt] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
+  const [lots, setLots] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ask, dialog] = useConfirm();
@@ -55,6 +56,7 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [] 
       const services = [{ service: 'plow', trigger_in: Number(trigger), pricing: pricing(type, dollarsToCents(price)) }, ...(salt ? [{ service: 'salt', trigger_in: null }] : [])];
       const out = await api('/api/quotes', { body: { site_id: siteId, season: season.trim(), services, salt_pricing: salt ? { unit: 'bag50lb', amount_cents: saltCents } : null, send } });
       setSent(send);
+      setLots(out.lots ?? 1);
       setUrl(out.url);
       router.refresh();
     } catch (e) {
@@ -74,14 +76,14 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [] 
         {zero ? <p className="text-xs text-warn-ink" data-testid="q-zero-warning">0 inches means any measurable snow starts service{type === 'seasonal' ? '.' : ', so every dusting is billable.'}</p> : null}
         <div><Label htmlFor="q-season">Season</Label><Input id="q-season" value={season} maxLength={40} onChange={(e) => setSeason(e.target.value)} /></div>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={salt} onChange={(e) => setSalt(e.target.checked)} /> Include salt per 50 lb bag</label>
-        {replaces ? <p className="rounded-md bg-warn-tint p-2 text-xs text-warn-ink" data-testid="q-replaces">This lot already has a signed contract for {season.trim()}. If the customer accepts this quote, it replaces that one. Seasonal installments already billed carry over.</p> : null}
+        {replaces ? <p className="rounded-md bg-warn-tint p-2 text-xs text-warn-ink" data-testid="q-replaces">This lot already has a signed contract for {season.trim()}. If the customer accepts this quote, it replaces that one. Seasonal installments already billed count toward the new price, and the rest of it is split over the installments left.</p> : null}
       </div>
       {price !== '' && problem ? <p className="mt-2 text-sm text-danger" data-testid="q-problem">{problem}</p> : null}
       <Button className="mt-3 w-full" disabled={busy || Boolean(problem) || !season.trim()} data-testid="q-send" onClick={() => void make(true)}>Send quote</Button>
       {/* For a quote handed over in person or sent from the office's own phone: nothing is emailed or texted (issue 92). */}
       <Button variant="outline" className="mt-2 w-full" disabled={busy || Boolean(problem) || !season.trim()} data-testid="q-link-only" onClick={() => void make(false)}>Get link only, don&apos;t send</Button>
       {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
-      {url ? <div className="mt-2"><Label>{sent ? 'Quote link. Share it if the customer has no email on file.' : 'Quote link. Nothing was sent, so share it with the customer.'}</Label><Input readOnly value={url} data-testid="q-url" /></div> : null}
+      {url ? <div className="mt-2"><Label>{sent ? 'Quote link. Share it if the customer has no email on file.' : 'Quote link. Nothing was sent, so share it with the customer.'}</Label><Input readOnly value={url} data-testid="q-url" />{lots > 1 ? <p className="mt-1 text-xs text-muted" data-testid="q-lots">The same link as this customer&apos;s other waiting quote{lots > 2 ? 's' : ''}: it covers all {lots} properties, and one signature accepts them all.</p> : null}</div> : null}
     </Card>
   );
 }

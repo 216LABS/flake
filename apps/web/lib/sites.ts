@@ -1,4 +1,11 @@
-import { and, eq, inArray, route_stop, run_stop, storm, storm_run, type Tx } from '@flake/db';
+import { and, customer, eq, inArray, route_stop, run_stop, storm, storm_run, type Tx } from '@flake/db';
+import { HttpError } from './http';
+
+/** An archived customer's lots are retired with them, so none is added or brought back until the customer is restored. */
+export async function requireLiveCustomer(tx: Tx, customerId: string) {
+  const [c] = await tx.select({ archived_at: customer.archived_at }).from(customer).where(eq(customer.id, customerId));
+  if (c?.archived_at) throw new HttpError(409, 'This customer is archived. Restore them first.', 'customer_archived');
+}
 
 /**
  * A retired lot leaves its routes, and its unfinished stops on a running storm are skipped, so no truck is sent

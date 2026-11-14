@@ -1,4 +1,4 @@
-import { asc, customer, eq, route, route_stop } from '@flake/db';
+import { asc, customer, eq, isNull, route, route_stop } from '@flake/db';
 import { DEFAULT_RATE_CARD, type RateCard } from '@flake/core/quote';
 import { redirect } from 'next/navigation';
 import { asUser, requirePage } from '@/lib/auth';
@@ -13,7 +13,7 @@ export default async function NewCustomer({ searchParams }: { searchParams: Prom
   const ctx = await requirePage();
   if (ctx.role === 'viewer') redirect('/customers');
   const { routes, stops, existing } = await asUser(ctx, async (tx) => ({
-    routes: await tx.select().from(route),
+    routes: await tx.select().from(route).where(isNull(route.archived_at)),
     stops: await tx.select().from(route_stop).orderBy(asc(route_stop.seq)),
     existing: customerId && isUuid(customerId) ? (await tx.select().from(customer).where(eq(customer.id, customerId)))[0] : undefined,
   }));

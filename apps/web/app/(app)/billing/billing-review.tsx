@@ -64,7 +64,8 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
   // Lots nobody reached make $0 drafts with only "missing visit" on them. They're one list with one action at the top,
   // not a card each (issue 85).
   const open = (r: DraftRow) => r.flags.filter((f) => f.severity === 'review' && !f.waived);
-  const unplowed = rows.filter((r) => r.status === 'draft' && r.subtotal_cents === 0 && open(r).length > 0 && open(r).every((f) => f.code === 'missing_visit'));
+  // A lot where the driver arrived and never tapped Done was plowed: it stays in the list, where it can be finished.
+  const unplowed = rows.filter((r) => r.status === 'draft' && r.subtotal_cents === 0 && open(r).length > 0 && open(r).every((f) => f.code === 'missing_visit' && !f.open_visit_id));
   const unplowedSites = [...new Set(unplowed.flatMap((r) => open(r).map((f) => f.site_id)))];
   // Money at risk first, then missing proof (issue 78).
   const worst = (r: DraftRow) => Math.min(...open(r).map((f) => TIER_ORDER.indexOf(FLAG_TIER[f.code])), TIER_ORDER.length);
@@ -151,7 +152,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
               </ul>
             ) : null}
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-faint">
-              <span>{showFees ? `Only owners see this: Flake fee ${money(r.fee_cents)}. Estimated Stripe fee ${money(r.stripe_fee_cents)}. ` : ''}{billingLabel(r.billing_mode)}.</span>
+              <span>{showFees ? (r.billing_mode === 'manual' ? 'Billed outside Stripe, so no Flake or Stripe fee. ' : `Only owners see this: Flake fee ${money(r.fee_cents)}. Estimated Stripe fee ${money(r.stripe_fee_cents)}. `) : ''}{billingLabel(r.billing_mode)}.</span>
               {r.status === 'draft' && isDraftClean(r.flags) ? <Button size="sm" variant="outline" disabled={busy} data-testid="approve-one" onClick={() => run(() => api('/api/billing/approve', { body: { draftIds: [r.id] } }))}>Approve</Button> : null}
               {r.status === 'draft' && !isDraftClean(r.flags) ? <span className="font-medium text-warn-ink" data-testid="approve-blocked">Fix or waive the flags to approve.</span> : null}
             </div>

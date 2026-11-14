@@ -1,4 +1,4 @@
-import { crew_member, desc, eq, route, storm } from '@flake/db';
+import { and, crew_member, desc, eq, isNull, route, site, sql, storm } from '@flake/db';
 import { fmtLocal } from '@flake/core/time';
 import { Badge, buttonVariants, Card, cn, EmptyState, PageHeader } from '@flake/ui';
 import Link from 'next/link';
@@ -12,8 +12,11 @@ export default async function Storms() {
   const ctx = await requirePage();
   const data = await asUser(ctx, async (tx) => ({
     storms: await tx.select().from(storm).orderBy(desc(storm.started_at)).limit(50),
-    routes: await tx.select().from(route),
+    // An archived route's lots stay with it but don't go out on new storms.
+    routes: await tx.select().from(route).where(isNull(route.archived_at)),
     crew: await tx.select().from(crew_member).where(eq(crew_member.active, true)),
+    // A lot on no route is left out of every storm started here, so say which.
+    unrouted: await tx.select({ id: site.id, label: site.label }).from(site).where(and(eq(site.active, true), sql`not exists (select 1 from route_stop rs join route r on r.id = rs.route_id where rs.site_id = ${site.id} and r.archived_at is null)`)).orderBy(site.label),
   }));
   return (
     <>
@@ -36,7 +39,7 @@ export default async function Storms() {
           ) : <EmptyState title="No storms yet" body="Add routes first, then start your first storm here." />}
         </div>
         {/* On a phone the form sits below every storm so far; the header button and the dashboard jump here. */}
-        <div id="start" className="scroll-mt-20"><NewStorm defaultName={`Storm ${fmtLocal(new Date(), ctx.tenant.timezone, { month: 'short', day: 'numeric' })}`} routes={data.routes.map((r) => ({ id: r.id, name: r.name, default_crew_id: r.default_crew_id }))} crew={data.crew.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))} /></div>
+        <div id="start" className="scroll-mt-20"><NewStorm defaultName={`Storm ${fmtLocal(new Date(), ctx.tenant.timezone, { month: 'short', day: 'numeric' })}`} routes={data.routes.map((r) => ({ id: r.id, name: r.name, default_crew_id: r.default_crew_id }))} crew={data.crew.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))} unrouted={data.unrouted.map((s) => s.label)} /></div>
       </div>
     </>
   );

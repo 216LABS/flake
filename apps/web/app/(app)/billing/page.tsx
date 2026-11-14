@@ -28,7 +28,8 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
   const missed = await visitsMissedByDrafts(ctx, data.selected.id);
   const owner = ctx.role === 'owner';
   const rows: DraftRow[] = data.drafts.map(({ draft: d, customer: c }) => ({
-    id: d.id, customer: c.name, billing_mode: c.billing_mode, status: d.status!, status_detail: d.status_detail, subtotal_cents: d.subtotal_cents, lines: d.lines as any[], flags: d.flags as any[], fee_cents: owner ? d.application_fee_cents ?? 0 : 0, stripe_fee_cents: owner ? estimateStripeFeeCents(d.subtotal_cents, stripeMethod(c.billing_mode)) : 0, pay_link: d.pay_link, disputed: d.disputed,
+    id: d.id, customer: c.name, billing_mode: c.billing_mode, status: d.status!, status_detail: d.status_detail, subtotal_cents: d.subtotal_cents, lines: d.lines as any[], flags: d.flags as any[], // A manual bill never goes through Stripe, so neither fee applies to it.
+    fee_cents: owner && c.billing_mode !== 'manual' ? d.application_fee_cents ?? 0 : 0, stripe_fee_cents: owner && c.billing_mode !== 'manual' ? estimateStripeFeeCents(d.subtotal_cents, stripeMethod(c.billing_mode)) : 0, pay_link: d.pay_link, disputed: d.disputed,
   }));
   return (
     <>

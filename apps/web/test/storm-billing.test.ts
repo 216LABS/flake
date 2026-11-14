@@ -319,7 +319,7 @@ describe('billing', () => {
     await drain();
     const [d] = await serviceDb().select().from(invoice_draft).where(eq(invoice_draft.id, id));
     expect(d!.status).toBe('approved');
-    expect(d!.status_detail).toMatch(/Connect Stripe/);
+    expect(d!.status_detail).toMatch(/Payments are not connected.*Mark paid.*connect Stripe/);
   });
 
   it('paid Pro pays 0.5%', async () => {

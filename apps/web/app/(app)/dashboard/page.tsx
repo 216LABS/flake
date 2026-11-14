@@ -1,9 +1,10 @@
-import { and, contract, crew_member, customer, desc, eq, message_log, route_stop, run_stop, serviceDb, sql, storm, storm_run, trigger_alert } from '@flake/db';
+import { and, contract, crew_member, customer, desc, eq, isNull, message_log, route, route_stop, run_stop, serviceDb, sql, storm, storm_run, trigger_alert } from '@flake/db';
 import { fmtLocal } from '@flake/core/time';
 import { Badge, buttonVariants, Card, EmptyState, Eyebrow, PageHeader, Progress, Stat, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
 import { stormStatus } from '@/lib/labels';
+import { money } from '@/lib/client';
 import { canSeeUsage, deploymentUsage } from '@/lib/usage';
 import { tenantWeatherHeader } from '@/lib/weather';
 
@@ -18,10 +19,19 @@ export default async function Dashboard() {
     recent: await tx.select().from(storm).where(sql`${storm.status} <> 'active'`).orderBy(desc(storm.started_at)).limit(5),
     customers: await tx.select({ n: sql<number>`count(*)::int` }).from(customer),
     crew: await tx.select({ n: sql<number>`count(*)::int` }).from(crew_member).where(eq(crew_member.active, true)),
-    routed: await tx.select({ n: sql<number>`count(*)::int` }).from(route_stop),
+    routed: await tx.select({ n: sql<number>`count(*)::int` }).from(route_stop).innerJoin(route, eq(route.id, route_stop.route_id)).where(isNull(route.archived_at)),
     progress: await tx.select({ storm_id: storm_run.storm_id, finished: sql<number>`count(*) filter (where ${run_stop.status} in ('done', 'skipped'))::int`, total: sql<number>`count(*)::int` }).from(run_stop).innerJoin(storm_run, eq(storm_run.id, run_stop.storm_run_id)).innerJoin(storm, eq(storm.id, storm_run.storm_id)).where(eq(storm.status, 'active')).groupBy(storm_run.storm_id),
-    pendingQuotes: await tx.select({ n: sql<number>`count(*)::int` }).from(contract).where(and(eq(contract.status, 'sent'))),
+    // Quotes waiting for a signature, whether emailed or handed over as a link (issue 92).
+    pendingQuotes: await tx.select({ n: sql<number>`count(distinct coalesce(${contract.quote_token_hash}, ${contract.id}::text))::int` }).from(contract).where(sql`${contract.status} in ('sent', 'draft')`),
+    // What customers still owe: storm bills not collected yet, and seasonal installments not paid.
+    owed: (await tx.execute(sql`
+      select c.id, c.name, sum(x.cents)::int as cents, count(*)::int as n from (
+        select customer_id, subtotal_cents as cents from invoice_draft where status in ('approved', 'sent', 'failed') and subtotal_cents > 0
+        union all
+        select s.customer_id, i.amount_cents from installment_invoice i join contract k on k.id = i.contract_id join site s on s.id = k.site_id where i.status in ('manual', 'sent', 'failed')
+      ) x join customer c on c.id = x.customer_id group by c.id, c.name order by cents desc`)) as unknown as { id: string; name: string; cents: number; n: number }[],
   }));
+  const owedTotal = data.owed.reduce((n, r) => n + r.cents, 0);
   // Customers' "come back" requests from their records page, one per lot and hour, for a week (issue 5).
   const requests = (await serviceDb().execute(sql`
     select distinct on (m.related->>'site_id', date_trunc('hour', m.created_at), coalesce(m.related->>'note', '')) m.related->>'site_id' as site_id, m.related->>'customer_id' as customer_id, m.related->>'note' as note, m.created_at, s.label, c.name
@@ -87,6 +97,23 @@ export default async function Dashboard() {
                   </li>
                 ))}
               </ul>
+            </section>
+          ) : null}
+          {owedTotal || data.pendingQuotes[0]!.n ? (
+            <section data-testid="waiting-on">
+              <Eyebrow className="mb-2">Waiting on customers</Eyebrow>
+              <div className="rounded-md border border-line-faint bg-surface p-3 text-sm">
+                {data.pendingQuotes[0]!.n ? <p data-testid="quotes-waiting">{data.pendingQuotes[0]!.n === 1 ? '1 quote is' : `${data.pendingQuotes[0]!.n} quotes are`} waiting for a signature. <Link className="text-link underline" href="/customers">Customers</Link></p> : null}
+                {owedTotal ? (
+                  <>
+                    <p className={data.pendingQuotes[0]!.n ? 'mt-2' : ''} data-testid="owed-total">Still owed: <b className="tabular">{money(owedTotal)}</b></p>
+                    <ul className="mt-1 space-y-0.5">
+                      {data.owed.slice(0, 8).map((r) => <li key={r.id}><Link className="text-link underline" href={`/customers/${r.id}`}>{r.name}</Link>: <span className="tabular">{money(r.cents)}</span>{r.n > 1 ? ` (${r.n} bills)` : ''}</li>)}
+                    </ul>
+                    {data.owed.length > 8 ? <p className="mt-1 text-xs text-muted">And {data.owed.length - 8} more customers.</p> : null}
+                  </>
+                ) : null}
+              </div>
             </section>
           ) : null}
           <section>

@@ -4,9 +4,11 @@ import { todayIn } from '@flake/core/time';
 import { eq, site, sql, tenant } from '@flake/db';
 import { collectionRoutes } from '@/lib/crud';
 import { HttpError } from '@/lib/http';
+import { requireLiveCustomer } from '@/lib/sites';
 
 export const { GET, POST } = collectionRoutes(site as any, siteCreate, {
-  beforeCreate: async (tx, tenantId) => {
+  beforeCreate: async (tx, tenantId, body) => {
+    await requireLiveCustomer(tx, body.customer_id);
     const [t] = await tx.select().from(tenant).where(eq(tenant.id, tenantId));
     if (proFeaturesEnabled(t!.plan, t!.free_season_until, todayIn(t!.timezone))) return;
     // Two sites saved at once would both see room for one more.

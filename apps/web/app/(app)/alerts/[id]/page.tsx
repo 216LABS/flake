@@ -1,4 +1,4 @@
-import { asc, crew_member, eq, inArray, route, route_stop, site, trigger_alert } from '@flake/db';
+import { asc, crew_member, eq, inArray, isNull, route, route_stop, site, trigger_alert } from '@flake/db';
 import { fmtLocal } from '@flake/core/time';
 import { Badge, Card, PageHeader } from '@flake/ui';
 import { notFound } from 'next/navigation';
@@ -17,13 +17,13 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
     if (!a) return null;
     const sites = a.site_ids.length ? await tx.select().from(site).where(inArray(site.id, a.site_ids)) : [];
     const stops = a.site_ids.length ? await tx.select().from(route_stop).where(inArray(route_stop.site_id, a.site_ids)).orderBy(asc(route_stop.seq)) : [];
-    const routes = await tx.select({ route, crew: crew_member }).from(route).leftJoin(crew_member, eq(crew_member.id, route.default_crew_id));
+    const routes = await tx.select({ route, crew: crew_member }).from(route).leftJoin(crew_member, eq(crew_member.id, route.default_crew_id)).where(isNull(route.archived_at));
     return { a, sites, stops, routes };
   });
   if (!data) notFound();
   const { a, sites, stops, routes } = data;
   const grouped = routes.map((r) => ({ ...r, sites: stops.filter((s) => s.route_id === r.route.id).map((s) => sites.find((x) => x.id === s.site_id)!).filter(Boolean) })).filter((g) => g.sites.length);
-  const unrouted = sites.filter((s) => !stops.some((x) => x.site_id === s.id));
+  const unrouted = sites.filter((s) => !stops.some((x) => x.site_id === s.id && routes.some((r) => r.route.id === x.route_id)));
   const siteDetail = (a.detail.sites ?? []) as { site_id: string; value_in: number | null; label?: string }[];
   return (
     <>

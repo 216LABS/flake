@@ -58,6 +58,9 @@ describe('a visit with an Arrive and no Done can still be billed or skipped', ()
     const mine = after.find((x) => x.draft.customer_id === w.customerIds[0])!.draft;
     expect((mine.flags as any[]).some((f) => f.code === 'missing_visit')).toBe(false);
     expect(mine.subtotal_cents).toBeGreaterThan(0);
+    const { visit_correction } = await import('@flake/db');
+    const [note] = await serviceDb().select().from(visit_correction).where(eq(visit_correction.visit_id, flag.open_visit_id));
+    expect(note!.reason).toContain('never tapped Done');
   });
   it('marking it skipped works for a driver left on site, and voids the half-open visit', async () => {
     const { applyFlagFix, generateDrafts } = await import('@/lib/billing');
@@ -91,5 +94,42 @@ describe('a done stop is not reopened under its visit', () => {
     await expect(patchRunStop(ctx, done.id, { status: 'open' })).rejects.toMatchObject({ status: 409, code: 'done' });
     await expect(patchRunStop(ctx, onsite.id, { status: 'open' })).rejects.toMatchObject({ status: 409, code: 'onsite' });
     expect((await patchRunStop(ctx, skipped.id, { status: 'open' })).status).toBe('open');
+  });
+});
+
+describe('seasonal installments without Stripe, and their payment', () => {
+  it('a company with no payments connected still records each month, to bill itself, and can mark it paid', async () => {
+    const { installment_invoice } = await import('@flake/db');
+    const { billInstallments, markInstallmentPaid } = await import('@/lib/billing');
+    const w = await makeWorld({ connected: false });
+    expect(await billInstallments(w.tenantId, new Date('2026-11-15T15:00:00Z'))).toBe(1);
+    const [row] = await serviceDb().select().from(installment_invoice).where(eq(installment_invoice.tenant_id, w.tenantId));
+    expect(row).toMatchObject({ status: 'manual', stripe_invoice_id: null, amount_cents: 60000 });
+    await markInstallmentPaid(ctxOf(w), row!.id);
+    expect((await serviceDb().select().from(installment_invoice).where(eq(installment_invoice.id, row!.id)))[0]!.status).toBe('paid');
+    expect(await markInstallmentPaid(ctxOf(w), row!.id)).toEqual({ ok: true });
+  });
+  it('Stripe saying an installment invoice was paid, or failed, shows on it', async () => {
+    const { installment_invoice } = await import('@flake/db');
+    const { billInstallments, handleStripeEvent } = await import('@/lib/billing');
+    const w = await makeWorld();
+    await billInstallments(w.tenantId, new Date('2026-11-15T15:00:00Z'));
+    const [row] = await serviceDb().select().from(installment_invoice).where(eq(installment_invoice.tenant_id, w.tenantId));
+    expect(row!.status).toBe('sent');
+    const send = (type: string, n: number) => handleStripeEvent({ id: `evt_inst_${row!.id}_${n}`, type, data: { object: { id: row!.stripe_invoice_id, metadata: { tenant_id: w.tenantId, contract_id: row!.contract_id } } } } as never);
+    await send('invoice.payment_failed', 1);
+    expect((await serviceDb().select().from(installment_invoice).where(eq(installment_invoice.id, row!.id)))[0]!.status).toBe('failed');
+    await send('invoice.paid', 2);
+    expect((await serviceDb().select().from(installment_invoice).where(eq(installment_invoice.id, row!.id)))[0]!.status).toBe('paid');
+  });
+});
+
+describe('an archived route stays out of new storms', () => {
+  it('starting a storm with an archived route is refused', async () => {
+    const { route } = await import('@flake/db');
+    const { createStorm } = await import('@/lib/storms');
+    const w = await makeWorld();
+    await serviceDb().update(route).set({ archived_at: new Date().toISOString() }).where(eq(route.id, w.route2Id));
+    await expect(createStorm(ctxOf(w), { name: 'Old route', routeIds: [w.routeId, w.route2Id], crewAssignments: {} })).rejects.toMatchObject({ status: 409, code: 'route_archived' });
   });
 });

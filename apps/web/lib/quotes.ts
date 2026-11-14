@@ -80,7 +80,7 @@ export async function getQuote(token: string) {
   const view = (c: typeof contract.$inferSelect) => ({ id: c.id, season: c.season, services: c.services, salt_pricing: c.salt_pricing, terms_md: c.terms_md, status: c.status, accepted_at: c.accepted_at, accepted_name: c.accepted_name, declined_at: c.declined_at });
   return {
     company: r.tenant.name,
-    lots: r.lots.map((l) => ({ site: { label: l.site.label, address: l.site.address, area_sqft: l.site.area_confirmed_sqft ?? l.site.area_estimate_sqft }, contract: view(l.contract) })),
+    lots: [...r.lots].reverse().map((l) => ({ site: { label: l.site.label, address: l.site.address, area_sqft: l.site.area_confirmed_sqft ?? l.site.area_estimate_sqft }, contract: view(l.contract) })),
     customer: { name: r.customer.name, email: r.customer.email, phone: r.customer.phone_e164, billing_mode: r.customer.billing_mode },
     site: { label: r.site.label, address: r.site.address, area_sqft: r.site.area_confirmed_sqft ?? r.site.area_estimate_sqft },
     contract: { id: r.contract.id, season: r.contract.season, services: r.contract.services, salt_pricing: r.contract.salt_pricing, terms_md: r.contract.terms_md, status: r.contract.status, accepted_at: r.contract.accepted_at, accepted_name: r.contract.accepted_name, declined_at: r.contract.declined_at },
@@ -190,9 +190,9 @@ export async function resendQuote(ctx: Ctx, contractId: string) {
   return { url: `${baseUrl()}/q/${token}` };
 }
 
-/** The link to a quote still waiting for a signature, when it was made after links were kept. */
+/** The link to a quote still waiting for a signature, sent or handed over as a link only (issue 92). */
 export function quoteUrl(c: { status: string; quote_token_enc: string | null }) {
-  return c.status === 'sent' && c.quote_token_enc ? `${baseUrl()}/q/${decryptToken(c.quote_token_enc)}` : null;
+  return (c.status === 'sent' || c.status === 'draft') && c.quote_token_enc ? `${baseUrl()}/q/${decryptToken(c.quote_token_enc)}` : null;
 }
 
 const isIp = (s: string) => /^[0-9a-fA-F:.]+$/.test(s);

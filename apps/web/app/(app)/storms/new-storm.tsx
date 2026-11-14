@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api } from '@/lib/client';
 
-export function NewStorm({ routes, crew, defaultName }: { routes: { id: string; name: string; default_crew_id: string | null }[]; crew: { id: string; name: string; kind: string }[]; defaultName: string }) {
+export function NewStorm({ routes, crew, defaultName, unrouted = [] }: { routes: { id: string; name: string; default_crew_id: string | null }[]; crew: { id: string; name: string; kind: string }[]; defaultName: string; unrouted?: string[] }) {
   const router = useRouter();
   const [name, setName] = useState(defaultName);
   const [picked, setPicked] = useState<Record<string, string>>(Object.fromEntries(routes.map((r) => [r.id, r.default_crew_id ?? ''])));
@@ -51,6 +51,7 @@ export function NewStorm({ routes, crew, defaultName }: { routes: { id: string; 
         ))}
         {!routes.length ? <p className="text-sm text-muted">No routes yet.</p> : null}
       </div>
+      {unrouted.length ? <p className="mt-2 rounded-md bg-warn-tint p-2 text-xs text-warn-ink" data-testid="unrouted-note">{unrouted.length === 1 ? '1 lot is' : `${unrouted.length} lots are`} on no route, so this storm leaves {unrouted.length === 1 ? 'it' : 'them'} out: {unrouted.slice(0, 5).join(', ')}{unrouted.length > 5 ? ` and ${unrouted.length - 5} more` : ''}. Add {unrouted.length === 1 ? 'it' : 'them'} on <a className="underline" href="/routes">Routes</a>.</p> : null}
       {noDriver.length && routes.length ? <p className="mt-2 text-xs text-muted" data-testid="no-driver-note">{noDriver.map((r) => r.name).join(', ')} {noDriver.length === 1 ? 'has' : 'have'} no driver. Pick one on the storm board before you publish.</p> : null}
       {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
       {busySites ? (

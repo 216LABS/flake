@@ -61,7 +61,7 @@ export async function portalData(customerId: string, tenantId: string) {
   const sites = await db.select().from(site).where(and(eq(site.tenant_id, tenantId), eq(site.customer_id, customerId)));
   const siteIds = sites.map((s) => s.id);
   const since = new Date(Date.now() - HISTORY_DAYS * 86_400_000).toISOString();
-  const contracts = siteIds.length ? await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), inArray(contract.site_id, siteIds), inArray(contract.status, ['sent', 'accepted']))).orderBy(desc(contract.created_at)) : [];
+  const contracts = siteIds.length ? await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), inArray(contract.site_id, siteIds), inArray(contract.status, ['draft', 'sent', 'accepted']))).orderBy(desc(contract.created_at)) : [];
   const visits = siteIds.length
     ? await db.select({ v: visit, stormName: storm.name, stormOn: sql<boolean>`${storm.status} = 'active'` }).from(visit).innerJoin(storm, eq(storm.id, visit.storm_id))
       .where(and(eq(visit.tenant_id, tenantId), inArray(visit.site_id, siteIds), gte(visit.arrived_device_at, since), visitNotVoided)).orderBy(desc(visit.arrived_device_at)).limit(400)
@@ -81,7 +81,7 @@ export async function portalData(customerId: string, tenantId: string) {
       // The signed agreement, even when a newer quote (a renewal, a price change) is waiting beside it.
       const k = contracts.find((x) => x.site_id === s.id && x.status === 'accepted');
       // A quote waiting to be signed, with its link, even when a signed contract is also in force.
-      const waiting = contracts.find((x) => x.site_id === s.id && x.status === 'sent');
+      const waiting = contracts.find((x) => x.site_id === s.id && (x.status === 'sent' || x.status === 'draft') && x.quote_token_enc);
       return {
         id: s.id, label: s.label, address: s.address, active: s.active,
         contract: k ? { season: k.season, status: k.status } : null,

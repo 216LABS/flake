@@ -1,4 +1,4 @@
-import { and, or, asc, asService, contract, customer, membership, desc, eq, inArray, installment_invoice, invoice_draft, notInArray, isNotNull, isNull, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
+import { and, or, ne, asc, asService, contract, customer, membership, desc, eq, inArray, installment_invoice, invoice_draft, notInArray, isNotNull, isNull, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
 import { applyCorrections, draftInvoices, flagKey, isDraftClean, type BillingContract, type BillingFlag, type BillingVisit } from '@flake/core/billing';
 import { applicationFeeCents, feeRate, proFeaturesEnabled, type Plan } from '@flake/core/fees';
 import { seasonalInstallments, type ContractService, type Pricing, type SaltPricing, type StormDepthContext } from '@flake/core/pricing';
@@ -195,6 +195,8 @@ export async function applyFlagFix(ctx: Ctx, fix: z.infer<typeof flagFix>) {
             .where(and(eq(visit.id, v.id), eq(visit.tenant_id, ctx.tenantId), isNull(visit.departed_device_at)));
           if (v.run_stop_id) await tx.update(run_stop).set({ status: 'done', updated_at: now }).where(and(eq(run_stop.id, v.run_stop_id), eq(run_stop.tenant_id, ctx.tenantId)));
         });
+        // On record beside the visit, so a proof packet shows the Done time came from the office, not the phone.
+        await tx.insert(visit_correction).values({ tenant_id: ctx.tenantId, visit_id: v.id, field: 'notes', old_value: v.notes, new_value: 'Done time entered by the office', reason: `The driver arrived but never tapped Done. The office entered ${fix.minutes} min on site in billing review.`, by_user: ctx.userId });
         break;
       }
       case 'skip_all': {
@@ -380,8 +382,8 @@ async function chargeDraftLocked(tenantId: string, draftId: string, attempt?: nu
   const setStatus = (status: typeof draft.status, detail: string | null, extra: Partial<typeof invoice_draft.$inferInsert> = {}) => db.update(invoice_draft).set({ status, status_detail: detail, ...extra }).where(eq(invoice_draft.id, draftId));
 
   if (draft.subtotal_cents <= 0) return void (await setStatus('void', 'Nothing to charge'));
-  if (c.billing_mode === 'manual') return void (await setStatus('approved', 'Manual billing. Use the QuickBooks export.'));
-  if (!t.stripe_account_id || !t.stripe_charges_enabled) return void (await setStatus('approved', 'Connect Stripe in Settings to collect this.'));
+  if (c.billing_mode === 'manual') return void (await setStatus('approved', 'Manual billing: send the customer a bill, then press Mark paid when it is paid.'));
+  if (!t.stripe_account_id || !t.stripe_charges_enabled) return void (await setStatus('approved', 'Payments are not connected: bill the customer yourself and press Mark paid, or connect Stripe in Settings and press Charge now.'));
 
   const { payments } = await getProviders();
   const fee = applicationFeeCents(draft.subtotal_cents, tenantFeeRate(t));
@@ -456,9 +458,12 @@ export async function handleStripeEvent(evt: StripeEventLike): Promise<'processe
       break;
     case 'invoice.paid':
       if (draftId && tenantId) await db.update(invoice_draft).set({ status: 'paid', status_detail: null }).where(and(eq(invoice_draft.id, draftId), eq(invoice_draft.tenant_id, tenantId)));
+      // A seasonal installment's Stripe invoice: the customer page shows it paid.
+      if (obj.metadata?.contract_id && tenantId && obj.id) await db.update(installment_invoice).set({ status: 'paid' }).where(and(eq(installment_invoice.stripe_invoice_id, obj.id), eq(installment_invoice.tenant_id, tenantId)));
       break;
     case 'invoice.payment_failed':
       if (draftId && tenantId) await failDraft(tenantId, draftId, 'Invoice payment failed');
+      if (obj.metadata?.contract_id && tenantId && obj.id) await db.update(installment_invoice).set({ status: 'failed' }).where(and(eq(installment_invoice.stripe_invoice_id, obj.id), eq(installment_invoice.tenant_id, tenantId), ne(installment_invoice.status, 'paid')));
       break;
     case 'charge.dispute.created': {
       const pi = typeof obj.payment_intent === 'string' ? obj.payment_intent : obj.payment_intent?.id;
@@ -537,9 +542,9 @@ export async function billInstallments(tenantId?: string, now = new Date()) {
 
 async function billInstallment(r: InstallmentRow, pricing: Extract<Pricing, { type: 'seasonal' }>, now: Date) {
   const db = serviceDb();
-  // Manual-billing customers stay off Stripe, the same as storm invoices. Their installment is still recorded.
-  const manual = r.customer.billing_mode === 'manual';
-  if (!manual && (!r.tenant.stripe_account_id || !r.tenant.stripe_charges_enabled)) return false;
+  // Manual-billing customers stay off Stripe, the same as storm invoices. So does everyone while the company hasn't
+  // connected payments: the installment is still recorded, so the office sees it's due and bills it itself.
+  const manual = r.customer.billing_mode === 'manual' || !r.tenant.stripe_account_id || !r.tenant.stripe_charges_enabled;
   const period = localHm(now, r.tenant.timezone).date.slice(0, 7);
   const thisMonth = await db.select({ status: installment_invoice.status, contract_id: installment_invoice.contract_id }).from(installment_invoice)
     .innerJoin(contract, eq(contract.id, installment_invoice.contract_id))
@@ -580,6 +585,18 @@ async function billInstallment(r: InstallmentRow, pricing: Extract<Pricing, { ty
     await tx.update(contract).set({ installments_billed: sql`greatest(${contract.installments_billed}, ${seq})` }).where(eq(contract.id, r.contract.id));
   });
   return true;
+}
+
+/** A seasonal installment the customer paid some other way (a check), or that the office billed itself. */
+export async function markInstallmentPaid(ctx: Ctx, id: string) {
+  return withUser(ctx.userId, async (tx) => {
+    const [row] = await tx.select({ status: installment_invoice.status }).from(installment_invoice).where(eq(installment_invoice.id, id));
+    if (!row) throw new HttpError(404, 'Installment not found');
+    if (row.status === 'paid') return { ok: true };
+    const took = await asService(tx, ctx.tenantId, () => tx.update(installment_invoice).set({ status: 'paid' }).where(and(eq(installment_invoice.id, id), eq(installment_invoice.tenant_id, ctx.tenantId), inArray(installment_invoice.status, ['manual', 'sent', 'failed']))).returning({ id: installment_invoice.id }));
+    if (!took.length) throw new HttpError(409, 'This installment is still being sent. Try again in a minute.', 'not_ready');
+    return { ok: true };
+  });
 }
 
 /** Approved invoices only: a draft still in review isn't a sale yet, and may still be voided or left unbilled. */
