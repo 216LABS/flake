@@ -1,6 +1,7 @@
 'use client';
 
 import { feet } from '@flake/core/units';
+import { clock12 } from '@/lib/labels';
 import { Badge, Button } from '@flake/ui';
 import { X } from 'lucide-react';
 import { useModal } from '@/components/use-modal';
@@ -34,6 +35,8 @@ const when = (iso: string | null, tz: string) => (iso ? new Date(iso).toLocaleSt
  * problem, and the photos. A sheet from the bottom on a phone, a panel on a desk. It re-reads when opened, so a photo
  * that synced a moment ago is there.
  */
+
+const SERVICE_WORD: Record<string, string> = { plow: 'Plow', salt: 'Salt', walks: 'Walks', haul: 'Haul' };
 export function StopSheet({ stopId, tz, onClose }: { stopId: string; tz: string; onClose: () => void }) {
   const [d, setD] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +84,7 @@ export function StopSheet({ stopId, tz, onClose }: { stopId: string; tz: string;
                 <Badge tone={d.status === 'done' ? 'green' : d.status === 'problem' ? 'red' : 'gray'} data-testid="stop-sheet-status">{STATUS_WORD[d.status] ?? d.status}</Badge>
                 <span className="text-muted">Stop {d.seq} on {d.run.name}{d.run.pass > 1 ? ` (pass ${d.run.pass})` : ''}{d.run.crew ? `, ${d.run.crew}` : ''}</span>
               </div>
-              {d.site.open_by ? <p className="mt-1 text-muted">Open by {d.site.open_by}</p> : null}
+              {d.site.open_by ? <p className="mt-1 text-muted">Open by {clock12(d.site.open_by)}</p> : null}
 
               {d.problems.length ? (
                 <section className="mt-4">
@@ -110,7 +113,7 @@ export function StopSheet({ stopId, tz, onClose }: { stopId: string; tz: string;
                       <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
                         <dt className="text-muted">Arrived</dt><dd>{when(v.arrived_at, tz)}</dd>
                         <dt className="text-muted">Finished</dt><dd>{when(v.departed_at, tz) ?? 'Still on site'}</dd>
-                        <dt className="text-muted">Services</dt><dd>{v.services.length ? v.services.join(', ') : 'None ticked'}</dd>
+                        <dt className="text-muted">Services</dt><dd>{v.services.length ? v.services.map((x) => SERVICE_WORD[x] ?? x).join(', ') : 'None ticked'}</dd>
                         <dt className="text-muted">Depth</dt><dd>{v.depth_in !== null ? `${v.depth_in} in` : 'Not logged'}</dd>
                         {v.salt?.length ? <><dt className="text-muted">Salt</dt><dd>{v.salt.map((x) => `${x.qty} ${SALT_UNIT[x.unit] ?? x.unit}`).join(', ')}</dd></> : null}
                         <dt className="text-muted">GPS</dt>

@@ -308,8 +308,9 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
       ) : null}
 
       <div className="flex flex-col gap-4 lg:flex-row">
-        {/* On a phone every truck is stacked, full width, so none hides off to the side (issue 46). */}
-        <div className="flex min-w-0 flex-1 flex-col gap-3 pb-2 md:snap-x md:flex-row md:overflow-x-auto">
+        {/* On a phone every truck is stacked, full width, so none hides off to the side (issue 46). On a desk the trucks wrap
+            onto more rows instead of scrolling under the Alerts card with no sign there's more (issue 124). */}
+        <div className="flex min-w-0 flex-1 flex-col gap-3 pb-2 md:snap-x md:flex-row md:overflow-x-auto md:[scrollbar-width:thin] lg:flex-wrap lg:items-start lg:overflow-visible">
           {live.runs.map((r: any) => (
             <section
               key={r.id}

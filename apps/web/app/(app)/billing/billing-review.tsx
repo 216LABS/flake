@@ -116,7 +116,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
       {!rows.length ? (nothingToBill
         ? <EmptyState title="Nothing to bill for this storm" body="Its lots are on seasonal contracts, or were skipped, so no invoice was needed. Seasonal installments bill on their own each month." />
         : <EmptyState title="No drafts yet" body="Generate drafts to price this storm's visits." />) : null}
-      {rows.length ? <p className="mb-3 text-sm text-muted">{flagged.length} flagged, {clean.length} clean and ready. Total {money(total)}.{showFees ? ` Flake fees ${money(fees)}.` : ''}</p> : null}
+      {rows.length ? <p className="mb-3 text-sm text-muted">{flagged.length} flagged, {clean.length} clean and ready. Total {money(total)}.{showFees && fees ? (stripeReady ? ` Flake fees ${money(fees)}.` : ` Flake fees ${money(fees)} if charged through Stripe.`) : ''}</p> : null}
       {rows.length && (tierCount('money') || tierCount('proof')) ? (
         <p className="mb-3 text-sm" data-testid="flag-tiers">
           {tierCount('money') ? <><b className="text-danger">{tierCount('money')} with money at risk</b> ({tierWhy('money')}). </> : null}
@@ -164,7 +164,8 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
               </ul>
             ) : null}
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-faint">
-              <span>{showFees ? (r.billing_mode === 'manual' ? 'Billed outside Stripe, so no Flake or Stripe fee. ' : `Only owners see this: Flake fee ${money(r.fee_cents)}. Estimated Stripe fee ${money(r.stripe_fee_cents)}. `) : ''}{billingLabel(r.billing_mode)}.</span>
+              <span>{showFees ? (r.billing_mode === 'manual' ? 'Billed outside Stripe (manual), so no Flake or Stripe fee.' : stripeReady ? `Only owners see this: Flake fee ${money(r.fee_cents)}. Estimated Stripe fee ${money(r.stripe_fee_cents)}. `
+                : `Only owners see this: charged through Stripe, the Flake fee is ${money(r.fee_cents)} and Stripe's about ${money(r.stripe_fee_cents)}. Paid by check, no fee. `) : ''}{r.billing_mode === 'manual' && showFees ? '' : `${billingLabel(r.billing_mode)}.`}</span>
               {r.status === 'draft' && isDraftClean(r.flags) ? <Button size="sm" variant="outline" disabled={busy} data-testid="approve-one" onClick={() => run(() => api('/api/billing/approve', { body: { draftIds: [r.id] } }))}>Approve</Button> : null}
               {r.status === 'draft' && !isDraftClean(r.flags) ? <span className="font-medium text-warn-ink" data-testid="approve-blocked">Fix or waive the flags to approve.</span> : null}
             </div>

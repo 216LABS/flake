@@ -71,7 +71,7 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [] 
       <h2 className="font-semibold">Send a new quote</h2>
       <div className="mt-2 space-y-2">
         <div><Label htmlFor="q-type">Pricing</Label><Select id="q-type" value={type} data-testid="q-type" onChange={(e) => setType(e.target.value as PricingType)}><option value="per_push">Per push</option><option value="per_inch_tier">Per inch tiers (price is the first tier)</option><option value="per_event">Per event</option><option value="seasonal">Seasonal (5 installments)</option><option value="hourly">Hourly</option></Select></div>
-        <div><Label htmlFor="q-price">Price ($)</Label><Input id="q-price" type="number" step="0.01" min="0.01" max="100000" value={price} data-testid="q-price" onChange={(e) => setPrice(e.target.value)} /></div>
+        <div><Label htmlFor="q-price">{type === 'seasonal' ? 'Season total ($)' : 'Price ($)'}</Label><Input id="q-price" type="number" step="0.01" min="0.01" max="100000" value={price} data-testid="q-price" onChange={(e) => setPrice(e.target.value)} /></div>
         <div><Label htmlFor="q-trigger">Trigger depth (in)</Label><Input id="q-trigger" type="number" step="0.5" min="0" max="48" value={trigger} data-testid="q-trigger" onChange={(e) => setTrigger(e.target.value)} /></div>
         {zero ? <p className="text-xs text-warn-ink" data-testid="q-zero-warning">0 inches means any measurable snow starts service{type === 'seasonal' ? '.' : ', so every dusting is billable.'}</p> : null}
         <div><Label htmlFor="q-season">Season</Label><Input id="q-season" value={season} maxLength={40} onChange={(e) => setSeason(e.target.value)} /></div>

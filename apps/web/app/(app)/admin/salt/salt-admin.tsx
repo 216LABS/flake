@@ -58,7 +58,7 @@ export function SaltAdmin({ initial }: { initial: Data }) {
         <p className="mt-1 text-sm text-muted">Referral fees earned on delivered salt: <b className="tabular" data-testid="fees-earned">{money(total)}</b>. Invoice each supplier for theirs.</p>
         {data.suppliers.length ? (
           <div className="mt-3 overflow-x-auto">
-            <Table>
+            <Table stack>
               <thead>
                 <tr><Th>Supplier</Th><Th className="text-right">Price a ton</Th><Th className="text-right">Your fee a ton</Th><Th className="text-right">Filling now</Th><Th className="text-right">Delivered</Th><Th className="text-right">Fees earned</Th><Th className="text-right">Fees coming</Th><Th>Link</Th></tr>
               </thead>
@@ -70,17 +70,19 @@ export function SaltAdmin({ initial }: { initial: Data }) {
                       <div className="text-xs text-muted">{s.email}, {s.radius_mi} mi, {s.truckload_tons} t loads</div>
                       {s.active ? null : <Badge tone="gray">Off</Badge>}
                     </Td>
-                    <Td className="tabular text-right">{money(s.price_per_ton_cents)}</Td>
-                    <Td className="tabular text-right">{money(s.referral_fee_per_ton_cents)}</Td>
-                    <Td className="text-right">
+                    <Td label="Price a ton" className="tabular md:text-right">{money(s.price_per_ton_cents)}</Td>
+                    <Td label="Your fee a ton" className="tabular md:text-right">{money(s.referral_fee_per_ton_cents)}</Td>
+                    <Td label="Filling now" className="md:text-right">
+                      <div className="min-w-0">
                       <div className="tabular">{t1(s.open_tons)} t</div>
                       {s.open_since ? <div className="text-xs text-muted" data-testid="open-age">waiting {days(s.open_since)}{s.open_needed_by ? `, needed by ${s.open_needed_by}` : ''}</div> : null}
                       {s.open_tons > 0 ? <Button size="sm" variant="ghost" className="mt-1" disabled={busy} data-testid="send-now" onClick={async () => { if (await ask({ title: `Send ${t1(s.open_tons)} tons to ${s.name} now?`, body: "It's short of a full truck. Check they'll run a partial load first.", confirm: 'Send now' })) void run(async () => { const r = await api<{ sent: number | null }>(`/api/admin/salt/suppliers/${s.id}`, { method: 'PATCH', body: { send_now: true } }); setMsg(r.sent ? `Sent ${r.sent} tons to ${s.name}. The companies in it were told.` : 'Nothing was waiting.'); }); }}>Send now</Button> : null}
+                      </div>
                     </Td>
-                    <Td className="tabular text-right">{t1(s.delivered_tons)} t</Td>
-                    <Td className="tabular text-right">{money(s.fees_earned_cents)}</Td>
-                    <Td className="tabular text-right">{money(s.fees_pending_cents)}</Td>
-                    <Td>
+                    <Td label="Delivered" className="tabular md:text-right">{t1(s.delivered_tons)} t</Td>
+                    <Td label="Fees earned" className="tabular md:text-right">{money(s.fees_earned_cents)}</Td>
+                    <Td label="Fees coming" className="tabular md:text-right">{money(s.fees_pending_cents)}</Td>
+                    <Td label="Link">
                       <div className="flex flex-wrap gap-1">
                         <Button size="sm" variant="outline" data-testid="supplier-copy" onClick={() => void copy(s)}>Copy link</Button>
                         <Button size="sm" variant="ghost" disabled={busy} onClick={() => run(async () => { await api(`/api/admin/salt/suppliers/${s.id}`, { method: 'PATCH', body: { active: !s.active } }); setMsg(s.active ? `${s.name} is off: no new orders, and orders waiting on its shared load were cancelled and those companies told. Its link still works for loads it already has. Use New link to shut that too.` : `${s.name} is taking orders again.`); })}>{s.active ? 'Turn off' : 'Turn on'}</Button>

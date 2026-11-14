@@ -111,7 +111,9 @@ test('walk every office screen and use its main control', async ({ page }) => {
 
   // Billing on the seeded historical storm: the three demo flags show up.
   await page.goto('/billing');
-  await page.getByTestId('storm-picker').selectOption({ label: 'Dec 13 Lake-Effect Storm (Demo)' });
+  // Options read "name, date" and are grouped by status, so pick by the storm's name.
+  const opt = await page.getByTestId('storm-picker').locator('option', { hasText: 'Dec 13 Lake-Effect Storm (Demo)' }).getAttribute('value');
+  await page.getByTestId('storm-picker').selectOption(opt!);
   await page.waitForURL(/billing\?storm=/);
   for (const code of ['no_after_photo', 'missing_salt_qty']) await expect(page.locator(`[data-code="${code}"]`)).toHaveCount(1);
   // The sample storm is priced by last winter's contracts, so a new user sees real bills, not "no contract" at $0.

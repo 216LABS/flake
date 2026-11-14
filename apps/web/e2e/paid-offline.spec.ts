@@ -86,3 +86,45 @@ test('a lot plowed with no visit from the phone is recorded from the not-plowed 
   await flag.getByTestId('fix-record').click();
   await expect(page.locator('[data-testid="flag"][data-code="missing_visit"]', { hasText: site!.label as string })).toHaveCount(0);
 });
+
+/** Without Stripe, a card or invoice customer's fees are only what Stripe would cost, not a cost of approving. */
+test('with Stripe off, billing review says the fees apply only if charged through Stripe', async ({ page }) => {
+  await login(page);
+  const tag = randomUUID().slice(0, 6);
+  const c = await (await page.request.post('/api/customers', { data: { name: `Card ${tag}`, kind: 'commercial', billing_mode: 'invoice_net30', email: `${tag}@example.com` } })).json();
+  const [s] = await sql`insert into storm (tenant_id, name, started_at, closed_at, status) values (${c.tenant_id}, ${`Fees ${tag}`}, now() - interval '2 days', now() - interval '1 day', 'closed') returning id`;
+  await sql`insert into invoice_draft (tenant_id, storm_id, customer_id, lines, subtotal_cents, flags, status, application_fee_cents) values (${c.tenant_id}, ${s!.id}, ${c.id}, '[]'::jsonb, 16000, '[]'::jsonb, 'draft', 160)`;
+  await sql`update tenant set stripe_charges_enabled = false where id = ${c.tenant_id}`;
+  try {
+    await page.goto(`/billing?storm=${s!.id}`);
+    await expect(page.getByTestId('stripe-not-connected')).toBeVisible();
+    await expect(page.locator('[data-testid="draft"]', { hasText: `Card ${tag}` })).toContainText('charged through Stripe, the Flake fee is');
+    await expect(page.getByText(/Flake fees \$[\d.]+ if charged through Stripe\./)).toBeVisible();
+  } finally {
+    await sql`update tenant set stripe_charges_enabled = true where id = ${c.tenant_id}`;
+  }
+});
+
+/** Issue 119: a seasonal customer owes installments, not the $0.00 storm bills their lot gets. */
+test('the records page lists seasonal installments owed and never calls a $0.00 bill due', async ({ page, browser, baseURL }) => {
+  await login(page);
+  const tag = randomUUID().slice(0, 6);
+  const c = await (await page.request.post('/api/customers', { data: { name: `Season ${tag}`, kind: 'hoa', billing_mode: 'manual' } })).json();
+  const [st] = await sql`insert into site (tenant_id, customer_id, label, address, lat, lon) values (${c.tenant_id}, ${c.id}, ${`Pond drive ${tag}`}, '1 Pond Rd, Lakewood, OH', 41.48, -81.8) returning id`;
+  const [k] = await sql`insert into contract (tenant_id, site_id, season, status, services) values (${c.tenant_id}, ${st!.id}, '2026-27', 'accepted', ${sql.json([{ service: 'plow', pricing: { type: 'seasonal', total_cents: 90000, installments: 5 } }])}) returning id`;
+  await sql`insert into installment_invoice (tenant_id, contract_id, seq, amount_cents, status, period) values (${c.tenant_id}, ${k!.id}, 1, 18000, 'manual', '2026-11')`;
+  const [s] = await sql`insert into storm (tenant_id, name, started_at, closed_at, status) values (${c.tenant_id}, ${`Zero ${tag}`}, now() - interval '2 days', now() - interval '1 day', 'billed') returning id`;
+  await sql`insert into invoice_draft (tenant_id, storm_id, customer_id, lines, subtotal_cents, flags, status) values (${c.tenant_id}, ${s!.id}, ${c.id}, '[]'::jsonb, 0, '[]'::jsonb, 'approved')`;
+  const { url } = await (await page.request.get(`/api/customers/${c.id}/portal`)).json();
+  const guest = await browser.newContext({ baseURL, viewport: { width: 375, height: 667 } });
+  const g = await guest.newPage();
+  await g.goto(url);
+  const due = g.getByTestId('portal-due');
+  await expect(due).toContainText(`Pond drive ${tag}, 2026-27 installment 1 of 5: $180.00`);
+  await expect(due).not.toContainText(`Zero ${tag}`);
+  await expect(g.getByTestId('portal-installment')).toContainText('November 2026');
+  await expect(g.getByTestId('portal-invoice').filter({ hasText: `Zero ${tag}` })).toContainText('No charge');
+  expect(await g.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  await guest.close();
+  await page.request.delete(`/api/customers/${c.id}`);
+});

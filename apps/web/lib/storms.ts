@@ -1,4 +1,5 @@
 import { and, asc, asService, contract, crew_member, customer, desc, driver_position, eq, inArray, invoice_draft, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, visit_photo, visitNotVoided, withUser, sms_consent, type Tx } from '@flake/db';
+import { clock12 } from './labels';
 import { isLate, liveContracts, localHm } from '@flake/core/time';
 import { replanFrom } from '@flake/core/routing';
 import { z } from 'zod';
@@ -475,6 +476,8 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
   const now = Date.now();
   const started = Date.parse(data.s.started_at);
   const alerts: { kind: string; text: string; at?: string | null; stop_id?: string; problem_id?: string }[] = [];
+  // Late only means something while the crew is still out, and a lot on two passes is one late lot (issue 121).
+  const lateSites = new Set<string>();
   const boards = data.runs.map(({ run, crew, route: r }) => {
     const stops = data.stops.filter((x) => x.stop.storm_run_id === run.id).map(({ stop, site: st, customer: c }) => {
       const stopVisits = data.visits.filter((v) => v.run_stop_id === stop.id);
@@ -484,8 +487,11 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
       // Billing asks for an after photo; the board says when there isn't one, so the two agree (issue 75).
       const afterPhotos = finished ? (data.photoCounts.find((p) => p.visit_id === finished.id)?.after ?? 0) : 0;
       const problem = data.problems.find((p) => p.site_id === st.id && (p.storm_run_id === run.id || stop.previous_run_ids.includes(p.storm_run_id ?? '')));
-      const late = (stop.status === 'open' || stop.status === 'enroute') && isLate(st.service_window, started, now, ctx.timezone);
-      if (late) alerts.push({ kind: 'late', text: `${st.label} is past its ${st.service_window?.open_by} deadline`, stop_id: stop.id });
+      const late = data.s.status === 'active' && (stop.status === 'open' || stop.status === 'enroute') && isLate(st.service_window, started, now, ctx.timezone);
+      if (late && !lateSites.has(st.id)) {
+        lateSites.add(st.id);
+        alerts.push({ kind: 'late', text: `${st.label} is past its ${clock12(st.service_window?.open_by)} deadline`, stop_id: stop.id });
+      }
       return { id: stop.id, seq: stop.seq, status: stop.status, late, priority: st.priority, site_id: st.id, label: st.label, address: st.address, lat: st.lat, lon: st.lon, customer: c.name, no_contract: !data.contracted.has(st.id), arrived_at: stop.status === 'onsite' ? (open?.arrived_device_at ?? null) : null, done_at: finished?.departed_device_at ?? null, depth_in: finished?.depth_in === null || finished?.depth_in === undefined ? null : Number(finished.depth_in), photos, after_photos: afterPhotos, problem: problem ? { kind: problem.kind, note: problem.note } : null };
     }).sort((a, b) => Number(b.late && b.priority <= 2) - Number(a.late && a.priority <= 2) || a.seq - b.seq);
     if (crew?.kind === 'sub' && run.published_at && !run.started_at && now - Date.parse(run.published_at) > 30 * 60000) {

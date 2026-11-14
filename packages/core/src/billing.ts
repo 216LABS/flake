@@ -13,6 +13,7 @@ export type FlagCode =
   | 'no_after_photo'
   | 'missing_salt_qty'
   | 'seasonal_info'
+  | 'office_recorded'
   | 'prior_season'
   | 'missing_depth'
   | 'no_contract'
@@ -30,7 +31,7 @@ export const FLAG_TIER: Record<FlagCode, FlagTier> = {
   no_contract: 'money', no_service: 'money', missing_salt_qty: 'money', salt_unit: 'money', missing_depth: 'money', duplicate: 'money', odd_duration: 'money', below_trigger: 'money',
   no_after_photo: 'proof', no_gps_match: 'proof',
   missing_visit: 'not_done',
-  seasonal_info: 'info', prior_season: 'money',
+  seasonal_info: 'info', prior_season: 'money', office_recorded: 'info',
 };
 export const TIER_ORDER: FlagTier[] = ['money', 'proof', 'not_done', 'info'];
 
@@ -39,7 +40,7 @@ const TIER_REASON: Record<FlagCode, string> = {
   no_contract: 'no price', no_service: 'nothing ticked', missing_salt_qty: 'salt missing', salt_unit: 'salt missing',
   missing_depth: 'depth missing', duplicate: 'a possible duplicate', odd_duration: 'an odd time on site', below_trigger: 'under the trigger',
   no_after_photo: 'no after photo', no_gps_match: 'no or far-off location',
-  missing_visit: 'not reached', seasonal_info: 'seasonal', prior_season: 'no contract this season',
+  missing_visit: 'not reached', seasonal_info: 'seasonal', office_recorded: 'recorded by the office', prior_season: 'no contract this season',
 };
 
 /**
@@ -88,6 +89,8 @@ export interface BillingVisit extends PricedVisit {
   arrive_lat: number | null;
   arrive_lon: number | null;
   after_photos: number;
+  /** The office recorded this visit in billing review because no visit came from the phone (issue 122). */
+  office_recorded?: boolean;
 }
 
 export interface VisitCorrection {
@@ -155,8 +158,11 @@ function flagsForSite(site: BillingSite, contract: BillingContract | undefined, 
     if (prev && !v.is_replow && Date.parse(v.arrived_at) - Date.parse(prev.arrived_at) < DUPLICATE_WINDOW_MS) {
       add('duplicate', `${site.label} has two done visits under 60 minutes apart. Mark as re-plow if both are real.`, v.id);
     }
-    // No location at all and a location in the wrong place are different problems (issue 78).
-    if (v.arrive_lat == null || v.arrive_lon == null) {
+    // The office recorded this one because the phone sent nothing, so a missing location or photo is already known: one
+    // note in the office's words instead of two flags that blame the phone (issue 122).
+    if (v.office_recorded) {
+      add('office_recorded', `${site.label}: visit recorded by the office. No location or photos came from the phone.`, v.id, 'info');
+    } else if (v.arrive_lat == null || v.arrive_lon == null) {
       add('no_gps_match', `${site.label}: the phone didn't share its location on arrival, so there's no GPS record of this visit.`, v.id);
     } else if (!gpsMatches(v.arrive_lat, v.arrive_lon, site)) {
       const m = site.polygons ? distanceToPolygonMeters(v.arrive_lat, v.arrive_lon, site.polygons) : distanceMeters(v.arrive_lat, v.arrive_lon, site.lat, site.lon);
@@ -170,7 +176,7 @@ function flagsForSite(site: BillingSite, contract: BillingContract | undefined, 
     } else if (minutes > LONG_VISIT_MINUTES && contract?.services.some((s) => s.pricing?.type === 'hourly')) {
       add('odd_duration', `${site.label}: ${Math.round(minutes / 6) / 10} h on site at an hourly rate. Check Done wasn't tapped late.`, v.id);
     }
-    if (v.after_photos === 0) add('no_after_photo', `${site.label}: no after photo on this visit.`, v.id);
+    if (v.after_photos === 0 && !v.office_recorded) add('no_after_photo', `${site.label}: no after photo on this visit.`, v.id);
     if (v.services.includes('salt') && !v.salt?.some((e) => e.qty > 0)) {
       add('missing_salt_qty', `${site.label}: salt service logged with no quantity.`, v.id, 'review', saltUnit ? { unit: saltUnit } : {});
     }

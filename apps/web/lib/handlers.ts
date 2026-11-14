@@ -1,4 +1,5 @@
 import { and, crew_member, customer, eq, isNotNull, proof_packet, visit_correction, run_stop, serviceDb, site, sql, storm, storm_run, tenant, visit, visit_photo, weather_snapshot } from '@flake/db';
+import { clock12 } from './labels';
 import { photoOrder } from '@flake/core/proof';
 import { saltAmountText } from '@flake/core/pricing';
 import { fmtLocal, isLate } from '@flake/core/time';
@@ -97,7 +98,7 @@ export async function lateCheck() {
       late++;
       // The office alert path: push, email to owners and dispatchers, and a text to the company phone once texting is
       // live, once per stop (issue 83). The key matches the email key used before, so a stop already alerted isn't again.
-      await notifyOffice(t, { subject: `Late: ${st.label}`, headline: `${st.label} is past its ${st.service_window?.open_by} deadline.`, link: `${baseUrl()}/storms/${s.id}`, key: `late_alert:${s.id}:${st.id}`, related: { storm_id: s.id } });
+      await notifyOffice(t, { subject: `Late: ${st.label}`, headline: `${st.label} is past its ${clock12(st.service_window?.open_by)} deadline.`, link: `${baseUrl()}/storms/${s.id}`, key: `late_alert:${s.id}:${st.id}`, related: { storm_id: s.id } });
     }
   }
   return { late };

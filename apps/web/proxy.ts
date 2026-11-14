@@ -7,9 +7,9 @@ const APP_PREFIXES = ['/admin', '/dashboard', '/alerts', '/storms', '/customers'
 /** Refreshes the Supabase session cookie, sends signed-out office visits to login, and hides /dev in production. */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if ((pathname.startsWith('/dev') || pathname.startsWith('/api/dev')) && isProd()) {
-    return new NextResponse('Not found', { status: 404 });
-  }
+  if (isProd() && pathname.startsWith('/api/dev/')) return new NextResponse('Not found', { status: 404 });
+  // A page gets the app's own 404, which fits a phone, instead of a bare desktop-width "Not found" (issue 124).
+  if (isProd() && (pathname === '/dev' || pathname.startsWith('/dev/'))) return NextResponse.rewrite(new URL('/not-found-hidden', request.url));
   let response = NextResponse.next({ request });
   const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
     cookies: {

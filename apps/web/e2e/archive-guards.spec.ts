@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { login } from './helpers';
+import { login, sql } from './helpers';
 
 /** Archived things stay archived: no new lots for an archived customer, no archived route on a new storm. */
 test('an archived customer gets no new lots, and an archived route is not offered or accepted for a storm', async ({ page }) => {
@@ -35,4 +35,21 @@ test('a quote season must be written like 2026-27', async ({ page }) => {
     expect((await r.json()).error).toContain('like 2026-27');
   }
   expect((await quote('2026-27')).status()).toBe(201);
+});
+
+/** Issue 124: a season of billed storms waits behind Show older, and the billing picker puts storms to bill first. */
+test('the storms list keeps live and unbilled storms up top and older billed ones behind a link', async ({ page }) => {
+  await login(page);
+  const tag = randomUUID().slice(0, 6);
+  const t = (await sql`select id from tenant where slug = 'lakeshore-demo'`)[0]!.id;
+  for (let i = 0; i < 7; i++) await sql`insert into storm (tenant_id, name, started_at, closed_at, status) values (${t}, ${`Billed ${tag} ${i}`}, now() - make_interval(days => ${400 + i}), now() - make_interval(days => ${399 + i}), 'billed')`;
+  const [old] = await sql`insert into storm (tenant_id, name, started_at, closed_at, status) values (${t}, ${`Unbilled ${tag}`}, now() - interval '500 days', now() - interval '499 days', 'closed') returning id`;
+  await page.goto('/storms');
+  await expect(page.getByText(`Unbilled ${tag}`)).toBeVisible();
+  await expect(page.getByText(`Billed ${tag} 6`)).toHaveCount(0);
+  await page.getByTestId('older-storms').click();
+  await expect(page.getByText(`Billed ${tag} 6`)).toBeVisible();
+  await page.goto('/billing');
+  await expect(page.getByTestId('storm-picker').locator('optgroup[label="Ready to bill"] option', { hasText: `Unbilled ${tag}` })).toHaveCount(1);
+  await sql`update storm set status = 'billed' where id = ${old!.id}`;
 });

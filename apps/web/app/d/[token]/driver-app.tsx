@@ -1,6 +1,7 @@
 'use client';
 
 import { t as translate, type DictKey, type Lang } from '@flake/core/i18n';
+import { clock12 } from '@/lib/labels';
 import { usDistance } from '@flake/core/units';
 import { BigButton, bigButtonClass, cn } from '@flake/ui';
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
@@ -586,7 +587,7 @@ function NextStop({ t, token, stop, awayM, index, total, onNavigate, onArrive, o
         {/* A driver needs "do this first", not the office's priority number (issue 80). */}
         {stop.site.priority === 1 ? <span className="rounded-lg bg-amber-300 px-3 py-2 font-bold text-black" data-testid="priority">{t('do_first')}</span> : null}
         {stop.site.not_before ? <span className="rounded-lg bg-slate-700 px-3 py-2" data-testid="not-before-tag">{t('not_before')} {stop.site.not_before}</span> : null}
-        {stop.site.open_by ? <span className="rounded-lg bg-slate-700 px-3 py-2">{t('window')} {stop.site.open_by}</span> : null}
+        {stop.site.open_by ? <span className="rounded-lg bg-slate-700 px-3 py-2">{t('window')} {clock12(stop.site.open_by)}</span> : null}
         {stop.pins.map((p) => <span key={p.id} className="rounded-lg bg-slate-700 px-3 py-2">{p.kind}{p.note ? `: ${p.note}` : ''}</span>)}
       </div>
       {stop.site.notes ? <p className="mt-3 text-lg text-slate-100"><b>{t('notes')}:</b> {stop.site.notes}</p> : null}

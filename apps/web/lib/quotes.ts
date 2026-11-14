@@ -1,5 +1,5 @@
 import { and, asService, contract, customer, desc, eq, gt, inArray, isNotNull, ne, notInArray, or, serviceDb, site, sms_consent, tenant, withUser } from '@flake/db';
-import { paymentText } from './scope';
+import { billedBy, paymentText } from './scope';
 import { CUSTOMER_CONSENT_TEXT } from '@flake/core/messages';
 import { quoteAccept, quoteCreate, quoteDecline } from '@flake/contracts';
 import { z } from 'zod';
@@ -119,7 +119,7 @@ type Lot = Awaited<ReturnType<typeof byToken>>['lots'][number];
 async function acceptLot(r: Lot, input: z.infer<typeof quoteAccept>, ip: string | null, at: string): Promise<'took' | 'void' | 'already'> {
   const db = serviceDb();
   const { renderContractPdf } = await import('@flake/providers/pdf');
-  const pdf = await renderContractPdf({ company: r.tenant.name, customer: r.customer.name, site: `${r.site.label}, ${r.site.address}`, season: r.contract.season, services: r.contract.services, payment: paymentText(r.customer.billing_mode, r.tenant.name, Boolean(r.tenant.stripe_account_id && r.tenant.stripe_charges_enabled)), terms: r.contract.terms_md, acceptance: { name: input.name, at, ip } });
+  const pdf = await renderContractPdf({ company: r.tenant.name, customer: r.customer.name, site: `${r.site.label}, ${r.site.address}`, season: r.contract.season, services: r.contract.services, payment: paymentText(r.customer.billing_mode, r.tenant.name, Boolean(r.tenant.stripe_account_id && r.tenant.stripe_charges_enabled), billedBy([r.contract])), terms: r.contract.terms_md, acceptance: { name: input.name, at, ip } });
   // Its own file per acceptance, so a second tap that loses the race below can't overwrite the signed copy.
   const pdfPath = `${r.tenant.id}/${r.contract.id}-${Date.parse(at)}.pdf`;
   await putBlob('contracts', pdfPath, pdf, 'application/pdf', { upsert: true });

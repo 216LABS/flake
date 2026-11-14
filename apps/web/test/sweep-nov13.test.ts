@@ -250,7 +250,8 @@ describe('a lot plowed with no visit from the phone can be recorded by the offic
     expect(after.subtotal_cents).toBeGreaterThan(0);
     const codes = (after.flags as any[]).map((f) => f.code);
     expect(codes).not.toContain('missing_visit');
-    expect(codes).toEqual(expect.arrayContaining(['no_gps_match', 'no_after_photo']));
+    // One note in the office's words, not two flags that blame a phone that sent nothing (issue 122).
+    expect(codes).toEqual(['office_recorded']);
     const [v] = await serviceDb().select().from(visit).where(eq(visit.storm_id, out.storm.id));
     expect(v!.notes).toBe('Visit recorded by the office');
     expect((await serviceDb().select().from(visit_correction).where(eq(visit_correction.visit_id, v!.id)))[0]!.reason).toContain('No visit came from the phone');

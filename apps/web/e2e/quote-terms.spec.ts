@@ -108,3 +108,25 @@ test('a customer with two lots sees both on one quote and accepts both with one 
   await page.reload();
   await expect(page.getByText(`HOA ${tag}`)).toHaveCount(0);
 });
+
+/** Issue 120: a seasonal lot's quote shows the installment plan, and says it's billed by installment, not per storm. */
+test('a seasonal quote shows its installments and how they are billed, beside a per-push lot on the same link', async ({ page, browser, baseURL }) => {
+  await login(page);
+  const tag = randomUUID().slice(0, 6);
+  const c = await (await page.request.post('/api/customers', { data: { name: `Seasonal ${tag}`, kind: 'hoa', billing_mode: 'invoice_net30', email: `${tag}@example.com` } })).json();
+  const lot = async (label: string) => (await page.request.post('/api/sites', { data: { customer_id: c.id, label: `${label} ${tag}`, address: '3 Season St, Lakewood, OH', lat: 41.48, lon: -81.8 } })).json();
+  const south = await lot('South');
+  const q = await (await page.request.post('/api/quotes', { data: { site_id: south.id, season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'seasonal', total_cents: 90000, installments: 5 } }], send: false } })).json();
+  const guest = await browser.newContext({ baseURL, viewport: { width: 375, height: 800 } });
+  const g = await guest.newPage();
+  await g.goto(q.url);
+  await expect(g.getByTestId('scope-line')).toHaveText('plow: $900.00 for the season: 5 monthly installments of $180.00, the first in the month you sign. Starts at 2" of snow.');
+  await expect(g.getByTestId('payment-line')).toHaveText('Payment: Each installment is invoiced, due within 30 days.');
+  // A per-push lot joins the same link: the payment line now covers both.
+  const north = await lot('North');
+  await page.request.post('/api/quotes', { data: { site_id: north.id, season: '2026-27', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 6500 } }], send: false } });
+  await g.reload();
+  await expect(g.getByTestId('quote-lot')).toHaveCount(2);
+  await expect(g.getByTestId('payment-line')).toHaveText('Payment: Invoiced after each storm, due within 30 days. Seasonal prices are billed by monthly installment instead.');
+  await guest.close();
+});

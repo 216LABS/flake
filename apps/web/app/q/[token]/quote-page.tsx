@@ -6,7 +6,7 @@ import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-
 import { loadStripe } from '@stripe/stripe-js/pure';
 import { useState } from 'react';
 import { api, money } from '@/lib/client';
-import { paymentText, priceText } from '@/lib/scope';
+import { billedBy, paymentText, priceText } from '@/lib/scope';
 
 export function QuotePage({ token, quote }: { token: string; quote: any }) {
   const [name, setName] = useState('');
@@ -26,6 +26,7 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
   const [declining, setDeclining] = useState(false);
   const [reason, setReason] = useState('');
   const terms = [...new Set(lots.map((l) => l.contract.terms_md).filter(Boolean))] as string[];
+  const billed = billedBy(lots.map((l) => l.contract));
   const acceptedName = lots.find((l) => l.contract.accepted_name)?.contract.accepted_name;
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
@@ -38,13 +39,13 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
             {many ? <><h2 className="font-semibold">{l.site.label}</h2><p className="text-sm text-muted">{l.site.address}{l.site.area_sqft ? `. About ${Number(l.site.area_sqft).toLocaleString()} sq ft.` : ''}</p></> : <h2 className="font-semibold">Scope and price, season {l.contract.season}</h2>}
             <ul className="mt-2 space-y-1 text-sm">
               {l.contract.services.map((s: any, i: number) => (
-                <li key={i} data-testid="scope-line"><b className="capitalize">{s.service}</b>: {s.service === 'salt' && l.contract.salt_pricing ? `${money(l.contract.salt_pricing.amount_cents)} per ${l.contract.salt_pricing.unit === 'bag50lb' ? '50 lb bag' : l.contract.salt_pricing.unit}` : priceText(s.pricing)}{s.trigger_in === 0 ? '. Starts with any measurable snow.' : s.trigger_in != null ? `. Starts at ${s.trigger_in}" of snow.` : ''}</li>
+                <li key={i} data-testid="scope-line"><b className="capitalize">{s.service}</b>: {s.service === 'salt' && l.contract.salt_pricing ? `${money(l.contract.salt_pricing.amount_cents)} per ${l.contract.salt_pricing.unit === 'bag50lb' ? '50 lb bag' : l.contract.salt_pricing.unit}` : priceText(s.pricing, l.contract.season)}{s.trigger_in === 0 ? '. Starts with any measurable snow.' : s.trigger_in != null ? `. Starts at ${s.trigger_in}" of snow.` : ''}</li>
               ))}
             </ul>
             {many && l.contract.status === 'accepted' ? <p className="mt-1 text-sm text-ok-ink">Signed.</p> : null}
           </section>
         ))}
-        <p className="mt-4 text-sm" data-testid="payment-line"><b>Payment</b>: {paymentText(quote.customer.billing_mode, quote.company, quote.payments_ready)}</p>
+        <p className="mt-4 text-sm" data-testid="payment-line"><b>Payment</b>: {paymentText(quote.customer.billing_mode, quote.company, quote.payments_ready, billedBy(lots.map((l) => l.contract)))}</p>
         {terms.map((t, i) => <div key={i}><h3 className="mt-3 text-sm font-semibold">Terms{terms.length > 1 ? ` (${lots.filter((l) => l.contract.terms_md === t).map((l) => l.site.label).join(', ')})` : ''}</h3><p className="mt-1 whitespace-pre-wrap text-sm text-ink-2">{t}</p></div>)}
       </Card>
       {declined && !accepted ? (
@@ -106,14 +107,14 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
         </Card>
       )}
       {accepted && quote.payments_ready && quote.customer.billing_mode !== 'manual' ? (
-        paid ? <Card className="mt-4" data-testid="payment-saved"><p className="text-sm">Payment method saved. You&apos;re only charged after a storm, for the service you got.</p></Card> : <PaymentSetup token={token} onSaved={() => setPaid(true)} />
+        paid ? <Card className="mt-4" data-testid="payment-saved"><p className="text-sm">Payment method saved. {billed.seasonal && !billed.perStorm ? "You're charged once for each installment." : "You're only charged after a storm, for the service you got."}</p></Card> : <PaymentSetup billed={billed} token={token} onSaved={() => setPaid(true)} />
       ) : null}
       <p className="mt-8 text-center text-xs text-muted">Quotes and service records by Flake</p>
     </main>
   );
 }
 
-function PaymentSetup({ token, onSaved }: { token: string; onSaved: () => void }) {
+function PaymentSetup({ token, onSaved, billed }: { token: string; onSaved: () => void; billed: { perStorm: boolean; seasonal: boolean } }) {
   const [si, setSi] = useState<{ clientSecret: string; publishableKey: string | null; stripeAccount: string; mock: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const start = async () => {
@@ -127,7 +128,7 @@ function PaymentSetup({ token, onSaved }: { token: string; onSaved: () => void }
   return (
     <Card className="mt-4">
       <h2 className="font-semibold">Card or bank account on file</h2>
-      <p className="mt-1 text-sm text-muted">Bank account is often cheapest for the company. You&apos;re charged only after each storm.</p>
+      <p className="mt-1 text-sm text-muted">Bank account is often cheapest for the company. {billed.seasonal && !billed.perStorm ? "You're charged once for each installment." : billed.seasonal ? "You're charged after each storm, and monthly for seasonal prices." : "You're charged only after each storm."}</p>
       {!si ? <Button className="mt-3" onClick={() => void start()} data-testid="add-payment">Add payment method</Button> : si.mock ? <MockElement token={token} onSaved={onSaved} /> : (
         <Elements stripe={loadStripe(si.publishableKey!, { stripeAccount: si.stripeAccount })} options={{ clientSecret: si.clientSecret }}><LiveElement onSaved={onSaved} /></Elements>
       )}

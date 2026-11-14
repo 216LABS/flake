@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { photoOrder } from '@flake/core/proof';
-import { and, app_setting, contract, customer, desc, eq, gte, inArray, invoice_draft, proof_packet, serviceDb, site, sql, storm, tenant, visit, visit_correction, visit_photo, visitNotVoided } from '@flake/db';
+import { and, app_setting, contract, customer, desc, eq, gte, inArray, installment_invoice, invoice_draft, proof_packet, serviceDb, site, sql, storm, tenant, visit, visit_correction, visit_photo, visitNotVoided } from '@flake/db';
 import { required } from './env';
 import { quoteUrl } from './quotes';
 import { isUuid } from './http';
@@ -72,6 +72,11 @@ export async function portalData(customerId: string, tenantId: string) {
   const invoices = await db.select({ d: invoice_draft, stormName: storm.name }).from(invoice_draft).innerJoin(storm, eq(storm.id, invoice_draft.storm_id))
     .where(and(eq(invoice_draft.tenant_id, tenantId), eq(invoice_draft.customer_id, customerId), inArray(invoice_draft.status, ['approved', 'charged', 'sent', 'paid', 'failed']))).orderBy(desc(invoice_draft.created_at)).limit(100);
   const packets = siteIds.length ? await db.select({ id: proof_packet.id, site_id: proof_packet.site_id, from: proof_packet.from_ts, to: proof_packet.to_ts, created_at: proof_packet.created_at }).from(proof_packet).where(and(eq(proof_packet.tenant_id, tenantId), inArray(proof_packet.site_id, siteIds))).orderBy(desc(proof_packet.created_at)).limit(50) : [];
+  // Seasonal installments billed so far (issue 119). A pending one is still being sent, so it isn't shown yet.
+  const installments = siteIds.length ? await db.select({ i: installment_invoice, season: contract.season, site_id: contract.site_id, services: contract.services }).from(installment_invoice)
+    .innerJoin(contract, eq(contract.id, installment_invoice.contract_id))
+    .where(and(eq(installment_invoice.tenant_id, tenantId), inArray(contract.site_id, siteIds), inArray(installment_invoice.status, ['manual', 'sent', 'failed', 'paid'])))
+    .orderBy(desc(installment_invoice.created_at)).limit(60) : [];
   const owedOffline = row.c.billing_mode === 'manual' || !row.t.stripe_account_id || !row.t.stripe_charges_enabled;
   const saltOf = (id: string, own: { unit: string; qty: number }[] | null) => (corrections.filter((c) => c.visit_id === id).pop()?.new_value as typeof own | undefined) ?? own;
   return {
@@ -98,10 +103,18 @@ export async function portalData(customerId: string, tenantId: string) {
     // be charged in a moment isn't shown, so a card customer isn't told to mail a check.
     invoices: invoices.filter(({ d }) => d.status !== 'approved' || owedOffline).map(({ d, stormName }) => ({
       id: d.id, storm: stormName, total_cents: d.subtotal_cents, status: d.status, created_at: d.created_at,
-      due: d.status === 'sent' || d.status === 'failed' || d.status === 'approved',
+      // Nothing to pay is never "due" (issue 119): a seasonal lot's storm bill is $0.00.
+      due: d.subtotal_cents > 0 && (d.status === 'sent' || d.status === 'failed' || d.status === 'approved'),
       pay_link: d.status === 'sent' || d.status === 'failed' ? d.pay_link : null,
       lines: (d.lines as { description: string; quantity: number; amount_cents: number }[]).map((l) => ({ description: l.description, quantity: l.quantity, amount_cents: l.amount_cents })),
     })),
+    installments: installments.map(({ i, season, site_id, services }) => {
+      const of = (services as { pricing?: { type: string; installments?: number } }[]).find((x) => x.pricing?.type === 'seasonal')?.pricing?.installments;
+      return {
+        id: i.id, site: sites.find((s) => s.id === site_id)?.label ?? 'Your property', season, seq: i.seq, of: of ?? null, period: i.period, total_cents: i.amount_cents,
+        status: i.status, due: i.status !== 'paid',
+      };
+    }),
   };
 }
 

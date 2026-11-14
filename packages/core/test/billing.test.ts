@@ -51,6 +51,13 @@ describe('draftInvoices flags', () => {
   it('no_after_photo', () => {
     expect(flagsOf(input({ visits: [v('s1', { after_photos: 0 })] }))).toEqual(['no_after_photo']);
   });
+  it('a visit the office recorded gets one info note, not location and photo flags (issue 122)', () => {
+    const [d] = draftInvoices(input({ visits: [v('s1', { arrive_lat: null, arrive_lon: null, after_photos: 0, office_recorded: true })] }));
+    expect(d!.flags.map((f) => [f.code, f.severity])).toEqual([['office_recorded', 'info']]);
+    expect(d!.flags[0]!.message).toBe('s1: visit recorded by the office. No location or photos came from the phone.');
+    expect(isDraftClean(d!.flags)).toBe(true);
+    expect(d!.subtotal_cents).toBe(6500);
+  });
   it('missing_salt_qty for salt with no quantity', () => {
     expect(flagsOf(input({ visits: [v('s1', { services: ['plow', 'salt'] })] }))).toEqual(['missing_salt_qty']);
     expect(flagsOf(input({ visits: [v('s1', { services: ['plow', 'salt'], salt: [{ unit: 'bag50lb', qty: 0 }] })] }))).toEqual(['missing_salt_qty']);

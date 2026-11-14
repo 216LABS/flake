@@ -161,7 +161,7 @@ test('a storm stop opens to its visit and photos, and every truck is on a phone 
   const sheet = page.getByTestId('stop-sheet');
   await expect(sheet).toBeVisible();
   await expect(sheet.getByTestId('stop-sheet-status')).toHaveText('Done');
-  await expect(sheet.getByTestId('stop-sheet-visit')).toContainText('plow');
+  await expect(sheet.getByTestId('stop-sheet-visit')).toContainText('ServicesPlow');
   await expect(sheet.getByTestId('stop-sheet-photo')).toHaveCount(2);
   // The sheet sits above the tab bar, so its last photo isn't hidden under it.
   const last = sheet.getByTestId('stop-sheet-photo').last();

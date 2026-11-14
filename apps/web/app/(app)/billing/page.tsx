@@ -19,7 +19,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
   const ctx = await requirePage();
   const tz = ctx.tenant.timezone;
   const data = await asUser(ctx, async (tx) => {
-    const storms = await tx.select({ id: storm.id, name: storm.name }).from(storm).orderBy(desc(storm.started_at));
+    const storms = await tx.select({ id: storm.id, name: storm.name, status: storm.status, started_at: storm.started_at }).from(storm).orderBy(desc(storm.started_at));
     const [selected] = stormParam ? await tx.select().from(storm).where(eq(storm.id, stormParam)) : await tx.select().from(storm).orderBy(desc(storm.started_at)).limit(1);
     const drafts = selected ? await tx.select({ draft: invoice_draft, customer }).from(invoice_draft).innerJoin(customer, eq(customer.id, invoice_draft.customer_id)).where(eq(invoice_draft.storm_id, selected.id)) : [];
     return { storms, selected, drafts };
@@ -34,7 +34,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
   return (
     <>
       <PageHeader title="Billing review" subtitle={`${data.selected.name}, ${fmtLocal(data.selected.started_at, tz)}.${owner ? ` Your fee rate: ${(tenantFeeRate(ctx.tenant) * 100).toFixed(1)}%.` : ''}`} />
-      <StormPicker storms={data.storms} selected={data.selected.id} />
+      <StormPicker storms={data.storms.map((s) => ({ id: s.id, name: `${s.name}, ${fmtLocal(s.started_at, tz, { month: 'short', day: 'numeric' })}`, status: s.status ?? 'billed' }))} selected={data.selected.id} />
       {missed.length ? (
         <p className="mb-4 rounded-md bg-warn-tint p-3 text-sm text-warn-ink" data-testid="missed-visits">
           {missed.length} visit{missed.length === 1 ? '' : 's'} synced after these drafts were made and {missed.length === 1 ? 'is' : 'are'} on no invoice: {[...new Set(missed.map((m) => m.site))].join(', ')}.{' '}

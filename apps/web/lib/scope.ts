@@ -1,13 +1,28 @@
+import { seasonalInstallments } from '@flake/core/pricing';
+import { currentSeason, isLaterSeason } from '@flake/core/time';
 import { money } from './client';
 
 /** One service's price in plain words, the same on the quote page and the office's contract list. */
-export function priceText(p: any): string {
+/**
+ * A seasonal price as a plan the customer can budget for (issue 120): "$900.00 for the season: 5 monthly installments
+ * of $180.00". With the season, it says when the first one is billed: the month they sign, or the July a season signed
+ * ahead of time starts, which is when the installment job starts billing it.
+ */
+export function seasonalPlan(p: { total_cents: number; installments: number }, season?: string, now = new Date()): string {
+  const [first, ...rest] = seasonalInstallments(p.total_cents, p.installments);
+  const each = rest.length && rest.some((x) => x !== first) ? `${money(first!)} then ${money(rest[0]!)}` : money(first!);
+  const plan = `${money(p.total_cents)} for the season: ${p.installments === 1 ? `one installment of ${each}` : `${p.installments} monthly installments of ${each}`}`;
+  if (!season) return plan;
+  return isLaterSeason(season, currentSeason(now)) ? `${plan}, the first in July ${season.slice(0, 4)}` : `${plan}, the first in the month you sign`;
+}
+
+export function priceText(p: any, season?: string): string {
   if (!p) return 'priced per unit';
   switch (p.type) {
     case 'per_push': return `${money(p.amount_cents)} per push`;
     case 'per_event': return `${money(p.amount_cents)} per storm`;
     case 'hourly': return `${money(p.rate_cents)} per hour, rounded up to 15 minutes`;
-    case 'seasonal': return `${money(p.total_cents)} for the season, in ${p.installments} installments`;
+    case 'seasonal': return seasonalPlan(p, season);
     case 'per_inch_tier': return p.tiers.map((t: any) => `${t.up_to_in ? `up to ${t.up_to_in}"` : 'above that'}: ${money(t.amount_cents)}`).join('; ');
     default: return '';
   }
@@ -26,7 +41,27 @@ export function scopeLine(s: { service: string; trigger_in?: number | null; pric
  * How the customer pays, said on the quote and in the signed agreement, so nobody signs without knowing (the terms
  * otherwise said only "as stated on each invoice").
  */
-export function paymentText(mode: string, company: string, online = true): string {
+export function paymentText(mode: string, company: string, online = true, billed: { perStorm: boolean; seasonal: boolean } = { perStorm: true, seasonal: false }): string {
+  // A quote of only seasonal lots is billed by installment, never after each storm (issue 120).
+  if (billed.seasonal && !billed.perStorm) {
+    switch (mode) {
+      case 'card_on_file': return online ? 'Each installment is charged to a card on file. You add the card after accepting.' : `Each installment is charged to a card on file. ${company} will send you a secure link to add your card.`;
+      case 'ach_on_file': return online ? 'Each installment is paid from a bank account on file. You add the account after accepting.' : `Each installment is paid from a bank account on file. ${company} will send you a secure link to add the account.`;
+      case 'invoice_net30': return 'Each installment is invoiced, due within 30 days.';
+      default: return `Invoiced by ${company} for each installment.`;
+    }
+  }
+  const storm = stormPayment(mode, company, online);
+  return billed.seasonal ? `${storm} Seasonal prices are billed by monthly installment instead.` : storm;
+}
+
+/** Whether a contract has anything billed after each storm, and anything billed by installment. */
+export function billedBy(contracts: { services: unknown }[]): { perStorm: boolean; seasonal: boolean } {
+  const all = contracts.flatMap((k) => k.services as { pricing?: { type?: string } }[]);
+  return { perStorm: all.some((s) => s.pricing?.type !== 'seasonal'), seasonal: all.some((s) => s.pricing?.type === 'seasonal') };
+}
+
+function stormPayment(mode: string, company: string, online: boolean): string {
   // Before the company turns on online payments there's no card form after accepting, so it doesn't promise one.
   switch (mode) {
     case 'card_on_file': return online ? 'Charged to a card on file after each storm. You add the card after accepting.' : `Charged to a card on file after each storm. ${company} will send you a secure link to add your card.`;

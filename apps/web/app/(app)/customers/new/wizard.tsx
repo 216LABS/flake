@@ -3,6 +3,7 @@
 import { quotingSeason } from '@flake/core/time';
 import { suggestPrice, type RateCard } from '@flake/core/quote';
 import { Badge, Button, Card, Input, Label, PageHeader, Segmented, Select, Progress } from '@flake/ui';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -22,13 +23,14 @@ const STEPS = ['Customer', 'Property', 'Pricing', 'Pins', 'Route', 'Quote'];
 const PIN_KINDS = ['stake', 'pile', 'ada', 'entrance', 'hazard', 'other'];
 type PricingType = 'per_push' | 'per_inch_tier' | 'per_event' | 'seasonal' | 'hourly';
 
-export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLayers; rateCard: RateCard; routes: { id: string; name: string; site_ids: string[] }[]; existing?: { id: string; name: string; kind: string; email: string } }) {
+export function Wizard({ layers, rateCard, routes, existing, others = [] }: { others?: { id: string; name: string }[]; layers: TileLayers; rateCard: RateCard; routes: { id: string; name: string; site_ids: string[] }[]; existing?: { id: string; name: string; kind: string; email: string } }) {
   const router = useRouter();
   const firstStep = existing ? 1 : 0;
   const [step, setStep] = useState(firstStep);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [c, setC] = useState({ name: existing?.name ?? '', kind: existing?.kind ?? 'commercial', contact_name: '', phone_e164: '', email: existing?.email ?? '', billing_mode: 'card_on_file' });
+  const twin = existing || !c.name.trim() ? null : others.find((o) => o.name.trim().toLowerCase() === c.name.trim().toLowerCase()) ?? null;
   const [address, setAddress] = useState('');
   const [hit, setHit] = useState<{ label: string; lat: number; lon: number } | null>(null);
   const [estimate, setEstimate] = useState<{ sqft: number | null; method: string; attribution: string[]; parcel_id?: string; county?: string } | null>(null);
@@ -204,6 +206,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
         {step === 0 ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2"><Label htmlFor="name">Name</Label><Input id="name" data-testid="c-name" value={c.name} onChange={(e) => setC({ ...c, name: e.target.value })} /></div>
+            {twin ? <p className="text-sm text-warn-ink sm:col-span-2" data-testid="customer-twin">You already have a customer named {twin.name}. <Link className="font-semibold text-link underline" href={`/customers/new?customer=${twin.id}`}>Add this lot to them</Link>, or keep going to make a second customer.</p> : null}
             <Segmented label="Kind" name="kind" testId="kind" value={c.kind as 'commercial' | 'residential' | 'hoa'} options={[['commercial', 'Commercial'], ['residential', 'Residential'], ['hoa', 'HOA']] as const} onChange={(kind) => setC({ ...c, kind })} />
             <div><Label htmlFor="billing">Billing</Label>
               <Select id="billing" value={c.billing_mode} onChange={(e) => setC({ ...c, billing_mode: e.target.value })}><option value="card_on_file">Card on file</option><option value="ach_on_file">Bank (ACH) on file</option><option value="invoice_net30">Net-30 invoice</option><option value="manual">Manual</option></Select>
@@ -272,7 +275,7 @@ export function Wizard({ layers, rateCard, routes, existing }: { layers: TileLay
                 <ul className="text-sm">{suggestion.tiers.map((t) => <li key={String(t.up_to_in)}>{t.up_to_in ? `Up to ${t.up_to_in}"` : 'Over that'}: {money(t.amount_cents)}</li>)}</ul>
               </div>
             ) : (
-              <div><Label htmlFor="price">Price ($). Suggested from your rate card, editable.</Label><Input id="price" data-testid="price" type="number" step="0.01" min="0.01" max="100000" value={price} onChange={(e) => { setPriceTyped(true); setPrice(e.target.value); }} /></div>
+              <div><Label htmlFor="price">{pricingType === 'seasonal' ? 'Season total ($), billed in 5 monthly installments.' : 'Price ($).'} Suggested from your rate card, editable.</Label><Input id="price" data-testid="price" type="number" step="0.01" min="0.01" max="100000" value={price} onChange={(e) => { setPriceTyped(true); setPrice(e.target.value); }} /></div>
             )}
             <div>
               <Label htmlFor="trigger">Trigger depth (in)</Label>

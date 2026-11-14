@@ -51,3 +51,11 @@ export const JOB_LABEL: Record<string, string> = {
   'trigger.evaluate': 'Check snow triggers', 'weather.fetch_alerts': 'Weather alerts', 'weather.fetch_cell': 'Forecast update', 'weather.nohrsc': 'Snowfall report',
 };
 export const jobLabel = (kind: string) => JOB_LABEL[kind] ?? kind.replace(/[._]/g, ' ');
+
+/** A stored "06:00" or "17:30" as people read it: "6:00 AM", "5:30 PM". Anything else is shown as it is. */
+export function clock12(hm: string | null | undefined): string {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hm ?? '');
+  if (!m) return hm ?? '';
+  const h = Number(m[1]);
+  return `${h % 12 || 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
+}

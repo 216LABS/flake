@@ -91,7 +91,7 @@ export function ProofForm({ sites, packets, preselect, tz }: { sites: { id: stri
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
       <Card>
         <Label htmlFor="site">Site</Label>
-        <Select id="site" value={siteId} data-testid="proof-site" onChange={(e) => setSiteId(e.target.value)}>{sites.map((s) => <option key={s.id} value={s.id}>{s.label} ({s.customer})</option>)}</Select>
+        <Select id="site" value={siteId} data-testid="proof-site" onChange={(e) => setSiteId(e.target.value)}>{sites.map((s) => <option key={s.id} value={s.id}>{s.label.startsWith(s.customer) || s.customer.startsWith(s.label) ? s.label : `${s.label} (${s.customer})`}</option>)}</Select>
         <Segmented className="mt-3" label="Which dates" name="proof-mode" testId="proof-mode" value={mode} options={[['range', 'Date range'], ['claim', 'Claim date ± 48 h']] as const} onChange={setMode} />
         {mode === 'range' ? (
           <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">

@@ -65,6 +65,7 @@ async function loadBillingInput(tx: Tx, stormId: string) {
   const billingVisits: BillingVisit[] = visits.map((v) => ({
     id: v.id, site_id: v.site_id, services: v.services, arrived_at: v.arrived_device_at, departed_at: v.departed_device_at, depth_in: v.depth_in === null ? null : Number(v.depth_in), salt: v.salt,
     is_replow: Boolean(v.is_replow), arrive_lat: v.arrive_lat, arrive_lon: v.arrive_lon, after_photos: photos.filter((p) => p.visit_id === v.id && p.phase === 'after').length,
+    office_recorded: corrections.some((c) => c.visit_id === v.id && c.field === 'notes' && c.new_value === 'Visit recorded by the office'),
   }));
   return { s, stops, sites, contracts, billingVisits, corrections };
 }

@@ -2,7 +2,7 @@ import { customerCreate } from '@flake/contracts';
 import { readableIssue } from './issues';
 
 /** RFC 4180 CSV: quoted fields, doubled quotes inside them, commas and line breaks inside quotes, CRLF or LF. */
-export function parseCsv(text: string): string[][] {
+export function parseCsv(text: string, sep = ','): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = '';
@@ -15,7 +15,7 @@ export function parseCsv(text: string): string[][] {
       else if (c === '"') quoted = false;
       else field += c;
     } else if (c === '"') quoted = true;
-    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === sep) { row.push(field); field = ''; }
     else if (c === '\n' || c === '\r') {
       if (c === '\r' && src[i + 1] === '\n') i++;
       row.push(field);
@@ -76,9 +76,12 @@ export type CsvCustomer = { name: string; address: string; label: string | null;
  * A customer list from a spreadsheet: the first row names the columns, in any order and any of the usual words for them.
  * Name and address are needed; the rest may be missing. Each row says what's wrong with it, if anything.
  */
-export function customersFromCsv(text: string): { rows: (CsvCustomer & { problem: string | null })[]; missing: string[] } {
-  const [head, ...body] = parseCsv(text);
-  if (!head) return { rows: [], missing: ['name', 'address'] };
+export function customersFromCsv(text: string): { rows: (CsvCustomer & { problem: string | null })[]; missing: string[]; empty?: boolean } {
+  // Excel saves with semicolons in many countries: the first line says which one this file uses.
+  const firstLine = text.replace(/^\uFEFF/, '').split(/\r?\n/, 1)[0] ?? '';
+  const sep = (firstLine.match(/;/g)?.length ?? 0) > (firstLine.match(/,/g)?.length ?? 0) ? ';' : ',';
+  const [head, ...body] = parseCsv(text, sep);
+  if (!head || !body.length) return { rows: [], missing: [], empty: true };
   const at = Object.fromEntries(Object.entries(HEADERS).map(([key, names]) => [key, head.findIndex((h) => names.includes(h.trim().toLowerCase()))])) as Record<keyof CsvCustomer, number>;
   const missing = (['name', 'address'] as const).filter((k) => at[k] < 0);
   const cell = (r: string[], k: keyof CsvCustomer) => (at[k] >= 0 ? (r[at[k]] ?? '').trim() : '') || null;
@@ -87,6 +90,15 @@ export function customersFromCsv(text: string): { rows: (CsvCustomer & { problem
     const check = checkImportRow(c);
     const problem = !c.name ? 'No name.' : c.address.length < 5 ? 'No address.' : check.ok ? null : check.problem;
     return { ...c, problem };
+  });
+  // The same name and address twice is one lot typed twice, not two lots: the later copy is left out.
+  const seen = new Map<string, number>();
+  rows.forEach((r, i) => {
+    if (r.problem) return;
+    const key = `${r.name.toLowerCase()}|${r.address.toLowerCase().replace(/\s+/g, ' ')}`;
+    const first = seen.get(key);
+    if (first === undefined) seen.set(key, i);
+    else r.problem = `Same lot as row ${first + 2}.`;
   });
   return { rows, missing };
 }

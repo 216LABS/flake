@@ -27,7 +27,14 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
   const day = (iso: string) => fmtLocal(iso, tz, { weekday: 'short', month: 'short', day: 'numeric' });
   const time = (iso: string) => fmtLocal(iso, tz, { hour: 'numeric', minute: '2-digit' });
   // Every invoice still owed, with or without an online pay link (issue 60).
-  const due = data.invoices.filter((i) => i.due);
+  const dueBills = data.invoices.filter((i) => i.due);
+  // Seasonal installments owed sit beside storm bills, so the card counts everything owed (issue 119).
+  const month = (p: string | null) => (p && /^\d{4}-\d{2}$/.test(p) ? new Date(`${p}-15T12:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : null);
+  const installmentName = (i: (typeof data.installments)[number]) => `${i.site}, ${i.season} installment ${i.seq}${i.of ? ` of ${i.of}` : ''}`;
+  const due = [
+    ...dueBills.map((i) => ({ id: i.id, name: i.storm, total_cents: i.total_cents, status: i.status, pay_link: i.pay_link, offline: !i.pay_link, anchor: `invoice-${i.id}` })),
+    ...data.installments.filter((i) => i.due).map((i) => ({ id: i.id, name: installmentName(i), total_cents: i.total_cents, status: i.status, pay_link: null as string | null, offline: i.status === 'manual', anchor: `installment-${i.id}` })),
+  ];
   const contact = `${data.company.name}${data.company.phone ? ` at ${phone(data.company.phone)}` : ''}`;
   // "10:32 AM to 10:58 AM", or one time when both fall in the same minute, instead of a window that reads as zero.
   const span = (from: string, to: string | null) => (to && time(to) !== time(from) ? `${time(from)} to ${time(to)}` : to ? `at ${time(from)}` : time(from));
@@ -47,9 +54,9 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
           <Card className="border-warn-line bg-warn-tint" data-testid="portal-due">
             <h2 className="font-semibold">{due.length === 1 ? 'An invoice is waiting' : `${due.length} invoices are waiting`}</h2>
             <ul className="mt-2 space-y-1 text-sm">
-              {due.map((i) => <li key={i.id}>{i.storm}: <b className="tabular">{money(i.total_cents)}</b>{i.status === 'failed' ? ' (the last payment did not go through)' : ''}. {i.pay_link ? <a className="font-semibold text-link underline" href={i.pay_link}>View and pay</a> : <a className="font-semibold text-link underline" href={`#invoice-${i.id}`}>See what it&apos;s for</a>}</li>)}
+              {due.map((i) => <li key={i.id}>{i.name}: <b className="tabular">{money(i.total_cents)}</b>{i.status === 'failed' ? ' (the last payment did not go through)' : ''}. {i.pay_link ? <a className="font-semibold text-link underline" href={i.pay_link}>View and pay</a> : <a className="font-semibold text-link underline" href={`#${i.anchor}`}>See what it&apos;s for</a>}</li>)}
             </ul>
-            {due.some((i) => !i.pay_link) ? <p className="mt-2 text-sm text-ink-2" data-testid="portal-pay-offline">Online payment isn&apos;t set up for {due.every((i) => !i.pay_link) ? 'these' : 'some of these'}. Pay {contact} the way you usually do, by check or over the phone.</p> : null}
+            {due.some((i) => i.offline) ? <p className="mt-2 text-sm text-ink-2" data-testid="portal-pay-offline">Online payment isn&apos;t set up for {due.every((i) => i.offline) ? (due.length === 1 ? 'this' : 'these') : 'some of these'}. Pay {contact} the way you usually do, by check or over the phone.</p> : null}
           </Card>
         ) : null}
 
@@ -136,7 +143,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
                   <details className="rounded-md border border-line-faint bg-surface" open={i.due} data-testid="portal-invoice">
                     <summary className="flex min-h-12 cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
                       <span className="font-medium">{i.storm}</span>
-                      <Badge tone={STATUS[i.status ?? '']?.tone ?? 'blue'}>{STATUS[i.status ?? '']?.label ?? i.status}</Badge>
+                      {i.total_cents === 0 ? <Badge tone="gray">No charge</Badge> : <Badge tone={STATUS[i.status ?? '']?.tone ?? 'blue'}>{STATUS[i.status ?? '']?.label ?? i.status}</Badge>}
                       <b className="tabular ml-auto">{money(i.total_cents)}</b>
                     </summary>
                     <div className="border-t border-line-faint px-3 py-2">
@@ -148,6 +155,21 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
                         : i.due ? <p className="mt-2 text-sm text-ink-2">Pay {contact} by check or over the phone. Online payment isn&apos;t set up for this invoice.</p> : null}
                     </div>
                   </details>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {data.installments.length ? (
+          <section aria-labelledby="installments">
+            <Eyebrow id="installments" className="mb-2">Seasonal installments</Eyebrow>
+            <ul className="divide-y divide-line-faint rounded-md border border-line-faint bg-surface" data-testid="portal-installments">
+              {data.installments.map((i) => (
+                <li key={i.id} id={`installment-${i.id}`} className="flex scroll-mt-4 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2" data-testid="portal-installment">
+                  <span className="min-w-0"><span className="font-medium">{installmentName(i)}</span>{month(i.period) ? <span className="block text-xs text-muted">{month(i.period)}</span> : null}</span>
+                  <Badge tone={i.status === 'paid' ? 'green' : i.status === 'failed' ? 'red' : 'amber'}>{i.status === 'paid' ? 'Paid' : i.status === 'failed' ? 'Payment failed' : i.status === 'sent' ? 'Due, invoice emailed' : 'Due'}</Badge>
+                  <b className="tabular ml-auto">{money(i.total_cents)}</b>
                 </li>
               ))}
             </ul>

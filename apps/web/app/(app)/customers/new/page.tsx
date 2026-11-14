@@ -12,12 +12,14 @@ export default async function NewCustomer({ searchParams }: { searchParams: Prom
   const { customer: customerId } = await searchParams;
   const ctx = await requirePage();
   if (ctx.role === 'viewer') redirect('/customers');
-  const { routes, stops, existing } = await asUser(ctx, async (tx) => ({
+  const { routes, stops, others, existing } = await asUser(ctx, async (tx) => ({
     routes: await tx.select().from(route).where(isNull(route.archived_at)),
     stops: await tx.select().from(route_stop).orderBy(asc(route_stop.seq)),
+    // Current customers' names, so a second customer with the same name is pointed at the first.
+    others: await tx.select({ id: customer.id, name: customer.name }).from(customer).where(isNull(customer.archived_at)),
     existing: customerId && isUuid(customerId) ? (await tx.select().from(customer).where(eq(customer.id, customerId)))[0] : undefined,
   }));
   const { tiles } = await getProviders();
   const card = (Object.keys(ctx.tenant.rate_card as object).length ? ctx.tenant.rate_card : DEFAULT_RATE_CARD) as RateCard;
-  return <Wizard existing={existing ? { id: existing.id, name: existing.name, kind: existing.kind, email: existing.email ?? '' } : undefined} layers={tiles.layers()} rateCard={card} routes={routes.map((r) => ({ id: r.id, name: r.name, site_ids: stops.filter((s) => s.route_id === r.id).map((s) => s.site_id) }))} />;
+  return <Wizard others={others} existing={existing ? { id: existing.id, name: existing.name, kind: existing.kind, email: existing.email ?? '' } : undefined} layers={tiles.layers()} rateCard={card} routes={routes.map((r) => ({ id: r.id, name: r.name, site_ids: stops.filter((s) => s.route_id === r.id).map((s) => s.site_id) }))} />;
 }
