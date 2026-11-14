@@ -1,5 +1,6 @@
 import { asc, customer, desc, eq, proof_packet, site } from '@flake/db';
-import { PageHeader } from '@flake/ui';
+import { buttonVariants, EmptyState, PageHeader } from '@flake/ui';
+import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
 import { ProofForm } from './proof-form';
 
@@ -15,7 +16,9 @@ export default async function Proof({ searchParams }: { searchParams: Promise<{ 
   return (
     <>
       <PageHeader title="Proof packets" subtitle="Everything an insurer or lawyer asks for, for any site and dates." />
-      <ProofForm sites={data.sites} packets={JSON.parse(JSON.stringify(data.packets))} preselect={preselect} tz={ctx.tenant.timezone} />
+      {/* No lots yet: nothing to pick, so say where packets come from (issue 129). */}
+      {data.sites.length ? null : <EmptyState title="No lots yet" body="Proof packets list every visit, photo and time for a lot. Add a customer and their lot, and packets are ready once it has visits." action={<Link href="/customers/new" className={buttonVariants({ variant: 'accent' })}>Add a customer</Link>} />}
+      {data.sites.length ? <ProofForm sites={data.sites} packets={JSON.parse(JSON.stringify(data.packets))} preselect={preselect} tz={ctx.tenant.timezone} /> : null}
     </>
   );
 }

@@ -126,5 +126,5 @@ test('on a phone, Start a storm jumps past the storm list to the form, and statu
   await page.getByTestId('jump-start-storm').click();
   await expect(page.getByTestId('storm-name')).toBeInViewport();
   const words = await page.locator('main li span.font-display').allTextContents();
-  for (const w of words) expect(['Live', 'Ready to bill', 'Billed']).toContain(w);
+  for (const w of words) expect(['Live', 'Ready to bill', 'Billed', 'Closed, no bills']).toContain(w);
 });

@@ -16,7 +16,7 @@ export default async function Dashboard() {
   const data = await asUser(ctx, async (tx) => ({
     alerts: await tx.select().from(trigger_alert).where(eq(trigger_alert.status, 'open')).orderBy(desc(trigger_alert.created_at)).limit(10),
     active: await tx.select().from(storm).where(eq(storm.status, 'active')).orderBy(desc(storm.started_at)),
-    recent: await tx.select().from(storm).where(sql`${storm.status} <> 'active'`).orderBy(desc(storm.started_at)).limit(5),
+    recent: await tx.select({ id: storm.id, name: storm.name, started_at: storm.started_at, status: storm.status, billedNothing: sql<boolean>`not exists (select 1 from invoice_draft d where d.storm_id = ${storm.id} and d.status <> 'void')` }).from(storm).where(sql`${storm.status} <> 'active'`).orderBy(desc(storm.started_at)).limit(5),
     customers: await tx.select({ n: sql<number>`count(*)::int` }).from(customer),
     crew: await tx.select({ n: sql<number>`count(*)::int` }).from(crew_member).where(eq(crew_member.active, true)),
     routed: await tx.select({ n: sql<number>`count(*)::int` }).from(route_stop).innerJoin(route, eq(route.id, route_stop.route_id)).where(isNull(route.archived_at)),
@@ -63,6 +63,14 @@ export default async function Dashboard() {
       {usage?.near_limit ? <p className="mb-4 rounded-md bg-danger-tint p-3 text-sm text-danger" data-testid="usage-warning">Storage is nearly full ({usage.files_mb} of {usage.files_limit_mb} MB of files, {usage.db_mb} of {usage.db_limit_mb} MB of database). <Link className="underline" href="/settings?tab=system">See details</Link></p> : null}
       {failedMessages ? <p className="mb-4 rounded-md bg-danger-tint p-3 text-sm text-danger" data-testid="messages-failed">{failedMessages === 1 ? '1 message' : `${failedMessages} messages`} could not be sent in the last 24 hours. {retrying ? 'Flake is still retrying.' : 'Flake has stopped retrying. Check the address, then send again from the driver or customer.'} <Link className="underline" href="/settings?tab=system">See why</Link></p> : null}
       {rejectedMessages ? <p className="mb-4 rounded-md bg-warn-tint p-3 text-sm text-warn-ink" data-testid="messages-rejected">{rejectedMessages === 1 ? '1 message was' : `${rejectedMessages} messages were`} not delivered because the email address or phone number was rejected. Fix it on the driver or customer, and route links go out again. <Link className="underline" href="/settings?tab=system">See which</Link></p> : null}
+      {/* A brand-new company has no lots, so no forecast to show yet: say what comes first instead of "unavailable" (issue 129). */}
+      {data.customers[0]!.n === 0 ? (
+        <section className="rounded-md bg-slate-950 p-5 text-white" data-testid="first-run">
+          <h2 className="font-display text-xl font-semibold">Welcome to Flake</h2>
+          <p className="mt-1 text-sm text-slate-300">Add a customer and their lot. The snow forecast for your lots shows here once there&apos;s one to watch.</p>
+          {canEdit ? <div className="mt-3 flex flex-wrap gap-2"><Link href="/customers/new" className={buttonVariants({ variant: 'accent' })}>Add your first customer</Link><Link href="/customers/import" className={buttonVariants({ variant: 'outline', className: 'text-ink' })}>Import a list</Link></div> : null}
+        </section>
+      ) : (
       <section className="overflow-hidden rounded-md bg-slate-950 text-white" data-testid="conditions">
         <div className="flex flex-wrap items-end gap-x-10 gap-y-4 p-5">
           <Stat label="Next 12 h" value={fmt(w.forecast_in)} />
@@ -71,6 +79,7 @@ export default async function Dashboard() {
           <p className="ml-auto text-xs text-slate-300">{w.reason ? `${w.reason} ` : ''}{w.source === 'unavailable' ? '' : `Live forecast. Source: ${w.source}${w.fetched_at ? `, ${fmtLocal(w.fetched_at, tz)}` : ''}`}</p>
         </div>
       </section>
+      )}
       <div className={`mt-6 grid grid-cols-1 gap-6 ${setup.some((s) => !s.done) ? 'lg:grid-cols-3' : ''}`}>
         <div className={`space-y-6 ${setup.some((s) => !s.done) ? 'lg:col-span-2' : ''}`}>
           <section>
@@ -155,7 +164,7 @@ export default async function Dashboard() {
               <tr key={s.id}>
                 <Td><Link className="text-link underline" href={`/storms/${s.id}`}>{s.name}</Link></Td>
                 <Td label="Started">{fmtLocal(s.started_at, tz)}</Td>
-                <Td label="Status"><Badge tone={stormStatus(s.status).tone}>{stormStatus(s.status).word}</Badge></Td>
+                <Td label="Status"><Badge tone={stormStatus(s.status ?? '', s.billedNothing).tone}>{stormStatus(s.status ?? '', s.billedNothing).word}</Badge></Td>
                 <Td><Link className="text-link underline" href={`/billing?storm=${s.id}`}>Billing</Link></Td>
               </tr>
             ))}

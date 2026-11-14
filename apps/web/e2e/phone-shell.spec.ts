@@ -204,7 +204,7 @@ for (const size of SIZES) {
     const run = runs[0]!;
     const [s] = await sql`select s.id, s.customer_id from site s where s.id = ${run.stops[0]!.site_id}`;
     const [alert] = await sql`select id from trigger_alert where tenant_id = (select id from tenant where slug = 'lakeshore-demo') order by created_at desc limit 1`;
-    const quote = await (await page.request.post('/api/quotes', { data: { site_id: s!.id, season: '2032-33', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 7500 } }], send: false } })).json();
+    const quote = await (await page.request.post('/api/quotes', { data: { site_id: s!.id, season: '2027-28', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 7500 } }], send: false } })).json();
     const portal = await (await page.request.get(`/api/customers/${s!.customer_id}/portal`)).json();
 
     const wide: string[] = [];

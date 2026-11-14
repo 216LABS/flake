@@ -195,10 +195,14 @@ h3 {
 }
 
 /*
- * A table that turns into one card per row on a phone (issue 47). Each cell shows its column name from data-label;
- * a cell without one (the row's name, or its action) spans the card.
+ * A table that turns into one card per row when its box is narrow (issue 47): on a phone, and on a tablet beside the
+ * sidebar, where a desk table would be cut off (issue 128). Each cell shows its column name from data-label; a cell
+ * without one (the row's name, or its action) spans the card.
  */
-@media (max-width: 767.98px) {
+.table-stack {
+  container-type: inline-size;
+}
+@container (max-width: 39.99rem) {
   .table-stack table,
   .table-stack tbody,
   .table-stack tr,
@@ -283,5 +287,29 @@ input::-webkit-date-and-time-value {
   textarea,
   select {
     font-size: max(16px, 1em);
+  }
+}
+
+/*
+ * A view-only teammate sees a page as a report (issue 131): its write buttons are hidden, and the fieldset around a form
+ * makes its fields read-only. A button that only changes what's shown carries data-read and stays.
+ */
+.view-only button:not([data-read]),
+.view-only [data-write],
+.view-only label:has(> input[type='file']) {
+  display: none !important;
+}
+
+/*
+ * On a touch screen a text link in a list or table is at least 24 px tall (WCAG 2.5.8, issue 127), so a row that looks
+ * tappable is. In the base layer, so a link styled as a block or a button keeps its own padding.
+ */
+@layer base {
+  @media (pointer: coarse) {
+    main li a,
+    main td a {
+      display: inline-block;
+      padding-block: 0.375rem;
+    }
   }
 }

@@ -4,7 +4,7 @@ import { Button, Card, Input, Label } from '@flake/ui';
 import { useState } from 'react';
 import { api } from '@/lib/client';
 
-export function JoinForm({ token, company, name, hasPhone, consentText, email: knownEmail, canText }: { token: string; company: string; name: string; hasPhone: boolean; consentText: string; email: string; canText: boolean }) {
+export function JoinForm({ token, company, name, hasPhone, consentText, email: knownEmail, canText, joined = false }: { token: string; company: string; name: string; hasPhone: boolean; consentText: string; email: string; canText: boolean; joined?: boolean }) {
   const [consent, setConsent] = useState(false);
   const [email, setEmail] = useState(knownEmail);
   // Until the company's texting is approved, email is the only way a route link reaches the driver.
@@ -15,7 +15,12 @@ export function JoinForm({ token, company, name, hasPhone, consentText, email: k
     <main className="mx-auto max-w-md px-4 py-12">
       <Card>
         <h1 className="text-xl font-semibold">{name}, join {company}</h1>
-        {done ? (
+        {joined ? (
+          <div className="mt-4 rounded-md bg-tint p-4" role="status" data-testid="already-joined">
+            <p className="font-semibold">You&apos;re already on the crew.</p>
+            <p className="mt-1 text-sm text-ink-2">Your route link comes when a storm starts. To change where it goes, ask {company} to update your email or send you a new join link.</p>
+          </div>
+        ) : done ? (
           <div className="mt-4 rounded-md bg-ok-tint p-4 text-ok-ink" role="status" data-testid="joined">
             <p className="text-lg font-semibold">✓ You&apos;re on the crew</p>
             <p className="mt-1 text-sm">Your route link comes {email.trim() ? `to ${email.trim()}` : 'by text'} when a storm starts. There is nothing to install, and you can close this page.</p>

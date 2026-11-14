@@ -508,7 +508,8 @@ export function DriverApp({ token }: { token: string }) {
       <main className="space-y-4 px-4 pb-8">
         {!next ? (
           <div className="rounded-lg bg-slate-800 p-8 text-center text-2xl font-bold" data-testid="all-done">
-            {t('all_done')}
+            {/* The page's heading once the route is done, for screen readers too (issue 135). */}
+            <h1 className="text-2xl font-bold">{t('all_done')}</h1>
             {sync !== 'synced' ? <p className="mt-3 text-lg font-medium text-amber-300" data-testid="keep-open">{t('keep_open')}</p> : null}
           </div>
         ) : (next.status === 'onsite' || stormClosed) && local.visits[next.id] ? (

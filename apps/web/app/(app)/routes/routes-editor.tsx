@@ -129,7 +129,7 @@ export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]
           </Card>
         ))}
       </div>
-      <Card className="mt-4 flex max-w-md flex-wrap items-end gap-2">
+      <Card data-write className="mt-4 flex max-w-md flex-wrap items-end gap-2">
         <div className="flex-1"><Label htmlFor="new-route">New route</Label><Input id="new-route" maxLength={120} value={name} onChange={(e) => setName(e.target.value)} data-testid="new-route-name" /></div>
         <Button disabled={!name.trim() || nameTaken(name)} data-testid="new-route-add" onClick={async () => {
           setError(null);

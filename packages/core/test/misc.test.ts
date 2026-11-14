@@ -63,6 +63,11 @@ describe('qbo csv', () => {
     expect(csvText('=SUM(A1)')).toBe("'=SUM(A1)");
     expect(csvText('a,"b"')).toBe('"a,""b"""');
     expect(csvText('plain')).toBe('plain');
+    // Numbers stay numbers (issue 134); a formula that starts with a minus is still neutralised.
+    expect(csvText('-81.8')).toBe('-81.8');
+    expect(csvText('-1250')).toBe('-1250');
+    expect(csvText('-1+cmd')).toBe("'-1+cmd");
+    expect(csvText('-')).toBe("'-");
   });
   it('emits the header and money', () => {
     const csv = qboCsv([{ invoiceNo: '1', customer: 'A', invoiceDate: '12/12/2025', dueDate: '01/11/2026', terms: 'Net 30', memo: 'm', item: 'Plow', description: 'd', quantity: 1, rateCents: 6500, amountCents: 6500 }]);

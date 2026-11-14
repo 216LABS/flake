@@ -27,7 +27,7 @@ const TONE: Record<string, 'gray' | 'blue' | 'green' | 'amber' | 'red'> = { draf
 
 const SALT_UNIT: Record<string, string> = { bag50lb: 'bags', lb: 'lb', ton: 'tons', application: 'applications' };
 
-export function BillingReview({ stormId, initial, canExport, showFees, stormActive = false, stripeReady = true, nothingToBill = false }: { stormId: string; initial: DraftRow[]; canExport: boolean; showFees: boolean; stormActive?: boolean; stripeReady?: boolean; nothingToBill?: boolean }) {
+export function BillingReview({ stormId, initial, canExport, showFees, stormActive = false, stripeReady = true, nothingToBill = false, readOnly = false }: { readOnly?: boolean; stormId: string; initial: DraftRow[]; canExport: boolean; showFees: boolean; stormActive?: boolean; stripeReady?: boolean; nothingToBill?: boolean }) {
   const router = useRouter();
   const [ask, dialog] = useConfirm();
   const [rows, setRows] = useState(initial);
@@ -74,6 +74,9 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
   const shown = (flaggedOnly ? rows.filter((r) => r.status !== 'draft' || !isDraftClean(r.flags)) : rows).filter((r) => !unplowed.includes(r)).slice()
     .sort((a, b) => Number(needsWork(b)) - Number(needsWork(a)) || worst(a) - worst(b));
   const tierCount = (t: FlagTier) => rows.filter((r) => r.status === 'draft' && !unplowed.includes(r) && open(r).some((f) => FLAG_TIER[f.code] === t)).length;
+  // Missing proof is about visits, not bills: one bill with two visits short a photo is two (issue 135).
+  const proofVisits = rows.filter((r) => r.status === 'draft' && !unplowed.includes(r)).flatMap((r) => open(r).filter((f) => FLAG_TIER[f.code] === 'proof').map((f) => f.visit_id ?? f.site_id));
+  const proofCount = new Set(proofVisits).size;
   // Only the reasons actually on these bills (issue 75 retest).
   const tierWhy = (t: FlagTier) => tierReasons(t, rows.filter((r) => r.status === 'draft' && !unplowed.includes(r)).flatMap((r) => open(r).map((f) => f.code)));
   const total = rows.reduce((s, r) => s + r.subtotal_cents, 0);
@@ -96,8 +99,9 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
     }
   };
   return (
-    <div>
+    <div className={readOnly ? 'view-only' : undefined}>
       {dialog}
+      {readOnly ? <p className="mb-4 rounded-md bg-tint p-3 text-sm text-ink-2" data-testid="view-only-note">You have view-only access. Ask the owner to approve, void or send bills.</p> : null}
       {!stripeReady && rows.length ? (
         <p className="mb-4 rounded-md bg-info-tint p-3 text-sm text-link" data-testid="stripe-not-connected">
           Stripe isn&apos;t connected, so approving doesn&apos;t charge anyone yet. Approved invoices wait here. Connect Stripe in <a className="underline" href="/settings?tab=payments">Settings, Payments</a>, then press Charge now on each. Or press Send bill to email each customer their bill, and Mark paid when the money comes in.
@@ -109,7 +113,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
           // The server takes 500 at a time, and a big company can have more lots than that in one storm.
           for (let i = 0; i < clean.length; i += 500) await api('/api/billing/approve', { body: { draftIds: clean.slice(i, i + 500).map((r) => r.id) } });
         })}>Approve all clean ({clean.length})</Button>
-        <label className="ml-2 flex items-center gap-2 text-sm"><input type="checkbox" data-testid="flagged-only" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.target.checked)} /> Show flagged only</label>
+        <label className="ml-2 flex min-h-11 cursor-pointer items-center gap-2 px-1 text-sm"><input type="checkbox" className="size-5" data-testid="flagged-only" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.target.checked)} /> Show flagged only</label>
         {canExport ? <a className={buttonVariants({ variant: 'outline' })} data-testid="qbo" href={`/api/billing/export.csv?storm=${stormId}`}>QuickBooks CSV (approved)</a> : null}
       </div>
       {error ? <p className="mb-3 rounded-md bg-danger-tint p-3 text-sm text-danger" role="alert">{error}</p> : null}
@@ -120,7 +124,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
       {rows.length && (tierCount('money') || tierCount('proof')) ? (
         <p className="mb-3 text-sm" data-testid="flag-tiers">
           {tierCount('money') ? <><b className="text-danger">{tierCount('money')} with money at risk</b> ({tierWhy('money')}). </> : null}
-          {tierCount('proof') ? <><b>{tierCount('proof')} missing proof</b> ({tierWhy('proof')}). Waive if you know the work was done.</> : null}
+          {tierCount('proof') ? <><b>{proofCount === 1 ? '1 visit' : `${proofCount} visits`} missing proof</b> ({tierWhy('proof')}). Waive if you know the work was done.</> : null}
         </p>
       ) : null}
       {unplowed.length ? (
@@ -128,7 +132,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
           <p className="font-medium">{unplowedSites.length === 1 ? '1 lot was' : `${unplowedSites.length} lots were`} not plowed this storm.</p>
           <p className="mt-1 text-sm text-ink-2">{unplowed.map((r) => r.customer).join(', ')}. Nothing is billed for {unplowedSites.length === 1 ? 'it' : 'them'}.</p>
           <Button size="sm" variant="outline" className="mt-2" disabled={busy} data-testid="unplowed-skip" onClick={() => fix({ action: 'skip_all', site_ids: unplowedSites })}>Mark {unplowedSites.length === 1 ? 'it' : 'all'} skipped</Button>
-          <Button size="sm" variant="ghost" className="ml-2 mt-2" disabled={busy} data-testid="unplowed-show" onClick={() => setShowUnplowed(true)}>Plowed but the phone died? Show {unplowedSites.length === 1 ? 'it' : 'them'}</Button>
+          <Button size="sm" variant="ghost" className="ml-2 mt-2" disabled={busy} data-read data-testid="unplowed-show" onClick={() => setShowUnplowed(true)}>Plowed but the phone died? Show {unplowedSites.length === 1 ? 'it' : 'them'}</Button>
         </Card>
       ) : null}
       {flaggedOnly && rows.length && !shown.length ? <EmptyState title="Nothing is flagged" body="Everything here is clean. Approve it, or turn off the filter to see it." /> : null}
@@ -160,7 +164,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
             ) : null}
             {r.flags.length ? (
               <ul className="mt-2 space-y-2">
-                {[...r.flags].sort((a, b) => TIER_ORDER.indexOf(FLAG_TIER[a.code]) - TIER_ORDER.indexOf(FLAG_TIER[b.code])).map((f) => <FlagRow key={flagKey(f)} flag={f} editable={r.status === 'draft'} busy={busy} onFix={fix} />)}
+                {[...r.flags].sort((a, b) => TIER_ORDER.indexOf(FLAG_TIER[a.code]) - TIER_ORDER.indexOf(FLAG_TIER[b.code])).map((f) => <FlagRow key={flagKey(f)} flag={f} editable={r.status === 'draft' && !readOnly} busy={busy} onFix={fix} />)}
               </ul>
             ) : null}
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-faint">

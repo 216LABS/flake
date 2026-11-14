@@ -16,7 +16,9 @@ const HEADER = ['InvoiceNo', 'Customer', 'InvoiceDate', 'DueDate', 'Terms', 'Mem
 
 /** Quotes per RFC 4180 and neutralizes spreadsheet formula injection in text cells. */
 export function csvText(value: string): string {
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  // A plain number, like a longitude of -81.8, is data, not a formula: only text gets the quote (issue 134).
+  const number = /^-?\d+(\.\d+)?$/.test(value);
+  const safe = !number && /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
   return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 

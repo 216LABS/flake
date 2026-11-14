@@ -43,7 +43,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
         <ArchiveCustomer id={c.id} name={c.name} archived={Boolean(c.archived_at)} />
       </>} />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <CustomerEditor customer={c} />
+        <fieldset disabled={ctx.role === 'viewer'} className={ctx.role === 'viewer' ? 'view-only contents' : 'contents'}><CustomerEditor customer={c} /></fieldset>
         <Card>
           <h2 className="font-semibold">Notices and payment</h2>
           <p className="mt-1 text-sm">Texts: {c.notify_sms ? 'yes' : 'no'}. Emails: {c.notify_email ? 'yes' : 'no'}.</p>

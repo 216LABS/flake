@@ -13,5 +13,7 @@ export default async function Join({ params }: { params: Promise<{ token: string
   const db = serviceDb();
   const [row] = await db.select({ crew: crew_member, tenant }).from(crew_member).innerJoin(tenant, eq(tenant.id, crew_member.tenant_id)).where(eq(crew_member.invite_token_hash, hashToken(token)));
   if (!row || !row.crew.active) notFound();
+  // Already joined: say so, and don't show the driver's email to whoever else has the link (issue 133).
+  if (row.crew.joined_at) return <JoinForm token={token} company={row.tenant.name} name={row.crew.name} hasPhone={false} consentText="" email="" canText={false} joined />;
   return <JoinForm token={token} company={row.tenant.name} name={row.crew.name} hasPhone={Boolean(row.crew.phone_e164)} consentText={CREW_CONSENT_TEXT(row.tenant.name)} email={row.crew.email ?? ''} canText={canTextFrom(row.tenant)} />;
 }

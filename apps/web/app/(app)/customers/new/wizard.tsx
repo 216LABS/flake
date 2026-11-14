@@ -1,6 +1,7 @@
 'use client';
 
 import { quotingSeason } from '@flake/core/time';
+import { quotableSeasons } from '@flake/contracts';
 import { suggestPrice, type RateCard } from '@flake/core/quote';
 import { Badge, Button, Card, Input, Label, PageHeader, Segmented, Select, Progress } from '@flake/ui';
 import Link from 'next/link';
@@ -282,7 +283,7 @@ export function Wizard({ layers, rateCard, routes, existing, others = [] }: { ot
               <Input id="trigger" type="number" min={0} max={48} step="0.5" value={trigger} onChange={(e) => setTrigger(Math.min(48, Math.max(0, Number(e.target.value))))} aria-describedby="trigger-hint" />
               <p id="trigger-hint" className={trigger === 0 ? 'mt-1 text-xs text-warn-ink' : 'mt-1 text-xs text-muted'} data-testid="trigger-hint">{trigger === 0 ? `Zero tolerance: any measurable snow starts service${pricingType === 'seasonal' ? '' : ', so every dusting is billable'}.` : 'Set 0 for zero tolerance, any measurable snow.'}</p>
             </div>
-            <div><Label htmlFor="season">Season</Label><Input id="season" value={season} onChange={(e) => setSeason(e.target.value)} /></div>
+            <div><Label htmlFor="season">Season</Label><Select id="season" value={season} onChange={(e) => setSeason(e.target.value)}>{[...new Set([season, ...quotableSeasons()])].sort().map((x) => <option key={x} value={x}>{x}</option>)}</Select></div>
             <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" checked={withSalt} onChange={(e) => setWithSalt(e.target.checked)} /> Salt, {money(suggestion.salt_bag_cents)} per 50 lb bag</label>
             {priceIssue ? <p className="text-sm text-danger sm:col-span-2" data-testid="price-problem">{priceIssue}</p> : null}
           </div>

@@ -40,15 +40,15 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   return (
     <>
       <PageHeader title="Settings" subtitle={`Routes are edited on the Routes page. You are the ${ctx.role}.`} />
-      {/* A phone gets one section picker; a desk gets tabs (issue 82 asked for one or the other; the wrap took 3 rows). */}
+      {/* A phone or tablet gets one section picker; a desk gets tabs, wrapping rather than hiding any off the edge (issues 82, 128). */}
       <SectionPicker sections={TABS.filter(([k]) => owner || !OWNER_TABS.includes(k))} current={tab} />
-      <nav aria-label="Settings sections" data-testid="settings-tabs" className="mb-5 hidden gap-1 whitespace-nowrap border-b border-line text-sm md:flex md:overflow-x-auto md:overflow-y-hidden md:[scrollbar-width:thin]">
+      <nav aria-label="Settings sections" data-testid="settings-tabs" className="mb-5 hidden flex-wrap gap-x-1 whitespace-nowrap border-b border-line text-sm lg:flex">
         {TABS.filter(([k]) => owner || !OWNER_TABS.includes(k)).map(([k, label]) => <Link key={k} href={`/settings?tab=${k}`} data-testid={`tab-${k}`} aria-current={tab === k ? 'page' : undefined} className={`-mb-px border-b-2 px-3 py-2 font-medium ${tab === k ? 'border-ink font-semibold text-ink' : 'border-transparent text-muted hover:text-ink'}`}>{label}</Link>)}
       </nav>
       {!allowed ? <Card className="max-w-2xl" data-testid="owner-only"><p className="text-sm">Only an owner can open this.</p></Card> : null}
       {allowed && tab === 'company' ? <CompanyForm tenant={JSON.parse(JSON.stringify(t))} /> : null}
       {allowed && tab === 'rate' ? <RateCardForm card={(Object.keys(t.rate_card as object).length ? t.rate_card : DEFAULT_RATE_CARD) as RateCard} /> : null}
-      {tab === 'crew' ? <fieldset disabled={readOnly} className="contents"><CrewPanel canText={canTextFrom(ctx.tenant)} crew={JSON.parse(JSON.stringify(await asUser(ctx, (tx) => tx.select().from(crew_member).orderBy(crew_member.name))))} /></fieldset> : null}
+      {tab === 'crew' ? <fieldset disabled={readOnly} className={readOnly ? 'view-only contents' : 'contents'}><CrewPanel canText={canTextFrom(ctx.tenant)} crew={JSON.parse(JSON.stringify(await asUser(ctx, (tx) => tx.select().from(crew_member).orderBy(crew_member.name))))} /></fieldset> : null}
       {tab === 'alerts' ? <PushPanel publicKey={(await getProviders()).push.publicKey} /> : null}
       {allowed && tab === 'team' ? <TeamPanel members={await listTeam(ctx.tenantId)} me={ctx.userId} /> : null}
       {allowed && tab === 'payments' ? <PaymentsPanel connected={Boolean(t.stripe_account_id)} enabled={await chargesEnabled(t)} payInstructions={t.pay_instructions} /> : null}

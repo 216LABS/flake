@@ -8,7 +8,7 @@ test.beforeEach(() => test.skip(test.info().project.name === 'pixel-7', 'Covered
 test('a customer can decline a quote, and the office sees it with the reason', async ({ page, browser, baseURL }) => {
   await login(page);
   const [s] = await sql`select id from site where active and tenant_id = (select tenant_id from route where name = 'Rocky River' limit 1) order by created_at limit 1`;
-  const res = await page.request.post('/api/quotes', { data: { site_id: s!.id, season: '2031-32', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 7500 } }], send: false } });
+  const res = await page.request.post('/api/quotes', { data: { site_id: s!.id, season: '2027-28', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 7500 } }], send: false } });
   expect(res.ok(), await res.text()).toBe(true);
   const q = await res.json();
   const ctx = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 } });
@@ -23,6 +23,7 @@ test('a customer can decline a quote, and the office sees it with the reason', a
   await ctx.close();
   await page.goto(`/sites/${s!.id}`);
   await expect(page.getByTestId('declined-note').first()).toContainText('Went with a neighbor this year');
-  await sql`update contract set status = 'void' where season = '2031-32'`;
+  // Only this test's quote: the season is a real one other tests quote too.
+  await sql`update contract set status = 'void' where season = '2027-28' and status = 'declined' and site_id in (select id from site where customer_id = (select customer_id from site where id = ${s!.id}))`;
 });
 

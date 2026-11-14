@@ -5,12 +5,15 @@ import { HttpError, route } from '@/lib/http';
 import { queueNotify, shortLink } from '@/lib/messaging';
 import { hashToken, newToken } from '@/lib/tokens';
 
-/** The token is only stored hashed, so a lost invite gets a new link. The old one stops working. */
+/**
+ * The token is only stored hashed, so a lost invite gets a new link. The old one stops working. A new link is a new
+ * invite: the driver joins again with it, which is how they fix their own email after joining (issue 133).
+ */
 export const POST = route<{ params: Promise<{ id: string }> }>(async (_req, { params }) => {
   const ctx = await requireApi('dispatcher');
   const { id } = await params;
   const token = newToken();
-  const [row] = await asUser(ctx, (tx) => tx.update(crew_member).set({ invite_token_hash: hashToken(token) }).where(and(eq(crew_member.id, id), eq(crew_member.active, true))).returning());
+  const [row] = await asUser(ctx, (tx) => tx.update(crew_member).set({ invite_token_hash: hashToken(token), joined_at: null }).where(and(eq(crew_member.id, id), eq(crew_member.active, true))).returning());
   if (!row) throw new HttpError(404, 'Not found. Someone who left the crew has to be added again.');
   const [t] = await serviceDb().select().from(tenant).where(eq(tenant.id, ctx.tenantId));
   const link = await shortLink(ctx.tenantId, `/join/${token}`);

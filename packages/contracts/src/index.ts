@@ -30,11 +30,31 @@ const email = z.email();
 const emptyToNull = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((v) => (v === '' ? null : v), schema.nullable().optional());
 
+const hm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+/** When a lot can be plowed. Open by has to come after Not before, or nothing could meet both (issue 126). */
+const serviceWindow = z.object({
+  open_by: hm.optional(),
+  not_before: hm.optional(),
+  days: z.array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])).max(7).transform((d) => [...new Set(d)]).optional(),
+}).refine((w) => !w.open_by || !w.not_before || w.not_before < w.open_by, { message: 'Not before has to be earlier than Open by.', path: ['not_before'] });
+
+/**
+ * Depth tiers read top to bottom on the quote and are charged in depth order, so they have to agree (issue 125): each
+ * depth higher than the last, and at most one open-ended "above that" tier, at the end.
+ */
+function tiersInOrder(tiers: { up_to_in: number | null }[]) {
+  const open = tiers.findIndex((t) => t.up_to_in === null);
+  if (open >= 0 && open !== tiers.length - 1) return false;
+  const depths = tiers.filter((t) => t.up_to_in !== null).map((t) => t.up_to_in!);
+  return depths.every((d, i) => i === 0 || d > depths[i - 1]!);
+}
+const TIER_ORDER_MESSAGE = 'List the tiers from the smallest depth up, each deeper than the last, with one "above that" tier at the end.';
+
 export const pricingSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('per_push'), amount_cents: price }),
   z.object({
     type: z.literal('per_inch_tier'),
-    tiers: z.array(z.object({ up_to_in: z.number().positive().max(120).nullable(), amount_cents: price })).min(1).max(20),
+    tiers: z.array(z.object({ up_to_in: z.number().positive().max(120).nullable(), amount_cents: price })).min(1).max(20).refine(tiersInOrder, TIER_ORDER_MESSAGE),
   }),
   z.object({ type: z.literal('per_event'), amount_cents: price }),
   z.object({ type: z.literal('seasonal'), total_cents: price, installments: z.number().int().min(1).max(12) }),
@@ -94,7 +114,7 @@ const siteBase = z.object({
   polygons: geoJsonGeom.nullable().optional(),
   walk_lf: z.number().min(0).max(1_000_000).nullable().optional(),
   priority: z.number().int().min(1).max(5),
-  service_window: z.object({ open_by: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), not_before: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), days: z.array(z.string().max(10)).max(7).optional() }).nullable().optional(),
+  service_window: serviceWindow.nullable().optional(),
   notes: emptyToNull(z.string().max(4000)),
 });
 export const siteCreate = siteBase.extend({ priority: z.number().int().min(1).max(5).default(3) });
@@ -114,14 +134,36 @@ const season = z.string().trim().refine((v) => {
   return Boolean(m && Number(m[2]) === (Number(m[1]) + 1) % 100);
 }, { message: 'Write the season like 2026-27.' });
 
-export const contractCreate = z.object({
+const SERVICE_WORD: Record<string, string> = { plow: 'Plow', salt: 'Salt', walks: 'Walks', haul: 'Haul' };
+/** One price per service: the same service twice would bill every visit twice (issue 125). */
+const contractServices = z.array(contractServiceSchema).min(1).max(10).superRefine((list, ctx) => {
+  const seen = new Set<string>();
+  for (const s of list) {
+    if (seen.has(s.service)) ctx.addIssue({ code: 'custom', message: `${SERVICE_WORD[s.service] ?? s.service} is listed twice. Give each service one price.` });
+    seen.add(s.service);
+  }
+});
+
+/** The season a new quote can be for: this one or next (issue 126). A typo like 1999-00 or 2062-63 would bill wrongly. */
+export function quotableSeasons(now = new Date()): [string, string] {
+  const start = now.getUTCMonth() + 1 >= 7 ? now.getUTCFullYear() : now.getUTCFullYear() - 1;
+  const name = (y: number) => `${y}-${String(y + 1).slice(2)}`;
+  return [name(start), name(start + 1)];
+}
+const newSeason = season.superRefine((v, ctx) => {
+  const ok = quotableSeasons();
+  if (/^\d{4}-\d{2}$/.test(v) && !ok.includes(v)) ctx.addIssue({ code: 'custom', message: `Quotes are for ${ok[0]} or ${ok[1]}.` });
+});
+
+const contractBase = z.object({
   site_id: uuid,
   season,
-  services: z.array(contractServiceSchema).min(1).max(10),
+  services: contractServices,
   salt_pricing: saltPricingSchema.nullable().optional(),
   terms_md: emptyToNull(z.string().max(20000)),
 });
-export const contractUpdate = contractCreate.partial().extend({ status: z.enum(['draft', 'void']).optional() });
+export const contractCreate = contractBase.extend({ season: newSeason });
+export const contractUpdate = contractBase.partial().extend({ status: z.enum(['draft', 'void']).optional() });
 
 /** The same lot twice on one route would send the truck there twice. */
 const siteList = z.array(uuid).max(500).transform((ids) => [...new Set(ids)]);
@@ -336,7 +378,7 @@ export const rateCardSchema = z.object({
   walks_per_lf_cents: z.number().min(0).max(1000),
   salt_bag_cents: cents,
   season_pushes: z.number().int().min(1).max(100),
-  tiers: z.array(z.object({ up_to_in: z.number().positive().max(120).nullable(), multiplier: z.number().min(0.1).max(10) })).min(1).max(20),
+  tiers: z.array(z.object({ up_to_in: z.number().positive().max(120).nullable(), multiplier: z.number().min(0.1).max(10) })).min(1).max(20).refine(tiersInOrder, TIER_ORDER_MESSAGE),
 });
 
 /** The server POSTs to this URL, so only the real browser push services are allowed. Anything else would be SSRF. */

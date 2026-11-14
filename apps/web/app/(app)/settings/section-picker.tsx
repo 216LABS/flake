@@ -10,7 +10,7 @@ import { useRouter } from 'next/navigation';
 export function SectionPicker({ sections, current }: { sections: readonly (readonly [string, string])[]; current: string }) {
   const router = useRouter();
   return (
-    <div className="mb-5 md:hidden">
+    <div className="mb-5 lg:hidden">
       <label htmlFor="settings-section" className="sr-only">Settings section</label>
       <Select id="settings-section" data-testid="settings-section" className="font-semibold" value={current} onChange={(e) => router.push(`/settings?tab=${e.target.value}`)}>
         {sections.map(([k, label]) => <option key={k} value={k}>{label}</option>)}

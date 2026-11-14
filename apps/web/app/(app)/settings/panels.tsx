@@ -78,14 +78,15 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
       {dialog}
       <div className="min-w-0 lg:col-span-2">
         {/* A card per person on a phone, with the actions on it, not off the edge (issue 73). */}
-        <Table stack data-testid="crew-table">
+        {crew.length ? null : <p className="mb-3 rounded-md border border-line-faint bg-surface p-4 text-sm text-ink-2" data-testid="crew-empty">No drivers yet. Add one with the form here: they get a join link, and route links once a storm starts.</p>}
+        {crew.length ? <Table stack data-testid="crew-table">
           <thead><tr><Th>Name</Th><Th>Kind</Th><Th>Contact</Th><Th>Language</Th><Th>Joined</Th><Th><span className="sr-only">Actions</span></Th></tr></thead>
           <tbody>
             {crew.map((c) => (
               <tr key={c.id} className={c.active ? '' : 'bg-tint text-muted'} data-testid="crew-row">
                 <Td className="font-medium">{c.name}{c.active ? null : <span className="ml-2 text-xs font-medium">(no longer on the crew)</span>}</Td>
                 <Td label="Kind"><Badge>{c.kind}</Badge></Td>
-                <Td label="Contact"><div className="whitespace-nowrap">{phone(c.phone_e164)}</div><div>{c.email ?? ''}</div></Td>
+                <Td label="Contact"><div className="min-w-0"><div className="whitespace-nowrap">{phone(c.phone_e164)}</div><div>{c.email ?? ''}</div></div></Td>
                 <Td label="Language">{c.language === 'es' ? 'Español' : 'English'}</Td>
                 <Td label="Joined">{c.joined_at ? 'Yes' : 'Invited'}</Td>
                 <Td>{c.active ? (
@@ -103,9 +104,9 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
               </tr>
             ))}
           </tbody>
-        </Table>
+        </Table> : null}
       </div>
-      <Card>
+      <Card data-write>
         <h2 className="font-semibold">{editing ? 'Edit crew member' : 'Invite crew'}</h2>
         <p className="mt-1 text-sm text-muted">{editing ? 'Texts stay opt-in. A changed number needs a new opt-in from the invite link.' : 'They choose on the join page whether to get texts.'}</p>
         <div className="mt-2 space-y-2">

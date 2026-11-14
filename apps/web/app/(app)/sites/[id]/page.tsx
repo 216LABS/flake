@@ -33,7 +33,7 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
     <>
       <PageHeader title={<>{s.label}{s.active ? null : <Badge className="ml-2 align-middle" data-testid="retired-badge">retired</Badge>}</>} subtitle={<>{s.address}. Customer: <Link className="underline" href={`/customers/${c.id}`}>{c.name}</Link></>} actions={<Link className={buttonVariants({ variant: 'outline' })} href={`/proof?site=${s.id}`}>Proof packet</Link>} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="space-y-3 lg:col-span-2"><SiteEditor site={JSON.parse(JSON.stringify(s))} pins={JSON.parse(JSON.stringify(pins))} layers={tiles.layers()} /><RetireSite siteId={s.id} customerId={c.id} active={Boolean(s.active)} canEdit={canEdit} /></div>
+        <div className="space-y-3 lg:col-span-2"><fieldset disabled={!canEdit} className={canEdit ? 'contents' : 'view-only contents'}><SiteEditor site={JSON.parse(JSON.stringify(s))} pins={JSON.parse(JSON.stringify(pins))} layers={tiles.layers()} /></fieldset><RetireSite siteId={s.id} customerId={c.id} active={Boolean(s.active)} canEdit={canEdit} /></div>
         <div className="space-y-4">
         <ContractList contracts={JSON.parse(JSON.stringify(contracts.map((k) => ({ id: k.id, status: k.status, season: k.season, services: k.services, salt_pricing: k.salt_pricing, accepted_name: k.accepted_name, accepted_at: k.accepted_at, created_at: k.created_at, installments_billed: k.installments_billed, quote_url: quoteUrl(k), decline_reason: k.decline_reason }))))} canEdit={canEdit} pdf={pdf} />
         {/* A retired lot can't be quoted; restore it first. */}

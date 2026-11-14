@@ -87,3 +87,8 @@ Same basis as D10. **[J]**
 - **How customers pay you** (Settings, Payments) is free text the company writes once: checks to, mail to, Zelle. It replaces the generic "pay by check or over the phone" on the records page.
 - **Storms list**: Live and Ready to bill storms always show, plus the 5 newest billed ones; older billed storms sit behind Show older. Every storm stays reachable in the billing picker, grouped by status.
 - **Late alerts** only show while a storm is live, once per lot across passes.
+- **Crew join links** are used up when the driver joins: the link can't change their email afterwards. A new link from the office is a fresh invite. (No expiry date yet; that needs a column.)
+- **New quotes** are for this season or next only, picked from a list. Contracts already signed keep whatever season they have.
+- **Viewers can make proof packets** (read-only copies an insurer asks for), up to ten a minute each. Write buttons are hidden for viewers, not just greyed out.
+- **The same customer sent twice within two minutes** is refused as a duplicate. Two customers can still share a name on purpose after that.
+- **Tables turn into cards whenever their box is narrow**, by the box's own width, so a tablet beside the sidebar gets cards instead of a cut-off table.

@@ -1,6 +1,7 @@
 'use client';
 
 import { Badge, Button, Card, Input, Label, Select } from '@flake/ui';
+import { quotableSeasons } from '@flake/contracts';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useConfirm } from '@/components/confirm';
@@ -74,7 +75,8 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [] 
         <div><Label htmlFor="q-price">{type === 'seasonal' ? 'Season total ($)' : 'Price ($)'}</Label><Input id="q-price" type="number" step="0.01" min="0.01" max="100000" value={price} data-testid="q-price" onChange={(e) => setPrice(e.target.value)} /></div>
         <div><Label htmlFor="q-trigger">Trigger depth (in)</Label><Input id="q-trigger" type="number" step="0.5" min="0" max="48" value={trigger} data-testid="q-trigger" onChange={(e) => setTrigger(e.target.value)} /></div>
         {zero ? <p className="text-xs text-warn-ink" data-testid="q-zero-warning">0 inches means any measurable snow starts service{type === 'seasonal' ? '.' : ', so every dusting is billable.'}</p> : null}
-        <div><Label htmlFor="q-season">Season</Label><Input id="q-season" value={season} maxLength={40} onChange={(e) => setSeason(e.target.value)} /></div>
+        {/* This season or next: a typed season could land on a winter long gone or decades out (issue 126). */}
+        <div><Label htmlFor="q-season">Season</Label><Select id="q-season" data-testid="q-season" value={season} onChange={(e) => setSeason(e.target.value)}>{[...new Set([defaultSeason, ...quotableSeasons()])].sort().map((x) => <option key={x} value={x}>{x}</option>)}</Select></div>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={salt} onChange={(e) => setSalt(e.target.checked)} /> Include salt per 50 lb bag</label>
         {replaces ? <p className="rounded-md bg-warn-tint p-2 text-xs text-warn-ink" data-testid="q-replaces">This lot already has a signed contract for {season.trim()}. If the customer accepts this quote, it replaces that one. Seasonal installments already billed count toward the new price, and the rest of it is split over the installments left.</p> : null}
       </div>

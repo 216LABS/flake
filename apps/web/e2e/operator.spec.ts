@@ -170,6 +170,27 @@ test('roles: dispatchers run storms but not settings, viewers only look, nobody 
   await viewerPage.waitForURL('**/customers');
   await viewerPage.goto('/settings?tab=team');
   await expect(viewerPage.getByTestId('owner-only')).toBeVisible();
+  // Pages read like a report for a viewer: no write buttons that would only fail (issue 131).
+  const [someCustomer] = await sql`select c.id, s.id as site_id from customer c join site s on s.customer_id = c.id join tenant t on t.id = c.tenant_id where t.slug = 'lakeshore-demo' and c.archived_at is null limit 1`;
+  await viewerPage.goto(`/customers/${someCustomer!.id}`);
+  await expect(viewerPage.locator('#name')).toBeDisabled();
+  await expect(viewerPage.getByTestId('customer-save')).toBeHidden();
+  await viewerPage.goto(`/sites/${someCustomer!.site_id}`);
+  await expect(viewerPage.getByTestId('site-save')).toBeHidden();
+  await expect(viewerPage.getByRole('button', { name: 'Draw / edit area' })).toBeHidden();
+  expect((await page.request.post(`/api/storms/${stormId}/close`, { data: { force: true } })).ok()).toBe(true);
+  await viewerPage.goto(`/billing?storm=${stormId}`);
+  await expect(viewerPage.getByTestId('view-only-note')).toBeVisible();
+  await expect(viewerPage.getByTestId('generate')).toBeHidden();
+  await expect(viewerPage.getByTestId('approve-clean')).toBeHidden();
+  await viewerPage.goto('/settings?tab=crew');
+  await expect(viewerPage.getByTestId('crew-table')).toBeVisible();
+  await expect(viewerPage.getByTestId('crew-invite')).toBeHidden();
+  expect(await viewerPage.getByTestId('crew-edit').evaluateAll((els) => els.every((e) => getComputedStyle(e).display === 'none'))).toBe(true);
+  await viewerPage.goto('/routes');
+  await expect(viewerPage.getByTestId('route-card').first()).toBeVisible();
+  await expect(viewerPage.getByTestId('new-route-add')).toBeHidden();
+  expect(await viewerPage.getByTestId('route-archive').evaluateAll((els) => els.every((e) => getComputedStyle(e).display === 'none'))).toBe(true);
   await viewer.close();
 
   // A person in a company can't be added to a second one, and new office staff get a sign-in email.

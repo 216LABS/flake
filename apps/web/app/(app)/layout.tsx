@@ -15,6 +15,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const test = isTestEnv();
   return (
     <div className="min-h-dvh md:grid md:grid-cols-[14.5rem_minmax(0,1fr)]">
+      {/* Keyboard users skip the nav to the page (issue 127). */}
+      <a href="#main" className="sr-only z-50 rounded-control bg-surface px-3 py-2 font-semibold text-ink focus:not-sr-only focus:fixed focus:left-3 focus:top-3" data-testid="skip-link">Skip to content</a>
       <header className="sticky top-0 z-30 bg-slate-950 text-slate-300 md:h-dvh" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="chevrons" />
         <div className="flex items-center gap-3 py-2 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] md:h-[calc(100dvh-6px)] md:flex-col md:items-stretch md:gap-y-5 md:px-3 md:py-5">
@@ -27,7 +29,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full min-w-0 max-w-[1500px] px-4 pt-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:px-8 md:py-8">
+      <main id="main" tabIndex={-1} className="mx-auto w-full outline-none min-w-0 max-w-[1500px] px-4 pt-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:px-8 md:py-8">
         {ctx.role === 'viewer' ? <p className="mb-4 rounded-md bg-tint-3 p-3 text-sm text-ink" data-testid="view-only">You have view-only access. An owner can change that in Settings.</p> : null}
         {ctx.role === 'viewer' ? <ViewOnly>{children}</ViewOnly> : children}
       </main>

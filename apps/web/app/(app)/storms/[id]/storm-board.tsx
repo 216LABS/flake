@@ -308,14 +308,14 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
       ) : null}
 
       <div className="flex flex-col gap-4 lg:flex-row">
-        {/* On a phone every truck is stacked, full width, so none hides off to the side (issue 46). On a desk the trucks wrap
-            onto more rows instead of scrolling under the Alerts card with no sign there's more (issue 124). */}
-        <div className="flex min-w-0 flex-1 flex-col gap-3 pb-2 md:snap-x md:flex-row md:overflow-x-auto md:[scrollbar-width:thin] lg:flex-wrap lg:items-start lg:overflow-visible">
+        {/* On a phone every truck is stacked, full width, so none hides off to the side (issue 46). On a tablet or desk the
+            trucks wrap onto more rows instead of scrolling under the Alerts card with no sign there's more (issues 124, 128). */}
+        <div className="flex min-w-0 flex-1 flex-col gap-3 pb-2 md:flex-row md:flex-wrap md:items-start">
           {live.runs.map((r: any) => (
             <section
               key={r.id}
               ref={(el) => { columns.current[r.id] = el; }}
-              className={cn('w-full scroll-mt-20 rounded-surface bg-tint-2 p-2 md:w-72 md:shrink-0 md:snap-start', dragging && 'ring-2 ring-ink')}
+              className={cn('w-full scroll-mt-20 rounded-surface bg-tint-2 p-2 md:min-w-72 md:max-w-md md:flex-1', dragging && 'ring-2 ring-ink')}
               data-testid="run-column"
               data-run={r.id}
               onDragOver={(e) => e.preventDefault()}

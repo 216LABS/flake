@@ -128,3 +128,21 @@ test('the records page lists seasonal installments owed and never calls a $0.00 
   await guest.close();
   await page.request.delete(`/api/customers/${c.id}`);
 });
+
+/** Issue 132: a card or bank payment under way is neither paid nor owed, and the totals still add up. */
+test('Reports Money shows a payment in progress, so billed equals paid plus owed plus in progress', async ({ page }) => {
+  await login(page);
+  const tag = randomUUID().slice(0, 6);
+  const c = await (await page.request.post('/api/customers', { data: { name: `Flight ${tag}`, kind: 'commercial', billing_mode: 'card_on_file' } })).json();
+  const c2 = await (await page.request.post('/api/customers', { data: { name: `Flight2 ${tag}`, kind: 'commercial', billing_mode: 'manual' } })).json();
+  const [s] = await sql`insert into storm (tenant_id, name, started_at, closed_at, status) values (${c.tenant_id}, ${`Flight ${tag}`}, now() - interval '1 day', now() - interval '20 hours', 'billed') returning id`;
+  await sql`insert into invoice_draft (tenant_id, storm_id, customer_id, lines, subtotal_cents, flags, status) values (${c.tenant_id}, ${s!.id}, ${c.id}, '[]'::jsonb, 5000, '[]'::jsonb, 'charged'), (${c.tenant_id}, ${s!.id}, ${c2.id}, '[]'::jsonb, 2500, '[]'::jsonb, 'approved')`;
+  const day = (d: number) => new Date(Date.now() + d * 86400000).toISOString().slice(0, 10);
+  await page.goto(`/reports?from=${day(-3)}&to=${day(1)}`);
+  const row = page.locator('[data-testid="money-row"]', { hasText: `Flight ${tag}` });
+  await expect(row.locator('[data-label="Billed"]')).toHaveText('$75.00');
+  await expect(row.locator('[data-label="Owed"]')).toHaveText('$25.00');
+  await expect(row.locator('[data-label="In progress"]')).toHaveText('$50.00');
+  await expect(page.getByTestId('money-report')).toContainText('Payment in progress');
+  await sql`update invoice_draft set status = 'void' where storm_id = ${s!.id}`;
+});

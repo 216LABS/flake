@@ -42,16 +42,19 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
       select s.id, s.name, s.started_at,
         coalesce(sum(d.subtotal_cents), 0)::int as billed,
         coalesce(sum(d.subtotal_cents) filter (where d.status = 'paid'), 0)::int as paid,
-        coalesce(sum(d.subtotal_cents) filter (where d.status in ('approved', 'sent', 'failed')), 0)::int as owed
+        coalesce(sum(d.subtotal_cents) filter (where d.status in ('approved', 'sent', 'failed')), 0)::int as owed,
+        coalesce(sum(d.subtotal_cents) filter (where d.status = 'charged'), 0)::int as processing
       from storm s join invoice_draft d on d.storm_id = s.id and d.status not in ('draft', 'void')
       where s.started_at >= ${p.startAt} and s.started_at < ${p.endAt}
-      group by s.id, s.name, s.started_at order by s.started_at`)) as unknown as { id: string; name: string; started_at: string; billed: number; paid: number; owed: number }[],
+      group by s.id, s.name, s.started_at order by s.started_at`)) as unknown as { id: string; name: string; started_at: string; billed: number; paid: number; owed: number; processing: number }[],
   }));
   const installments = (await asUser(ctx, (tx) => tx.execute(sql`
-    select coalesce(sum(amount_cents), 0)::int as billed, coalesce(sum(amount_cents) filter (where status = 'paid'), 0)::int as paid,
-      coalesce(sum(amount_cents) filter (where status in ('manual', 'sent', 'failed')), 0)::int as owed
-    from installment_invoice where period >= ${p.from.slice(0, 7)} and period <= ${p.to.slice(0, 7)}`)) as unknown as { billed: number; paid: number; owed: number }[])[0] ?? { billed: 0, paid: 0, owed: 0 };
-  const billTotal = (k: 'billed' | 'paid' | 'owed') => bills.reduce((n, b) => n + b[k], 0) + installments[k];
+    select coalesce(sum(amount_cents) filter (where status <> 'void'), 0)::int as billed, coalesce(sum(amount_cents) filter (where status = 'paid'), 0)::int as paid,
+      coalesce(sum(amount_cents) filter (where status in ('manual', 'sent', 'failed')), 0)::int as owed,
+      coalesce(sum(amount_cents) filter (where status = 'pending'), 0)::int as processing
+    from installment_invoice where period >= ${p.from.slice(0, 7)} and period <= ${p.to.slice(0, 7)}`)) as unknown as { billed: number; paid: number; owed: number; processing: number }[])[0] ?? { billed: 0, paid: 0, owed: 0, processing: 0 };
+  // Billed = Paid + Owed + In progress, always (issue 132): a card or bank payment under way is neither yet.
+  const billTotal = (k: 'billed' | 'paid' | 'owed' | 'processing') => bills.reduce((n, b) => n + b[k], 0) + installments[k];
   const people = [...new Set(hours.map((h) => h.crewId))].map((id) => {
     const rows = hours.filter((h) => h.crewId === id);
     return { id, name: rows[0]!.crew, kind: rows[0]!.kind, shifts: rows.length, hours: rows.reduce((n, r) => n + r.hours, 0), stops: rows.reduce((n, r) => n + r.stops, 0) };
@@ -112,9 +115,10 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
               <Stat label="Billed" value={money(billTotal('billed'))} />
               <Stat label="Paid" value={money(billTotal('paid'))} />
               <Stat label="Still owed" value={money(billTotal('owed'))} />
+              {billTotal('processing') ? <Stat label="Payment in progress" value={money(billTotal('processing'))} /> : null}
             </div>
             <Table stack>
-              <thead><tr><Th>Storm</Th><Th>Billed</Th><Th>Paid</Th><Th>Owed</Th></tr></thead>
+              <thead><tr><Th>Storm</Th><Th>Billed</Th><Th>Paid</Th><Th>Owed</Th>{billTotal('processing') ? <Th>In progress</Th> : null}</tr></thead>
               <tbody>
                 {bills.map((b) => (
                   <tr key={b.id} data-testid="money-row">
@@ -122,6 +126,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
                     <Td label="Billed" className="tabular">{money(b.billed)}</Td>
                     <Td label="Paid" className="tabular">{money(b.paid)}</Td>
                     <Td label="Owed" className="tabular">{money(b.owed)}</Td>
+                    {billTotal('processing') ? <Td label="In progress" className="tabular">{money(b.processing)}</Td> : null}
                   </tr>
                 ))}
                 {installments.billed ? (
@@ -130,10 +135,12 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
                     <Td label="Billed" className="tabular">{money(installments.billed)}</Td>
                     <Td label="Paid" className="tabular">{money(installments.paid)}</Td>
                     <Td label="Owed" className="tabular">{money(installments.owed)}</Td>
+                    {billTotal('processing') ? <Td label="In progress" className="tabular">{money(installments.processing)}</Td> : null}
                   </tr>
                 ) : null}
               </tbody>
             </Table>
+            <p className="mt-2 text-xs text-muted" data-testid="money-note">Storm bills count by the day the storm started. Seasonal installments count by the month they were billed, for every month these dates touch.{billTotal('processing') ? ' In progress is a card or bank payment that has started and not cleared yet.' : ''}</p>
           </>
         ) : <p className="text-sm text-muted">Nothing billed in these dates yet. Approved storm bills and seasonal installments show here.</p>}
       </section>
