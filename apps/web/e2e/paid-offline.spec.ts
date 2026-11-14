@@ -40,6 +40,10 @@ test('a bill paid by check is owed on the portal and customer page until the off
   await expect(g.getByTestId('portal-due')).toHaveCount(0);
   await page.goto('/dashboard');
   await expect(page.getByText(`Check ${tag}`)).toHaveCount(0);
+  await page.goto('/reports');
+  const moneyRow = page.locator('[data-testid="money-row"]', { hasText: `Checks ${tag}` });
+  await expect(moneyRow.locator('[data-label="Paid"]')).toHaveText('$125.00');
+  await expect(moneyRow.locator('[data-label="Owed"]')).toHaveText('$0.00');
   await guest.close();
 });
 

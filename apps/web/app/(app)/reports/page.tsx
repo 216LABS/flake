@@ -1,6 +1,8 @@
 import { fmtLocal } from '@flake/core/time';
 import { buttonVariants, Card, Eyebrow, Input, Label, PageHeader, Stat, Table, Td, Th } from '@flake/ui';
+import { sql } from '@flake/db';
 import { asUser, requirePage } from '@/lib/auth';
+import { money } from '@/lib/client';
 import { crewHours, period, saltReport } from '@/lib/reports';
 import { contractorSalt, saltOrderingReady } from '@/lib/salt-orders';
 import { SaltOrder } from './salt-order';
@@ -19,7 +21,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   if (p.backward) {
     return (
       <>
-        <PageHeader title="Reports" subtitle="Crew hours for payroll, and salt used and on hand." />
+        <PageHeader title="Reports" subtitle="What you billed and were paid, crew hours for payroll, and salt used and on hand." />
         <form method="get" className="mb-4 grid grid-cols-1 items-end gap-3 sm:flex sm:flex-wrap" data-testid="period">
           <div className="min-w-0"><Label htmlFor="from">From</Label><Input id="from" name="from" type="date" defaultValue={p.backward.from} aria-invalid="true" /></div>
           <div className="min-w-0"><Label htmlFor="to">To</Label><Input id="to" name="to" type="date" defaultValue={p.backward.to} /></div>
@@ -32,7 +34,24 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
       </>
     );
   }
-  const { hours, salt } = await asUser(ctx, async (tx) => ({ hours: await crewHours(tx, p, tz), salt: await saltReport(tx, ctx.tenantId, p) }));
+  const { hours, salt, bills } = await asUser(ctx, async (tx) => ({
+    hours: await crewHours(tx, p, tz),
+    salt: await saltReport(tx, ctx.tenantId, p),
+    // Storm bills past review, by storm started in the period; seasonal installments by the month they were billed.
+    bills: (await tx.execute(sql`
+      select s.id, s.name, s.started_at,
+        coalesce(sum(d.subtotal_cents), 0)::int as billed,
+        coalesce(sum(d.subtotal_cents) filter (where d.status = 'paid'), 0)::int as paid,
+        coalesce(sum(d.subtotal_cents) filter (where d.status in ('approved', 'sent', 'failed')), 0)::int as owed
+      from storm s join invoice_draft d on d.storm_id = s.id and d.status not in ('draft', 'void')
+      where s.started_at >= ${p.startAt} and s.started_at < ${p.endAt}
+      group by s.id, s.name, s.started_at order by s.started_at`)) as unknown as { id: string; name: string; started_at: string; billed: number; paid: number; owed: number }[],
+  }));
+  const installments = (await asUser(ctx, (tx) => tx.execute(sql`
+    select coalesce(sum(amount_cents), 0)::int as billed, coalesce(sum(amount_cents) filter (where status = 'paid'), 0)::int as paid,
+      coalesce(sum(amount_cents) filter (where status in ('manual', 'sent', 'failed')), 0)::int as owed
+    from installment_invoice where period >= ${p.from.slice(0, 7)} and period <= ${p.to.slice(0, 7)}`)) as unknown as { billed: number; paid: number; owed: number }[])[0] ?? { billed: 0, paid: 0, owed: 0 };
+  const billTotal = (k: 'billed' | 'paid' | 'owed') => bills.reduce((n, b) => n + b[k], 0) + installments[k];
   const people = [...new Set(hours.map((h) => h.crewId))].map((id) => {
     const rows = hours.filter((h) => h.crewId === id);
     return { id, name: rows[0]!.crew, kind: rows[0]!.kind, shifts: rows.length, hours: rows.reduce((n, r) => n + r.hours, 0), stops: rows.reduce((n, r) => n + r.stops, 0) };
@@ -44,7 +63,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   const saltedVisits = salt.storms.reduce((n, s) => n + s.visits, 0);
   return (
     <>
-      <PageHeader title="Reports" subtitle="Crew hours for payroll, and salt used and on hand." />
+      <PageHeader title="Reports" subtitle="What you billed and were paid, crew hours for payroll, and salt used and on hand." />
       {/* Stacked on a phone, so a wide iOS date control can't sit on top of Show (issue 44). */}
       <form method="get" className="mb-6 grid grid-cols-1 items-end gap-3 sm:flex sm:flex-wrap" data-testid="period">
         <div className="min-w-0"><Label htmlFor="from">From</Label><Input id="from" name="from" type="date" defaultValue={p.from} /></div>
@@ -83,6 +102,40 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
             </details>
           </>
         ) : <Card className="text-sm text-muted">No driver activity between these dates.</Card>}
+      </section>
+
+      <section className="mb-8" aria-labelledby="money-title" data-testid="money-report">
+        <Eyebrow id="money-title" className="mb-2">Money</Eyebrow>
+        {billTotal('billed') ? (
+          <>
+            <div className="mb-3 flex flex-wrap gap-x-10 gap-y-3">
+              <Stat label="Billed" value={money(billTotal('billed'))} />
+              <Stat label="Paid" value={money(billTotal('paid'))} />
+              <Stat label="Still owed" value={money(billTotal('owed'))} />
+            </div>
+            <Table stack>
+              <thead><tr><Th>Storm</Th><Th>Billed</Th><Th>Paid</Th><Th>Owed</Th></tr></thead>
+              <tbody>
+                {bills.map((b) => (
+                  <tr key={b.id} data-testid="money-row">
+                    <Td><a className="text-link underline" href={`/billing?storm=${b.id}`}>{b.name}</a><span className="block text-xs text-muted">{fmtLocal(b.started_at, tz, { month: 'short', day: 'numeric' })}</span></Td>
+                    <Td label="Billed" className="tabular">{money(b.billed)}</Td>
+                    <Td label="Paid" className="tabular">{money(b.paid)}</Td>
+                    <Td label="Owed" className="tabular">{money(b.owed)}</Td>
+                  </tr>
+                ))}
+                {installments.billed ? (
+                  <tr data-testid="money-installments">
+                    <Td>Seasonal installments</Td>
+                    <Td label="Billed" className="tabular">{money(installments.billed)}</Td>
+                    <Td label="Paid" className="tabular">{money(installments.paid)}</Td>
+                    <Td label="Owed" className="tabular">{money(installments.owed)}</Td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </Table>
+          </>
+        ) : <p className="text-sm text-muted">Nothing billed in these dates yet. Approved storm bills and seasonal installments show here.</p>}
       </section>
 
       <section aria-labelledby="salt-title">
