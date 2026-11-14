@@ -90,7 +90,9 @@ test('archiving a customer takes their waiting quote out of the dashboard count'
   const tag = randomUUID().slice(0, 6);
   const c = await (await page.request.post('/api/customers', { data: { name: `Waits ${tag}`, kind: 'commercial', billing_mode: 'manual', email: `${tag}@example.com` } })).json();
   const s = await (await page.request.post('/api/sites', { data: { customer_id: c.id, label: `Lot ${tag}`, address: '9 Wait St, Lakewood, OH', lat: 41.48, lon: -81.8 } })).json();
-  expect((await page.request.post('/api/quotes', { data: { site_id: s.id, season: SEASON, services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 5000 } }], send: false } })).ok()).toBe(true);
+  const made = await page.request.post('/api/quotes', { data: { site_id: s.id, season: SEASON, services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 5000 } }], send: false } });
+  expect(made.ok()).toBe(true);
+  const quoteUrl = (await made.json()).url as string;
   expect(await count()).toBe(before + 1);
   const quoteRow = (await sql`select status from contract where site_id = ${s.id}`)[0]!;
   expect(quoteRow.status).toBe('draft');
@@ -98,4 +100,7 @@ test('archiving a customer takes their waiting quote out of the dashboard count'
   expect(await count()).toBe(before);
   // The unsigned quote is withdrawn with the lot, so the link can't sign a contract for a retired lot.
   expect((await sql`select status from contract where site_id = ${s.id}`)[0]!.status).toBe('void');
+  // And the customer opening it is told it was withdrawn, and by whom, not shown a bare "not found".
+  await page.goto(quoteUrl);
+  await expect(page.getByTestId('quote-withdrawn')).toContainText('withdrew this quote');
 });

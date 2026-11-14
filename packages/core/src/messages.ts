@@ -25,7 +25,7 @@ export function emailFooter(template: string, c: { name: string; phone?: string 
   return `\n\n--\n${lines.join('\n')}`;
 }
 
-export type TemplateKey = 'team_invite' | 'receipt' | 'crew_link' | 'call_out' | 'on_the_way' | 'done' | 'late' | 'invoice' | 'help' | 'route_changed' | 'quote' | 'owner_alert' | 'crew_invite' | 'portal';
+export type TemplateKey = 'team_invite' | 'receipt' | 'crew_link' | 'call_out' | 'on_the_way' | 'done' | 'late' | 'invoice' | 'bill' | 'help' | 'route_changed' | 'quote' | 'owner_alert' | 'crew_invite' | 'portal';
 
 const TEMPLATES: Record<TemplateKey, string> = {
   crew_link: '{company}: Storm on. Route {route} - {n} stops. Start: {link} Reply STOP to opt out.',
@@ -34,6 +34,8 @@ const TEMPLATES: Record<TemplateKey, string> = {
   done: '{company}: {site} cleared at {time}. Photo: {link}',
   late: '{company}: Heavy snow is slowing routes. We expect to reach {site} by {time}.',
   invoice: '{company}: Invoice for {storm} - ${amount}. View/pay: {link}',
+  // A bill the company collects itself: what it's for, and how to pay, in the company's own words when it wrote them.
+  bill: '{company}: Bill for {storm} - ${amount}. See what it is for: {link}{pay}',
   receipt: '{company}: Payment received. {storm} - ${amount}. Thank you.',
   help: '{company} service texts via Flake. Contact {phone}. Reply STOP to opt out.',
   route_changed: '{company}: Your route changed. Open your link to see it: {link}',

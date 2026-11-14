@@ -354,7 +354,7 @@ export async function sendBill(ctx: Ctx, draftId: string) {
   const link = await shortLink(ctx.tenantId, `/c/${await portalToken(row.customer.id)}`);
   const amount = dollars(row.draft.subtotal_cents);
   await queueNotify(row.tenant.id, { phone, email: row.customer.email }, {
-    template: 'invoice', vars: { storm: row.storm.name, amount, link },
+    template: 'bill', vars: { storm: row.storm.name, amount, link, pay: row.tenant.pay_instructions ? ` How to pay: ${row.tenant.pay_instructions.replace(/\s+/g, ' ').trim()}` : '' },
     subject: `${row.tenant.name}: invoice for ${row.storm.name}, $${amount}`,
     key: `bill:${draftId}:${Math.floor(Date.now() / 60_000)}`, related: { draft_id: draftId },
   });

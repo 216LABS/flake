@@ -146,3 +146,27 @@ describe('crew join links expire after two weeks (issue 137)', () => {
     expect((await join(jsonReq(`/api/join/${old}`, { consent: false }), { params: Promise.resolve({ token: old }) })).status).toBe(410);
   });
 });
+
+describe('proof packets say who entered a visit, and which were voided', () => {
+  it('an office-recorded visit is marked as such, and an undone visit carries its reason', async () => {
+    const { visit, visit_correction, storm } = await import('@flake/db');
+    const { assembleProof } = await import('@/lib/proof');
+    const w = await makeWorld();
+    const db = serviceDb();
+    const [s] = await db.insert(storm).values({ tenant_id: w.tenantId, name: 'Proof marks', started_at: new Date(Date.now() - 7200_000).toISOString(), status: 'closed' }).returning();
+    const at = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+    const mk = async (client: string, from: number) => (await db.insert(visit).values({ tenant_id: w.tenantId, client_uuid: client, storm_id: s!.id, site_id: w.siteIds[0]!, crew_id: w.crewId, services: ['plow'], arrived_device_at: at(from), departed_device_at: at(from - 20), departed_received_at: at(from - 20) }).returning())[0]!;
+    const phone = await mk(crypto.randomUUID(), 100);
+    const office = await mk(crypto.randomUUID(), 70);
+    const undone = await mk(crypto.randomUUID(), 40);
+    await db.insert(visit_correction).values([
+      { tenant_id: w.tenantId, visit_id: office.id, field: 'notes', old_value: null, new_value: 'Visit recorded by the office', reason: 'No visit came from the phone.', by_user: w.userId },
+      { tenant_id: w.tenantId, visit_id: undone.id, field: 'voided', old_value: false, new_value: true, reason: 'Driver tapped Undo last', by_crew: w.crewId },
+    ]);
+    const p = await assembleProof(w.tenantId, w.siteIds[0]!, at(200), new Date().toISOString());
+    const byId = (id: string) => p.visits.find((v) => v.id === id)!;
+    expect(byId(phone.id)).toMatchObject({ entered_by: 'phone', voided_reason: null });
+    expect(byId(office.id)).toMatchObject({ entered_by: 'office_recorded', voided_reason: null });
+    expect(byId(undone.id)).toMatchObject({ voided_reason: 'Driver tapped Undo last' });
+  });
+});

@@ -152,9 +152,10 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
           widths={[1.1, 2.2, 2.2, 1.5, 1, 0.8, 0.6, 0.6]}
           cols={['Crew', 'Arrived', 'Departed', 'GPS and accuracy', 'Services', 'Salt', 'Depth', 'Photos']}
           rows={m.visits.map((v) => [
-            v.crew_name,
-            `Phone: ${when(v.arrived_device_at)}\nServer: ${when(v.arrived_received_at)}`,
-            `Phone: ${when(v.departed_device_at)}\nServer: ${when(v.departed_received_at)}`,
+            // Who entered the times, and a voided visit marked as such, in the row itself (not only the corrections log).
+            `${v.crew_name}${v.voided_reason ? `\nVOIDED: ${v.voided_reason}` : ''}${v.entered_by === 'office_recorded' ? '\nRecorded by the office' : v.entered_by === 'office_done' ? '\nDone entered by the office' : ''}`,
+            `${v.entered_by === 'office_recorded' ? 'Office' : 'Phone'}: ${when(v.arrived_device_at)}\nServer: ${when(v.arrived_received_at)}`,
+            `${v.entered_by && v.entered_by !== 'phone' ? 'Office' : 'Phone'}: ${when(v.departed_device_at)}\nServer: ${when(v.departed_received_at)}`,
             v.arrive_lat === null ? unavailable : `${v.arrive_lat.toFixed(5)}, ${v.arrive_lon?.toFixed(5)} (${val(v.arrive_acc_m, ' m')})`,
             v.services.join(', ') + (v.is_replow ? ' (re-plow)' : ''),
             Array.isArray(v.salt) && v.salt.length ? (v.salt as any[]).map((x) => `${x.qty} ${x.unit}`).join(', ') : '-',

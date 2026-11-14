@@ -296,7 +296,7 @@ describe('quotes', () => {
     expect(await getBlob('contracts', row.pdf_path)).not.toBeNull();
     const v = await mk();
     await serviceDb().execute(sql`update contract set status = 'void' where id = ${v.contract.id}`);
-    await expect(acceptQuote(v.token, { name: 'Late', agree: true, consentSms: false, consentEmail: true, phone_e164: null }, null)).rejects.toMatchObject({ status: 404 });
+    await expect(acceptQuote(v.token, { name: 'Late', agree: true, consentSms: false, consentEmail: true, phone_e164: null }, null)).rejects.toMatchObject({ status: 410, code: 'quote_withdrawn' });
   }, 30000);
 
   it('checking the box records consent, and a mock card is stored', async () => {

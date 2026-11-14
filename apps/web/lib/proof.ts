@@ -26,7 +26,7 @@ export async function assembleProof(tenantId: string, siteId: string, from: stri
   const visits = await db.select({ visit, crew: crew_member }).from(visit).innerJoin(crew_member, eq(crew_member.id, visit.crew_id)).where(and(eq(visit.tenant_id, tenantId), eq(visit.site_id, siteId), gte(visit.arrived_device_at, from), lte(visit.arrived_device_at, to))).orderBy(asc(visit.arrived_device_at));
   const visitIds = visits.map((v) => v.visit.id);
   const photos = visitIds.length ? await db.select().from(visit_photo).where(and(eq(visit_photo.tenant_id, tenantId), inArray(visit_photo.visit_id, visitIds))) : [];
-  const corrections = visitIds.length ? await db.select().from(visit_correction).where(and(eq(visit_correction.tenant_id, tenantId), inArray(visit_correction.visit_id, visitIds))) : [];
+  const corrections = visitIds.length ? await db.select().from(visit_correction).where(and(eq(visit_correction.tenant_id, tenantId), inArray(visit_correction.visit_id, visitIds))).orderBy(asc(visit_correction.created_at)) : [];
 
   // Storms that overlap the period, or that hold a visit in it.
   const stormIds = [...new Set(visits.map((v) => v.visit.storm_id))];
@@ -37,7 +37,15 @@ export async function assembleProof(tenantId: string, siteId: string, from: stri
 
   const messages = await db.select().from(message_log).where(and(eq(message_log.tenant_id, tenantId), sql`${message_log.related}->>'site_id' = ${siteId}`, gte(message_log.created_at, from), lte(message_log.created_at, to)));
 
+  // A packet is evidence, so each visit says who entered its times and whether it was voided, in the visit row itself.
+  const enteredBy = (id: string): ProofVisit['entered_by'] => {
+    const notes = corrections.filter((c2) => c2.visit_id === id && c2.field === 'notes').map((c2) => c2.new_value);
+    return notes.includes('Visit recorded by the office') ? 'office_recorded' : notes.includes('Done time entered by the office') ? 'office_done' : 'phone';
+  };
+  const voidedReason = (id: string) => corrections.filter((c2) => c2.visit_id === id && c2.field === 'voided').at(-1)?.new_value === true
+    ? (corrections.filter((c2) => c2.visit_id === id && c2.field === 'voided').at(-1)!.reason ?? 'Voided') : null;
   const proofVisits: ProofVisit[] = visits.map(({ visit: v, crew }) => ({
+    entered_by: enteredBy(v.id), voided_reason: voidedReason(v.id),
     id: v.id, storm_id: v.storm_id, crew_name: crew.name, arrived_device_at: v.arrived_device_at, arrived_received_at: v.arrived_received_at, departed_device_at: v.departed_device_at, departed_received_at: v.departed_received_at,
     arrive_lat: v.arrive_lat, arrive_lon: v.arrive_lon, arrive_acc_m: v.arrive_acc_m, services: v.services, salt: v.salt, depth_in: v.depth_in === null ? null : Number(v.depth_in), is_replow: Boolean(v.is_replow), gps_match: v.gps_match,
     photos: photos.filter((p) => p.visit_id === v.id).sort(photoOrder).map((p) => ({ id: p.id, phase: p.phase ?? 'other', storage_path: p.storage_path, sha256: p.sha256, taken_device_at: p.taken_device_at, received_at: p.received_at! })),

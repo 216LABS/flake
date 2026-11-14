@@ -3,6 +3,7 @@ import { billedBy, paymentText } from './scope';
 import { CUSTOMER_CONSENT_TEXT } from '@flake/core/messages';
 import { quoteAccept, quoteCreate, quoteDecline } from '@flake/contracts';
 import { z } from 'zod';
+import { phone } from './client';
 import { baseUrl } from './env';
 import { HttpError } from './http';
 import { notifyOffice, plainText, queueNotify, shortLink } from './messaging';
@@ -62,6 +63,8 @@ async function byToken(token: string) {
   if (!lots.length) {
     const row = rows[0]!;
     if (await newerQuote(row.contract)) throw new HttpError(410, `${row.tenant.name} sent you a newer quote for ${row.site.label}. Open the link in their latest message.`, 'quote_replaced');
+    // Voided by the office, or withdrawn when the lot was retired: say so, and who to ask, instead of a bare 404.
+    if (rows.every((r) => r.contract.status === 'void')) throw new HttpError(410, `${row.tenant.name} withdrew this quote. Contact them if you still want snow service${row.tenant.contact_phone ? ` at ${phone(row.tenant.contact_phone)}` : ''}.`, 'quote_withdrawn');
     throw new HttpError(404, 'This quote is no longer available', 'quote_dead');
   }
   return { ...lots[0]!, lots };

@@ -36,6 +36,10 @@ export interface ProofVisit {
   is_replow: boolean;
   gps_match: boolean | null;
   photos: ProofPhoto[];
+  /** Who entered the times: the phone, or the office in billing review (the whole visit, or only its Done). */
+  entered_by?: 'phone' | 'office_recorded' | 'office_done';
+  /** Set when the visit was voided (Undo, or skipped after arriving): it's on file, but wasn't work done. */
+  voided_reason?: string | null;
 }
 
 export interface ProofInput {
