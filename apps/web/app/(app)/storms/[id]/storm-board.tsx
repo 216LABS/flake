@@ -218,7 +218,8 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
               }
             }}>Close storm</Button>
           ) : closed ? (
-            <div className="flex items-center gap-2">
+            // On a phone the badge and Reopen get their own row, so Reopen is never cut off (issue 118).
+            <div className="col-span-2 flex flex-wrap items-center gap-2 sm:col-span-1">
               <Badge tone={stormStatus(live.storm.status).tone} data-testid="storm-closed">{stormStatus(live.storm.status).word}</Badge>
               {canEdit && live.storm.status === 'closed' ? <Button className={DARK_RING} variant="outline" data-testid="reopen-storm" onClick={async () => {
                 if (!(await ask({ title: 'Reopen this storm?', body: 'Route links work again and drivers can keep going. Invoice drafts still in review are dropped, and made again when you close it.', confirm: 'Reopen' }))) return;

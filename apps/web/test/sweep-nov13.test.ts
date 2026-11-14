@@ -224,6 +224,11 @@ describe('a bill the company collects itself can be sent to the customer', () =>
     expect(m!.body).toContain('$88.00');
     expect((await db.select().from(invoice_draft).where(eq(invoice_draft.id, ok.id)))[0]!.status_detail).toContain('Bill sent to billme@example.com');
     await expect(sendBill(ctx, review.id)).rejects.toMatchObject({ status: 409 });
+    // A voided or paid bill says so, instead of "already being collected".
+    await db.update(invoice_draft).set({ status: 'void' }).where(eq(invoice_draft.id, review.id));
+    await db.update(invoice_draft).set({ status: 'paid' }).where(eq(invoice_draft.id, ok.id));
+    await expect(sendBill(ctx, review.id)).rejects.toMatchObject({ status: 409, message: 'This invoice was voided.' });
+    await expect(sendBill(ctx, ok.id)).rejects.toMatchObject({ status: 409, message: 'This invoice is already paid.' });
   });
 });
 
@@ -263,6 +268,9 @@ describe('importing a customer list', () => {
     expect(rows[1]!.problem).toBe('No name.');
     expect(rows[2]!.problem).toBe('No address.');
     expect(customersFromCsv('who,where\nA,B').missing).toEqual(['name', 'address']);
+    // The preview flags what the server would refuse, before Add.
+    const odd = customersFromCsv('name,address,kind,email,billing\nA Farm,1 Farm Rd Avon OH,farm,,\nB Bad,2 Main St Avon OH,,not-an-email,\nC Barter,3 Main St Avon OH,,,barter\nD Fine,4 Main St Avon OH,hoa,d@example.com,check').rows;
+    expect(odd.map((r) => r.problem)).toEqual(['Kind "farm" isn\'t one of residential, commercial or HOA.', expect.stringMatching(/Email isn't in the right format/), 'Billing "barter" isn\'t one of card, bank, invoice or manual.', null]);
   });
   it('adds each row as a customer and lot, joins rows with the same name, and says why a row was left out', async () => {
     const { customer, site } = await import('@flake/db');
@@ -276,7 +284,8 @@ describe('importing a customer list', () => {
       { name: 'Lost', address: '7 Nowhere #nomatch' },
     ]);
     expect(out.map((r) => r.ok)).toEqual([true, true, false, false, false]);
-    expect(out[1]).toMatchObject({ added_to_existing: true });
+    // The result names the customer it joined, as saved, not as typed.
+    expect(out[1]).toMatchObject({ added_to_existing: true, customer: 'Bayview HOA' });
     const [c] = await serviceDb().select().from(customer).where(and(eq(customer.tenant_id, w.tenantId), eq(customer.name, 'Bayview HOA')));
     expect(c).toMatchObject({ kind: 'hoa', billing_mode: 'invoice_net30', phone_e164: '+12165550101' });
     expect((await serviceDb().select().from(site).where(eq(site.customer_id, c!.id))).map((s) => s.label).sort()).toEqual(['North drive', 'South drive']);

@@ -1,4 +1,4 @@
-import { and, or, ne, asc, asService, contract, customer, membership, desc, eq, inArray, installment_invoice, invoice_draft, notInArray, isNotNull, isNull, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type Tx } from '@flake/db';
+import { and, or, ne, asc, asService, contract, customer, membership, desc, eq, inArray, installment_invoice, invoice_draft, notInArray, isNotNull, isNull, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type DraftStatus, type Tx } from '@flake/db';
 import { applyCorrections, draftInvoices, flagKey, isDraftClean, type BillingContract, type BillingFlag, type BillingVisit } from '@flake/core/billing';
 import { applicationFeeCents, feeRate, proFeaturesEnabled, type Plan } from '@flake/core/fees';
 import { seasonalInstallments, type ContractService, type Pricing, type SaltPricing, type StormDepthContext } from '@flake/core/pricing';
@@ -336,11 +336,17 @@ async function sendPayLink(row: NonNullable<Awaited<ReturnType<typeof loadDraft>
  * by text if they agreed to texts, with a link to their records page, which lists every line and how to pay. Each press
  * sends it again, at most once a minute.
  */
+const NOT_SENDABLE: Partial<Record<DraftStatus, string>> = {
+  draft: 'Approve this invoice first.',
+  void: 'This invoice was voided.',
+  paid: 'This invoice is already paid.',
+};
+
 export async function sendBill(ctx: Ctx, draftId: string) {
   const [mine] = await withUser(ctx.userId, (tx) => tx.select({ id: invoice_draft.id }).from(invoice_draft).where(eq(invoice_draft.id, draftId)));
   const row = mine ? await loadDraft(ctx.tenantId, draftId) : null;
   if (!row) throw new HttpError(404, 'Invoice not found');
-  if (row.draft.status !== 'approved') throw new HttpError(409, row.draft.status === 'draft' ? 'Approve this invoice first.' : 'This invoice is already being collected.', 'not_sendable');
+  if (row.draft.status !== 'approved') throw new HttpError(409, NOT_SENDABLE[row.draft.status ?? 'draft'] ?? 'This invoice is already being collected.', 'not_sendable');
   const phone = row.customer.notify_sms ? row.customer.phone_e164 : null;
   if (!row.customer.email && !phone) throw new HttpError(422, 'Add an email for this customer first.', 'no_contact');
   const { portalToken } = await import('./portal');

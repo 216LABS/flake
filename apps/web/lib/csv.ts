@@ -1,3 +1,6 @@
+import { customerCreate } from '@flake/contracts';
+import { readableIssue } from './issues';
+
 /** RFC 4180 CSV: quoted fields, doubled quotes inside them, commas and line breaks inside quotes, CRLF or LF. */
 export function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -25,6 +28,38 @@ export function parseCsv(text: string): string[][] {
   return rows.filter((r) => r.some((v) => v.trim()));
 }
 
+/** The words people use in a spreadsheet, to Flake's customer kinds. Blank means residential. */
+export function importKind(v: string | null | undefined): 'residential' | 'commercial' | 'hoa' | null {
+  const s = (v ?? '').trim().toLowerCase();
+  if (!s || /^(res|residential|home|house|driveway)/.test(s)) return 'residential';
+  if (/^(com|commercial|business|lot|retail|office)/.test(s)) return 'commercial';
+  if (/^(hoa|association|condo)/.test(s)) return 'hoa';
+  return null;
+}
+
+/** The same for billing. Blank uses the default, card on file. */
+export function importBilling(v: string | null | undefined): 'card_on_file' | 'ach_on_file' | 'invoice_net30' | 'manual' | null {
+  const s = (v ?? '').trim().toLowerCase();
+  if (!s || /card/.test(s)) return 'card_on_file';
+  if (/bank|ach/.test(s)) return 'ach_on_file';
+  if (/invoice|net/.test(s)) return 'invoice_net30';
+  if (/manual|check|cash|bill/.test(s)) return 'manual';
+  return null;
+}
+
+type RowIn = { name: string; kind?: string | null; billing?: string | null; email?: string | null; phone?: string | null };
+
+/** The checks the server makes on an imported row, so the preview flags a row before Add instead of after. */
+export function checkImportRow(r: RowIn) {
+  const kind = importKind(r.kind);
+  if (!kind) return { ok: false as const, problem: `Kind "${r.kind}" isn't one of residential, commercial or HOA.` };
+  const billing = importBilling(r.billing);
+  if (!billing) return { ok: false as const, problem: `Billing "${r.billing}" isn't one of card, bank, invoice or manual.` };
+  const parsed = customerCreate.safeParse({ name: r.name, kind, billing_mode: billing, email: r.email ?? '', phone_e164: r.phone ?? '' });
+  if (!parsed.success) return { ok: false as const, problem: [...new Set(parsed.error.issues.map(readableIssue))].join(' ') };
+  return { ok: true as const, data: parsed.data };
+}
+
 const HEADERS: Record<string, string[]> = {
   name: ['name', 'customer', 'customer name', 'client', 'client name'],
   address: ['address', 'street', 'service address', 'property address', 'location'],
@@ -49,7 +84,8 @@ export function customersFromCsv(text: string): { rows: (CsvCustomer & { problem
   const cell = (r: string[], k: keyof CsvCustomer) => (at[k] >= 0 ? (r[at[k]] ?? '').trim() : '') || null;
   const rows = missing.length ? [] : body.map((r) => {
     const c: CsvCustomer = { name: cell(r, 'name') ?? '', address: cell(r, 'address') ?? '', label: cell(r, 'label'), email: cell(r, 'email'), phone: cell(r, 'phone'), kind: cell(r, 'kind'), billing: cell(r, 'billing') };
-    const problem = !c.name ? 'No name.' : c.address.length < 5 ? 'No address.' : null;
+    const check = checkImportRow(c);
+    const problem = !c.name ? 'No name.' : c.address.length < 5 ? 'No address.' : check.ok ? null : check.problem;
     return { ...c, problem };
   });
   return { rows, missing };
