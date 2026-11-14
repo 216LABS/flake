@@ -179,6 +179,8 @@ export const flagFix = z.discriminatedUnion('action', [
   z.object({ action: z.literal('services'), storm_id: uuid, visit_id: uuid, services: z.array(serviceKind).min(1).max(4) }),
   /** A visit with an Arrive and no Done: the office enters how long the driver was there. */
   z.object({ action: z.literal('finish'), storm_id: uuid, visit_id: uuid, minutes: z.number().int().min(1).max(720), services: z.array(serviceKind).min(1).max(4) }),
+  /** No visit came from the phone at all, but the lot was plowed: the office records one. */
+  z.object({ action: z.literal('record'), storm_id: uuid, site_id: uuid, minutes: z.number().int().min(1).max(720), services: z.array(serviceKind).min(1).max(4) }),
 ]);
 
 /** One packet covers up to two seasons. A wider range is a mistake, and its photos would not fit in one PDF. */

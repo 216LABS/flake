@@ -226,3 +226,29 @@ describe('a bill the company collects itself can be sent to the customer', () =>
     await expect(sendBill(ctx, review.id)).rejects.toMatchObject({ status: 409 });
   });
 });
+
+describe('a lot plowed with no visit from the phone can be recorded by the office', () => {
+  it('Record visit bills it, keeps the location and photo flags for a waive, and is noted as entered by the office', async () => {
+    const { visit_correction, visit } = await import('@flake/db');
+    const { applyFlagFix, generateDrafts } = await import('@/lib/billing');
+    const { publishStorm, closeStorm } = await import('@/lib/storms');
+    const { createStorm } = await import('./helpers');
+    const w = await makeWorld();
+    const ctx = ctxOf(w);
+    const out = await createStorm(ctx, { name: 'Phone at home', routeIds: [w.routeId], crewAssignments: {}, siteIds: [w.siteIds[0]!] });
+    await publishStorm(ctx, out.storm.id);
+    await expect(applyFlagFix(ctx, { action: 'record', storm_id: out.storm.id, site_id: w.siteIds[0]!, minutes: 20, services: ['plow'] })).rejects.toMatchObject({ status: 409, code: 'storm_active' });
+    await closeStorm(ctx, out.storm.id, true);
+    const before = (await generateDrafts(ctx, out.storm.id))[0]!.draft;
+    expect(before.subtotal_cents).toBe(0);
+    const after = (await applyFlagFix(ctx, { action: 'record', storm_id: out.storm.id, site_id: w.siteIds[0]!, minutes: 20, services: ['plow'] }))[0]!.draft;
+    expect(after.subtotal_cents).toBeGreaterThan(0);
+    const codes = (after.flags as any[]).map((f) => f.code);
+    expect(codes).not.toContain('missing_visit');
+    expect(codes).toEqual(expect.arrayContaining(['no_gps_match', 'no_after_photo']));
+    const [v] = await serviceDb().select().from(visit).where(eq(visit.storm_id, out.storm.id));
+    expect(v!.notes).toBe('Visit recorded by the office');
+    expect((await serviceDb().select().from(visit_correction).where(eq(visit_correction.visit_id, v!.id)))[0]!.reason).toContain('No visit came from the phone');
+    await expect(applyFlagFix(ctx, { action: 'record', storm_id: out.storm.id, site_id: w.siteIds[0]!, minutes: 20, services: ['plow'] })).rejects.toMatchObject({ code: 'has_visit' });
+  });
+});

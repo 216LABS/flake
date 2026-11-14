@@ -68,3 +68,21 @@ test('a lot with an Arrive and no Done is finished from billing review and bills
   await flag.getByTestId('fix-finish').click();
   await expect(page.locator('[data-testid="flag"][data-code="missing_visit"]', { hasText: site!.label as string })).toHaveCount(0);
 });
+
+/** The phone stayed home: nothing came from it, but the lot was plowed. The office records the visit. */
+test('a lot plowed with no visit from the phone is recorded from the not-plowed card', async ({ page }) => {
+  await login(page);
+  const { id, runs } = await startStorm(page.request, `No phone ${Date.now()}`, ['West Lakewood']);
+  const run = runs[0]!;
+  const [stop, ...rest] = run.stops;
+  await finishStops(page.request, run, rest);
+  const [site] = await sql`select label from site where id = ${stop!.site_id}`;
+  expect((await page.request.post(`/api/storms/${id}/close`, { data: { force: true } })).ok()).toBe(true);
+  await page.goto(`/billing?storm=${id}`);
+  await expect(page.getByTestId('unplowed')).toContainText('not plowed');
+  await page.getByTestId('unplowed-show').click();
+  const flag = page.locator('[data-testid="flag"][data-code="missing_visit"]', { hasText: site!.label as string });
+  await flag.getByTestId('record-minutes').fill('25');
+  await flag.getByTestId('fix-record').click();
+  await expect(page.locator('[data-testid="flag"][data-code="missing_visit"]', { hasText: site!.label as string })).toHaveCount(0);
+});

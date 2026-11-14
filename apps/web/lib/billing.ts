@@ -209,6 +209,31 @@ export async function applyFlagFix(ctx: Ctx, fix: z.infer<typeof flagFix>) {
         await tx.insert(visit_correction).values({ tenant_id: ctx.tenantId, visit_id: v.id, field: 'notes', old_value: v.notes, new_value: 'Done time entered by the office', reason: `The driver arrived but never tapped Done. The office entered ${fix.minutes} min on site in billing review.`, by_user: ctx.userId });
         break;
       }
+      case 'record': {
+        // The phone never sent an Arrive (it died, or was left at home) but the lot was plowed. The office records the
+        // visit for the truck's driver. It has no location or photo, so those flags still need a waive to bill it.
+        const [s] = await tx.select({ status: storm.status, closed_at: storm.closed_at }).from(storm).where(eq(storm.id, fix.storm_id));
+        if (!s) throw new HttpError(404, 'Storm not found');
+        if (s.status === 'active') throw new HttpError(409, 'This storm is still running, so the driver can still record it. Close the storm first.', 'storm_active');
+        const [stop] = await tx.select({ id: run_stop.id, crew_id: storm_run.crew_id }).from(run_stop).innerJoin(storm_run, eq(storm_run.id, run_stop.storm_run_id))
+          .where(and(eq(storm_run.storm_id, fix.storm_id), eq(run_stop.site_id, fix.site_id))).orderBy(desc(storm_run.pass)).limit(1);
+        if (!stop) throw new HttpError(404, 'That lot is not on this storm');
+        if (!stop.crew_id) throw new HttpError(409, 'Nobody was driving that truck. Pick its driver on the storm board, then record the visit.', 'no_crew');
+        const [already] = await tx.select({ id: visit.id }).from(visit).where(and(eq(visit.storm_id, fix.storm_id), eq(visit.site_id, fix.site_id), sql`not exists (select 1 from visit_correction c where c.visit_id = ${visit.id} and c.field = 'voided' and c.new_value = 'true'::jsonb)`)).limit(1);
+        if (already) throw new HttpError(409, 'This lot already has a visit. Finish it instead.', 'has_visit');
+        const end = s.closed_at ? Date.parse(s.closed_at) : Date.now();
+        const now = new Date().toISOString();
+        const [v] = await asService(tx, ctx.tenantId, async () => {
+          const rows = await tx.insert(visit).values({
+            tenant_id: ctx.tenantId, client_uuid: crypto.randomUUID(), storm_id: fix.storm_id, run_stop_id: stop.id, site_id: fix.site_id, crew_id: stop.crew_id!, services: fix.services,
+            arrived_device_at: new Date(end - fix.minutes * 60000).toISOString(), departed_device_at: new Date(end).toISOString(), departed_received_at: now, notes: 'Visit recorded by the office',
+          }).returning({ id: visit.id });
+          await tx.update(run_stop).set({ status: 'done', updated_at: now }).where(and(eq(run_stop.id, stop.id), eq(run_stop.tenant_id, ctx.tenantId)));
+          return rows;
+        });
+        await tx.insert(visit_correction).values({ tenant_id: ctx.tenantId, visit_id: v!.id, field: 'notes', old_value: null, new_value: 'Visit recorded by the office', reason: `No visit came from the phone. The office recorded ${fix.minutes} min on site in billing review.`, by_user: ctx.userId });
+        break;
+      }
       case 'skip_all': {
         const runs = await tx.select({ id: storm_run.id }).from(storm_run).where(eq(storm_run.storm_id, fix.storm_id));
         if (runs.length) await tx.update(run_stop).set({ status: 'skipped', updated_at: new Date().toISOString() }).where(and(inArray(run_stop.storm_run_id, runs.map((r) => r.id)), inArray(run_stop.site_id, fix.site_ids), inArray(run_stop.status, ['open', 'enroute', 'problem'])));

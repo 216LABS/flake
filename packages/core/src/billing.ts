@@ -146,7 +146,8 @@ function flagsForSite(site: BillingSite, contract: BillingContract | undefined, 
     // The driver arrived and never tapped Done (a dead phone, or forgot): the office can finish it to bill the work.
     const services = [...new Set((contract?.services ?? []).map((s) => s.service as string).filter((s) => s !== 'salt'))];
     if (open) add('missing_visit', `${site.label}: the driver arrived but never tapped Done, so the visit isn't finished. Enter how long they were there to bill it, or mark it skipped.`, undefined, 'review', { open_visit_id: open.id, services: services.length ? services : ['plow'] });
-    else add('missing_visit', `${site.label} was in this storm's runs but has no completed visit.`);
+    // No Arrive at all: usually not plowed, but a dead phone looks the same, so the office can still record the visit.
+    else add('missing_visit', `${site.label} was in this storm's runs but has no completed visit.`, undefined, 'review', { services: services.length ? services : ['plow'] });
   }
   const sorted = [...visits].sort((a, b) => Date.parse(a.arrived_at) - Date.parse(b.arrived_at));
   sorted.forEach((v, i) => {

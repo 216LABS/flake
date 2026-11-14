@@ -65,7 +65,9 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
   // not a card each (issue 85).
   const open = (r: DraftRow) => r.flags.filter((f) => f.severity === 'review' && !f.waived);
   // A lot where the driver arrived and never tapped Done was plowed: it stays in the list, where it can be finished.
-  const unplowed = rows.filter((r) => r.status === 'draft' && r.subtotal_cents === 0 && open(r).length > 0 && open(r).every((f) => f.code === 'missing_visit' && !f.open_visit_id));
+  // "Show them" opens the list, for a lot that was plowed with a dead phone and needs its visit recorded.
+  const [showUnplowed, setShowUnplowed] = useState(false);
+  const unplowed = showUnplowed ? [] : rows.filter((r) => r.status === 'draft' && r.subtotal_cents === 0 && open(r).length > 0 && open(r).every((f) => f.code === 'missing_visit' && !f.open_visit_id));
   const unplowedSites = [...new Set(unplowed.flatMap((r) => open(r).map((f) => f.site_id)))];
   // Money at risk first, then missing proof (issue 78).
   const worst = (r: DraftRow) => Math.min(...open(r).map((f) => TIER_ORDER.indexOf(FLAG_TIER[f.code])), TIER_ORDER.length);
@@ -126,6 +128,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
           <p className="font-medium">{unplowedSites.length === 1 ? '1 lot was' : `${unplowedSites.length} lots were`} not plowed this storm.</p>
           <p className="mt-1 text-sm text-ink-2">{unplowed.map((r) => r.customer).join(', ')}. Nothing is billed for {unplowedSites.length === 1 ? 'it' : 'them'}.</p>
           <Button size="sm" variant="outline" className="mt-2" disabled={busy} data-testid="unplowed-skip" onClick={() => fix({ action: 'skip_all', site_ids: unplowedSites })}>Mark {unplowedSites.length === 1 ? 'it' : 'all'} skipped</Button>
+          <Button size="sm" variant="ghost" className="ml-2 mt-2" disabled={busy} data-testid="unplowed-show" onClick={() => setShowUnplowed(true)}>Plowed but the phone died? Show {unplowedSites.length === 1 ? 'it' : 'them'}</Button>
         </Card>
       ) : null}
       {flaggedOnly && rows.length && !shown.length ? <EmptyState title="Nothing is flagged" body="Everything here is clean. Approve it, or turn off the filter to see it." /> : null}
@@ -187,6 +190,13 @@ function FlagRow({ flag, editable, busy, onFix }: { flag: BillingFlag; editable:
               <Input aria-label="Minutes on site" className="h-8 w-20" type="number" min={1} max={720} step={1} value={qty} onChange={(e) => setQty(e.target.value)} data-testid="finish-minutes" />
               <span className="text-xs">min on site</span>
               <Button size="sm" variant="outline" disabled={busy || !(Number.isInteger(Number(qty)) && Number(qty) >= 1 && Number(qty) <= 720)} data-testid="fix-finish" onClick={() => onFix({ action: 'finish', visit_id: flag.open_visit_id, minutes: Number(qty), services: flag.services ?? ['plow'] })}>Finish visit</Button>
+            </>
+          ) : null}
+          {flag.code === 'missing_visit' && !flag.open_visit_id ? (
+            <>
+              <Input aria-label="Minutes on site" className="h-8 w-20" type="number" min={1} max={720} step={1} value={qty} onChange={(e) => setQty(e.target.value)} data-testid="record-minutes" />
+              <span className="text-xs">min on site</span>
+              <Button size="sm" variant="outline" disabled={busy || !(Number.isInteger(Number(qty)) && Number(qty) >= 1 && Number(qty) <= 720)} data-testid="fix-record" onClick={() => onFix({ action: 'record', site_id: flag.site_id, minutes: Number(qty), services: flag.services ?? ['plow'] })}>It was plowed: record it</Button>
             </>
           ) : null}
           {flag.code === 'missing_visit' ? <Button size="sm" variant="outline" disabled={busy} data-testid="fix-skip" onClick={() => onFix({ action: 'skip', site_id: flag.site_id })}>Mark skipped</Button> : null}
