@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { finishStops, login, sql, startStorm } from './helpers';
+import { login, sql, startStorm } from './helpers';
 
 /**
  * A company paid by check: the customer's portal shows the bill as due, the customer page shows what they owe, and
@@ -55,8 +55,8 @@ test('a lot with an Arrive and no Done is finished from billing review and bills
   await login(page);
   const { id, runs } = await startStorm(page.request, `Dead phone ${Date.now()}`, ['West Lakewood']);
   const run = runs[0]!;
-  const [stop, ...rest] = run.stops;
-  await finishStops(page.request, run, rest);
+  // Only this stop: visits on the others would crowd other tests' records pages.
+  const [stop] = run.stops;
   const token = new URL(run.link).pathname.split('/').pop()!;
   const [site] = await sql`select lat, lon, label from site where id = ${stop!.site_id}`;
   expect((await page.request.post(`/api/d/${token}/actions`, { data: { actions: [{ client_uuid: randomUUID(), at: new Date(Date.now() - 1800_000).toISOString(), kind: 'arrive', run_stop_id: stop!.id, visit_client_uuid: randomUUID(), gps: { lat: site!.lat, lon: site!.lon, acc: 5 } }] } })).ok()).toBe(true);
@@ -74,8 +74,8 @@ test('a lot plowed with no visit from the phone is recorded from the not-plowed 
   await login(page);
   const { id, runs } = await startStorm(page.request, `No phone ${Date.now()}`, ['West Lakewood']);
   const run = runs[0]!;
-  const [stop, ...rest] = run.stops;
-  await finishStops(page.request, run, rest);
+  // Only this stop: visits on the others would crowd other tests' records pages.
+  const [stop] = run.stops;
   const [site] = await sql`select label from site where id = ${stop!.site_id}`;
   expect((await page.request.post(`/api/storms/${id}/close`, { data: { force: true } })).ok()).toBe(true);
   await page.goto(`/billing?storm=${id}`);

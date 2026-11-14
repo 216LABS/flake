@@ -28,7 +28,7 @@ export default async function Customers({ searchParams }: { searchParams: Promis
   const siteCount = (id: string) => sites.filter((s) => s.customer_id === id && s.active).length;
   return (
     <>
-      <PageHeader title={showArchived ? 'Archived customers' : 'Customers'} actions={ctx.role !== 'viewer' && !showArchived ? <Link href="/customers/new" className={buttonVariants({ variant: 'accent' })} data-testid="new-customer">New customer</Link> : null} />
+      <PageHeader title={showArchived ? 'Archived customers' : 'Customers'} actions={ctx.role !== 'viewer' && !showArchived ? <><Link href="/customers/import" className={buttonVariants({ variant: 'outline' })} data-testid="import-customers">Import</Link><Link href="/customers/new" className={buttonVariants({ variant: 'accent' })} data-testid="new-customer">New customer</Link></> : null} />
       {listed.length > 8 || q ? (
         <form className="mb-3 flex gap-2" role="search" action="/customers">
           {showArchived ? <input type="hidden" name="archived" value="1" /> : null}

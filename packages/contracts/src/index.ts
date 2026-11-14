@@ -65,6 +65,20 @@ export const customerCreate = customerBase.extend({ billing_mode: billingMode.de
 // Update schemas come from the base: zod 4 applies defaults even through .partial(), which would reset fields.
 export const customerUpdate = customerBase.partial().extend({ archived: z.boolean().optional() });
 
+/** One row of a customer list pasted or uploaded as CSV. Each field is checked again when the row is saved. */
+const csvText = (max: number) => z.string().trim().max(max).nullable().optional();
+export const customerImportRow = z.object({
+  name: z.string().trim().min(1).max(200),
+  address: z.string().trim().min(5).max(300),
+  label: csvText(200),
+  email: csvText(254),
+  phone: csvText(30),
+  kind: csvText(40),
+  billing: csvText(40),
+});
+/** A batch small enough to look up every address inside one request. */
+export const customerImport = z.object({ rows: z.array(customerImportRow).min(1).max(25) });
+
 const geoJsonGeom = z.object({ type: z.enum(['Polygon', 'MultiPolygon']), coordinates: z.array(z.any()) });
 
 const siteBase = z.object({

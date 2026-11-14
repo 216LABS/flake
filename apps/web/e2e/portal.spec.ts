@@ -8,8 +8,9 @@ test('customer records page: visits with photos and salt, private to that custom
   const stormName = `Portal storm ${randomUUID().slice(0, 6)}`;
   const { runs } = await startStorm(page.request, stormName, ['West Lakewood']);
   const run = runs[0]!;
-  // Other tests pile visits onto the first stops, so use the quietest site: the page shows the 10 newest as cards.
-  const counts = await sql`select s.id, (select count(*)::int from visit v where v.site_id = s.id) as n from site s where s.id in ${sql(run.stops.map((x) => x.site_id))}`;
+  // Other tests pile visits onto these lots, some dated ahead of now, and the page shows the 10 newest as cards. Use the
+  // lot with the fewest visits newer than this one.
+  const counts = await sql`select s.id, (select count(*)::int from visit v where v.site_id = s.id and v.arrived_device_at > now() - interval '30 minutes') as n from site s where s.id in ${sql(run.stops.map((x) => x.site_id))}`;
   const quietest = counts.sort((x, y) => x.n - y.n)[0]!.id;
   const stop = run.stops.find((x) => x.site_id === quietest)!;
   const [owner] = await sql`select s.customer_id, s.label, c.name from site s join customer c on c.id = s.customer_id where s.id = ${stop.site_id}`;

@@ -252,3 +252,34 @@ describe('a lot plowed with no visit from the phone can be recorded by the offic
     await expect(applyFlagFix(ctx, { action: 'record', storm_id: out.storm.id, site_id: w.siteIds[0]!, minutes: 20, services: ['plow'] })).rejects.toMatchObject({ code: 'has_visit' });
   });
 });
+
+describe('importing a customer list', () => {
+  it('reads a spreadsheet CSV with quotes, any column order and the usual header words', async () => {
+    const { customersFromCsv } = await import('@/lib/csv');
+    const csv = '﻿Customer,Type,Service Address,E-mail\r\n"Smith, Jo",Residential,"12 Elm St, Lakewood, OH",jo@example.com\r\n,HOA,1 Lake Ave Lakewood OH,\r\nNo Address,,,\r\n';
+    const { rows, missing } = customersFromCsv(csv);
+    expect(missing).toEqual([]);
+    expect(rows[0]).toMatchObject({ name: 'Smith, Jo', address: '12 Elm St, Lakewood, OH', email: 'jo@example.com', kind: 'Residential', problem: null });
+    expect(rows[1]!.problem).toBe('No name.');
+    expect(rows[2]!.problem).toBe('No address.');
+    expect(customersFromCsv('who,where\nA,B').missing).toEqual(['name', 'address']);
+  });
+  it('adds each row as a customer and lot, joins rows with the same name, and says why a row was left out', async () => {
+    const { customer, site } = await import('@flake/db');
+    const { importCustomers } = await import('@/lib/import');
+    const w = await makeWorld();
+    const out = await importCustomers(ctxOf(w), [
+      { name: 'Bayview HOA', address: '100 Lake Ave Lakewood OH', label: 'North drive', email: 'board@example.com', phone: '216-555-0101', kind: 'HOA', billing: 'invoice' },
+      { name: 'bayview hoa', address: '120 Lake Ave Lakewood OH', label: 'South drive' },
+      { name: 'Bad Email', address: '5 Main St Lakewood OH', email: 'not-an-email' },
+      { name: 'Odd Kind', address: '6 Main St Lakewood OH', kind: 'spaceship' },
+      { name: 'Lost', address: '7 Nowhere #nomatch' },
+    ]);
+    expect(out.map((r) => r.ok)).toEqual([true, true, false, false, false]);
+    expect(out[1]).toMatchObject({ added_to_existing: true });
+    const [c] = await serviceDb().select().from(customer).where(and(eq(customer.tenant_id, w.tenantId), eq(customer.name, 'Bayview HOA')));
+    expect(c).toMatchObject({ kind: 'hoa', billing_mode: 'invoice_net30', phone_e164: '+12165550101' });
+    expect((await serviceDb().select().from(site).where(eq(site.customer_id, c!.id))).map((s) => s.label).sort()).toEqual(['North drive', 'South drive']);
+    expect((out[4] as { error: string }).error).toMatch(/couldn't find that address/);
+  });
+});
