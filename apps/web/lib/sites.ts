@@ -1,6 +1,6 @@
 import { FREE_SITE_LIMIT, proFeaturesEnabled } from '@flake/core/fees';
 import { todayIn } from '@flake/core/time';
-import { and, customer, eq, inArray, route_stop, run_stop, site, sql, storm, storm_run, tenant, type Tx } from '@flake/db';
+import { and, contract, customer, eq, inArray, route_stop, run_stop, site, sql, storm, storm_run, tenant, type Tx } from '@flake/db';
 import { HttpError } from './http';
 
 /** The free plan's site cap, for every way a site is added. Two saved at once can't both take the last place. */
@@ -25,6 +25,8 @@ export async function requireLiveCustomer(tx: Tx, customerId: string) {
 export async function takeSitesOffWork(tx: Tx, siteIds: string[]) {
   if (!siteIds.length) return;
   await tx.delete(route_stop).where(inArray(route_stop.site_id, siteIds));
+  // A quote nobody has signed is withdrawn with the lot, so a retired lot can't pick up a signed contract later.
+  await tx.update(contract).set({ status: 'void' }).where(and(inArray(contract.site_id, siteIds), inArray(contract.status, ['draft', 'sent'])));
   const live = await tx.select({ id: storm_run.id }).from(storm_run).innerJoin(storm, eq(storm.id, storm_run.storm_id)).where(eq(storm.status, 'active'));
   if (!live.length) return;
   await tx.update(run_stop).set({ status: 'skipped', updated_at: new Date().toISOString() })

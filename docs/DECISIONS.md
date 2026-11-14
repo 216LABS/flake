@@ -92,3 +92,5 @@ Same basis as D10. **[J]**
 - **Viewers can make proof packets** (read-only copies an insurer asks for), up to ten a minute each. Write buttons are hidden for viewers, not just greyed out.
 - **The same customer sent twice within two minutes** is refused as a duplicate. Two customers can still share a name on purpose after that.
 - **Tables turn into cards whenever their box is narrow**, by the box's own width, so a tablet beside the sidebar gets cards instead of a cut-off table.
+- **Retiring a lot, or archiving its customer, withdraws its unsigned quotes.** The link then can't sign a contract for a lot that's out of service. Restoring the lot means sending a new quote.
+- **The dashboard counts only active customers and lots** for the first-run card, Start a storm, the setup list and waiting quotes.

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { login, sql } from './helpers';
+import { login, SEASON, sql } from './helpers';
 
 /** Issue 129: a brand-new company's first screens say what to do first, instead of "unavailable" and empty pickers. */
 test('a new company sees a first-run card, an empty Proof page that explains itself, and an empty crew note', async ({ page }) => {
@@ -23,6 +23,14 @@ test('a new company sees a first-run card, an empty Proof page that explains its
   await expect(page.getByTestId('proof-site')).toHaveCount(0);
   await page.goto('/settings?tab=crew');
   await expect(page.getByTestId('crew-empty')).toBeVisible();
+  // Issue 139: a company whose only customer is archived is back to the first-run card, worded for it.
+  const c = await (await page.request.post('/api/customers', { data: { name: 'Gone Soon', kind: 'residential', billing_mode: 'manual' } })).json();
+  await page.goto('/dashboard');
+  await expect(page.getByTestId('first-run')).toHaveCount(0);
+  expect((await page.request.patch(`/api/customers/${c.id}`, { data: { archived: true } })).ok()).toBe(true);
+  await page.goto('/dashboard');
+  await expect(page.getByTestId('first-run')).toContainText('No active customers');
+  await expect(page.getByRole('main').getByRole('link', { name: 'Start a storm' })).toHaveCount(0);
 });
 
 /** Issue 130: an unknown packet id is a 404, not "pending" forever; a real one is pending or ready. */
@@ -68,4 +76,26 @@ test('skip link, tap targets of at least 24 px on list links, and a tappable fla
   await page.goto('/billing');
   const label = page.getByTestId('flagged-only').locator('xpath=..');
   if (await label.count()) expect((await label.boundingBox())!.height).toBeGreaterThanOrEqual(24);
+});
+
+/** The dashboard's waiting-quote count leaves out archived customers' lots, the same as the list it links to. */
+test('archiving a customer takes their waiting quote out of the dashboard count', async ({ page }) => {
+  await login(page);
+  const count = async () => {
+    await page.goto('/dashboard');
+    const t = await page.getByTestId('quotes-waiting').textContent().catch(() => null);
+    return t ? Number(/(\d+) quotes? (is|are) waiting/.exec(t)?.[1] ?? 0) : 0;
+  };
+  const before = await count();
+  const tag = randomUUID().slice(0, 6);
+  const c = await (await page.request.post('/api/customers', { data: { name: `Waits ${tag}`, kind: 'commercial', billing_mode: 'manual', email: `${tag}@example.com` } })).json();
+  const s = await (await page.request.post('/api/sites', { data: { customer_id: c.id, label: `Lot ${tag}`, address: '9 Wait St, Lakewood, OH', lat: 41.48, lon: -81.8 } })).json();
+  expect((await page.request.post('/api/quotes', { data: { site_id: s.id, season: SEASON, services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 5000 } }], send: false } })).ok()).toBe(true);
+  expect(await count()).toBe(before + 1);
+  const quoteRow = (await sql`select status from contract where site_id = ${s.id}`)[0]!;
+  expect(quoteRow.status).toBe('draft');
+  await page.request.patch(`/api/customers/${c.id}`, { data: { archived: true } });
+  expect(await count()).toBe(before);
+  // The unsigned quote is withdrawn with the lot, so the link can't sign a contract for a retired lot.
+  expect((await sql`select status from contract where site_id = ${s.id}`)[0]!.status).toBe('void');
 });

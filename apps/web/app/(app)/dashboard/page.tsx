@@ -1,4 +1,4 @@
-import { and, contract, crew_member, customer, desc, eq, isNull, message_log, route, route_stop, run_stop, serviceDb, sql, storm, storm_run, trigger_alert } from '@flake/db';
+import { and, contract, crew_member, customer, desc, eq, isNull, message_log, route, route_stop, run_stop, serviceDb, site, sql, storm, storm_run, trigger_alert } from '@flake/db';
 import { fmtLocal } from '@flake/core/time';
 import { Badge, buttonVariants, Card, EmptyState, Eyebrow, PageHeader, Progress, Stat, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
@@ -17,12 +17,14 @@ export default async function Dashboard() {
     alerts: await tx.select().from(trigger_alert).where(eq(trigger_alert.status, 'open')).orderBy(desc(trigger_alert.created_at)).limit(10),
     active: await tx.select().from(storm).where(eq(storm.status, 'active')).orderBy(desc(storm.started_at)),
     recent: await tx.select({ id: storm.id, name: storm.name, started_at: storm.started_at, status: storm.status, billedNothing: sql<boolean>`not exists (select 1 from invoice_draft d where d.storm_id = ${storm.id} and d.status <> 'void')` }).from(storm).where(sql`${storm.status} <> 'active'`).orderBy(desc(storm.started_at)).limit(5),
-    customers: await tx.select({ n: sql<number>`count(*)::int` }).from(customer),
+    // Active customers decide the first-run card, Start a storm and the checklist; archived ones only change the words (issue 139).
+    customers: await tx.select({ n: sql<number>`(count(*) filter (where ${customer.archived_at} is null))::int`, all: sql<number>`count(*)::int` }).from(customer),
     crew: await tx.select({ n: sql<number>`count(*)::int` }).from(crew_member).where(eq(crew_member.active, true)),
-    routed: await tx.select({ n: sql<number>`count(*)::int` }).from(route_stop).innerJoin(route, eq(route.id, route_stop.route_id)).where(isNull(route.archived_at)),
+    routed: await tx.select({ n: sql<number>`count(*)::int` }).from(route_stop).innerJoin(route, eq(route.id, route_stop.route_id)).innerJoin(site, eq(site.id, route_stop.site_id)).where(and(isNull(route.archived_at), eq(site.active, true))),
     progress: await tx.select({ storm_id: storm_run.storm_id, finished: sql<number>`count(*) filter (where ${run_stop.status} in ('done', 'skipped'))::int`, total: sql<number>`count(*)::int` }).from(run_stop).innerJoin(storm_run, eq(storm_run.id, run_stop.storm_run_id)).innerJoin(storm, eq(storm.id, storm_run.storm_id)).where(eq(storm.status, 'active')).groupBy(storm_run.storm_id),
-    // Quotes waiting for a signature, whether emailed or handed over as a link (issue 92).
-    pendingQuotes: await tx.select({ n: sql<number>`count(distinct coalesce(${contract.quote_token_hash}, ${contract.id}::text))::int` }).from(contract).where(sql`${contract.status} in ('sent', 'draft')`),
+    // Quotes waiting for a signature, whether emailed or handed over as a link (issue 92), on lots still in service, the
+    // same set Customers' "Quote waiting" filter lists.
+    pendingQuotes: await tx.select({ n: sql<number>`count(distinct coalesce(${contract.quote_token_hash}, ${contract.id}::text))::int` }).from(contract).innerJoin(site, eq(site.id, contract.site_id)).where(and(sql`${contract.status} in ('sent', 'draft')`, eq(site.active, true))),
     // What customers still owe: storm bills not collected yet, and seasonal installments not paid.
     owed: (await tx.execute(sql`
       select c.id, c.name, sum(x.cents)::int as cents, count(*)::int as n from (
@@ -51,7 +53,7 @@ export default async function Dashboard() {
   const fmt = (v: number | null, unit = '"') => (v === null ? 'unavailable' : `${v}${unit}`);
   const canEdit = ctx.role !== 'viewer';
   const setup = ctx.role !== 'owner' ? [] : [
-    { done: data.customers[0]!.n > 0, text: 'Add your first customer', href: '/customers/new' },
+    { done: data.customers[0]!.n > 0, text: data.customers[0]!.all ? 'Add a customer' : 'Add your first customer', href: '/customers/new' },
     { done: data.crew[0]!.n > 0, text: 'Invite your drivers', href: '/settings?tab=crew' },
     { done: data.routed[0]!.n > 0, text: 'Put your lots on a route, so a storm knows where to go', href: '/routes' },
     { done: Boolean(ctx.tenant.stripe_charges_enabled), text: 'Connect Stripe to get paid', href: '/settings?tab=payments' },
@@ -66,8 +68,8 @@ export default async function Dashboard() {
       {/* A brand-new company has no lots, so no forecast to show yet: say what comes first instead of "unavailable" (issue 129). */}
       {data.customers[0]!.n === 0 ? (
         <section className="rounded-md bg-slate-950 p-5 text-white" data-testid="first-run">
-          <h2 className="font-display text-xl font-semibold">Welcome to Flake</h2>
-          <p className="mt-1 text-sm text-slate-300">Add a customer and their lot. The snow forecast for your lots shows here once there&apos;s one to watch.</p>
+          <h2 className="font-display text-xl font-semibold">{data.customers[0]!.all ? 'No active customers' : 'Welcome to Flake'}</h2>
+          <p className="mt-1 text-sm text-slate-300">{data.customers[0]!.all ? 'Every customer is archived. Add one, or restore one from Archived customers.' : 'Add a customer and their lot.'} The snow forecast for your lots shows here once there&apos;s one to watch.</p>
           {canEdit ? <div className="mt-3 flex flex-wrap gap-2"><Link href="/customers/new" className={buttonVariants({ variant: 'accent' })}>Add your first customer</Link><Link href="/customers/import" className={buttonVariants({ variant: 'outline', className: 'text-ink' })}>Import a list</Link></div> : null}
         </section>
       ) : (
