@@ -359,6 +359,13 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
                     {live.crew.map((c: any) => <option key={c.id} value={c.id}>{c.name}{c.kind === 'sub' ? ' (sub)' : ''}</option>)}
                   </Select>
                 ) : null}
+                {/* Which truck ran this route, for a damage question later and fuel per storm. Only once a company has trucks. */}
+                {live.trucks?.length ? (editable ? (
+                  <Select aria-label={`Truck for ${r.name}`} data-testid="assign-truck" className="mt-1 h-8 py-0 text-xs" value={r.truck_id ?? ''} onChange={(e) => void act(() => api(`/api/runs/${r.id}`, { method: 'PATCH', body: { truck_id: e.target.value || null } }))}>
+                    <option value="">No truck set</option>
+                    {live.trucks.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </Select>
+                ) : r.truck_id ? <div className="text-xs text-muted" data-testid="run-truck">{live.trucks.find((t: any) => t.id === r.truck_id)?.name ?? 'Retired truck'}</div> : null) : null}
                 {/* Did the driver get the link? Known the moment their phone opens it, not only once they tap something (issue 86). */}
                 {r.opened_at ? <p className="mt-1 text-xs text-ink-2" data-testid="link-opened">Opened {clock(r.opened_at, tz)}</p>
                   : r.crew && !closed ? <p className="mt-1 text-xs font-medium text-warn-ink" data-testid="link-opened">Not opened yet</p> : null}

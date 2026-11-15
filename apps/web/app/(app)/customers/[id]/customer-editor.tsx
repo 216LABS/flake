@@ -39,7 +39,10 @@ export function CustomerEditor({ customer }: { customer: { id: string; name: str
             const keys = (Object.keys(next) as (keyof typeof next)[]).filter((k) => (next[k] ?? null) !== (base[k] ?? null));
             if (!keys.length) return setMsg({ ok: true, text: 'Saved' });
             const saved = await api<typeof base>(`/api/customers/${customer.id}`, { method: 'PATCH', body: { ...Object.fromEntries(keys.map((k) => [k, next[k] ?? ''])), expected: Object.fromEntries(keys.map((k) => [k, base[k] ?? null])) } });
+            // The form shows the saved row, so fields this tab didn't touch pick up another tab's changes too (issue 164).
+            // Otherwise the next save would send a field the tab never changed, as stale, and undo the other edit.
             setBase({ name: saved.name, kind: saved.kind, contact_name: saved.contact_name, email: saved.email, phone_e164: saved.phone_e164, billing_mode: saved.billing_mode });
+            setF({ name: saved.name, kind: saved.kind, contact_name: saved.contact_name ?? '', email: saved.email ?? '', phone_e164: saved.phone_e164 ?? '', billing_mode: saved.billing_mode });
             setMsg({ ok: true, text: 'Saved' });
             router.refresh();
           } catch (e) {

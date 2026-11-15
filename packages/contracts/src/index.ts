@@ -177,6 +177,7 @@ const siteList = z.array(uuid).max(500).transform((ids) => [...new Set(ids)]);
 const routeBase = z.object({
   name: z.string().trim().min(1).max(120),
   default_crew_id: uuid.nullable().optional(),
+  default_truck_id: uuid.nullable().optional(),
   site_ids: siteList,
 });
 export const routeCreate = routeBase.extend({ site_ids: siteList.default([]) });
@@ -222,7 +223,44 @@ export const runStopPatch = z.object({
   status: z.enum(['skipped', 'open']).optional(),
 });
 
-export const runPatch = z.object({ crew_id: uuid });
+export const runPatch = z.object({ crew_id: uuid.optional(), truck_id: uuid.nullable().optional() })
+  .refine((b) => b.crew_id !== undefined || b.truck_id !== undefined, { message: 'Pick a driver or a truck.' });
+
+/** Trucks, loaders and other equipment. */
+export const truckKind = z.enum(['truck', 'loader', 'skid_steer', 'spreader', 'other']);
+const truckBase = z.object({
+  name: z.string().trim().min(1, 'Name the truck, like Truck 3.').max(120),
+  kind: truckKind,
+  plate: emptyToNull(z.string().trim().max(20)),
+  notes: emptyToNull(z.string().trim().max(1000)),
+});
+export const truckCreate = truckBase.extend({ kind: truckKind.default('truck') });
+export const truckUpdate = truckBase.partial().extend({ active: z.boolean().optional() });
+
+/** One line in a truck's log: fuel, engine or blade hours, maintenance, or a note. */
+export const equipmentLogCreate = z.object({
+  truck_id: uuid,
+  storm_id: uuid.nullable().optional(),
+  kind: z.enum(['fuel', 'hours', 'maintenance', 'note']),
+  gallons: z.number().positive().max(1000).nullable().optional(),
+  cost_cents: z.number().int().min(0).max(100_000_000).nullable().optional(),
+  hours: z.number().min(0).max(100_000).nullable().optional(),
+  note: z.string().trim().max(1000).nullable().optional(),
+  at: z.iso.datetime({ offset: true }).optional(),
+}).refine((b) => b.kind !== 'fuel' || Boolean(b.gallons), { message: 'Enter the gallons.', path: ['gallons'] })
+  .refine((b) => b.kind !== 'hours' || b.hours != null, { message: 'Enter the meter hours.', path: ['hours'] })
+  .refine((b) => !['maintenance', 'note'].includes(b.kind) || Boolean(b.note), { message: 'Say what was done.', path: ['note'] });
+
+/** A pre-season site walk item. The photo comes as a file beside these fields. */
+export const siteWalkKind = z.enum(['damage', 'pile', 'hazard', 'drain', 'note']);
+export const siteWalkCreate = z.object({
+  season: z.string().regex(/^\d{4}-\d{2}$/, 'Seasons are written like 2026-27.'),
+  kind: siteWalkKind,
+  note: z.string().trim().max(1000).optional(),
+  taken_at: z.iso.datetime({ offset: true }).optional(),
+  lat: latN.optional(),
+  lon: lonN.optional(),
+});
 export const stormNotify = z.object({ siteIds: z.array(uuid).min(1), template: z.enum(['late', 'on_the_way']), time: z.string().trim().max(40).optional() })
   // "We expect to reach X by ." helps nobody (issue 148): a running-late message says when.
   .refine((b) => b.template !== 'late' || Boolean(b.time), { message: 'Pick the time you expect to get there.', path: ['time'] });

@@ -125,3 +125,11 @@ Sam: Flake will be sold nationwide, not only in NE Ohio. **[J]**
 - **A lot outside NWS coverage** (Canada, offshore, a misplaced pin) is marked checked with no forecast area and says so on the dashboard; it no longer counts toward the weather breaker that pauses weather for every company.
 - **Refreeze alerts** are their own alert, for lots with a salt contract: freezing rain or drizzle within 12 hours, or snow still down (snow in the forecast's last 48 hours, or a storm in the last 3 days) that melts above 32 F and freezes again within 18 hours. One per lot per day, saying when and how cold.
 - **Alert list** adds Freezing Fog Advisory and Blizzard Watch.
+
+## D14. Site walk and equipment (Nov 15, 2026)
+Sam picked these; the details are mine. **[J]**
+- **Site walk** lives on each lot's page, by season (the quoting season by default): a kind (damage already there, where piles go, hazard, drain, note), a note, and an optional photo. Photos are re-encoded, hashed and dated from the photo itself. Proof packets print the walk for the seasons they cover.
+- **Trucks** are listed in Settings, Equipment, for owners and dispatchers. A truck is retired, never deleted, so its log and past storms stay. Truck names are unique among trucks in service.
+- **A route's default truck** goes onto each storm's run and the next pass; the board can change it. Proof packets name the truck at each visit. Truck is optional everywhere, so a one-truck company never sees it until it adds one.
+- **The equipment log** takes fuel (gallons, optional cost), meter hours, maintenance (what was done, optional cost) and notes, optionally against a storm. Reports shows per truck: storm routes, fuel, fuel cost, maintenance cost and the latest meter reading.
+- **Maintenance reminders** (every N hours or days) need one more table; they come next, as their own migration.

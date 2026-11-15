@@ -142,6 +142,8 @@ export const route = pgTable('route', {
   archived_at: ts('archived_at'),
   /** Suggest order starts and ends this route at the yard, when the company has one (issue 64). */
   yard_trip: boolean('yard_trip').notNull().default(true),
+  /** The truck that usually runs this route; each storm's run starts with it. */
+  default_truck_id: uuid('default_truck_id'),
   created_at: createdAt(),
 });
 
@@ -205,6 +207,8 @@ export const storm_run = pgTable('storm_run', {
   link_opened_at: ts('link_opened_at'),
   published_at: ts('published_at'),
   started_at: ts('started_at'),
+  /** The truck that ran this route in this storm, for damage questions and fuel per storm. */
+  truck_id: uuid('truck_id'),
   created_at: createdAt(),
 });
 
@@ -493,4 +497,48 @@ export const salt_order = pgTable('salt_order', {
   created_by: uuid('created_by'),
   created_at: createdAt(),
   updated_at: ts('updated_at').defaultNow(),
+});
+
+/** What a lot looked like before the first snow: damage already there, where piles go, hazards. */
+export const site_walk_item = pgTable('site_walk_item', {
+  id: id(),
+  tenant_id: tenantId(),
+  site_id: uuid('site_id').notNull(),
+  season: text('season').notNull(),
+  kind: text('kind').$type<'damage' | 'pile' | 'hazard' | 'drain' | 'note'>().notNull(),
+  note: text('note'),
+  photo_path: text('photo_path'),
+  photo_sha256: text('photo_sha256'),
+  lat: doublePrecision('lat'),
+  lon: doublePrecision('lon'),
+  taken_at: ts('taken_at'),
+  created_by: uuid('created_by'),
+  created_at: createdAt(),
+});
+
+export const truck = pgTable('truck', {
+  id: id(),
+  tenant_id: tenantId(),
+  name: text('name').notNull(),
+  kind: text('kind').$type<'truck' | 'loader' | 'skid_steer' | 'spreader' | 'other'>().notNull().default('truck'),
+  plate: text('plate'),
+  notes: text('notes'),
+  active: boolean('active').notNull().default(true),
+  created_at: createdAt(),
+});
+
+/** Fuel, engine or blade hours, and maintenance, per truck and, when it happened in one, per storm. */
+export const equipment_log = pgTable('equipment_log', {
+  id: id(),
+  tenant_id: tenantId(),
+  truck_id: uuid('truck_id').notNull(),
+  storm_id: uuid('storm_id'),
+  kind: text('kind').$type<'fuel' | 'hours' | 'maintenance' | 'note'>().notNull(),
+  gallons: numeric('gallons', { mode: 'number' }),
+  cost_cents: integer('cost_cents'),
+  hours: numeric('hours', { mode: 'number' }),
+  note: text('note'),
+  at: ts('at').notNull().defaultNow(),
+  created_by: uuid('created_by'),
+  created_at: createdAt(),
 });

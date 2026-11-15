@@ -3,7 +3,7 @@ import { buttonVariants, Card, Eyebrow, Input, Label, PageHeader, Stat, Table, T
 import { sql } from '@flake/db';
 import { asUser, requirePage } from '@/lib/auth';
 import { money } from '@/lib/client';
-import { crewHours, period, saltReport } from '@/lib/reports';
+import { crewHours, equipmentReport, period, saltReport } from '@/lib/reports';
 import { contractorSalt, saltOrderingReady } from '@/lib/salt-orders';
 import { SaltOrder } from './salt-order';
 import { SaltStockForm } from './salt-stock';
@@ -34,7 +34,8 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
       </>
     );
   }
-  const { hours, salt, bills } = await asUser(ctx, async (tx) => ({
+  const { hours, salt, bills, equipment } = await asUser(ctx, async (tx) => ({
+    equipment: await equipmentReport(tx, p),
     hours: await crewHours(tx, p, tz),
     salt: await saltReport(tx, ctx.tenantId, p),
     // Storm bills past review, by storm started in the period; seasonal installments by the month they were billed.
@@ -145,6 +146,28 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
           </>
         ) : <p className="text-sm text-muted">Nothing billed in these dates yet. Approved storm bills and seasonal installments show here.</p>}
       </section>
+
+      {equipment.length ? (
+        <section className="mb-8" aria-labelledby="equipment-title" data-testid="equipment-report">
+          <Eyebrow id="equipment-title" className="mb-2">Equipment</Eyebrow>
+          <Table stack>
+            <thead><tr><Th>Truck</Th><Th>Storms</Th><Th>Fuel</Th><Th>Fuel cost</Th><Th>Maintenance</Th><Th>Meter</Th></tr></thead>
+            <tbody>
+              {equipment.map((t) => (
+                <tr key={t.id} data-testid="equipment-row">
+                  <Td className="wrap-anywhere">{t.name}</Td>
+                  <Td label="Storms" className="tabular">{t.storms}</Td>
+                  <Td label="Fuel" className="tabular">{t.gallons ? `${t.gallons} gal` : '-'}</Td>
+                  <Td label="Fuel cost" className="tabular">{t.fuel_cents ? money(t.fuel_cents) : '-'}</Td>
+                  <Td label="Maintenance" className="tabular">{t.maintenance_cents ? money(t.maintenance_cents) : '-'}</Td>
+                  <Td label="Meter" className="tabular">{t.last_hours != null ? `${t.last_hours} h` : '-'}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+          <p className="mt-1 text-xs text-muted">Storms counts the storm routes each truck was set on. Log fuel, hours and maintenance in Settings, Equipment.</p>
+        </section>
+      ) : null}
 
       <section aria-labelledby="salt-title">
         <Eyebrow id="salt-title" className="mb-2">Salt</Eyebrow>

@@ -42,7 +42,12 @@ export interface ProofVisit {
   voided_reason?: string | null;
   /** When the phone wasn't at the lot on arrival, how far off it was, as billing review says it (issue 152). */
   gps_note?: string | null;
+  /** The truck that ran this visit's route in the storm, when the office set one. */
+  truck_name?: string | null;
 }
+
+/** A pre-season site walk item: what the lot looked like before the first snow. */
+export interface ProofWalkItem { id: string; season: string; kind: string; note: string | null; taken_at: string | null; photo: { storage_path: string; sha256: string | null } | null }
 
 /** One signed agreement in force for part of the packet's period (issue 158). */
 export interface ProofAgreement { season: string; services: unknown; accepted_at: string | null; accepted_name: string | null }
@@ -55,6 +60,8 @@ export interface ProofInput {
   contract: { season: string; services: unknown; salt_pricing: unknown; terms_md: string | null; accepted_at: string | null; accepted_name: string | null } | null;
   /** Every agreement that priced a visit in the period, oldest first, when there was more than one (a re-sign). */
   agreements?: ProofAgreement[];
+  /** The site walk for the seasons the period covers. */
+  site_walk?: ProofWalkItem[];
   storms: { id: string; name: string; started_at: string; closed_at: string | null; snapshots: ProofSnapshot[] }[];
   visits: ProofVisit[];
   messages: { id: string; channel: string; template: string; body: string; created_at: string; status: string | null }[];

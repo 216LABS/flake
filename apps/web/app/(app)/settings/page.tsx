@@ -1,4 +1,5 @@
-import { and, crew_member, desc, eq, job, message_log, serviceDb, sql, tenant } from '@flake/db';
+import { and, crew_member, desc, eq, equipment_log, job, message_log, serviceDb, sql, storm, tenant, truck } from '@flake/db';
+import { EquipmentPanel } from './equipment-panel';
 import { SectionPicker } from './section-picker';
 import { fmtLocal, todayIn } from '@flake/core/time';
 import { inFreeSeason } from '@flake/core/fees';
@@ -20,8 +21,8 @@ import { BusinessForm, CompanyForm, CrewPanel, PaymentsPanel, PlanPanel, RateCar
 
 export const metadata = { title: 'Settings' };
 
-const TABS = [['company', 'Company'], ['rate', 'Rate card'], ['crew', 'Crew'], ['team', 'Team'], ['alerts', 'Alerts'], ['payments', 'Payments'], ['sms', 'Text messages'], ['plan', 'Plan'], ['data', 'Data export'], ['system', 'System']] as const;
-const EXPORTS = ['customer', 'site', 'contract', 'crew_member', 'route', 'storm', 'storm_run', 'run_stop', 'visit', 'visit_photo', 'visit_correction', 'problem_report', 'invoice_draft', 'message_log', 'proof_packet'];
+const TABS = [['company', 'Company'], ['rate', 'Rate card'], ['crew', 'Crew'], ['equipment', 'Equipment'], ['team', 'Team'], ['alerts', 'Alerts'], ['payments', 'Payments'], ['sms', 'Text messages'], ['plan', 'Plan'], ['data', 'Data export'], ['system', 'System']] as const;
+const EXPORTS = ['customer', 'site', 'contract', 'crew_member', 'route', 'storm', 'storm_run', 'run_stop', 'visit', 'visit_photo', 'visit_correction', 'problem_report', 'invoice_draft', 'message_log', 'proof_packet', 'truck', 'equipment_log', 'site_walk_item'];
 
 /** Everything in these saves through owner-only routes. */
 const OWNER_TABS = ['company', 'rate', 'team', 'payments', 'sms', 'plan', 'data'];
@@ -49,6 +50,14 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       {allowed && tab === 'company' ? <CompanyForm tenant={JSON.parse(JSON.stringify(t))} /> : null}
       {allowed && tab === 'rate' ? <RateCardForm card={(Object.keys(t.rate_card as object).length ? t.rate_card : DEFAULT_RATE_CARD) as RateCard} /> : null}
       {tab === 'crew' ? <fieldset disabled={readOnly} className={readOnly ? 'view-only contents' : 'contents'}><CrewPanel canText={canTextFrom(ctx.tenant)} crew={JSON.parse(JSON.stringify(await asUser(ctx, (tx) => tx.select().from(crew_member).orderBy(crew_member.name))))} /></fieldset> : null}
+      {tab === 'equipment' ? await (async () => {
+        const data = await asUser(ctx, async (tx) => ({
+          trucks: await tx.select({ id: truck.id, name: truck.name, kind: truck.kind, plate: truck.plate, active: truck.active }).from(truck).orderBy(truck.name),
+          logs: await tx.select().from(equipment_log).orderBy(desc(equipment_log.at)).limit(500),
+          storms: await tx.select({ id: storm.id, name: storm.name }).from(storm).orderBy(desc(storm.started_at)).limit(20),
+        }));
+        return <fieldset disabled={readOnly} className={readOnly ? 'view-only contents' : 'contents'}><EquipmentPanel tz={tz} trucks={data.trucks} storms={data.storms} logs={JSON.parse(JSON.stringify(data.logs))} /></fieldset>;
+      })() : null}
       {tab === 'alerts' ? <PushPanel publicKey={(await getProviders()).push.publicKey} /> : null}
       {allowed && tab === 'team' ? <TeamPanel members={await listTeam(ctx.tenantId)} me={ctx.userId} /> : null}
       {allowed && tab === 'payments' ? <PaymentsPanel connected={Boolean(t.stripe_account_id)} enabled={await chargesEnabled(t)} payInstructions={t.pay_instructions} /> : null}

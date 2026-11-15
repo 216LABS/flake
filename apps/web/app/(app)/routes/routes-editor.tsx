@@ -8,9 +8,9 @@ import { useConfirm } from '@/components/confirm';
 import { api } from '@/lib/client';
 import { SuggestOrder } from './suggest-order';
 
-interface R { id: string; name: string; default_crew_id: string | null; yard_trip: boolean; site_ids: string[] }
+interface R { id: string; name: string; default_crew_id: string | null; default_truck_id?: string | null; yard_trip: boolean; site_ids: string[] }
 
-export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]; sites: { id: string; label: string; active: boolean; contracted?: boolean }[]; crew: { id: string; name: string }[]; yard?: string | null }) {
+export function RoutesEditor({ routes, sites, crew, trucks = [], yard = null }: { routes: R[]; sites: { id: string; label: string; active: boolean; contracted?: boolean }[]; crew: { id: string; name: string }[]; trucks?: { id: string; name: string }[]; yard?: string | null }) {
   const router = useRouter();
   const [list, setList] = useState(routes);
   const [name, setName] = useState('');
@@ -38,7 +38,7 @@ export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]
   const save = async (r: R) => {
     setError(null);
     try {
-      await api(`/api/routes/${r.id}`, { method: 'PATCH', body: { name: r.name, default_crew_id: r.default_crew_id, site_ids: r.site_ids } });
+      await api(`/api/routes/${r.id}`, { method: 'PATCH', body: { name: r.name, default_crew_id: r.default_crew_id, ...(trucks.length ? { default_truck_id: r.default_truck_id ?? null } : {}), site_ids: r.site_ids } });
     } catch (e) {
       setError((e as Error).message);
     }
@@ -77,6 +77,15 @@ export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]
               <option value="">None</option>
               {crew.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
+            {trucks.length ? (
+              <>
+                <Label className="mt-2" htmlFor={`truck-${r.id}`}>Default truck</Label>
+                <Select id={`truck-${r.id}`} data-testid="route-truck" value={r.default_truck_id ?? ''} onChange={(e) => update({ ...r, default_truck_id: e.target.value || null })}>
+                  <option value="">None</option>
+                  {trucks.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </Select>
+              </>
+            ) : null}
             {!r.site_ids.length ? <p className="mt-3 text-sm text-muted" data-testid="route-empty">No sites yet. Add them below; an empty route is left out of storms.</p> : null}
             {r.site_ids.length > 10 ? <Input type="search" className="mt-3" aria-label={`Find a lot on ${r.name}`} placeholder="Find a lot on this route" value={find[r.id] ?? ''} onChange={(e) => setFind({ ...find, [r.id]: e.target.value })} data-testid="route-find" /> : null}
             <ol className="mt-3 space-y-1">

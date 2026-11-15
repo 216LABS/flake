@@ -154,3 +154,23 @@ export async function saltReport(tx: Tx, tenantId: string, p: Period) {
     stormsLeft: perStorm > 0 && stock.tons > 0 ? Math.floor(stock.tons / perStorm) : null,
   };
 }
+
+export interface TruckReport { id: string; name: string; storms: number; gallons: number; fuel_cents: number; maintenance_cents: number; last_hours: number | null }
+
+/**
+ * Per truck, for the period: storm routes it ran, fuel logged, what maintenance cost, and the latest meter reading.
+ * Only trucks with something in the period are listed.
+ */
+export async function equipmentReport(tx: Tx, p: Period): Promise<TruckReport[]> {
+  const rows = rowsOf<{ id: string; name: string; storms: number; gallons: string | null; fuel_cents: number; maintenance_cents: number; last_hours: string | null }>(await tx.execute(sql`
+    select t.id, t.name,
+      (select count(*)::int from storm_run r join storm s on s.id = r.storm_id where r.truck_id = t.id and s.started_at >= ${p.startAt} and s.started_at < ${p.endAt}) as storms,
+      (select sum(l.gallons) from equipment_log l where l.truck_id = t.id and l.kind = 'fuel' and l.at >= ${p.startAt} and l.at < ${p.endAt}) as gallons,
+      coalesce((select sum(l.cost_cents) from equipment_log l where l.truck_id = t.id and l.kind = 'fuel' and l.at >= ${p.startAt} and l.at < ${p.endAt}), 0)::int as fuel_cents,
+      coalesce((select sum(l.cost_cents) from equipment_log l where l.truck_id = t.id and l.kind = 'maintenance' and l.at >= ${p.startAt} and l.at < ${p.endAt}), 0)::int as maintenance_cents,
+      (select l.hours from equipment_log l where l.truck_id = t.id and l.kind = 'hours' and l.at < ${p.endAt} order by l.at desc limit 1) as last_hours
+    from truck t order by t.name`));
+  return rows
+    .map((r) => ({ ...r, gallons: r.gallons === null ? 0 : Math.round(Number(r.gallons) * 10) / 10, last_hours: r.last_hours === null ? null : Number(r.last_hours) }))
+    .filter((r) => r.storms || r.gallons || r.fuel_cents || r.maintenance_cents);
+}

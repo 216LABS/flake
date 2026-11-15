@@ -14,6 +14,8 @@ Font.register({ family: 'Noto Sans', fonts: [{ src: NOTO_SANS_REGULAR }, { src: 
 // name) breaks into pieces instead of running off the page (issue 158).
 Font.registerHyphenationCallback((word) => (word.length > 40 ? word.match(/.{1,30}/gu) ?? [word] : [word]));
 
+const WALK_KIND: Record<string, string> = { damage: 'Damage already there', pile: 'Where piles go', hazard: 'Hazard', drain: 'Drain or grate', note: 'Note' };
+
 /** A service as the customer reads it, "Plow" and not the stored "plow" (issue 145). */
 const SERVICE_WORD: Record<string, string> = { plow: 'Plow', salt: 'Salt', walks: 'Walks', haul: 'Haul' };
 const serviceWord = (s: string) => SERVICE_WORD[s] ?? s;
@@ -183,7 +185,7 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
           cols={['Crew', 'Arrived', 'Departed', 'GPS and accuracy', 'Services', 'Salt', 'Depth', 'Photos']}
           rows={m.visits.map((v) => [
             // Who entered the times, and a voided visit marked as such, in the row itself (not only the corrections log).
-            `${v.crew_name}${v.voided_reason ? `\nVOIDED: ${v.voided_reason}` : ''}${v.entered_by === 'office_recorded' ? '\nRecorded by the office' : v.entered_by === 'office_done' ? '\nDone entered by the office' : ''}`,
+            `${v.crew_name}${v.truck_name ? `\n${v.truck_name}` : ''}${v.voided_reason ? `\nVOIDED: ${v.voided_reason}` : ''}${v.entered_by === 'office_recorded' ? '\nRecorded by the office' : v.entered_by === 'office_done' ? '\nDone entered by the office' : ''}`,
             `${v.entered_by === 'office_recorded' ? 'Office' : 'Phone'}: ${when(v.arrived_device_at)}\nServer: ${when(v.arrived_received_at)}`,
             `${v.entered_by && v.entered_by !== 'phone' ? 'Office' : 'Phone'}: ${when(v.departed_device_at)}\nServer: ${when(v.departed_received_at)}`,
             v.arrive_lat === null ? unavailable : `${v.arrive_lat.toFixed(5)}, ${v.arrive_lon?.toFixed(5)} (${val(v.arrive_acc_m, ' m')})${v.gps_note ? `\n${v.gps_note}` : ''}`,
@@ -194,6 +196,23 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
           ])}
         />
       </Page>
+
+      {m.site_walk?.length ? (
+        <Page size="LETTER" style={s.page}>
+          <Text style={s.h2}>Pre-season site walk</Text>
+          <Text style={s.muted}>Recorded by {m.contractor.name} before the season, to show what was already there.</Text>
+          <View style={s.photos}>
+            {m.site_walk.map((w) => (
+              <View key={w.id} style={s.photo} wrap={false}>
+                {w.photo ? (images[`walk:${w.id}`] ? <Image style={s.img} src={{ data: Buffer.from(images[`walk:${w.id}`]!), format: 'jpg' }} /> : <Text style={s.muted}>Image unavailable</Text>) : null}
+                <Text>{WALK_KIND[w.kind] ?? w.kind}{w.note ? `: ${w.note}` : ''}</Text>
+                <Text style={s.muted}>Season {w.season}{w.taken_at ? `, ${when(w.taken_at)}` : ''}</Text>
+                {w.photo?.sha256 ? <Text style={s.mono}>sha256 {w.photo.sha256}</Text> : null}
+              </View>
+            ))}
+          </View>
+        </Page>
+      ) : null}
 
       {/* Photos are evidence too, so the packet always says what it has, even when that's none (issue 43). */}
       {m.visits.length ? (

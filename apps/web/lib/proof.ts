@@ -1,8 +1,8 @@
-import { and, asc, contract, crew_member, customer, desc, eq, gte, inArray, lte, message_log, proof_packet, serviceDb, site, sql, storm, tenant, visit, visit_correction, visit_photo, weather_snapshot } from '@flake/db';
+import { and, asc, contract, crew_member, customer, desc, eq, gte, inArray, lte, message_log, proof_packet, run_stop, serviceDb, site, site_walk_item, sql, storm, storm_run, tenant, truck, visit, visit_correction, visit_photo, weather_snapshot } from '@flake/db';
 import { distanceMeters, distanceToPolygonMeters } from '@flake/core/geo';
 import { usDistanceText } from '@flake/core/units';
 import type { MultiPolygon, Polygon } from 'geojson';
-import { contractsInForce } from '@flake/core/time';
+import { contractsInForce, currentSeason } from '@flake/core/time';
 import { photoOrder } from '@flake/core/proof';
 import { buildManifest, type ProofInput, type ProofSnapshot, type ProofVisit } from '@flake/core/proof';
 import { getBlob, putBlob } from './blob';
@@ -60,8 +60,14 @@ export async function assembleProof(tenantId: string, siteId: string, from: stri
   // Every agreement that priced a visit here, when a re-sign falls inside the period (issue 158).
   const agreements = [...new Map(visits.flatMap(({ visit: v }) => contractsInForce(signed, v.arrived_device_at, row.tenant.timezone).slice(0, 1)).map((k) => [k.id, k])).values()]
     .sort((a, b) => Date.parse(a.accepted_at ?? '') - Date.parse(b.accepted_at ?? ''));
+  // The truck on each visit's route that storm, for "which truck was on my lot".
+  const stopIds = visits.map((x) => x.visit.run_stop_id).filter((x): x is string => Boolean(x));
+  const trucks = stopIds.length ? await db.select({ stop: run_stop.id, name: truck.name }).from(run_stop).innerJoin(storm_run, eq(storm_run.id, run_stop.storm_run_id)).innerJoin(truck, eq(truck.id, storm_run.truck_id)).where(and(eq(run_stop.tenant_id, tenantId), inArray(run_stop.id, stopIds))) : [];
+  // The site walk for every season the period touches: what was already there before the snow.
+  const seasons = [...new Set([currentSeason(new Date(from), row.tenant.timezone), currentSeason(new Date(to), row.tenant.timezone)])];
+  const walk = await db.select().from(site_walk_item).where(and(eq(site_walk_item.tenant_id, tenantId), eq(site_walk_item.site_id, siteId), inArray(site_walk_item.season, seasons))).orderBy(asc(site_walk_item.created_at));
   const proofVisits: ProofVisit[] = visits.map(({ visit: v, crew }) => ({
-    entered_by: enteredBy(v.id), voided_reason: voidedReason(v.id), gps_note: gpsNote(v),
+    entered_by: enteredBy(v.id), voided_reason: voidedReason(v.id), gps_note: gpsNote(v), truck_name: trucks.find((t) => t.stop === v.run_stop_id)?.name ?? null,
     id: v.id, storm_id: v.storm_id, crew_name: crew.name, arrived_device_at: v.arrived_device_at, arrived_received_at: v.arrived_received_at, departed_device_at: v.departed_device_at, departed_received_at: v.departed_received_at,
     arrive_lat: v.arrive_lat, arrive_lon: v.arrive_lon, arrive_acc_m: v.arrive_acc_m, services: v.services, salt: v.salt, depth_in: v.depth_in === null ? null : Number(v.depth_in), is_replow: Boolean(v.is_replow), gps_match: v.gps_match,
     photos: photos.filter((p) => p.visit_id === v.id).sort(photoOrder).map((p) => ({ id: p.id, phase: p.phase ?? 'other', storage_path: p.storage_path, sha256: p.sha256, taken_device_at: p.taken_device_at, received_at: p.received_at! })),
@@ -73,6 +79,7 @@ export async function assembleProof(tenantId: string, siteId: string, from: stri
     site: { id: row.site.id, label: row.site.label, address: row.site.address, lat: row.site.lat, lon: row.site.lon },
     period: { from, to },
     contract: c ? { season: c.season, services: c.services, salt_pricing: c.salt_pricing, terms_md: c.terms_md, accepted_at: c.accepted_at, accepted_name: c.accepted_name } : null,
+    ...(walk.length ? { site_walk: walk.map((w) => ({ id: w.id, season: w.season, kind: w.kind, note: w.note, taken_at: w.taken_at, photo: w.photo_path ? { storage_path: w.photo_path, sha256: w.photo_sha256 } : null })) } : {}),
     ...(agreements.length > 1 ? { agreements: agreements.map((k) => ({ season: k.season, services: k.services, accepted_at: k.accepted_at, accepted_name: k.accepted_name })) } : {}),
     storms: storms.map((s) => ({ id: s.id, name: s.name, started_at: s.started_at, closed_at: s.closed_at, snapshots: snapshots.filter((x) => (s.forecast_snapshot_ids ?? []).includes(x.id) && relevant(x)).map((x) => snapshotForPacket(x, siteId)) })),
     visits: proofVisits,
@@ -85,6 +92,16 @@ export async function assembleProof(tenantId: string, siteId: string, from: stri
 async function imagesFor(input: ProofInput): Promise<Record<string, Uint8Array>> {
   const sharp = (await import('sharp')).default;
   const out: Record<string, Uint8Array> = {};
+  for (const w of input.site_walk ?? []) {
+    if (!w.photo) continue;
+    const bytes = await getBlob('photos', w.photo.storage_path);
+    if (!bytes) continue;
+    try {
+      out[`walk:${w.id}`] = await sharp(bytes).resize(800, 800, { fit: 'inside' }).jpeg({ quality: 75 }).toBuffer();
+    } catch {
+      // Left out; the PDF prints "Image unavailable" for it.
+    }
+  }
   for (const v of input.visits) {
     for (const p of v.photos) {
       const bytes = (await getBlob('photos', `${p.storage_path}.thumb.jpg`)) ?? (await getBlob('photos', p.storage_path));

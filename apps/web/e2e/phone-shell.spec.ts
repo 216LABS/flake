@@ -79,7 +79,7 @@ for (const size of SIZES) {
       const picker = page.getByTestId('settings-section');
       // One line: the tabs took three rows and pushed the settings half a screen down.
       expect((await picker.boundingBox())!.height).toBeLessThan(60);
-      expect(await picker.locator('option').count()).toBe(10);
+      expect(await picker.locator('option').count()).toBe(11);
       expect(await picker.inputValue()).toBe('company');
       await picker.selectOption('payments');
       await page.waitForURL(/tab=payments/);

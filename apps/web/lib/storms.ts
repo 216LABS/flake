@@ -1,4 +1,4 @@
-import { and, asc, asService, contract, crew_member, customer, desc, driver_position, eq, inArray, invoice_draft, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, visit_photo, visitNotVoided, withUser, sms_consent, type Tx } from '@flake/db';
+import { and, asc, asService, contract, crew_member, customer, desc, driver_position, eq, inArray, invoice_draft, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, truck, visit, visit_photo, visitNotVoided, withUser, sms_consent, type Tx } from '@flake/db';
 import { CREW_SUBJECT } from '@flake/core/messages';
 import { clock12 } from './labels';
 import { isLate, liveContracts, localHm } from '@flake/core/time';
@@ -86,7 +86,7 @@ export async function createStorm(ctx: Ctx, raw: z.input<typeof stormCreate>) {
       // A driver the office cleared stays cleared; only a route nobody touched falls back to its usual driver.
       const crewId = routeId in input.crewAssignments ? input.crewAssignments[routeId] : r.default_crew_id;
       const [run] = await tx.insert(storm_run).values({
-        tenant_id: ctx.tenantId, storm_id: s!.id, route_id: routeId, crew_id: await activeCrew(tx, crewId),
+        tenant_id: ctx.tenantId, storm_id: s!.id, route_id: routeId, crew_id: await activeCrew(tx, crewId), truck_id: await activeTruck(tx, r.default_truck_id),
         link_token_hash: link.hash, link_token_enc: link.enc, link_expires_at: link.expires,
       }).returning();
       await tx.insert(run_stop).values(chosen.map((x, i) => ({ tenant_id: ctx.tenantId, storm_run_id: run!.id, site_id: x.site_id, seq: i + 1 })));
@@ -119,6 +119,13 @@ async function requireActiveStorm(tx: Tx, where: { stormId?: string; runId?: str
 }
 
 /** A route's usual driver may have left since it was set: a run gets nobody rather than someone who's gone. */
+/** A truck still in service, or none: a retired truck isn't put on a new storm. */
+async function activeTruck(tx: Tx, truckId: string | null | undefined): Promise<string | null> {
+  if (!truckId) return null;
+  const [t] = await tx.select({ id: truck.id }).from(truck).where(and(eq(truck.id, truckId), eq(truck.active, true)));
+  return t?.id ?? null;
+}
+
 async function activeCrew(tx: Tx, crewId: string | null | undefined): Promise<string | null> {
   if (!crewId) return null;
   const [c] = await tx.select({ id: crew_member.id }).from(crew_member).where(and(eq(crew_member.id, crewId), eq(crew_member.active, true)));
@@ -145,7 +152,7 @@ export async function addPass(ctx: Ctx, stormId: string) {
       // Every stop may have been moved off this run, and then there is nothing to plow again.
       if (!stops.length) continue;
       const link = newLink();
-      const [run] = await tx.insert(storm_run).values({ tenant_id: ctx.tenantId, storm_id: stormId, route_id: old.route_id, crew_id: await activeCrew(tx, old.crew_id), pass, link_token_hash: link.hash, link_token_enc: link.enc, link_expires_at: link.expires }).returning();
+      const [run] = await tx.insert(storm_run).values({ tenant_id: ctx.tenantId, storm_id: stormId, route_id: old.route_id, crew_id: await activeCrew(tx, old.crew_id), truck_id: await activeTruck(tx, old.truck_id), pass, link_token_hash: link.hash, link_token_enc: link.enc, link_expires_at: link.expires }).returning();
       await tx.insert(run_stop).values(stops.map((x, i) => ({ tenant_id: ctx.tenantId, storm_run_id: run!.id, site_id: x.site_id, seq: i + 1 })));
       created.push(run!);
     }
@@ -439,6 +446,16 @@ export async function revokeRunLink(ctx: Ctx, runId: string) {
   });
 }
 
+/** Which truck runs this route in this storm. Retired trucks can't be picked; none clears it. */
+export async function assignRunTruck(ctx: Ctx, runId: string, truckId: string | null) {
+  return withUser(ctx.userId, async (tx) => {
+    if (truckId && !(await activeTruck(tx, truckId))) throw new HttpError(422, 'That truck is retired. Bring it back in Settings, Equipment, or pick another.', 'inactive_truck');
+    const [r] = await tx.update(storm_run).set({ truck_id: truckId }).where(eq(storm_run.id, runId)).returning();
+    if (!r) throw new HttpError(404, 'Run not found');
+    return r;
+  });
+}
+
 /** Assigns or swaps a run's driver. After publish, the new driver gets the link right away. */
 export async function assignRunDriver(ctx: Ctx, runId: string, crewId: string) {
   const run = await withUser(ctx.userId, async (tx) => {
@@ -473,7 +490,8 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     const crew = await tx.select({ id: crew_member.id, name: crew_member.name, kind: crew_member.kind }).from(crew_member).where(eq(crew_member.active, true)).orderBy(asc(crew_member.name));
     // The same rule billing uses: a renewal signed only for next winter doesn't cover this storm.
     const contracted = stops.length ? new Set(liveContracts(await tx.select({ site_id: contract.site_id, season: contract.season }).from(contract).where(and(eq(contract.status, 'accepted'), inArray(contract.site_id, stops.map((x) => x.site.id)))).orderBy(desc(contract.created_at)), s!.started_at, ctx.timezone).map((c) => c.site_id)) : new Set<string>();
-    return { s: s!, runs, stops, visits, photoCounts, problems, positions, pins, crew, contracted };
+    const trucks = await tx.select({ id: truck.id, name: truck.name }).from(truck).where(eq(truck.active, true)).orderBy(asc(truck.name));
+    return { s: s!, runs, stops, visits, photoCounts, problems, positions, pins, crew, contracted, trucks };
   });
   const now = Date.now();
   const started = Date.parse(data.s.started_at);
@@ -501,7 +519,7 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     }
     const pos = data.positions.find((p) => p.storm_run_id === run.id);
     return {
-      id: run.id, pass: run.pass, name: r?.name ?? 'Run', crew: crew ? { id: crew.id, name: crew.name, kind: crew.kind, callout_reply: crew.callout_reply_at && Date.parse(crew.callout_reply_at) >= started ? crew.callout_reply : null, reachable: Boolean(crew.email) || textable.has(crew.phone_e164), reach: { email: Boolean(crew.email), text: textable.has(crew.phone_e164) } } : null,
+      id: run.id, pass: run.pass, name: r?.name ?? 'Run', truck_id: run.truck_id, crew: crew ? { id: crew.id, name: crew.name, kind: crew.kind, callout_reply: crew.callout_reply_at && Date.parse(crew.callout_reply_at) >= started ? crew.callout_reply : null, reachable: Boolean(crew.email) || textable.has(crew.phone_e164), reach: { email: Boolean(crew.email), text: textable.has(crew.phone_e164) } } : null,
       published_at: run.published_at, started_at: run.started_at, opened_at: run.link_opened_at, // The link exists from the start; showing a QR in person shouldn't need Publish, which messages the crew (issue 58).
       link: ctx.role !== 'viewer' ? runLink(run) : null, stops,
       position: pos ? { lat: pos.lat, lon: pos.lon, at: pos.device_at } : null,
@@ -516,6 +534,7 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
   return {
     storm: data.s,
     crew: data.crew,
+    trucks: data.trucks,
     runs: boards,
     alerts,
     counts: { done: all.filter((x) => x.status === 'done').length, open: all.filter((x) => ['open', 'enroute', 'problem'].includes(x.status)).length, onsite: all.filter((x) => x.status === 'onsite').length, skipped: all.filter((x) => x.status === 'skipped').length, late: all.filter((x) => x.late).length, total: all.length },

@@ -3,7 +3,7 @@ import { sql } from '@flake/db';
 import { asUser, requireApi } from '@/lib/auth';
 import { HttpError, route } from '@/lib/http';
 
-const EXPORT_TABLES = ['customer', 'site', 'contract', 'crew_member', 'route', 'storm', 'storm_run', 'run_stop', 'visit', 'visit_photo', 'visit_correction', 'problem_report', 'invoice_draft', 'message_log', 'proof_packet'];
+const EXPORT_TABLES = ['customer', 'site', 'contract', 'crew_member', 'route', 'storm', 'storm_run', 'run_stop', 'visit', 'visit_photo', 'visit_correction', 'problem_report', 'invoice_draft', 'message_log', 'proof_packet', 'truck', 'equipment_log', 'site_walk_item'];
 
 /** CSV of one table for this tenant. RLS scopes it, and the link token columns never leave the server. */
 export const GET = route(async (req) => {

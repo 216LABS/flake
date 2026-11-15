@@ -1,5 +1,6 @@
 import { quotingSeason } from '@flake/core/time';
-import { contract, customer, desc, eq, site, site_pin } from '@flake/db';
+import { SiteWalk } from './site-walk';
+import { contract, customer, desc, eq, site, site_pin, site_walk_item } from '@flake/db';
 import { Badge, buttonVariants, PageHeader } from '@flake/ui';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -22,10 +23,10 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
     const [s] = await tx.select().from(site).where(eq(site.id, id));
     if (!s) return null;
     const [c] = await tx.select().from(customer).where(eq(customer.id, s.customer_id));
-    return { s, c: c!, pins: await tx.select().from(site_pin).where(eq(site_pin.site_id, id)), contracts: await tx.select().from(contract).where(eq(contract.site_id, id)).orderBy(desc(contract.created_at)) };
+    return { s, c: c!, walk: await tx.select().from(site_walk_item).where(eq(site_walk_item.site_id, id)).orderBy(desc(site_walk_item.created_at)), pins: await tx.select().from(site_pin).where(eq(site_pin.site_id, id)), contracts: await tx.select().from(contract).where(eq(contract.site_id, id)).orderBy(desc(contract.created_at)) };
   });
   if (!data) notFound();
-  const { s, c, pins, contracts } = data;
+  const { s, c, pins, contracts, walk } = data;
   const { tiles } = await getProviders();
   const signed = contracts.find((k) => k.status === 'accepted' && k.pdf_path);
   const pdf = signed?.pdf_path ? await contractPdfUrl(ctx.tenantId, signed.pdf_path) : null;
@@ -39,7 +40,7 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
     <>
       <PageHeader title={<>{s.label}{s.active ? null : <Badge className="ml-2 align-middle" data-testid="retired-badge">retired</Badge>}</>} subtitle={<>{s.address}. Customer: <Link className="underline" href={`/customers/${c.id}`}>{c.name}</Link></>} actions={<Link className={buttonVariants({ variant: 'outline' })} href={`/proof?site=${s.id}`}>Proof packet</Link>} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="space-y-3 lg:col-span-2"><fieldset disabled={!canEdit} className={canEdit ? 'contents' : 'view-only contents'}><SiteEditor site={JSON.parse(JSON.stringify(s))} pins={JSON.parse(JSON.stringify(pins))} layers={tiles.layers()} /></fieldset><RetireSite siteId={s.id} customerId={c.id} active={Boolean(s.active)} canEdit={canEdit} /></div>
+        <div className="space-y-3 lg:col-span-2"><fieldset disabled={!canEdit} className={canEdit ? 'contents' : 'view-only contents'}><SiteEditor site={JSON.parse(JSON.stringify(s))} pins={JSON.parse(JSON.stringify(pins))} layers={tiles.layers()} /></fieldset><SiteWalk siteId={s.id} canEdit={canEdit} tz={ctx.tenant.timezone} season={quotingSeason(new Date(), ctx.tenant.timezone)} items={walk.map((w) => ({ id: w.id, season: w.season, kind: w.kind, note: w.note, has_photo: Boolean(w.photo_path), taken_at: w.taken_at }))} /><RetireSite siteId={s.id} customerId={c.id} active={Boolean(s.active)} canEdit={canEdit} /></div>
         <div className="space-y-4">
         <ContractList contracts={JSON.parse(JSON.stringify(contracts.map((k, n) => ({ id: k.id, status: k.status, season: k.season, services: k.services, salt_pricing: k.salt_pricing, accepted_name: k.accepted_name, accepted_at: k.accepted_at, created_at: k.created_at, installments_billed: k.installments_billed, quote_url: quoteUrl(k), decline_reason: k.decline_reason, prior: priors[n], in_force: k.id === inForceId && (contracts.filter((x) => x.status === 'accepted').length > 1 || standing?.tone === 'amber') }))))} canEdit={canEdit} pdf={pdf} />
         {/* A retired lot can't be quoted; restore it first. */}

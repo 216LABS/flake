@@ -114,3 +114,67 @@ test('pricing answers the first questions', async ({ page }) => {
   await expect(page.getByTestId('pricing-faq')).toContainText('Who pays for the texts?');
   await expect(page.getByTestId('stripe-fees')).toBeVisible();
 });
+
+/** Issue 164: a stale tab's second save doesn't undo another tab's rename. */
+test('two tabs on one customer: a rename survives the other tab saving twice', async ({ page, browser, baseURL }) => {
+  await login(page);
+  const tag = randomUUID().slice(0, 6);
+  const c = await (await page.request.post('/api/customers', { data: { name: `Tabs ${tag}`, kind: 'commercial', billing_mode: 'manual' } })).json();
+  const b = await (await browser.newContext({ baseURL, storageState: await page.context().storageState() })).newPage();
+  await page.goto(`/customers/${c.id}`);
+  await b.goto(`/customers/${c.id}`);
+  await page.locator('#name').fill(`Tabs ${tag} renamed`);
+  await page.getByTestId('customer-save').click();
+  await expect(page.getByTestId('customer-msg')).toHaveText('Saved');
+  for (const who of ['Pat', 'Sam']) {
+    await b.locator('#contact_name').fill(who);
+    await b.getByTestId('customer-save').click();
+    await expect(b.getByTestId('customer-msg')).toHaveText('Saved');
+  }
+  // The tab that never touched the name now shows the rename instead of sending its old copy back.
+  await expect(b.locator('#name')).toHaveValue(`Tabs ${tag} renamed`);
+  const [row] = await sql`select name, contact_name from customer where id = ${c.id}`;
+  expect([row!.name, row!.contact_name]).toEqual([`Tabs ${tag} renamed`, 'Sam']);
+});
+
+/** Equipment: add a truck, log fuel, set it as a route's default, and see it on Reports. */
+test('equipment: a truck, its fuel log, a route default, and the report', async ({ page }) => {
+  await login(page);
+  const name = `Truck ${randomUUID().slice(0, 4)}`;
+  try {
+    await page.goto('/settings?tab=equipment');
+    await page.getByTestId('truck-name').fill(name);
+    await page.getByTestId('truck-add').click();
+    await expect(page.getByTestId('truck-row').filter({ hasText: name })).toBeVisible();
+    await page.getByTestId('log-truck').selectOption({ label: name });
+    await page.getByTestId('log-gallons').fill('18.5');
+    await page.getByTestId('log-cost').fill('62.90');
+    await page.getByTestId('log-add').click();
+    await expect(page.getByTestId('log-summary')).toContainText('18.5 gal, $62.90');
+    await page.goto('/reports');
+    await expect(page.getByTestId('equipment-row').filter({ hasText: name })).toContainText('18.5 gal');
+    await page.goto('/routes');
+    const select = page.getByTestId('route-truck').first();
+    await select.selectOption({ label: name });
+    await expect.poll(async () => (await sql`select count(*)::int as n from route r join truck t on t.id = r.default_truck_id where t.name = ${name}`)[0]!.n).toBe(1);
+  } finally {
+    await sql`update route set default_truck_id = null where default_truck_id in (select id from truck where name = ${name})`;
+    await sql`delete from equipment_log where truck_id in (select id from truck where name = ${name})`;
+    await sql`delete from truck where name = ${name}`;
+  }
+});
+
+/** The site walk: a note on a lot, listed for this season. */
+test('site walk: a note saves on the lot page', async ({ page }) => {
+  await login(page);
+  const [s] = await sql`select s.id from site s join tenant t on t.id = s.tenant_id where t.slug = 'lakeshore-demo' and s.active limit 1`;
+  const note = `Cracked curb ${randomUUID().slice(0, 4)}`;
+  try {
+    await page.goto(`/sites/${s!.id}`);
+    await page.getByTestId('walk-note').fill(note);
+    await page.getByTestId('walk-add').click();
+    await expect(page.getByTestId('walk-item').filter({ hasText: note })).toBeVisible();
+  } finally {
+    await sql`delete from site_walk_item where note = ${note}`;
+  }
+});
