@@ -155,20 +155,30 @@ describe('weather and triggers', () => {
     await serviceDb().update(storm).set({ forecast_snapshot_ids: [day!.id, six!.id] }).where(eq(storm.id, out.storm.id));
     const rs = await resolveToken(decryptToken(out.runs[0]!.link_token_enc!));
     const [s] = await serviceDb().select().from(run_stop).where(and(eq(run_stop.storm_run_id, out.runs[0]!.id), eq(run_stop.seq, 2)));
-    // The driver saw 1", the 24 h analysis says 3.2": both fall in the first tier here, so raise the tier edge to tell them apart.
+    // Nobody measured at this lot; the 24 h analysis says 3.2". Raise the tier edge so 3.2" and "none" price differently.
     // The replayed storm is from December 2025, so its contract is that season's.
     await serviceDb().execute(sql`update contract set season = '2025-26', services = '[{"service":"plow","pricing":{"type":"per_inch_tier","tiers":[{"up_to_in":2,"amount_cents":10000},{"up_to_in":null,"amount_cents":20000}]}}]'::jsonb where site_id = ${x.siteIds[1]!}`);
-    await processActions(rs, stopActions(s!.id, new Date('2025-12-13T12:00:00Z'), { depth: 1 }).actions as never);
+    const a = stopActions(s!.id, new Date('2025-12-13T12:00:00Z'));
+    (a.actions[1] as { depth_in: number | null }).depth_in = null;
+    await processActions(rs, a.actions as never);
     // A storm that ran the whole day the 24 h file covers: its 3.2" is this storm's snow and sets the tier.
     const windowStart = new Date(Date.parse(day!.summary.valid_at) - 24 * 3600_000).toISOString();
     await serviceDb().update(storm).set({ status: 'closed', started_at: windowStart, closed_at: '2025-12-13T14:00:00Z' }).where(eq(storm.id, out.storm.id));
     const drafts = await generateDrafts(ctxOf(x), out.storm.id);
-    expect(drafts.find((d) => d.draft.customer_id === x.customerIds[1])!.draft.subtotal_cents).toBe(20000);
-    // A storm that started an hour before close: most of that 24 h total fell before it, maybe in another storm, so
-    // only the driver's 1" counts.
+    const full = drafts.find((d) => d.draft.customer_id === x.customerIds[1])!.draft;
+    expect(full.subtotal_cents).toBe(20000);
+    expect((full.lines as { description: string }[])[0]!.description).toMatch(/NOAA observed/);
+    // A storm that started an hour before close: most of that 24 h total fell before it, maybe in another storm, so it
+    // doesn't count, and with nothing measured the depth is missing (the office enters it).
     await serviceDb().update(storm).set({ started_at: '2025-12-13T13:00:00Z' }).where(eq(storm.id, out.storm.id));
-    const later = await generateDrafts(ctxOf(x), out.storm.id);
-    expect(later.find((d) => d.draft.customer_id === x.customerIds[1])!.draft.subtotal_cents).toBe(10000);
+    const later = (await generateDrafts(ctxOf(x), out.storm.id)).find((d) => d.draft.customer_id === x.customerIds[1])!.draft;
+    expect((later.flags as { code: string }[]).map((f) => f.code)).toContain('missing_depth');
+    // A driver's 1" measured on site prices the tier, and NOAA's 3.2" far from it is flagged for a look.
+    await serviceDb().update(storm).set({ started_at: windowStart }).where(eq(storm.id, out.storm.id));
+    await serviceDb().execute(sql`insert into visit_correction (tenant_id, visit_id, field, old_value, new_value, reason, by_user) select tenant_id, id, 'depth_in', 'null'::jsonb, '1'::jsonb, 'Driver measured 1 inch', ${x.userId} from visit where storm_id = ${out.storm.id}`);
+    const measured = (await generateDrafts(ctxOf(x), out.storm.id)).find((d) => d.draft.customer_id === x.customerIds[1])!.draft;
+    expect(measured.subtotal_cents).toBe(10000);
+    expect((measured.flags as { code: string }[]).map((f) => f.code)).toContain('depth_disagrees');
   });
 
   it('missing weather reads as unavailable, never zero', async () => {

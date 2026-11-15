@@ -66,3 +66,14 @@ describe('issue 141: a storm still running', () => {
     expect(d!.flags.map((f) => f.code)).toContain('time_outside_storm');
   });
 });
+
+describe('nationwide depth: driver and NOAA far apart', () => {
+  const tier: BillingContract = { site_id: 's1', services: [{ service: 'plow', trigger_in: 1, pricing: { type: 'per_inch_tier', tiers: [{ up_to_in: 4, amount_cents: 6000 }, { up_to_in: null, amount_cents: 9000 }] } }], season: '2026-27' };
+  it('holds a tier bill when the driver and NOAA differ by more than 1.5", and lets a close match through', () => {
+    const far = draftInvoices(input(tier, [v({ depth_in: 6 })], { depth: { s1: { nohrsc24hIn: 2, nwsElapsedIn: null } } }))[0]!;
+    expect(far.flags.find((f) => f.code === 'depth_disagrees')?.message).toMatch(/driver measured 6" but NOAA observed 2"/);
+    expect(far.subtotal_cents).toBe(9000);
+    const close = draftInvoices(input(tier, [v({ depth_in: 3 })], { depth: { s1: { nohrsc24hIn: 4, nwsElapsedIn: null } } }))[0]!;
+    expect(close.flags.map((f) => f.code)).not.toContain('depth_disagrees');
+  });
+});

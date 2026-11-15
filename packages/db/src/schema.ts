@@ -170,7 +170,7 @@ export const weather_snapshot = pgTable('weather_snapshot', {
 export const trigger_alert = pgTable('trigger_alert', {
   id: id(),
   tenant_id: tenantId(),
-  kind: text('kind').$type<'forecast' | 'depth_report' | 'nws_alert'>(),
+  kind: text('kind').$type<'forecast' | 'depth_report' | 'refreeze' | 'nws_alert'>(),
   site_ids: uuidArray('site_ids').notNull(),
   detail: jsonb('detail').$type<Record<string, any>>().notNull(),
   snapshot_ids: uuidArray('snapshot_ids').notNull().default(sql`'{}'`),

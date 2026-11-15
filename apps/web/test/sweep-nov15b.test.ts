@@ -60,3 +60,49 @@ describe('a printable invoice (issue 146)', () => {
     expect(await invoicePdf(w.tenantId, d!.id)).toBeNull();
   });
 });
+
+describe('weather across the country', () => {
+  it('a lot outside NWS coverage is marked checked and does not trip the shared weather breaker', async () => {
+    const providers = await import('@/lib/providers');
+    const { mapSites, breakerState } = await import('@/lib/weather');
+    const { site } = await import('@flake/db');
+    const { vi } = await import('vitest');
+    const w = await makeWorld();
+    const db = serviceDb();
+    await db.update(site).set({ nws_mapped_at: null, nws_office: null }).where(eq(site.tenant_id, w.tenantId));
+    const real = await providers.getProviders();
+    const spy = vi.spyOn(providers, 'getProviders').mockResolvedValue({ ...real, weather: { ...real.weather, pointToGrid: async () => { throw new Error('NWS 404 for https://api.weather.gov/points/49.9,-97.1'); } } } as never);
+    const before = (await breakerState()).failures;
+    await mapSites(w.tenantId);
+    spy.mockRestore();
+    expect((await breakerState()).failures).toBe(before);
+    const rows = await db.select().from(site).where(eq(site.tenant_id, w.tenantId));
+    expect(rows.every((r) => r.nws_mapped_at && r.nws_office === null)).toBe(true);
+    const { tenantWeatherHeader } = await import('@/lib/weather');
+    expect((await tenantWeatherHeader(w.tenantId)).reason).toMatch(/no forecast for these lots/);
+  });
+
+  it('a tier lot nobody measured, with no NOAA total, is priced from a crew reading at a lot within 10 miles', async () => {
+    const { generateDrafts } = await import('@/lib/billing');
+    const { closeStorm } = await import('@/lib/storms');
+    const { processActions, resolveToken } = await import('@/lib/driver');
+    const { decryptToken } = await import('@/lib/tokens');
+    const { run_stop } = await import('@flake/db');
+    const { stopActions } = await import('./helpers');
+    const w = await makeWorld();
+    const out = await createStorm(ctxOf(w), { name: `Nearby ${randomUUID().slice(0, 4)}`, routeIds: [w.routeId], crewAssignments: {} });
+    const rs = await resolveToken(decryptToken(out.runs[0]!.link_token_enc!));
+    const stops = (await serviceDb().select().from(run_stop).where(eq(run_stop.storm_run_id, out.runs[0]!.id))).sort((a, b) => a.seq - b.seq);
+    // Push lot measured 5"; the tier lot (index 1, 0.1 km away) done with no depth.
+    await processActions(rs, stopActions(stops[0]!.id, new Date(Date.now() - 50 * 60_000), { depth: 5 }).actions);
+    const a = stopActions(stops[1]!.id, new Date(Date.now() - 30 * 60_000));
+    (a.actions[1] as { depth_in: number | null }).depth_in = null;
+    await processActions(rs, a.actions);
+    await closeStorm(ctxOf(w), out.storm.id, true);
+    await generateDrafts(ctxOf(w), out.storm.id);
+    const [d] = await serviceDb().select().from(invoice_draft).where(and(eq(invoice_draft.storm_id, out.storm.id), eq(invoice_draft.customer_id, w.customerIds[1]!)));
+    const line = (d!.lines as { description: string; amount_cents: number }[])[0]!;
+    expect(line.amount_cents).toBe(25000);
+    expect(line.description).toMatch(/for 5" of snow, measured at a lot nearby/);
+  });
+});

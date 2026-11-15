@@ -221,14 +221,10 @@ test('a new plow company runs a whole storm from sign up to paid invoices', asyn
   await expect(page.getByTestId('draft').first()).toBeVisible();
   await page.getByTestId('flagged-only').uncheck();
   await expect(page.getByTestId('draft')).toHaveCount(4);
-  // No depth reached the clinic's lot (the driver only enters it at the first stop and the demo snowfall data
-  // doesn't cover it). It can't be waived to $0; the office enters the depth instead.
-  const depthFlag = page.locator('[data-code="missing_depth"]');
-  await expect(depthFlag).toHaveCount(1);
-  await expect(depthFlag.getByTestId('fix-waive')).toHaveCount(0);
-  await depthFlag.getByTestId('depth-in').fill('5');
-  await depthFlag.getByTestId('fix-depth').click();
+  // No depth was entered at the clinic's lot (the driver only enters it at the first stop) and the demo snowfall data
+  // doesn't cover it, so its tier price comes from the depth the crew measured at a lot nearby, and the bill says so.
   await expect(page.locator('[data-code="missing_depth"]')).toHaveCount(0);
+  await expect(page.getByTestId('draft').filter({ hasText: 'Clinic' })).toContainText('measured at a lot nearby');
   // Phones in a test browser have no GPS, so location flags are expected; waive those.
   const open = page.locator('[data-testid="flag"]').filter({ has: page.getByTestId('fix-waive') });
   for (let left = await open.count(); left > 0; left--) {

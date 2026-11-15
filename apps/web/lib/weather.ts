@@ -1,5 +1,5 @@
 import { gzipSync } from 'node:zlib';
-import { and, app_setting, contract, desc, driver_action, eq, gte, inArray, lte, serviceDb, site, sql, tenant, trigger_alert, weather_snapshot } from '@flake/db';
+import { and, app_setting, contract, desc, driver_action, eq, gte, inArray, lte, serviceDb, site, sql, storm, tenant, trigger_alert, weather_snapshot } from '@flake/db';
 import { expandSeries, evaluateSite, groupDecisions, alertHeadline, newWinterAlerts, summarize, sumOverlap, toFahrenheit, toInches, type DepthReport, type HourBucket, type NwsAlert, type SiteDecision, type TriggerSite, type WeatherSeries } from '@flake/core/trigger';
 import type { ContractService } from '@flake/core/pricing';
 import { fmtLocal, liveContracts } from '@flake/core/time';
@@ -83,6 +83,14 @@ export async function mapSites(tenantId?: string, force = false) {
       const g = await weather.pointToGrid(s.lat, s.lon);
       await serviceDb().update(site).set({ nws_office: g.office, nws_grid_x: g.gridX, nws_grid_y: g.gridY, nws_station: g.station, nws_mapped_at: new Date().toISOString() }).where(eq(site.id, s.id));
     } catch (err) {
+      // A lot outside the NWS's area (across the border, offshore, or a pin dropped in the wrong place) answers 404 on
+      // every try. It's marked checked with no forecast area, so it neither retries every run nor trips the breaker
+      // that pauses weather for every company.
+      if (/NWS 404/.test(err instanceof Error ? err.message : String(err))) {
+        await serviceDb().update(site).set({ nws_office: null, nws_grid_x: null, nws_grid_y: null, nws_station: null, nws_mapped_at: new Date().toISOString() }).where(eq(site.id, s.id));
+        log.info('site outside NWS coverage', { site_id: s.id });
+        continue;
+      }
       log.error('site grid mapping failed', err, { site_id: s.id });
       await recordFailure();
     }
@@ -184,12 +192,14 @@ export async function evaluateTenant(tenantId: string): Promise<string[]> {
     .filter((r) => typeof r.payload.lat === 'number')
     .map((r) => ({ lat: r.payload.lat, lon: r.payload.lon, depth_in: r.payload.depth_in, at: Date.parse(r.device_at) }));
 
+  // Snow still on the ground for a refreeze: a storm this company ran in the last 3 days.
+  const [recentStorm] = await db.select({ id: storm.id }).from(storm).where(and(eq(storm.tenant_id, tenantId), gte(storm.started_at, new Date(nowMs - 72 * HOUR).toISOString()))).limit(1);
   const decisions: SiteDecision[] = [];
   for (const s of sites) {
     const c = contracts.find((x) => x.site_id === s.id);
     const services = (c?.services ?? []) as ContractService[];
     const triggers = services.map((x) => x.trigger_in).filter((v): v is number => typeof v === 'number');
-    const input: TriggerSite = { site_id: s.id, lat: s.lat, lon: s.lon, trigger_in: triggers.length ? Math.min(...triggers) : null, has_salt: services.some((x) => x.service === 'salt') };
+    const input: TriggerSite = { site_id: s.id, lat: s.lat, lon: s.lon, trigger_in: triggers.length ? Math.min(...triggers) : null, has_salt: services.some((x) => x.service === 'salt'), snow_on_ground: Boolean(recentStorm) };
     if (input.trigger_in === null && !input.has_salt) continue;
     const snap = latest.get(cellKey(s));
     if (snap) decisions.push(...evaluateSite(input, seriesFromSummary(snap.summary), nowMs, reports));
@@ -304,6 +314,7 @@ const WHY = {
   breaker: 'NWS is not answering, so Flake paused weather for a few minutes. It tries again on its own.',
   not_mapped: 'These lots are not matched to an NWS forecast area yet. That happens a few minutes after a site is added with its address.',
   no_snapshot: 'No NWS forecast has been fetched for these lots yet. It updates every few minutes.',
+  no_coverage: 'The National Weather Service has no forecast for these lots, which happens outside the US or for a pin in the wrong place. Check the address. Drivers can still report depth.',
 } as const;
 
 /** The dashboard header: the live forecast vs elapsed with source labels. Anything missing reads "unavailable", with why. */
@@ -312,7 +323,10 @@ export async function tenantWeatherHeader(tenantId: string, siteIds?: string[]) 
   const [s] = await db.select().from(site).where(and(eq(site.tenant_id, tenantId), siteIds?.length ? inArray(site.id, siteIds) : undefined, sql`${site.nws_office} is not null`)).limit(1);
   const breaker = await breakerState();
   const none = (why: keyof typeof WHY) => ({ forecast_in: null as number | null, elapsed_in: null as number | null, temp_f: null as number | null, source: 'unavailable', synthetic: false, fetched_at: null as string | null, breaker_open: breakerOpen(breaker), reason: (breakerOpen(breaker) ? WHY.breaker : WHY[why]) as string | null });
-  if (!s) return none('not_mapped');
+  if (!s) {
+    const [checked] = await db.select({ id: site.id }).from(site).where(and(eq(site.tenant_id, tenantId), siteIds?.length ? inArray(site.id, siteIds) : undefined, sql`${site.nws_mapped_at} is not null`)).limit(1);
+    return none(checked ? 'no_coverage' : 'not_mapped');
+  }
   const [snap] = await db.select().from(weather_snapshot).where(and(eq(weather_snapshot.source, 'nws_grid'), eq(weather_snapshot.office, s.nws_office!), eq(weather_snapshot.grid_x, s.nws_grid_x!), eq(weather_snapshot.grid_y, s.nws_grid_y!))).orderBy(desc(weather_snapshot.fetched_at)).limit(1);
   if (!snap) return none('no_snapshot');
   const now = await weatherNow();

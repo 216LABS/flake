@@ -15,7 +15,10 @@ describe('late lots on the storm board (issue 121)', () => {
     const w = await makeWorld();
     const ctx = ctxOf(w);
     const db = serviceDb();
-    // Due a minute after midnight, on a storm that started yesterday: late at any time of day but that one minute.
+    // Due a minute after midnight, on a storm that started yesterday: late at any time of day but the first minutes
+    // after midnight in New York, when the run would race the deadline itself.
+    const { localHm } = await import('@flake/core/time');
+    if (localHm(Date.now(), 'America/New_York').hm <= '00:03') return;
     await db.update(site).set({ service_window: { open_by: '00:01' } }).where(eq(site.id, w.siteIds[0]!));
     const out = await createStorm(ctx, { name: 'Late lots', routeIds: [w.routeId], crewAssignments: {} });
     await db.update(storm).set({ started_at: new Date(Date.now() - 26 * 3600_000).toISOString() }).where(eq(storm.id, out.storm.id));

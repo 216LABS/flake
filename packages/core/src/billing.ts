@@ -2,7 +2,7 @@ import type { MultiPolygon, Polygon } from 'geojson';
 import { distanceMeters, distanceToPolygonMeters, gpsMatches } from './geo';
 import { usDistanceText } from './units';
 import { fmtLocal, isLaterSeason } from './time';
-import { priceSiteForStorm, stormDepthIn, type ContractService, type InvoiceLine, type PricedVisit, type SaltPricing, type StormDepthContext } from './pricing';
+import { DEPTH_DISAGREE_IN, priceSiteForStorm, stormDepthIn, type ContractService, type InvoiceLine, type PricedVisit, type SaltPricing, type StormDepthContext } from './pricing';
 
 export const DUPLICATE_WINDOW_MS = 60 * 60 * 1000;
 
@@ -21,7 +21,8 @@ export type FlagCode =
   | 'no_service'
   | 'salt_unit'
   | 'below_trigger'
-  | 'time_outside_storm';
+  | 'time_outside_storm'
+  | 'depth_disagrees';
 
 /**
  * How much a flag matters at a dawn billing review (issue 78): money at risk first, then missing proof, then lots
@@ -29,7 +30,7 @@ export type FlagCode =
  */
 export type FlagTier = 'money' | 'proof' | 'not_done' | 'info';
 export const FLAG_TIER: Record<FlagCode, FlagTier> = {
-  no_contract: 'money', no_service: 'money', missing_salt_qty: 'money', salt_unit: 'money', missing_depth: 'money', duplicate: 'money', odd_duration: 'money', below_trigger: 'money', time_outside_storm: 'money',
+  no_contract: 'money', no_service: 'money', missing_salt_qty: 'money', salt_unit: 'money', missing_depth: 'money', duplicate: 'money', odd_duration: 'money', below_trigger: 'money', time_outside_storm: 'money', depth_disagrees: 'money',
   no_after_photo: 'proof', no_gps_match: 'proof',
   missing_visit: 'not_done',
   seasonal_info: 'info', prior_season: 'money', office_recorded: 'info',
@@ -39,7 +40,7 @@ export const TIER_ORDER: FlagTier[] = ['money', 'proof', 'not_done', 'info'];
 /** Each flag in the few words a billing summary line uses. */
 const TIER_REASON: Record<FlagCode, string> = {
   no_contract: 'no price', no_service: 'nothing ticked', missing_salt_qty: 'salt missing', salt_unit: 'salt missing',
-  missing_depth: 'depth missing', duplicate: 'a possible duplicate', odd_duration: 'an odd time on site', below_trigger: 'under the trigger', time_outside_storm: 'a wrong phone clock',
+  missing_depth: 'depth missing', duplicate: 'a possible duplicate', odd_duration: 'an odd time on site', below_trigger: 'under the trigger', time_outside_storm: 'a wrong phone clock', depth_disagrees: 'depth in question',
   no_after_photo: 'no after photo', no_gps_match: 'no or far-off location',
   missing_visit: 'not reached', seasonal_info: 'seasonal', office_recorded: 'recorded by the office', prior_season: 'no contract this season',
 };
@@ -254,6 +255,13 @@ export function draftInvoices(input: DraftInput): DraftInvoice[] {
       if (seasonal && visits.length) for (let i = flags.length - 1; i >= 0; i--) if (flags[i]!.code === 'seasonal_info') flags.splice(i, 1);
       if (seasonal && visits.length) flags.push({ code: 'prior_season', site_id: site.id, severity: 'review', message: `${site.label} is on the ${contract.season} seasonal contract and has none for ${input.season}, so this work isn't paid for. Send a new quote, or waive to plow it free.` });
       else if (lines.length) flags.push({ code: 'prior_season', site_id: site.id, severity: 'info', message: `${site.label} has no contract for ${input.season} yet, so it was priced from the ${contract.season} contract.` });
+    }
+    // A tier price from the driver's depth when NOAA saw something quite different (a wrong tap, or a narrow band
+    // NOAA's grid missed): someone looks before it goes out.
+    const measured = visits.map((v) => v.depth_in).filter((d): d is number => d !== null);
+    const observed = depthCtx.nohrsc24hIn;
+    if (measured.length && observed !== null && lines.some((l) => l.pricing_type === 'per_inch_tier' && !l.needs_depth) && Math.abs(Math.max(...measured) - observed) > DEPTH_DISAGREE_IN) {
+      flags.push({ code: 'depth_disagrees', site_id: site.id, severity: 'review', message: `${site.label}: the driver measured ${Math.max(...measured)}" but NOAA observed ${observed}" here this storm. The bill uses the driver's ${Math.max(...measured)}". Check it before billing, or correct the depth.` });
     }
     for (const l of lines) {
       if (l.needs_depth) {

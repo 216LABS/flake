@@ -38,9 +38,17 @@ export interface PricedVisit {
 
 /** Each source may be unavailable. null is "unavailable", never zero. */
 export interface StormDepthContext {
+  /** NOAA's observed snowfall analysis at the lot, over a window inside the storm. */
   nohrsc24hIn: number | null;
+  /** The forecast added up over the storm. Kept for the dashboard and alerts; it never prices a bill. */
   nwsElapsedIn: number | null;
+  /** The deepest a crew measured at another lot within 10 miles in the same storm. */
+  nearbyDriverIn?: number | null;
 }
+
+/** Where a tier price's depth came from, so the bill can say it. */
+export type DepthSource = 'site' | 'observed' | 'nearby';
+const DEPTH_FROM: Record<DepthSource, string> = { site: 'measured on site', observed: 'NOAA observed', nearby: 'measured at a lot nearby' };
 
 export interface InvoiceLine {
   site_id: string;
@@ -55,13 +63,24 @@ export interface InvoiceLine {
 }
 
 /**
- * per_inch_tier depth = max(driver depth, observed total, NWS elapsed). null when all are unavailable. The caller only
+ * The depth a tier price uses, from evidence only: what the crew measured at this lot, else NOAA's observed total at
+ * the lot, else what a crew measured at a lot within 10 miles in the same storm. A forecast is not evidence of what
+ * fell, so it never sets a price; across the country a forecast can be off by inches (lake-effect bands, mountain
+ * snow, the rain-snow line). null when there's no evidence, which the bill flags as depth missing. The caller only
  * passes an observed total whose window falls inside the storm, so snow from an earlier storm never sets the tier.
  */
-export function stormDepthIn(driverDepths: (number | null)[], ctx: StormDepthContext): number | null {
-  const known = [...driverDepths, ctx.nohrsc24hIn, ctx.nwsElapsedIn].filter((v): v is number => v !== null);
-  return known.length ? Math.max(...known) : null;
+export function stormDepth(driverDepths: (number | null)[], ctx: StormDepthContext): { in: number; source: DepthSource } | null {
+  const site = driverDepths.filter((v): v is number => v !== null);
+  if (site.length) return { in: Math.max(...site), source: 'site' };
+  if (ctx.nohrsc24hIn !== null) return { in: ctx.nohrsc24hIn, source: 'observed' };
+  if (ctx.nearbyDriverIn != null) return { in: ctx.nearbyDriverIn, source: 'nearby' };
+  return null;
 }
+
+export const stormDepthIn = (driverDepths: (number | null)[], ctx: StormDepthContext): number | null => stormDepth(driverDepths, ctx)?.in ?? null;
+
+/** Driver and NOAA this far apart is worth a look before a tier price goes out. */
+export const DEPTH_DISAGREE_IN = 1.5;
 
 export function tierAmountCents(tiers: { up_to_in: number | null; amount_cents: number }[], depthIn: number): number {
   const sorted = [...tiers].sort((a, b) => (a.up_to_in ?? Infinity) - (b.up_to_in ?? Infinity));
@@ -116,7 +135,7 @@ function line(
  * Prices one visit for one contract service. per_event and per_inch_tier return a line for each visit;
  * `priceSiteForStorm` collapses them to one charge per storm per site. seasonal returns nothing.
  */
-export function priceVisit(svc: ContractService, visit: PricedVisit, depthIn: number | null): InvoiceLine[] {
+export function priceVisit(svc: ContractService, visit: PricedVisit, depthIn: number | null, source?: DepthSource): InvoiceLine[] {
   const p = svc.pricing;
   if (!p) return [];
   switch (p.type) {
@@ -130,7 +149,7 @@ export function priceVisit(svc: ContractService, visit: PricedVisit, depthIn: nu
         return [{ ...l, needs_depth: true }];
       }
       const amount = tierAmountCents(p.tiers, depthIn);
-      return [line(visit, svc, 'per_inch_tier', 1, amount, amount, `for ${depthIn}" of snow`)];
+      return [line(visit, svc, 'per_inch_tier', 1, amount, amount, `for ${depthIn}" of snow${source ? `, ${DEPTH_FROM[source]}` : ''}`)];
     }
     case 'seasonal':
       return [];
@@ -165,11 +184,11 @@ export function priceSiteForStorm(
   visits: PricedVisit[],
   ctx: StormDepthContext,
 ): InvoiceLine[] {
-  const depth = stormDepthIn(visits.map((v) => v.depth_in), ctx);
+  const depth = stormDepth(visits.map((v) => v.depth_in), ctx);
   const lines: InvoiceLine[] = [];
   for (const svc of services) {
     const relevant = visits.filter((v) => v.services.includes(svc.service));
-    const priced = relevant.flatMap((v) => priceVisit(svc, v, depth));
+    const priced = relevant.flatMap((v) => priceVisit(svc, v, depth?.in ?? null, depth?.source));
     const once = svc.pricing?.type === 'per_event' || svc.pricing?.type === 'per_inch_tier';
     if (once && priced.length) {
       lines.push({ ...priced[0]!, source_visit_ids: priced.flatMap((l) => l.source_visit_ids) });

@@ -119,6 +119,8 @@ export interface TriggerSite {
   lon: number;
   trigger_in: number | null;
   has_salt: boolean;
+  /** Snow is still down: a storm in the last 3 days. The forecast's own 48 h of history counts too. */
+  snow_on_ground?: boolean;
 }
 
 export interface DepthReport {
@@ -128,15 +130,19 @@ export interface DepthReport {
   at: number;
 }
 
-export type AlertKind = 'forecast' | 'depth_report' | 'nws_alert';
+export type AlertKind = 'forecast' | 'depth_report' | 'refreeze' | 'nws_alert';
 
 export interface SiteDecision {
-  kind: 'forecast' | 'depth_report';
+  kind: 'forecast' | 'depth_report' | 'refreeze';
   site_id: string;
   event_key: string;
   value_in: number | null;
   at_iso?: string;
   label?: string;
+  /** For a refreeze: the low after the freeze, and the high before it. */
+  low_f?: number | null;
+  high_f?: number | null;
+  reason?: 'ice' | 'melt';
 }
 
 /** When the running forecast total first reaches the trigger, for "2.4" by 5 AM". */
@@ -150,14 +156,31 @@ export function reachesTriggerAt(buckets: HourBucket[], from: number, to: number
   return null;
 }
 
-function refreezeRisk(series: WeatherSeries, now: number): boolean {
-  const horizon = now + 6 * HOUR;
-  const ice = sumRange(series.iceIn, now, horizon);
-  if (ice !== null && ice > 0) return true;
-  const recentSnow = sumRange(series.snowIn, now - 6 * HOUR, horizon);
-  if (recentSnow === null || recentSnow <= 0) return false;
-  const temps = series.tempF.filter((b) => b.t >= now && b.t < horizon && b.v !== null);
-  return temps.some((b, i) => i > 0 && temps[i - 1]!.v! > 32 && b.v! <= 32);
+export interface Refreeze { at: number; reason: 'ice' | 'melt'; low_f: number | null; high_f: number | null }
+
+/**
+ * When salted pavement is about to ice over: freezing rain or drizzle in the next 12 hours, or snow still on the ground
+ * that melts above 32 F and then freezes again within 18 hours (the night after a sunny day). Works the same anywhere
+ * the NWS forecasts; nothing here is tuned to one region.
+ */
+export function refreezeForecast(series: WeatherSeries, now: number, snowOnGround = false): Refreeze | null {
+  const ice = series.iceIn.filter((b) => b.t >= now && b.t < now + 12 * HOUR && (b.v ?? 0) > 0).sort((a, b) => a.t - b.t)[0];
+  const temps = series.tempF.filter((b) => b.v !== null).sort((a, b) => a.t - b.t);
+  const lowAfter = (t: number) => {
+    const next = temps.filter((b) => b.t >= t && b.t < t + 12 * HOUR).map((b) => b.v!);
+    return next.length ? Math.min(...next) : null;
+  };
+  if (ice) return { at: ice.t, reason: 'ice', low_f: lowAfter(ice.t), high_f: null };
+  const recentSnow = sumRange(series.snowIn, now - 48 * HOUR, now + 6 * HOUR);
+  if (!snowOnGround && !(recentSnow !== null && recentSnow > 0)) return null;
+  const window = temps.filter((b) => b.t >= now - 12 * HOUR && b.t < now + 18 * HOUR);
+  for (let i = 1; i < window.length; i++) {
+    const b = window[i]!;
+    if (b.t < now || !(window[i - 1]!.v! > 32 && b.v! <= 32)) continue;
+    const before = window.slice(0, i).map((x) => x.v!);
+    return { at: b.t, reason: 'melt', low_f: lowAfter(b.t), high_f: Math.max(...before) };
+  }
+  return null;
 }
 
 /** The smallest snowfall the weather service reports. */
@@ -194,8 +217,10 @@ export function evaluateSite(site: TriggerSite, series: WeatherSeries, now: numb
       out.push({ kind: 'depth_report', site_id: site.site_id, event_key: eventKey, value_in: Math.max(...known) });
     }
   }
-  if (site.has_salt && refreezeRisk(series, now)) {
-    out.push({ kind: 'forecast', site_id: site.site_id, event_key: `refreeze:${eventKey}`, value_in: null, label: 'refreeze risk' });
+  const freeze = site.has_salt ? refreezeForecast(series, now, site.snow_on_ground) : null;
+  if (freeze) {
+    // Once per freeze: the hour it's due, rounded to the day, so tonight's freeze alerts once however often it's checked.
+    out.push({ kind: 'refreeze', site_id: site.site_id, event_key: `refreeze:${new Date(freeze.at).toISOString().slice(0, 10)}`, value_in: null, at_iso: new Date(freeze.at).toISOString(), low_f: freeze.low_f, high_f: freeze.high_f, reason: freeze.reason, label: 'refreeze risk' });
   }
   return out;
 }
@@ -207,7 +232,7 @@ export interface PriorSend {
 }
 
 export interface ProposedAlert {
-  kind: 'forecast' | 'depth_report';
+  kind: 'forecast' | 'depth_report' | 'refreeze';
   site_ids: string[];
   sites: SiteDecision[];
 }
@@ -225,7 +250,7 @@ export function groupDecisions(
   const sent = new Set(prior.map((p) => `${p.kind}|${p.site_id}|${p.event_key}`));
   const fresh = decisions.filter((d) => !sent.has(`${d.kind}|${d.site_id}|${d.event_key}`));
   const out: ProposedAlert[] = [];
-  for (const kind of ['forecast', 'depth_report'] as const) {
+  for (const kind of ['forecast', 'depth_report', 'refreeze'] as const) {
     const sites = fresh.filter((d) => d.kind === kind);
     if (!sites.length) continue;
     if (recent.some((r) => r.kind === kind && now - r.created_at < DEBOUNCE_MS)) continue;
@@ -245,6 +270,9 @@ const WINTER_EVENTS = new Set([
   'Ice Storm Warning',
   'Snow Squall Warning',
   'Freezing Rain Advisory',
+  // Black ice from fog that freezes on pavement: a salt run, anywhere in the country.
+  'Freezing Fog Advisory',
+  'Blizzard Watch',
 ]);
 
 export interface NwsAlert {
@@ -263,6 +291,14 @@ export function newWinterAlerts(alerts: NwsAlert[], seenIds: string[]): NwsAlert
 export function alertHeadline(alert: ProposedAlert, area: string, tz: string): string {
   const n = alert.site_ids.length;
   const sites = `${n} site${n === 1 ? '' : 's'}`;
+  if (alert.kind === 'refreeze') {
+    const first = alert.sites.map((s) => s.at_iso).filter((v): v is string => Boolean(v)).sort()[0];
+    const time = first ? new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short', hour: 'numeric' }).format(new Date(first)) : null;
+    const lows = alert.sites.map((s) => s.low_f).filter((v): v is number => typeof v === 'number');
+    const salt = `${n} salt lot${n === 1 ? '' : 's'}`;
+    if (alert.sites.some((s) => s.reason === 'ice')) return `${area}: freezing rain expected${time ? ` by ${time}` : ''} at ${salt}.`;
+    return `${area}: refreeze risk at ${salt}. Melting now, below freezing${time ? ` by ${time}` : ''}${lows.length ? `, down to ${Math.round(Math.min(...lows))}°F` : ''}.`;
+  }
   const values = alert.sites.map((s) => s.value_in).filter((v): v is number => v !== null);
   if (!values.length) return `${area}: refreeze risk at ${sites}.`;
   const max = Math.max(...values);

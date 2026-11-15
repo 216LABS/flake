@@ -116,3 +116,12 @@ Same basis as D10. **[J]**
 - **Rate card depth tiers are editable**: 2 to 8 tiers, each deeper than the last, as a multiple of the push price.
 - **Invoices print**: every bill past review has an invoice PDF (number FL- plus 8 characters, lines, total, terms, how to pay), for the office and on the customer's records page.
 - **The customer list shows 100 at a time**, with Newest, Name A to Z and Most sites. Newest stays the default.
+
+## D13. Weather for a nationwide product (Nov 15, 2026)
+Sam: Flake will be sold nationwide, not only in NE Ohio. **[J]**
+- **A tier price's depth comes from evidence, never the forecast**: the depth the crew measured at the lot, else NOAA's observed snowfall (NOHRSC) at the lot, else the deepest a crew measured at a lot within 10 miles in the same storm. The line says which ("measured on site", "NOAA observed", "measured at a lot nearby"). With none of them, the bill is held as depth missing.
+- **Driver and NOAA more than 1.5" apart** holds a tier bill for review; it still uses the driver's depth, which was measured at the lot.
+- **The forecast drives alerts and the dashboard only.**
+- **A lot outside NWS coverage** (Canada, offshore, a misplaced pin) is marked checked with no forecast area and says so on the dashboard; it no longer counts toward the weather breaker that pauses weather for every company.
+- **Refreeze alerts** are their own alert, for lots with a salt contract: freezing rain or drizzle within 12 hours, or snow still down (snow in the forecast's last 48 hours, or a storm in the last 3 days) that melts above 32 F and freezes again within 18 hours. One per lot per day, saying when and how cold.
+- **Alert list** adds Freezing Fog Advisory and Blizzard Watch.

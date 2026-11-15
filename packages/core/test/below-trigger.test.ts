@@ -23,8 +23,14 @@ describe('a storm under the contract trigger', () => {
     expect(f.message).toBe('Plaza: this storm measured 1.5" here, under the 2" this contract starts at, but plow is billed. Bill it only if the customer asked for it.');
     expect(f.severity).toBe('review');
   });
-  it('uses the deepest reading, so a weather total over the trigger clears it', () => {
-    expect(codes(input({ depth: { s1: { nohrsc24hIn: 2.5, nwsElapsedIn: null } } }))).not.toContain('below_trigger');
+  it('goes by the depth measured on site; NOAA far from it is flagged too, and the forecast never counts', () => {
+    // The driver's 1.5" is under the 2" trigger, and NOAA saw 3.5": both questions go to the office.
+    const both = codes(input({ depth: { s1: { nohrsc24hIn: 3.5, nwsElapsedIn: null } } }));
+    expect(both).toContain('below_trigger');
+    // A forecast total over the trigger doesn't clear it.
+    expect(codes(input({ depth: { s1: { nohrsc24hIn: null, nwsElapsedIn: 5 } } }))).toContain('below_trigger');
+    // With no driver depth, NOAA's observed total decides.
+    expect(codes(input({ visits: [v({ depth_in: null })], depth: { s1: { nohrsc24hIn: 2.5, nwsElapsedIn: null } } }))).not.toContain('below_trigger');
   });
   it('does not flag at the trigger, with no trigger, with a zero trigger, or with no depth anywhere', () => {
     expect(codes(input({ visits: [v({ depth_in: 2 })] }))).not.toContain('below_trigger');

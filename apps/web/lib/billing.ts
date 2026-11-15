@@ -5,6 +5,7 @@ import { seasonalRemaining, type ContractService, type Pricing, type SaltPricing
 import { qboCsv, type QboRow } from '@flake/core/qbo';
 import { contractsInForce, currentSeason, fmtLocal, isLaterSeason, localHm, todayIn } from '@flake/core/time';
 import { sumOverlap } from '@flake/core/trigger';
+import { distanceMeters } from '@flake/core/geo';
 import type { StripeEventLike } from '@flake/providers';
 import { z } from 'zod';
 import { flagFix } from '@flake/contracts';
@@ -29,7 +30,7 @@ export const tenantHasPro = (t: { plan: Plan; free_season_until: string | null; 
  * guessed. An observed (NOHRSC) total counts only when its whole window falls inside the storm: the 24 h total fetched
  * as the storm started is the day before, and a 2" storm after a 6" one would otherwise bill the 6" tier.
  */
-async function depthContext(s: typeof storm.$inferSelect, sites: (typeof site.$inferSelect)[]): Promise<Record<string, StormDepthContext>> {
+async function depthContext(s: typeof storm.$inferSelect, sites: (typeof site.$inferSelect)[], visits: { site_id: string; depth_in: number | null }[] = []): Promise<Record<string, StormDepthContext>> {
   const db = serviceDb();
   const start = Date.parse(s.started_at);
   const end = s.closed_at ? Date.parse(s.closed_at) : Date.now();
@@ -39,7 +40,14 @@ async function depthContext(s: typeof storm.$inferSelect, sites: (typeof site.$i
   for (const st of sites) {
     const totals = observed.map((x) => x.summary.sites?.[st.id]).filter((v): v is number => typeof v === 'number');
     const grid = snaps.find((x) => x.source === 'nws_grid' && x.office === st.nws_office && x.grid_x === st.nws_grid_x && x.grid_y === st.nws_grid_y);
+    // A crew's depth at another lot within 10 miles, for a lot where nobody measured and NOAA has nothing (outside its
+    // coverage, or an outage).
+    const nearby = visits.filter((v) => v.site_id !== st.id && v.depth_in !== null).filter((v) => {
+      const o = sites.find((x) => x.id === v.site_id);
+      return o ? distanceMeters(st.lat, st.lon, o.lat, o.lon) <= 16_093 : false;
+    }).map((v) => v.depth_in!);
     out[st.id] = {
+      nearbyDriverIn: nearby.length ? Math.max(...nearby) : null,
       nohrsc24hIn: totals.length ? Math.max(...totals) : null,
       nwsElapsedIn: grid ? sumOverlap(seriesFromSummary(grid.summary).snowIn, start, end) : null,
     };
@@ -123,7 +131,7 @@ export async function generateDrafts(ctx: Ctx, stormId: string) {
     // Mid-storm, more visits and passes are still coming. Charging now would bill half the work and miss the rest.
     if (s.status === 'active') throw new HttpError(409, 'Close the storm first. Invoices are drafted once the work is done.', 'storm_active');
     const [t] = await tx.select().from(tenant).where(eq(tenant.id, ctx.tenantId));
-    const depth = await depthContext(s, sites);
+    const depth = await depthContext(s, sites, applyCorrections(billingVisits, corrections.map((c) => ({ visit_id: c.visit_id, field: c.field, new_value: c.new_value }))));
     const newestBySite = new Map<string, typeof contract.$inferSelect>();
     for (const c of contracts) if (!newestBySite.has(c.site_id)) newestBySite.set(c.site_id, c);
     const billingContracts: BillingContract[] = [...newestBySite.values()].map((c) => ({ site_id: c.site_id, services: c.services as ContractService[], salt_pricing: c.salt_pricing as SaltPricing | null, season: c.season }));

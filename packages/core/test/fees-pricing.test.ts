@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applicationFeeCents, estimateStripeFeeCents, feeRate, inFreeSeason, proFeaturesEnabled } from '../src/fees';
-import { billableQuarterHours, priceSalt, priceSiteForStorm, priceVisit, seasonalInstallments, stormDepthIn, tierAmountCents, type ContractService, type PricedVisit } from '../src/pricing';
+import { billableQuarterHours, priceSalt, priceSiteForStorm, priceVisit, seasonalInstallments, stormDepth, stormDepthIn, tierAmountCents, type ContractService, type PricedVisit } from '../src/pricing';
 
 describe('application fee', () => {
   it('rounds and clamps to $0.50 to $25', () => {
@@ -42,8 +42,11 @@ const none = { nohrsc24hIn: null, nwsElapsedIn: null };
 const tiers = [{ up_to_in: 4, amount_cents: 6000 }, { up_to_in: 8, amount_cents: 9000 }, { up_to_in: null, amount_cents: 12000 }];
 
 describe('pricing helpers', () => {
-  it('stormDepthIn takes the max of known values and is null when all are unavailable', () => {
-    expect(stormDepthIn([3, null], { nohrsc24hIn: 4.2, nwsElapsedIn: 1 })).toBe(4.2);
+  it('depth comes from evidence: on site, then NOAA observed, then a lot nearby, never the forecast', () => {
+    expect(stormDepth([3, null], { nohrsc24hIn: 4.2, nwsElapsedIn: 9 })).toEqual({ in: 3, source: 'site' });
+    expect(stormDepth([null], { nohrsc24hIn: 4.2, nwsElapsedIn: 9, nearbyDriverIn: 5 })).toEqual({ in: 4.2, source: 'observed' });
+    expect(stormDepth([null], { nohrsc24hIn: null, nwsElapsedIn: 9, nearbyDriverIn: 5 })).toEqual({ in: 5, source: 'nearby' });
+    expect(stormDepthIn([null], { nohrsc24hIn: null, nwsElapsedIn: 9 })).toBeNull();
     expect(stormDepthIn([null], none)).toBeNull();
   });
   it('tierAmountCents picks the matching tier, open top, and the highest when no open tier exists', () => {
@@ -122,11 +125,14 @@ describe('priceSiteForStorm', () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]!.source_visit_ids).toEqual(['v1', 'v2']);
   });
-  it('charges per_inch_tier once using the max of driver, NOHRSC and NWS', () => {
+  it('charges per_inch_tier once, at the deepest the crew measured on site, and says where the depth came from', () => {
     const svc: ContractService[] = [{ service: 'plow', pricing: { type: 'per_inch_tier', tiers } }];
-    const lines = priceSiteForStorm(svc, null, [visit({ depth_in: 2 }), visit({ id: 'v2', depth_in: 3 })], { nohrsc24hIn: 6, nwsElapsedIn: 1 });
+    const lines = priceSiteForStorm(svc, null, [visit({ depth_in: 2 }), visit({ id: 'v2', depth_in: 5 })], { nohrsc24hIn: 6, nwsElapsedIn: 1 });
     expect(lines).toHaveLength(1);
     expect(lines[0]!.amount_cents).toBe(9000);
+    expect(lines[0]!.description).toMatch(/for 5" of snow, measured on site$/);
+    const observed = priceSiteForStorm(svc, null, [visit({ depth_in: null })], { nohrsc24hIn: 3, nwsElapsedIn: 9 });
+    expect([observed[0]!.amount_cents, observed[0]!.description]).toEqual([6000, expect.stringMatching(/NOAA observed$/)]);
   });
   it('adds salt only when the contract has a salt service, and ignores services the visit lacks', () => {
     const v = visit({ services: ['plow', 'salt'], salt: [{ unit: 'bag50lb', qty: 2 }] });
