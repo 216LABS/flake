@@ -35,8 +35,8 @@ describe('refreeze alerts for salt lots', () => {
     const [d] = evaluateSite({ ...site, snow_on_ground: true }, series({ tempF: melt }), NOW, []);
     expect(d).toMatchObject({ kind: 'refreeze', event_key: 'refreeze:2026-11-16', reason: 'melt' });
     expect(alertHeadline({ kind: 'refreeze', site_ids: ['s1', 's2'], sites: [d!, { ...d!, site_id: 's2', low_f: null }] }, 'Lakewood', 'America/New_York'))
-      .toBe('Lakewood: refreeze risk at 2 salt lots. Melting now, below freezing by Mon, 5 PM, down to 25°F.');
-    expect(alertHeadline({ kind: 'refreeze', site_ids: ['s1'], sites: [{ ...d!, reason: 'ice' }] }, 'Denver', 'America/Denver')).toBe('Denver: freezing rain expected by Mon, 3 PM at 1 salt lot.');
+      .toBe('Lakewood: refreeze risk at 2 salt lots. Melting now, below freezing by Mon 5 PM, down to 25°F.');
+    expect(alertHeadline({ kind: 'refreeze', site_ids: ['s1'], sites: [{ ...d!, reason: 'ice' }] }, 'Denver', 'America/Denver')).toBe('Denver: freezing rain expected by Mon 3 PM at 1 salt lot.');
     expect(alertHeadline({ kind: 'refreeze', site_ids: ['s1'], sites: [{ ...d!, at_iso: undefined, low_f: null }] }, 'Erie', 'America/New_York')).toBe('Erie: refreeze risk at 1 salt lot. Melting now, below freezing.');
     expect(alertHeadline({ kind: 'refreeze', site_ids: ['s1'], sites: [{ ...d!, at_iso: undefined, reason: 'ice' }] }, 'Erie', 'America/New_York')).toBe('Erie: freezing rain expected at 1 salt lot.');
   });

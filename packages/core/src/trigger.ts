@@ -293,7 +293,8 @@ export function alertHeadline(alert: ProposedAlert, area: string, tz: string): s
   const sites = `${n} site${n === 1 ? '' : 's'}`;
   if (alert.kind === 'refreeze') {
     const first = alert.sites.map((s) => s.at_iso).filter((v): v is string => Boolean(v)).sort()[0];
-    const time = first ? new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short', hour: 'numeric' }).format(new Date(first)) : null;
+    // Day and hour formatted apart and joined here: one formatter's punctuation between them differs across platforms.
+    const time = first ? `${new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(new Date(first))} ${new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric' }).format(new Date(first))}` : null;
     const lows = alert.sites.map((s) => s.low_f).filter((v): v is number => typeof v === 'number');
     const salt = `${n} salt lot${n === 1 ? '' : 's'}`;
     if (alert.sites.some((s) => s.reason === 'ice')) return `${area}: freezing rain expected${time ? ` by ${time}` : ''} at ${salt}.`;
