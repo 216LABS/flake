@@ -332,3 +332,26 @@ input::-webkit-date-and-time-value {
     min-height: 1.5rem;
   }
 }
+
+/*
+ * Printing an office page (issue 158): the page only, full width. The nav, the tab bar and the buttons stay on screen.
+ */
+@media print {
+  .app-shell { display: block; }
+  .app-shell > header,
+  .app-shell > nav,
+  .app-shell > a[href='#main'],
+  .app-shell main button,
+  .app-shell main [role='tablist'],
+  .app-shell main [data-print-hide] {
+    display: none !important;
+  }
+  .app-shell main {
+    max-width: none;
+    padding: 0;
+  }
+  .app-shell main .shadow-float,
+  .app-shell main .shadow-drop {
+    box-shadow: none;
+  }
+}

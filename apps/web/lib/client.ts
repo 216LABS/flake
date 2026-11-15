@@ -24,3 +24,6 @@ export const phone = (e164: string | null | undefined) => {
 
 export const money = (cents: number | null | undefined) => (cents === null || cents === undefined ? '-' : `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 export const dollarsToCents = (v: string | number) => Math.round(Number(v) * 100);
+
+/** "Flip's", but "Jones Sons'" (issue 152): a name ending in s takes just the apostrophe. */
+export const possessive = (name: string) => (/s$/i.test(name.trim()) ? `${name.trim()}'` : `${name.trim()}'s`);

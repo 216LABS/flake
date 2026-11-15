@@ -93,6 +93,15 @@ export function isLate(window: ServiceWindow | null | undefined, stormStartedAt:
  * zone when given: 1 AM UTC on July 1 is still June 30 in Ohio. Without one it uses the device's own zone, which is
  * right in a browser and wrong on a UTC server.
  */
+/**
+ * A storm's date for a list (issue 157): "Mar 20, 8:00 AM" this winter, "Mar 20, 2026, 8:00 AM" for an earlier one, so
+ * two winters of storms don't read alike. withTime false gives the day alone.
+ */
+export function stormWhen(iso: string | number | Date, tz: string, withTime = true, now = new Date()): string {
+  const other = currentSeason(new Date(iso), tz) !== currentSeason(now, tz);
+  return fmtLocal(iso, tz, { month: 'short', day: 'numeric', ...(other ? { year: 'numeric' } : {}), ...(withTime ? { hour: 'numeric', minute: '2-digit' } : {}) });
+}
+
 export function currentSeason(now = new Date(), tz?: string): string {
   const [year, month] = tz ? localHm(now, tz).date.split('-').map(Number) as [number, number] : [now.getFullYear(), now.getMonth() + 1];
   const start = month >= 7 ? year : year - 1;

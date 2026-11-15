@@ -1,4 +1,5 @@
 import { and, crew_member, eq, serviceDb, tenant } from '@flake/db';
+import { CREW_SUBJECT } from '@flake/core/messages';
 import { asUser, requireApi } from '@/lib/auth';
 import { baseUrl } from '@/lib/env';
 import { HttpError, route } from '@/lib/http';
@@ -17,6 +18,6 @@ export const POST = route<{ params: Promise<{ id: string }> }>(async (_req, { pa
   if (!row) throw new HttpError(404, 'Not found. Someone who left the crew has to be added again.');
   const [t] = await serviceDb().select().from(tenant).where(eq(tenant.id, ctx.tenantId));
   const link = await shortLink(ctx.tenantId, `/join/${token}`);
-  await queueNotify(ctx.tenantId, { email: row.email }, { template: 'crew_invite', vars: { link }, subject: `${t!.name} invited you to get route links`, key: `crew_invite:${id}:${Date.now()}`, related: { crew_id: id } });
+  await queueNotify(ctx.tenantId, { email: row.email }, { template: 'crew_invite', vars: { link }, subject: CREW_SUBJECT[row.language === 'es' ? 'es' : 'en'].crew_invite(t!.name), lang: row.language === 'es' ? 'es' : 'en', key: `crew_invite:${id}:${Date.now()}`, related: { crew_id: id } });
   return { invite_url: `${baseUrl()}/join/${token}` };
 });

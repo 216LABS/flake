@@ -1,5 +1,5 @@
 import { and, crew_member, desc, eq, invoice_draft, isNull, ne, route, site, sql, storm } from '@flake/db';
-import { fmtLocal } from '@flake/core/time';
+import { fmtLocal, stormWhen } from '@flake/core/time';
 import { Badge, buttonVariants, Card, cn, EmptyState, PageHeader } from '@flake/ui';
 import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
@@ -45,7 +45,7 @@ export default async function Storms({ searchParams }: { searchParams: Promise<{
                 <li key={s.id}>
                   <Link href={`/storms/${s.id}`}>
                     <Card className="flex items-center justify-between transition-colors hover:border-ink">
-                      <div><div className="font-display text-lg font-semibold leading-tight">{s.name}</div><div className="text-sm text-muted">{fmtLocal(s.started_at, ctx.tenant.timezone)}</div></div>
+                      <div><div className="font-display text-lg font-semibold leading-tight">{s.name}</div><div className="text-sm text-muted">{stormWhen(s.started_at, ctx.tenant.timezone)}</div></div>
                       <Badge tone={stormStatus(s.status, !data.withBills.includes(s.id)).tone}>{stormStatus(s.status, !data.withBills.includes(s.id)).word}</Badge>
                     </Card>
                   </Link>

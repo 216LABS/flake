@@ -1,7 +1,7 @@
 import type { MultiPolygon, Polygon } from 'geojson';
 import { distanceMeters, distanceToPolygonMeters, gpsMatches } from './geo';
 import { usDistanceText } from './units';
-import { isLaterSeason } from './time';
+import { fmtLocal, isLaterSeason } from './time';
 import { priceSiteForStorm, stormDepthIn, type ContractService, type InvoiceLine, type PricedVisit, type SaltPricing, type StormDepthContext } from './pricing';
 
 export const DUPLICATE_WINDOW_MS = 60 * 60 * 1000;
@@ -20,7 +20,8 @@ export type FlagCode =
   | 'odd_duration'
   | 'no_service'
   | 'salt_unit'
-  | 'below_trigger';
+  | 'below_trigger'
+  | 'time_outside_storm';
 
 /**
  * How much a flag matters at a dawn billing review (issue 78): money at risk first, then missing proof, then lots
@@ -28,7 +29,7 @@ export type FlagCode =
  */
 export type FlagTier = 'money' | 'proof' | 'not_done' | 'info';
 export const FLAG_TIER: Record<FlagCode, FlagTier> = {
-  no_contract: 'money', no_service: 'money', missing_salt_qty: 'money', salt_unit: 'money', missing_depth: 'money', duplicate: 'money', odd_duration: 'money', below_trigger: 'money',
+  no_contract: 'money', no_service: 'money', missing_salt_qty: 'money', salt_unit: 'money', missing_depth: 'money', duplicate: 'money', odd_duration: 'money', below_trigger: 'money', time_outside_storm: 'money',
   no_after_photo: 'proof', no_gps_match: 'proof',
   missing_visit: 'not_done',
   seasonal_info: 'info', prior_season: 'money', office_recorded: 'info',
@@ -38,7 +39,7 @@ export const TIER_ORDER: FlagTier[] = ['money', 'proof', 'not_done', 'info'];
 /** Each flag in the few words a billing summary line uses. */
 const TIER_REASON: Record<FlagCode, string> = {
   no_contract: 'no price', no_service: 'nothing ticked', missing_salt_qty: 'salt missing', salt_unit: 'salt missing',
-  missing_depth: 'depth missing', duplicate: 'a possible duplicate', odd_duration: 'an odd time on site', below_trigger: 'under the trigger',
+  missing_depth: 'depth missing', duplicate: 'a possible duplicate', odd_duration: 'an odd time on site', below_trigger: 'under the trigger', time_outside_storm: 'a wrong phone clock',
   no_after_photo: 'no after photo', no_gps_match: 'no or far-off location',
   missing_visit: 'not reached', seasonal_info: 'seasonal', office_recorded: 'recorded by the office', prior_season: 'no contract this season',
 };
@@ -117,7 +118,16 @@ export interface DraftInput {
   waived?: string[];
   /** The storm's season. A lot priced from an earlier season's contract is named (issue 112). */
   season?: string;
+  /**
+   * When the storm ran, for checking the phone's clock (issue 141). A visit stamped well before the start or after the
+   * close is held for review: a phone with a wrong clock, or a replayed queue, would put that date on a bill.
+   */
+  window?: { start: string; end: string | null; timezone: string };
 }
+
+/** A phone can be set a little early, and a driver can finish soon after the office closes the storm. */
+export const CLOCK_BEFORE_MS = 6 * 3600 * 1000;
+export const CLOCK_AFTER_MS = 12 * 3600 * 1000;
 
 export const flagKey = (f: Pick<BillingFlag, 'code' | 'site_id' | 'visit_id'>) => `${f.code}:${f.site_id}:${f.visit_id ?? ''}`;
 /** Stored with the storm's waived flags: leave this lot off this storm's bill. */
@@ -139,7 +149,7 @@ export function applyCorrections(visits: BillingVisit[], corrections: VisitCorre
 /** Longer than this on one hourly lot is unusual enough for a person to look before it bills. */
 const LONG_VISIT_MINUTES = 4 * 60;
 
-function flagsForSite(site: BillingSite, contract: BillingContract | undefined, statuses: string[], visits: BillingVisit[], depthIn: number | null, open?: BillingVisit): BillingFlag[] {
+function flagsForSite(site: BillingSite, contract: BillingContract | undefined, statuses: string[], visits: BillingVisit[], depthIn: number | null, open?: BillingVisit, window?: DraftInput['window']): BillingFlag[] {
   const flags: BillingFlag[] = [];
   const add = (code: FlagCode, message: string, visit_id?: string, severity: BillingFlag['severity'] = 'review', extra: Pick<BillingFlag, 'unit' | 'services' | 'open_visit_id'> = {}) =>
     flags.push({ code, site_id: site.id, message, severity, ...(visit_id ? { visit_id } : {}), ...extra });
@@ -175,6 +185,12 @@ function flagsForSite(site: BillingSite, contract: BillingContract | undefined, 
       add('odd_duration', `${site.label}: Done is earlier than Arrive on the phone's clock, so the time on site is unknown.`, v.id);
     } else if (minutes > LONG_VISIT_MINUTES && contract?.services.some((s) => s.pricing?.type === 'hourly')) {
       add('odd_duration', `${site.label}: ${Math.round(minutes / 6) / 10} h on site at an hourly rate. Check Done wasn't tapped late.`, v.id);
+    }
+    if (window && !v.office_recorded) {
+      const lo = Date.parse(window.start) - CLOCK_BEFORE_MS;
+      const hi = Date.parse(window.end ?? new Date().toISOString()) + CLOCK_AFTER_MS;
+      const odd = [v.arrived_at, v.departed_at!].find((t) => Date.parse(t) < lo || Date.parse(t) > hi);
+      if (odd) add('time_outside_storm', `${site.label}: the phone's clock put this visit at ${fmtLocal(odd, window.timezone, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}, outside this storm (started ${fmtLocal(window.start, window.timezone)}). Check the phone's date before billing it.`, v.id);
     }
     if (v.after_photos === 0 && !v.office_recorded) add('no_after_photo', `${site.label}: no after photo on this visit.`, v.id);
     if (v.services.includes('salt') && !v.salt?.some((e) => e.qty > 0)) {
@@ -227,13 +243,15 @@ export function draftInvoices(input: DraftInput): DraftInvoice[] {
     // "Don't bill" on a lot under its trigger: its work stays on record, its charge comes off this storm's bill.
     const noBill = waived.has(noBillKey(site.id));
     const lines = contract && !noBill ? priceSiteForStorm(contract.services, contract.salt_pricing, visits, depthCtx) : [];
-    const flags = flagsForSite(site, contract, statuses, visits, stormDepthIn(visits.map((v) => v.depth_in), depthCtx), corrected.find((v) => v.site_id === site.id && v.departed_at === null))
+    const flags = flagsForSite(site, contract, statuses, visits, stormDepthIn(visits.map((v) => v.depth_in), depthCtx), corrected.find((v) => v.site_id === site.id && v.departed_at === null), input.window)
       .map((f) => (noBill && f.code === 'below_trigger' ? { ...f, message: `${f.message} Not billed for this storm.`, waived: true } : f));
     // No contract signed for this season yet: last season's prices carry on (most plow contracts renew), but the
     // office sees it so a price change isn't missed.
     // A seasonal lot whose season was paid in full would be plowed free, so that one needs a decision.
     if (contract?.season && input.season && isLaterSeason(input.season, contract.season)) {
       const seasonal = contract.services.some((s) => s.pricing?.type === 'seasonal');
+      // The review flag says the work isn't paid for, so the "no per-visit charge" note beside it would contradict it (issue 157).
+      if (seasonal && visits.length) for (let i = flags.length - 1; i >= 0; i--) if (flags[i]!.code === 'seasonal_info') flags.splice(i, 1);
       if (seasonal && visits.length) flags.push({ code: 'prior_season', site_id: site.id, severity: 'review', message: `${site.label} is on the ${contract.season} seasonal contract and has none for ${input.season}, so this work isn't paid for. Send a new quote, or waive to plow it free.` });
       else if (lines.length) flags.push({ code: 'prior_season', site_id: site.id, severity: 'info', message: `${site.label} has no contract for ${input.season} yet, so it was priced from the ${contract.season} contract.` });
     }

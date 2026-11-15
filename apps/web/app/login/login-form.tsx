@@ -5,9 +5,10 @@ import { createBrowserClient } from '@supabase/ssr';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api } from '@/lib/client';
+import { NEXT_COOKIE } from '@/lib/next-path';
 import { AuthShell } from '../auth-shell';
 
-export function LoginForm({ demo }: { demo: boolean }) {
+export function LoginForm({ demo, next = '/dashboard' }: { demo: boolean; next?: string }) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
@@ -18,6 +19,8 @@ export function LoginForm({ demo }: { demo: boolean }) {
   const send = async () => {
     setError(null);
     setBusy(true);
+    // The emailed link returns through /auth/callback, which reads this to land on the page that asked for sign-in.
+    document.cookie = `${NEXT_COOKIE}=${encodeURIComponent(next)}; path=/; max-age=3600; samesite=lax`;
     const { error: err } = await supabase().auth.signInWithOtp({ email, options: { emailRedirectTo: `${location.origin}/auth/callback` } });
     setBusy(false);
     if (err) setError(err.message);
@@ -36,7 +39,7 @@ export function LoginForm({ demo }: { demo: boolean }) {
     if (err && /expired|invalid/i.test(err.message)) ({ error: err } = await supabase().auth.verifyOtp({ email, token, type: 'signup' }));
     setBusy(false);
     if (err) return setError(/expired|invalid/i.test(err.message) ? 'That code is wrong or has expired. Check the newest email, or send a new one.' : err.message);
-    router.push('/dashboard');
+    router.push(next);
     router.refresh();
   };
   return (
@@ -64,7 +67,7 @@ export function LoginForm({ demo }: { demo: boolean }) {
           <Button variant="outline" className="mt-3 w-full" data-testid="demo-login" onClick={async () => {
             try {
               await api('/api/dev/login', { body: { email: 'demo@flake.test' } });
-              router.push('/dashboard');
+              router.push(next);
               router.refresh();
             } catch (e) {
               setError((e as Error).message);

@@ -185,6 +185,17 @@ export function priceSiteForStorm(
 }
 
 /** Equal installments in cents; the remainder goes on the first so the total always adds up exactly. */
+/**
+ * What is left to bill on a seasonal price once earlier agreements for the same lot and season billed some of it
+ * (issues 112, 156): the rest of the total over the installments left, and at least one if the count is used up but
+ * money is still owed. Empty once the total is covered.
+ */
+export function seasonalRemaining(totalCents: number, installments: number, prior: { cents: number; count: number }): number[] {
+  const left = Math.max(0, totalCents - prior.cents);
+  if (left <= 0) return [];
+  return seasonalInstallments(left, Math.max(1, installments - prior.count));
+}
+
 export function seasonalInstallments(totalCents: number, count: number): number[] {
   const base = Math.floor(totalCents / count);
   const out = Array.from({ length: count }, () => base);

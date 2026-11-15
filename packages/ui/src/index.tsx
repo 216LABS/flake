@@ -39,7 +39,7 @@ export function Button({ className, variant, size, ...props }: ButtonProps) {
   return <button type="button" className={cn(buttonVariants({ variant, size }), className)} {...props} />;
 }
 
-export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement> & { ref?: Ref<HTMLDivElement> }) {
   return <div className={cn('rounded-surface border border-line-faint bg-surface p-4 shadow-float', className)} {...props} />;
 }
 

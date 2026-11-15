@@ -1,7 +1,7 @@
 /** SMS templates from ADDENDUM_SMS section 4: company name first, two segments at most. */
 /** Who an email is for decides why the footer says they got it. */
 const AUDIENCE: Record<string, 'customer' | 'crew' | 'office' | 'flake'> = {
-  on_the_way: 'customer', done: 'customer', late: 'customer', invoice: 'customer', receipt: 'customer', quote: 'customer', portal: 'customer', completion_report: 'customer', help: 'customer',
+  on_the_way: 'customer', done: 'customer', done_no_photo: 'customer', late: 'customer', invoice: 'customer', receipt: 'customer', quote: 'customer', portal: 'customer', completion_report: 'customer', help: 'customer',
   crew_link: 'crew', route_changed: 'crew', crew_invite: 'crew', call_out: 'crew',
   owner_alert: 'office', team_invite: 'office',
   salt_supplier: 'flake',
@@ -11,27 +11,29 @@ const AUDIENCE: Record<string, 'customer' | 'crew' | 'office' | 'flake'> = {
  * The bottom of every email: who it's from, how to reach them, their mailing address when the company has entered one,
  * why the reader is getting it, and how to stop. Plain text, like the rest of the email.
  */
-export function emailFooter(template: string, c: { name: string; phone?: string | null; email?: string | null; address?: string | null }) {
+export function emailFooter(template: string, c: { name: string; phone?: string | null; email?: string | null; address?: string | null }, lang: 'en' | 'es' = 'en') {
   const who = AUDIENCE[template] ?? 'customer';
   if (who === 'flake') return '\n\n--\nSent by Flake (216LABS) for salt orders placed through it. Reply to this email with any question.';
   const phone = c.phone && /^\+1\d{10}$/.test(c.phone) ? `(${c.phone.slice(2, 5)}) ${c.phone.slice(5, 8)}-${c.phone.slice(8)}` : c.phone;
   const contact = [phone, c.email].filter(Boolean).join(' | ');
   const why = {
     customer: `You get these because ${c.name} provides snow service at your property. To stop these emails, reply and ask ${c.name} to turn them off.`,
-    crew: `You get these because you're on ${c.name}'s crew. To stop them, ask ${c.name} to take you off.`,
+    crew: lang === 'es' ? `Recibes esto porque estás en el equipo de ${c.name}. Para dejar de recibirlos, pide a ${c.name} que te quite.` : `You get these because you're on ${c.name}'s crew. To stop them, ask ${c.name} to take you off.`,
     office: `You get these because you're on ${c.name}'s team in Flake. An owner can change who gets them in Settings.`,
   }[who];
-  const lines = [c.name, c.address, contact, why, 'Sent with Flake: https://flake.216labs.dev'].filter((x): x is string => Boolean(x));
+  const lines = [c.name, c.address, contact, why, lang === 'es' && who === 'crew' ? 'Enviado con Flake: https://flake.216labs.dev' : 'Sent with Flake: https://flake.216labs.dev'].filter((x): x is string => Boolean(x));
   return `\n\n--\n${lines.join('\n')}`;
 }
 
-export type TemplateKey = 'team_invite' | 'receipt' | 'crew_link' | 'call_out' | 'on_the_way' | 'done' | 'late' | 'invoice' | 'bill' | 'help' | 'route_changed' | 'quote' | 'owner_alert' | 'crew_invite' | 'portal';
+export type TemplateKey = 'team_invite' | 'receipt' | 'crew_link' | 'call_out' | 'on_the_way' | 'done' | 'done_no_photo' | 'late' | 'invoice' | 'bill' | 'help' | 'route_changed' | 'quote' | 'owner_alert' | 'crew_invite' | 'portal';
 
 const TEMPLATES: Record<TemplateKey, string> = {
   crew_link: '{company}: Storm on. Route {route} - {n} stops. Start: {link} Reply STOP to opt out.',
   call_out: '{company}: Plowing expected ~{time}. Can you run {route}? Reply YES or NO.',
   on_the_way: '{company}: Your plow is on the way to {site}.',
   done: '{company}: {site} cleared at {time}. Photo: {link}',
+  // No photo came (issue 148): no "Photo:" link that would open the company's page instead.
+  done_no_photo: '{company}: {site} cleared at {time}.',
   late: '{company}: Heavy snow is slowing routes. We expect to reach {site} by {time}.',
   invoice: '{company}: Invoice for {storm} - ${amount}. View/pay: {link}',
   // A bill the company collects itself: what it's for, and how to pay, in the company's own words when it wrote them.
@@ -46,8 +48,25 @@ const TEMPLATES: Record<TemplateKey, string> = {
   portal: '{company}: Your snow service records, with every visit and photo: {link}',
 };
 
-export function renderTemplate(key: TemplateKey, vars: Record<string, string | number>): string {
-  return TEMPLATES[key].replace(/\{(\w+)\}/g, (_, name: string) => {
+/**
+ * The crew's messages in Spanish, for a driver whose language is set to Spanish (issue 151). A call-out still takes
+ * YES or NO, and SI as YES. Customer and office messages stay in English.
+ */
+const TEMPLATES_ES: Partial<Record<TemplateKey, string>> = {
+  crew_link: '{company}: Hay tormenta. Ruta {route} - {n} paradas. Empieza: {link} Responde STOP para no recibir más.',
+  call_out: '{company}: Se espera quitar nieve ~{time}. ¿Puedes hacer la ruta {route}? Responde SI o NO.',
+  route_changed: '{company}: Tu ruta cambió. Abre tu enlace para verla: {link}',
+  crew_invite: '{company} te invitó a recibir enlaces de ruta. Únete: {link}',
+};
+
+/** Email subjects for the crew's messages, in the driver's language. */
+export const CREW_SUBJECT: Record<'en' | 'es', Record<'crew_link' | 'route_changed' | 'crew_invite', (company: string) => string>> = {
+  en: { crew_link: (c) => `${c}: storm on, your route is ready`, route_changed: (c) => `${c}: your route changed`, crew_invite: (c) => `${c} invited you to get route links` },
+  es: { crew_link: (c) => `${c}: hay tormenta, tu ruta está lista`, route_changed: (c) => `${c}: tu ruta cambió`, crew_invite: (c) => `${c} te invitó a recibir enlaces de ruta` },
+};
+
+export function renderTemplate(key: TemplateKey, vars: Record<string, string | number>, lang: 'en' | 'es' = 'en'): string {
+  return ((lang === 'es' ? TEMPLATES_ES[key] : undefined) ?? TEMPLATES[key]).replace(/\{(\w+)\}/g, (_, name: string) => {
     if (!(name in vars)) throw new Error(`Template ${key} is missing {${name}}`);
     return String(vars[name]);
   });
@@ -66,12 +85,13 @@ export type InboundKind = 'stop' | 'start' | 'help' | 'yes' | 'no' | 'other';
 /** YES doubles as Twilio's opt-back-in word, so it's only a call-out reply when the number is opted in. */
 export function classifyInbound(body: string, optedOut: boolean): InboundKind {
   // People type "No." and "yes!". Only the whole message counts, because "no problem" means yes.
-  const word = body.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim();
+  // Accents off first, so a Spanish "Sí" reads as SI (issue 151).
+  const word = body.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim();
   if (STOP.has(word)) return 'stop';
   if (word === 'HELP' || word === 'INFO') return 'help';
   if (optedOut && START.has(word)) return 'start';
   if (word === 'START' || word === 'UNSTOP') return 'start';
-  if (['YES', 'Y', 'YEP', 'YEAH', 'YUP', 'OK', 'OKAY', 'SURE'].includes(word)) return 'yes';
+  if (['YES', 'Y', 'YEP', 'YEAH', 'YUP', 'OK', 'OKAY', 'SURE', 'SI', 'CLARO', 'VALE'].includes(word)) return 'yes';
   if (['NO', 'N', 'NOPE'].includes(word)) return 'no';
   return 'other';
 }

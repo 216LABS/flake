@@ -19,7 +19,7 @@ export const POST = route<{ params: Promise<{ id: string }> }>(async (req, { par
   let sent = 0;
   for (const r of runs) {
     if (r.run.tenant_id !== ctx.tenantId || !r.crew?.phone_e164 || !r.crew.active) continue;
-    const ok = await sendSms(t!, { to: r.crew.phone_e164, template: 'call_out', vars: { company: t!.name, time, route: r.route?.name ?? 'a route' }, key: `callout:${id}:${r.crew.id}:${time.trim().toLowerCase()}`, related: { storm_id: id } });
+    const ok = await sendSms(t!, { to: r.crew.phone_e164, template: 'call_out', vars: { company: t!.name, time, route: r.route?.name ?? (r.crew.language === 'es' ? 'una ruta' : 'a route') }, lang: r.crew.language === 'es' ? 'es' : 'en', key: `callout:${id}:${r.crew.id}:${time.trim().toLowerCase()}`, related: { storm_id: id } });
     if (!ok) continue;
     sent++;
     // The board shows their answer to this question, not one left over from an earlier storm.

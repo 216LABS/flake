@@ -1,5 +1,5 @@
 import { and, contract, crew_member, customer, desc, eq, isNull, message_log, route, route_stop, run_stop, serviceDb, site, sql, storm, storm_run, trigger_alert } from '@flake/db';
-import { fmtLocal } from '@flake/core/time';
+import { fmtLocal, stormWhen } from '@flake/core/time';
 import { Badge, buttonVariants, Card, EmptyState, Eyebrow, PageHeader, Progress, Stat, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
@@ -57,6 +57,8 @@ export default async function Dashboard() {
     { done: data.crew[0]!.n > 0, text: 'Invite your drivers', href: '/settings?tab=crew' },
     { done: data.routed[0]!.n > 0, text: 'Put your lots on a route, so a storm knows where to go', href: '/routes' },
     { done: Boolean(ctx.tenant.stripe_charges_enabled), text: 'Connect Stripe to get paid', href: '/settings?tab=payments' },
+    // Customer emails carry the company's postal address (issue 149).
+    { done: Boolean((ctx.tenant.address as { line1?: string } | null)?.line1), text: 'Add your mailing address for customer emails', href: '/settings?tab=company' },
     { done: ctx.tenant.sms_status === 'approved', text: 'Verify your text number. Links go by email and QR until then.', href: '/settings?tab=sms' },
   ];
   return (
@@ -137,7 +139,7 @@ export default async function Dashboard() {
                     <Link key={s.id} href={`/storms/${s.id}`} data-testid="active-storm">
                       <Card className="transition-colors hover:border-ink">
                         <div className="flex items-start justify-between gap-2"><div className="font-display text-lg font-semibold leading-tight">{s.name}</div><Badge tone={stormStatus('active').tone}>{stormStatus('active').word}</Badge></div>
-                        <div className="mt-0.5 text-xs text-muted">Started {fmtLocal(s.started_at, tz)}</div>
+                        <div className="mt-0.5 text-xs text-muted">Started {stormWhen(s.started_at, tz)}</div>
                         <Progress className="mt-3" value={p?.finished ?? 0} max={p?.total ?? 0} label={`Stops finished in ${s.name}`} />
                         <div className="tabular mt-1.5 text-sm font-medium text-ink" data-testid="storm-progress">{p ? `${p.finished} of ${p.total} stops finished` : 'No stops yet'}</div>
                       </Card>
@@ -165,7 +167,7 @@ export default async function Dashboard() {
             {data.recent.map((s) => (
               <tr key={s.id}>
                 <Td><Link className="text-link underline" href={`/storms/${s.id}`}>{s.name}</Link></Td>
-                <Td label="Started">{fmtLocal(s.started_at, tz)}</Td>
+                <Td label="Started">{stormWhen(s.started_at, tz)}</Td>
                 <Td label="Status"><Badge tone={stormStatus(s.status ?? '', s.billedNothing).tone}>{stormStatus(s.status ?? '', s.billedNothing).word}</Badge></Td>
                 <Td><Link className="text-link underline" href={`/billing?storm=${s.id}`}>Billing</Link></Td>
               </tr>

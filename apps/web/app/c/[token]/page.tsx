@@ -1,7 +1,7 @@
 import { fmtLocal } from '@flake/core/time';
 import { Badge, Card, Eyebrow, Stat, Table, Td, Th, Wordmark } from '@flake/ui';
 import { notFound } from 'next/navigation';
-import { money, phone } from '@/lib/client';
+import { money, phone, possessive } from '@/lib/client';
 import { portalData, resolvePortal } from '@/lib/portal';
 import { RequestVisit } from './request-visit';
 
@@ -47,7 +47,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
         <div className="mx-auto max-w-3xl px-4 py-6">
           <p className="font-display text-lg font-semibold">{data.company.name}</p>
           <h1 className="font-display mt-1 text-3xl font-semibold leading-tight md:text-4xl">Service records for {data.customer.name}</h1>
-          <p className="mt-1 text-sm text-slate-300">Every visit, with the time, what was done and the driver&apos;s photos. Times are {data.company.name}&apos;s local time.</p>
+          <p className="mt-1 text-sm text-slate-300">Every visit, with the time, what was done and the driver&apos;s photos. Times are {possessive(data.company.name)} local time.</p>
         </div>
         <div className="chevrons h-1.5" aria-hidden="true" />
       </header>
@@ -92,7 +92,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
                         </div>
                         <p className="mt-0.5 text-sm text-ink-2">
                           {[
-                            (v.departed ? (v.services.length ? v.services.map((x) => SERVICE[x] ?? x).join(', ') : 'Visit') : v.on_site_now ? 'Crew on site now' : 'Crew arrived. No finish time was recorded') + (v.replow ? ' (second pass)' : ''),
+                            (v.departed ? (v.services.flatMap((x) => (SERVICE[x] ? [SERVICE[x]] : [])).join(', ') || 'Visit') : v.on_site_now ? 'Crew on site now' : 'Crew arrived. No finish time was recorded') + (v.replow ? ' (second pass)' : ''),
                             v.depth !== null ? `${v.depth}" of snow` : null,
                             v.salt?.length ? `Salt: ${v.salt.map((e) => `${e.qty} ${UNIT[e.unit] ?? e.unit}`).join(', ')}` : null,
                           ].filter(Boolean).join('. ')}
@@ -120,7 +120,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
                     <thead><tr><Th>Date</Th><Th>Time</Th><Th>Done</Th><Th>Photos</Th></tr></thead>
                     <tbody>
                       {s.visits.slice(10).map((v) => (
-                        <tr key={v.id}><Td>{day(v.arrived)}</Td><Td className="tabular">{span(v.arrived, v.departed)}</Td><Td>{v.services.map((x) => SERVICE[x] ?? x).join(', ')}</Td><Td>{v.photos.map((p, i) => <a key={p.id} className="mr-2 text-link underline" href={photo(p.id)} target="_blank" rel="noopener">{i + 1}</a>)}</Td></tr>
+                        <tr key={v.id}><Td>{day(v.arrived)}</Td><Td className="tabular">{span(v.arrived, v.departed)}</Td><Td>{v.services.flatMap((x) => (SERVICE[x] ? [SERVICE[x]] : [])).join(', ')}</Td><Td>{v.photos.map((p, i) => <a key={p.id} className="mr-2 text-link underline" href={photo(p.id)} target="_blank" rel="noopener">{i + 1}</a>)}</Td></tr>
                       ))}
                     </tbody>
                   </Table>
@@ -155,6 +155,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
                       <p className="mt-2 flex justify-between text-sm font-semibold"><span>Total</span><span className="tabular">{money(i.total_cents)}</span></p>
                       {i.pay_link ? <a className="mt-2 inline-block font-semibold text-link underline" href={i.pay_link}>View and pay</a>
                         : i.due ? <p className="mt-2 text-sm text-ink-2">{payHow}</p> : null}
+                      {i.total_cents > 0 ? <a className="ml-3 mt-2 inline-block text-sm text-link underline" href={`/api/c/${token}/invoice/${i.id}`} target="_blank" rel="noopener" data-testid="portal-invoice-pdf">Invoice PDF</a> : null}
                     </div>
                   </details>
                 </li>
@@ -178,7 +179,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
           </section>
         ) : null}
 
-        <RequestVisit token={token} company={data.company.name} sites={data.sites.filter((x) => x.active).map((x) => ({ id: x.id, label: x.label }))} />
+        <RequestVisit token={token} company={data.company.name} sites={data.customer.archived ? [] : data.sites.filter((x) => x.active).map((x) => ({ id: x.id, label: x.label }))} />
 
         <footer className="border-t border-line-faint pt-4 text-sm text-muted">
           <p>Questions about a visit or a bill? Contact {data.company.name}{data.company.phone ? ` at ${phone(data.company.phone)}` : ''}{data.company.email ? <> or <a className="text-link underline" href={`mailto:${data.company.email}`}>{data.company.email}</a></> : null}.</p>

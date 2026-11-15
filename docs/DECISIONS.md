@@ -94,3 +94,25 @@ Same basis as D10. **[J]**
 - **Tables turn into cards whenever their box is narrow**, by the box's own width, so a tablet beside the sidebar gets cards instead of a cut-off table.
 - **Retiring a lot, or archiving its customer, withdraws its unsigned quotes.** The link then can't sign a contract for a lot that's out of service. Restoring the lot means sending a new quote.
 - **The dashboard counts only active customers and lots** for the first-run card, Start a storm, the setup list and waiting quotes.
+
+## D12. Calls made Nov 15, 2026 (issues 140 to 159)
+Same basis as D10. **[J]**
+- **Driver work that syncs after the close** (a Done, an Undo, a skip after arriving) remakes the drafts still in review half a minute later, the same as a late after photo. An approved or charged bill is never changed: Billing names the lot whose visit was undone so the office can credit it.
+- **Reopening a storm keeps voided bills voided.** Closing again drafts everyone else; a voided bill comes back only with Unvoid, which remakes it from the visits.
+- **A visit stamped more than 6 hours before the storm started or 12 hours after it closed** is held with a "phone clock looks wrong" flag. The phone's time is still what's recorded.
+- **Payroll counts a whole shift in the period it started.** Two back-to-back reports add up to the hours worked. Times within an hour of a clock change carry EST or EDT.
+- **A mid-season seasonal re-sign** says what is left to bill, on the quote, the signed PDF and the lot page. If the new price is above what was billed and every installment is used up, the rest is billed as one more installment.
+- **Swapping a run's driver** leaves a visit the first driver started with them: they finish it from their link. A phone opening its own link fresh picks up its own open visit.
+- **Driver actions keep only real services and salt units.** Salt over a plausible amount per visit is held for the office as "salt missing". Photos must be JPEG, PNG, WebP, HEIC, AVIF or GIF.
+- **Restoring an archived customer brings back the lots archiving retired**, onto the routes they were on. A lot retired on its own before stays retired. Restoring a single lot also puts it back on its routes.
+- **Customer saves send only the fields changed**, with what they were. If someone else changed that field since, the save is refused with "Reload to see their changes".
+- **Each wizard step is a browser history entry**, and leaving with unsaved entries asks first.
+- **Sign-in returns to the page that asked for it.** The magic link carries it in a short-lived cookie, since the emailed link can't carry a query. Only local paths are allowed.
+- **Running late** needs a time, picked with a time picker that starts an hour from now. **A Done with no photo** says "cleared at" without a link.
+- **The lot page and customer page show the agreement in force this winter**: a renewal for next winter doesn't count, and last winter's carries over with a note until this winter's is signed. Storms from an earlier winter show their year.
+- **Texts and email are included on both plans.** Flake sets up and pays for each company's verified toll-free number and the texts it sends. The pricing page says so, with Stripe's fees as a footnote under the plans.
+- **Crew messages go in the driver's language**: the route link, call-out, invite and route-changed messages have Spanish versions, and a call-out answered "Sí" counts as yes. Customer messages stay in English for now.
+- **The mailing address and legal name live on Settings, Company**, and the dashboard's setup list asks for the address. The toll-free form shares the same fields.
+- **Rate card depth tiers are editable**: 2 to 8 tiers, each deeper than the last, as a multiple of the push price.
+- **Invoices print**: every bill past review has an invoice PDF (number FL- plus 8 characters, lines, total, terms, how to pay), for the office and on the customer's records page.
+- **The customer list shows 100 at a time**, with Newest, Name A to Z and Most sites. Newest stays the default.

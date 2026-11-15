@@ -9,6 +9,7 @@ import { asUser, requirePage } from '@/lib/auth';
 import { isUuid } from '@/lib/http';
 import { money } from '@/lib/client';
 import { invoiceStatus } from '@/lib/labels';
+import { contractStanding } from '@/lib/scope';
 
 export const metadata = { title: 'Customer' };
 
@@ -57,14 +58,16 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
         <thead><tr><Th>Site</Th><Th>Address</Th><Th>Area</Th><Th>Contract</Th></tr></thead>
         <tbody>
           {[...sites].sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active))).map((s) => {
-            // The signed agreement wins, even with a renewal waiting or declined beside it; otherwise the newest offer.
-            const k = contracts.find((x) => x.site_id === s.id && x.status === 'accepted') ?? contracts.find((x) => x.site_id === s.id && x.status !== 'void');
+            // The agreement in force this winter wins, even with a renewal waiting or declined beside it (issue 157); otherwise
+            // the newest offer.
+            const standing = contractStanding(contracts.filter((x) => x.site_id === s.id && x.status === 'accepted'), new Date(), ctx.tenant.timezone);
+            const k = contracts.find((x) => x.site_id === s.id && x.status !== 'void');
             return (
               <tr key={s.id} className={s.active ? '' : 'text-faint'} data-testid="site-row" data-active={String(Boolean(s.active))}>
-                <Td><Link className="text-link underline" href={`/sites/${s.id}`}>{s.label}</Link>{s.active ? null : <Badge className="ml-2">retired</Badge>}</Td>
-                <Td label="Address">{s.address}</Td>
+                <Td className="wrap-anywhere"><Link className="text-link underline" href={`/sites/${s.id}`}>{s.label}</Link>{s.active ? null : <Badge className="ml-2">retired</Badge>}</Td>
+                <Td label="Address" className="wrap-anywhere">{s.address}</Td>
                 <Td label="Area">{s.area_confirmed_sqft ? `${Number(s.area_confirmed_sqft).toLocaleString()} sq ft` : s.area_estimate_sqft ? `~${Number(s.area_estimate_sqft).toLocaleString()} sq ft` : 'unavailable'}</Td>
-                <Td label="Contract"><Badge tone={k?.status === 'accepted' ? 'green' : 'amber'}>{k ? ({ accepted: `signed ${k.season}`, sent: 'quote sent', draft: 'quote waiting', declined: 'quote declined' } as Record<string, string>)[k.status] ?? k.status : 'none'}</Badge></Td>
+                <Td label="Contract">{standing ? <span className={standing.tone === 'green' ? 'text-ok-ink' : 'text-warn-ink'} data-testid="contract-standing">{standing.text}</span> : <Badge tone="amber">{k ? ({ sent: 'quote sent', draft: 'quote waiting', declined: 'quote declined' } as Record<string, string>)[k.status] ?? k.status : 'none'}</Badge>}</Td>
               </tr>
             );
           })}

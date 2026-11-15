@@ -63,7 +63,7 @@ export function MobileTabs({ showDev }: { showDev: boolean }) {
   const inMore = rest.some(([href]) => isHere(path, href)) || (showDev && isHere(path, '/dev'));
   const tab = 'flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-medium';
   return (
-    <div className="md:hidden">
+    <div className="md:hidden print:hidden">
       {more ? <button type="button" aria-label="Close menu" className="fixed inset-0 z-40 bg-slate-950/40" onClick={() => setMore(false)} /> : null}
       {more ? (
         <nav ref={menu} aria-label="More" id="more-menu" data-testid="more-menu" className="fixed inset-x-0 z-50 rounded-t-popup bg-slate-950 p-3 text-slate-200 shadow-popup" style={{ bottom: 'calc(3.5rem + env(safe-area-inset-bottom))' }}>

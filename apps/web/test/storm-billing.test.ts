@@ -19,7 +19,10 @@ async function completeStorm(w: World, opts: { skipLast?: boolean } = {}) {
   const run = out.runs[0]!;
   const rs = await resolveToken(decryptToken(run.link_token_enc!));
   const stops = (await serviceDb().select().from(run_stop).where(eq(run_stop.storm_run_id, run.id))).sort((a, b) => a.seq - b.seq);
-  const base = Date.parse('2026-01-20T10:00:00Z');
+  // Inside the 2026-27 season the test contracts are signed for, and the storm started then too: a phone clock days off
+  // the storm is flagged (issue 141).
+  const base = Date.parse('2026-11-10T10:00:00Z');
+  await serviceDb().update(storm).set({ started_at: new Date(base - 3600000).toISOString() }).where(eq(storm.id, out.storm.id));
   for (const [i, s] of stops.entries()) {
     if (opts.skipLast && i === stops.length - 1) continue;
     const a = stopActions(s.id, new Date(base + i * 3600000), { depth: 3, gps: { lat: 41.48 + i * 0.001, lon: -81.8 }, minutes: 40 });
@@ -119,7 +122,8 @@ describe('storm lifecycle', () => {
     await drain();
     const [site0Visit] = await serviceDb().select().from(visit).where(eq(visit.run_stop_id, stops[2]!.id));
     const rows = await serviceDb().select().from(message_log).where(and(eq(message_log.tenant_id, w.tenantId), sql`related->>'visit_id' = ${site0Visit!.id}`));
-    expect(rows.map((r) => r.template).sort()).toEqual(['completion_report', 'done']);
+    // No photo was taken, so the notice has no "Photo:" link (issue 148).
+    expect(rows.map((r) => r.template).sort()).toEqual(['completion_report', 'done_no_photo']);
     expect(rows.find((r) => r.template === 'completion_report')!.body).toContain('Arrived:');
   });
 
@@ -285,7 +289,7 @@ describe('billing', () => {
   it('invoice lines say which site and when', async () => {
     const rows = await drafts(stormId);
     const d = rows.find((r) => r.customer_id === w.customerIds[0])!;
-    expect((d.lines as any[])[0].description).toMatch(/^Site 0: Plow per push, Jan 20, 5:00 AM$/);
+    expect((d.lines as any[])[0].description).toMatch(/^Site 0: Plow per push, Nov 10, 5:00 AM EST$/);
   });
 
   it('a card with nothing on file still gets paid through a link', async () => {

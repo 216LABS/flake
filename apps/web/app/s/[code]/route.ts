@@ -2,10 +2,19 @@ import { eq, serviceDb, short_link, visit_photo, and } from '@flake/db';
 import { NextResponse } from 'next/server';
 import { signedUrl } from '@/lib/blob';
 import { baseUrl } from '@/lib/env';
+import { clientIp, HttpError, rateLimit } from '@/lib/http';
 
 /** Own short links. A photo target gets a fresh signed URL each visit, so it never exposes a lasting link. */
-export async function GET(_req: Request, { params }: { params: Promise<{ code: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
+  // The same per-address backstop as the other public token routes (issue 152). Loose, since many phones on one carrier
+  // share an address on a storm night.
+  try {
+    rateLimit(`short:${clientIp(req)}`, 120, 60_000);
+  } catch (e) {
+    if (e instanceof HttpError) return new NextResponse('Too many requests. Wait a minute and try again.', { status: 429 });
+    throw e;
+  }
   // The link in sample messages (Settings, Text messages, and the toll-free submission). Real codes are random.
   if (code === 'sample') return NextResponse.redirect(new URL('/', baseUrl()));
   const db = serviceDb();

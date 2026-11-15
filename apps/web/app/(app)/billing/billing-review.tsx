@@ -5,7 +5,7 @@ import { Badge, Button, Card, EmptyState, Input, Table, Td, Th, buttonVariants }
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useConfirm } from '@/components/confirm';
-import { api, money } from '@/lib/client';
+import { api, money, possessive } from '@/lib/client';
 import { billingLabel, invoiceStatus } from '@/lib/labels';
 
 export interface DraftRow {
@@ -86,10 +86,12 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
 
   const revise = async (r: DraftRow, to: 'draft' | 'void' | 'paid') => {
     const ok = await ask(to === 'void'
-      ? { title: `Void ${r.customer}'s invoice?`, body: <>Nothing more is charged for it. {r.pay_link ? 'A pay link already went to the customer: deactivate it in your Stripe dashboard too.' : ''}</>, confirm: 'Void invoice', danger: true }
+      ? { title: `Void ${possessive(r.customer)} invoice?`, body: <>Nothing more is charged for it. {r.pay_link ? 'A pay link already went to the customer: deactivate it in your Stripe dashboard too.' : ''}</>, confirm: 'Void invoice', danger: true }
       : to === 'paid'
-        ? { title: `Mark ${r.customer}'s invoice paid?`, body: <>For a check, cash or other payment you already have. Nothing is charged for it. {r.pay_link ? 'A pay link already went to the customer: deactivate it in your Stripe dashboard so they don\'t pay twice.' : ''}</>, confirm: 'Mark paid' }
-        : { title: `Take ${r.customer}'s invoice back to review?`, body: 'Nothing is charged until you approve it again.', confirm: 'Back to review' });
+        ? { title: `Mark ${possessive(r.customer)} invoice paid?`, body: <>For a check, cash or other payment you already have. Nothing is charged for it. {r.pay_link ? 'A pay link already went to the customer: deactivate it in your Stripe dashboard so they don\'t pay twice.' : ''}</>, confirm: 'Mark paid' }
+        : r.status === 'void'
+          ? { title: `Bring back ${possessive(r.customer)} invoice?`, body: 'It goes back to review, remade from the visits on this storm. Nothing is charged until you approve it.', confirm: 'Unvoid' }
+          : { title: `Take ${possessive(r.customer)} invoice back to review?`, body: 'Nothing is charged until you approve it again.', confirm: 'Back to review' });
     if (ok) await run(() => api('/api/billing/revise', { body: { draftId: r.id, to } }));
   };
   // A bill nobody charges through Stripe goes to the customer from here, with a link to their records page.
@@ -154,8 +156,11 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
               {r.status === 'approved' || r.status === 'failed' ? <Button size="sm" variant="outline" disabled={busy} data-testid="mark-paid" onClick={() => void revise(r, 'paid')}>Mark paid</Button> : null}
               {r.status === 'approved' || r.status === 'failed' ? <Button size="sm" variant="ghost" disabled={busy} data-testid="unapprove" onClick={() => void revise(r, 'draft')}>Back to review</Button> : null}
               {['draft', 'approved', 'failed'].includes(r.status) ? <Button size="sm" variant="ghost" disabled={busy} data-testid="void" onClick={() => void revise(r, 'void')}>Void</Button> : null}
+              {r.status === 'void' ? <Button size="sm" variant="ghost" disabled={busy} data-testid="unvoid" onClick={() => void revise(r, 'draft')}>Unvoid</Button> : null}
             </div>
             {r.pay_link ? <p className="mt-1 text-sm">Pay link sent: <a className="text-link underline" href={r.pay_link}>open</a></p> : null}
+            {/* A printable invoice for a customer who pays by check (issue 146), once the bill is past review. */}
+            {!['draft', 'void'].includes(r.status) && r.subtotal_cents > 0 ? <a className="mt-1 inline-block text-sm text-link underline" href={`/api/billing/${r.id}/pdf`} target="_blank" rel="noopener" data-testid="invoice-pdf">Invoice PDF</a> : null}
             {r.lines.length ? (
               <div className="mt-2"><Table>
                 <thead><tr><Th>Line</Th><Th>Qty</Th><Th>Amount</Th></tr></thead>

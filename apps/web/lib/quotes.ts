@@ -1,10 +1,10 @@
-import { and, asService, contract, customer, desc, eq, gt, inArray, isNotNull, ne, notInArray, or, serviceDb, site, sms_consent, tenant, withUser } from '@flake/db';
-import { billedBy, paymentText } from './scope';
+import { and, asService, contract, customer, desc, eq, gt, inArray, installment_invoice, isNotNull, lt, ne, notInArray, or, serviceDb, site, sms_consent, sql, tenant, withUser } from '@flake/db';
+import { billedBy, paymentText, type PriorBilled } from './scope';
 import { CUSTOMER_CONSENT_TEXT } from '@flake/core/messages';
 import { quoteAccept, quoteCreate, quoteDecline } from '@flake/contracts';
 import { z } from 'zod';
 import { phone } from './client';
-import { baseUrl } from './env';
+import { baseUrl, emailConfigured } from './env';
 import { HttpError } from './http';
 import { notifyOffice, plainText, queueNotify, shortLink } from './messaging';
 import { getProviders } from './providers';
@@ -46,7 +46,8 @@ export async function createQuote(ctx: Ctx, input: z.infer<typeof quoteCreate>) 
     const link = await shortLink(ctx.tenantId, `/q/${token}`);
     await queueNotify(row.tenant.id, { phone: row.customer.phone_e164, email: row.customer.email }, { template: 'quote', vars: { link }, subject: `${row.tenant.name}: your snow service quote`, key: `quote:${row.contract.id}`, related: { contract_id: row.contract.id } });
   }
-  return { contract: row.contract, url, token, lots: row.lots };
+  // Whether this quote went out by email now (issue 152): only when it was sent, to a customer with an address.
+  return { contract: row.contract, url, token, lots: row.lots, emailed: Boolean(input.send && row.customer.email && emailConfigured()) };
 }
 
 /**
@@ -77,13 +78,29 @@ async function newerQuote(c: typeof contract.$inferSelect) {
   return Boolean(n);
 }
 
+/**
+ * Seasonal installments already billed for this lot and season under earlier agreements (issue 156), so a re-sign's
+ * quote, PDF and lot page say what is left to bill. Null when nothing was billed before, or the price isn't seasonal.
+ */
+export async function priorBilled(c: Pick<typeof contract.$inferSelect, 'id' | 'tenant_id' | 'site_id' | 'season' | 'created_at' | 'services'>): Promise<PriorBilled | null> {
+  if (!(c.services as { pricing?: { type?: string } }[]).some((x) => x.pricing?.type === 'seasonal')) return null;
+  const db = serviceDb();
+  const earlier = await db.select({ id: contract.id, n: contract.installments_billed }).from(contract)
+    .where(and(eq(contract.tenant_id, c.tenant_id), eq(contract.site_id, c.site_id), eq(contract.season, c.season), ne(contract.id, c.id), lt(contract.created_at, c.created_at!), inArray(contract.status, ['accepted', 'void'])));
+  if (!earlier.length) return null;
+  const [{ cents }] = await db.select({ cents: sql<number>`coalesce(sum(${installment_invoice.amount_cents}), 0)::int` }).from(installment_invoice)
+    .where(and(eq(installment_invoice.tenant_id, c.tenant_id), inArray(installment_invoice.contract_id, earlier.map((e) => e.id)))) as [{ cents: number }];
+  const count = Math.max(0, ...earlier.map((e) => e.n));
+  return cents > 0 || count > 0 ? { cents, count } : null;
+}
+
 /** What the customer page shows. Nothing here is Flake's fee or anything internal. */
 export async function getQuote(token: string) {
   const r = await byToken(token);
-  const view = (c: typeof contract.$inferSelect) => ({ id: c.id, season: c.season, services: c.services, salt_pricing: c.salt_pricing, terms_md: c.terms_md, status: c.status, accepted_at: c.accepted_at, accepted_name: c.accepted_name, declined_at: c.declined_at });
+  const view = async (c: typeof contract.$inferSelect) => ({ id: c.id, season: c.season, services: c.services, salt_pricing: c.salt_pricing, terms_md: c.terms_md, status: c.status, accepted_at: c.accepted_at, accepted_name: c.accepted_name, declined_at: c.declined_at, prior: await priorBilled(c) });
   return {
     company: r.tenant.name,
-    lots: [...r.lots].reverse().map((l) => ({ site: { label: l.site.label, address: l.site.address, area_sqft: l.site.area_confirmed_sqft ?? l.site.area_estimate_sqft }, contract: view(l.contract) })),
+    lots: await Promise.all([...r.lots].reverse().map(async (l) => ({ site: { label: l.site.label, address: l.site.address, area_sqft: l.site.area_confirmed_sqft ?? l.site.area_estimate_sqft }, contract: await view(l.contract) }))),
     customer: { name: r.customer.name, email: r.customer.email, phone: r.customer.phone_e164, billing_mode: r.customer.billing_mode },
     site: { label: r.site.label, address: r.site.address, area_sqft: r.site.area_confirmed_sqft ?? r.site.area_estimate_sqft },
     contract: { id: r.contract.id, season: r.contract.season, services: r.contract.services, salt_pricing: r.contract.salt_pricing, terms_md: r.contract.terms_md, status: r.contract.status, accepted_at: r.contract.accepted_at, accepted_name: r.contract.accepted_name, declined_at: r.contract.declined_at },
@@ -122,7 +139,7 @@ type Lot = Awaited<ReturnType<typeof byToken>>['lots'][number];
 async function acceptLot(r: Lot, input: z.infer<typeof quoteAccept>, ip: string | null, at: string): Promise<'took' | 'void' | 'already'> {
   const db = serviceDb();
   const { renderContractPdf } = await import('@flake/providers/pdf');
-  const pdf = await renderContractPdf({ company: r.tenant.name, customer: r.customer.name, site: `${r.site.label}, ${r.site.address}`, season: r.contract.season, services: r.contract.services, payment: paymentText(r.customer.billing_mode, r.tenant.name, Boolean(r.tenant.stripe_account_id && r.tenant.stripe_charges_enabled), billedBy([r.contract])), terms: r.contract.terms_md, acceptance: { name: input.name, at, ip } });
+  const pdf = await renderContractPdf({ company: r.tenant.name, customer: r.customer.name, site: `${r.site.label}, ${r.site.address}`, season: r.contract.season, services: r.contract.services, prior: await priorBilled(r.contract), payment: paymentText(r.customer.billing_mode, r.tenant.name, Boolean(r.tenant.stripe_account_id && r.tenant.stripe_charges_enabled), billedBy([r.contract])), terms: r.contract.terms_md, acceptance: { name: input.name, at, ip }, timezone: r.tenant.timezone });
   // Its own file per acceptance, so a second tap that loses the race below can't overwrite the signed copy.
   const pdfPath = `${r.tenant.id}/${r.contract.id}-${Date.parse(at)}.pdf`;
   await putBlob('contracts', pdfPath, pdf, 'application/pdf', { upsert: true });

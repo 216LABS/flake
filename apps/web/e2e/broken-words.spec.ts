@@ -63,15 +63,22 @@ test('no short label on any screen breaks a word across two lines at 375 wide', 
     const [crew] = await sql`select c.id, c.language from crew_member c join storm_run r on r.crew_id = c.id where r.id = ${runs[0]!.id}`;
     await sql`update crew_member set language = ${lang} where id = ${crew!.id}`;
     const ctx = await browser.newContext({ ...devices['iPhone 13'], viewport: { width: 375, height: 667 } });
-    const d = await ctx.newPage();
-    await d.goto(runs[0]!.link);
-    await expect(d.getByTestId('next-stop')).toBeVisible();
-    for (const w of await brokenWords(d)) found.push(`driver (${lang}): ${w}`);
-    await d.getByTestId('arrive').click();
-    await expect(d.getByTestId('onsite')).toBeVisible();
-    for (const w of await brokenWords(d)) found.push(`driver on site (${lang}): ${w}`);
-    await sql`update crew_member set language = ${crew!.language} where id = ${crew!.id}`;
-    await ctx.close();
+    try {
+      const d = await ctx.newPage();
+      await d.goto(runs[0]!.link);
+      // The first pass arrived at stop 1, so a fresh phone on the same link picks that visit up (issue 143) and opens
+      // on site; the first pass sees the next-stop screen.
+      await expect(d.getByTestId('next-stop').or(d.getByTestId('onsite'))).toBeVisible();
+      if (await d.getByTestId('next-stop').isVisible()) {
+        for (const w of await brokenWords(d)) found.push(`driver (${lang}): ${w}`);
+        await d.getByTestId('arrive').click();
+      }
+      await expect(d.getByTestId('onsite')).toBeVisible();
+      for (const w of await brokenWords(d)) found.push(`driver on site (${lang}): ${w}`);
+    } finally {
+      await sql`update crew_member set language = ${crew!.language} where id = ${crew!.id}`;
+      await ctx.close();
+    }
   }
   const { url } = await (await page.request.get(`/api/customers/${c!.id}/portal`)).json();
   await page.goto(url);

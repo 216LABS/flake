@@ -1,6 +1,7 @@
 import { Wordmark } from '@flake/ui';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { SessionLink } from './session-link';
 
 export default function MarketingLayout({ children }: { children: ReactNode }) {
   return (
@@ -13,7 +14,7 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
             <Link className="hover:text-white" href="/tools/snow-removal-contract">Contract builder</Link>
             <Link className="hover:text-white" href="/tools/snow-removal-pricing-calculator">Pricing calculator</Link>
           </nav>
-          <Link href="/login" className="ml-auto text-sm font-semibold text-white underline-offset-2 hover:underline">Sign in</Link>
+          <SessionLink className="ml-auto text-sm font-semibold text-white underline-offset-2 hover:underline" signedOut="Sign in" />
         </div>
       </header>
       <main className="flex-1">{children}</main>

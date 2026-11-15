@@ -4,7 +4,7 @@ import { todayIn } from '@flake/core/time';
 import { eq, site, sql, tenant } from '@flake/db';
 import { itemRoutes } from '@/lib/crud';
 import { HttpError } from '@/lib/http';
-import { requireLiveCustomer, takeSitesOffWork } from '@/lib/sites';
+import { requireLiveCustomer, restoreRoutes, takeSitesOffWork } from '@/lib/sites';
 
 // Sites have visit history, so "delete" retires them instead of removing them.
 export const { GET, PATCH, DELETE } = itemRoutes(site as any, siteUpdate, {
@@ -21,6 +21,10 @@ export const { GET, PATCH, DELETE } = itemRoutes(site as any, siteUpdate, {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`sites:${s.tenant_id}`}))`);
     const [{ n } = { n: 0 }] = await tx.select({ n: sql<number>`count(*)::int` }).from(site).where(eq(site.active, true));
     if (n >= FREE_SITE_LIMIT) throw new HttpError(402, `The free plan covers ${FREE_SITE_LIMIT} sites. Upgrade to Pro to restore this one.`, 'site_limit');
+  },
+  // Back on the routes it was on (issue 152), once it's live again.
+  afterUpdate: async (tx, id, body, tenantId) => {
+    if (body.active === true) await restoreRoutes(tx, tenantId, [id]);
   },
   afterDelete: (tx, id) => takeSitesOffWork(tx, [id]),
 });

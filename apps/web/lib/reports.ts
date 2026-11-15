@@ -18,7 +18,9 @@ export function period(from: string | undefined, to: string | undefined, tz: str
   const backward = Boolean(typedFrom && typedFrom > end);
   const start = typedFrom && !backward ? typedFrom : localHm(zonedDayStart(end, tz).getTime() - 13 * DAY, tz).date;
   const next = localHm(zonedDayStart(end, tz).getTime() + DAY + 3 * 3_600_000, tz).date;
-  return { from: start, to: end, startAt: zonedDayStart(start, tz).toISOString(), endAt: zonedDayStart(next, tz).toISOString(), backward: backward ? { from: typedFrom!, to: end } : null };
+  // A date typed in the link that isn't a real day (issue 152) is named, not quietly replaced.
+  const invalid = [from && !ymd.test(from) ? `From "${from.slice(0, 20)}"` : null, to && !ymd.test(to) ? `To "${to.slice(0, 20)}"` : null].filter((x): x is string => Boolean(x));
+  return { from: start, to: end, startAt: zonedDayStart(start, tz).toISOString(), endAt: zonedDayStart(next, tz).toISOString(), backward: backward ? { from: typedFrom!, to: end } : null, invalid };
 }
 
 type Period = ReturnType<typeof period>;
@@ -26,11 +28,17 @@ type Period = ReturnType<typeof period>;
 const ms = (v: unknown) => new Date(v as string).getTime();
 const rowsOf = <T>(r: unknown) => (Array.isArray(r) ? r : ((r as { rows?: T[] }).rows ?? [])) as T[];
 
+/** Taps this far either side of the period are read too, so an overnight shift isn't cut at midnight (issue 140). */
+const SHIFT_REACH_MS = 12 * 3_600_000;
+
 /**
  * Shifts from what each driver's phone sent: route taps, GPS fixes and visits, first to last,
- * split on a two-hour quiet gap. Times are the phone's own clock, rounded to the minute.
+ * split on a two-hour quiet gap. Times are the phone's own clock, rounded to the minute. A whole shift counts in the
+ * period it started in, the usual payroll rule, so two back-to-back reports add up to the hours worked.
  */
 export async function crewHours(tx: Tx, p: Period, tz: string): Promise<(HoursRow & { crewId: string })[]> {
+  const from = new Date(Date.parse(p.startAt) - SHIFT_REACH_MS).toISOString();
+  const until = new Date(Date.parse(p.endAt) + SHIFT_REACH_MS).toISOString();
   const ev = rowsOf<{ crew_id: string; storm_id: string; t: string; n: number }>(await tx.execute(sql`
     with ev as (
       select r.crew_id, r.storm_id, a.device_at as t from driver_action a join storm_run r on r.id = a.storm_run_id
@@ -42,26 +50,32 @@ export async function crewHours(tx: Tx, p: Period, tz: string): Promise<(HoursRo
       select v.crew_id, v.storm_id, v.departed_device_at from visit v where v.departed_device_at is not null
     )
     select crew_id, storm_id, date_trunc('minute', t) as t, count(*)::int as n from ev
-    where crew_id is not null and t >= ${p.startAt} and t < ${p.endAt}
+    where crew_id is not null and t >= ${from} and t < ${until}
     group by 1, 2, 3`));
   if (!ev.length) return [];
   const names = rowsOf<{ id: string; name: string; kind: 'employee' | 'sub' }>(await tx.execute(sql`select id, name, kind from crew_member`));
   const storms = rowsOf<{ id: string; name: string }>(await tx.execute(sql`select id, name from storm`));
   const done = rowsOf<{ crew_id: string; storm_id: string; t: string }>(await tx.execute(sql`
     select crew_id, storm_id, departed_device_at as t from visit
-    where departed_device_at >= ${p.startAt} and departed_device_at < ${p.endAt}`));
+    where departed_device_at >= ${from} and departed_device_at < ${until}`));
   const groups = new Map<string, number[]>();
   for (const e of ev) {
     const k = `${e.crew_id}|${e.storm_id}`;
     groups.set(k, [...(groups.get(k) ?? []), ms(e.t)]);
   }
-  const fmt = (ms: number) => fmtLocal(ms, tz, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  // Within an hour of a clock change, 1:30 AM can happen twice, so those times carry EST or EDT (issue 145).
+  const zone = (t: number) => fmtLocal(t, tz, { timeZoneName: 'short' }).split(' ').pop();
+  const fmt = (ms: number) => {
+    const near = zone(ms - 3_600_000) !== zone(ms) || zone(ms + 3_600_000) !== zone(ms);
+    return fmtLocal(ms, tz, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', ...(near ? { timeZoneName: 'short' } : {}) });
+  };
   const out: (HoursRow & { crewId: string; start: number })[] = [];
   for (const [k, times] of groups) {
     const [crewId, stormId] = k.split('|') as [string, string];
     const c = names.find((n) => n.id === crewId);
     const shifts = shiftsFrom(times);
-    for (const s of shifts) {
+    const startsIn = (s: { start: number }) => s.start >= Date.parse(p.startAt) && s.start < Date.parse(p.endAt);
+    for (const s of shifts.filter(startsIn)) {
       const stops = done.filter((d) => d.crew_id === crewId && d.storm_id === stormId && ms(d.t) >= s.start && ms(d.t) < s.end + 60_000).length;
       out.push({
         crewId, start: s.start, crew: c?.name ?? 'Removed crew member', kind: c?.kind ?? 'employee', storm: storms.find((x) => x.id === stormId)?.name ?? 'Storm',

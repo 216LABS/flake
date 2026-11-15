@@ -2,7 +2,7 @@
 
 import { Button, Card, Label, Select, Textarea } from '@flake/ui';
 import { useState } from 'react';
-import { api } from '@/lib/client';
+import { api, possessive } from '@/lib/client';
 
 /** A lot drifted back in, or a delivery is coming early. The office hears about it right away. */
 export function RequestVisit({ token, company, sites }: { token: string; company: string; sites: { id: string; label: string }[] }) {
@@ -18,7 +18,7 @@ export function RequestVisit({ token, company, sites }: { token: string; company
         <p className="mt-2 text-sm" role="status" data-testid="request-sent">Sent. {company} has your request and will be in touch.</p>
       ) : (
         <>
-          <p className="mt-1 text-sm text-muted">Ask for another visit. Your request goes straight to {company}'s office.</p>
+          <p className="mt-1 text-sm text-muted">Ask for another visit. Your request goes straight to {possessive(company)} office.</p>
           {sites.length > 1 ? (
             <div className="mt-3"><Label htmlFor="req-site">Which lot</Label><Select id="req-site" value={siteId} onChange={(e) => setSiteId(e.target.value)}>{sites.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</Select></div>
           ) : null}

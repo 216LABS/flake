@@ -5,7 +5,7 @@ import { quotableSeasons } from '@flake/contracts';
 import { suggestPrice, type RateCard } from '@flake/core/quote';
 import { Badge, Button, Card, Input, Label, PageHeader, Segmented, Select, Progress } from '@flake/ui';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { api, dollarsToCents, money } from '@/lib/client';
@@ -22,18 +22,37 @@ export const sameStreet = (typed: string, found: string) => streetOf(typed) === 
 
 const STEPS = ['Customer', 'Property', 'Pricing', 'Pins', 'Route', 'Quote'];
 const PIN_KINDS = ['stake', 'pile', 'ada', 'entrance', 'hazard', 'other'];
+const PIN_WORD: Record<string, string> = { stake: 'Stake', pile: 'Snow pile', ada: 'Accessible parking', entrance: 'Entrance', hazard: 'Hazard', other: 'Other' };
 type PricingType = 'per_push' | 'per_inch_tier' | 'per_event' | 'seasonal' | 'hourly';
 
-export function Wizard({ layers, rateCard, routes, existing, others = [] }: { others?: { id: string; name: string }[]; layers: TileLayers; rateCard: RateCard; routes: { id: string; name: string; site_ids: string[] }[]; existing?: { id: string; name: string; kind: string; email: string } }) {
+/** The same lot: the house number and the street, however the suffix is written. */
+const sameLot = (a: string, b: string) => {
+  const num = (s: string) => /^\s*(\d+[a-z]?)\b/i.exec(s)?.[1]?.toLowerCase();
+  return Boolean(num(a)) && num(a) === num(b) && sameStreet(a, b);
+};
+
+export function Wizard({ layers, rateCard, routes, existing, others = [], knownLots = [] }: { others?: { id: string; name: string }[]; knownLots?: { customer_id: string; customer: string; label: string; address: string }[]; layers: TileLayers; rateCard: RateCard; routes: { id: string; name: string; site_ids: string[] }[]; existing?: { id: string; name: string; kind: string; email: string } }) {
   const router = useRouter();
   const firstStep = existing ? 1 : 0;
-  const [step, setStep] = useState(firstStep);
+  // Each step is a history entry (?step=2), so the browser's Back, or a swipe back on a phone, goes to the step before
+  // instead of leaving the wizard and losing what was typed (issue 144). A step not reached yet can't be opened by URL.
+  const params = useSearchParams();
+  const [reached, setReached] = useState(firstStep);
+  const wanted = Number(params.get('step'));
+  const step = Number.isInteger(wanted) && wanted >= firstStep ? Math.min(wanted, reached) : firstStep;
+  const setStep = (n: number) => {
+    setReached((r) => Math.max(r, n));
+    const q = new URLSearchParams(window.location.search);
+    q.set('step', String(n));
+    window.history.pushState(null, '', `?${q.toString()}`);
+  };
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [c, setC] = useState({ name: existing?.name ?? '', kind: existing?.kind ?? 'commercial', contact_name: '', phone_e164: '', email: existing?.email ?? '', billing_mode: 'card_on_file' });
   const twin = existing || !c.name.trim() ? null : others.find((o) => o.name.trim().toLowerCase() === c.name.trim().toLowerCase()) ?? null;
   const [address, setAddress] = useState('');
   const [hit, setHit] = useState<{ label: string; lat: number; lon: number } | null>(null);
+  const lotTwin = hit ? knownLots.find((l) => sameLot(l.address, hit.label.replace(' (mock geocode)', ''))) ?? null : null;
   const [estimate, setEstimate] = useState<{ sqft: number | null; method: string; attribution: string[]; parcel_id?: string; county?: string } | null>(null);
   const [polygon, setPolygon] = useState<Polygon | MultiPolygon | null>(null);
   const [sqft, setSqft] = useState<number | null>(null);
@@ -59,6 +78,23 @@ export function Wizard({ layers, rateCard, routes, existing, others = [] }: { ot
   const [quoteUrl, setQuoteUrl] = useState<string | null>(null);
   const [emailed, setEmailed] = useState(false);
   const [lots, setLots] = useState(1);
+  // A new step takes keyboard focus (issue 158), so the next Tab is inside it, not back at the skip link and the nav.
+  const stepCard = useRef<HTMLDivElement>(null);
+  const shownStep = useRef(step);
+  useEffect(() => {
+    if (shownStep.current === step) return;
+    shownStep.current = step;
+    const first = stepCard.current?.querySelector<HTMLElement>('input:not([type=hidden]):not([disabled]), select, textarea');
+    (first ?? stepCard.current)?.focus();
+  }, [step]);
+  // Closing the tab or leaving the site mid-wizard asks first, while anything typed isn't saved yet.
+  const dirty = !quoteUrl && Boolean((existing ? '' : c.name.trim()) || address.trim());
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
   const saved = useRef<{ customerId?: string; siteId?: string; pins: number; routed: boolean }>({ customerId: existing?.id, pins: 0, routed: false });
 
   const suggestion = useMemo(() => suggestPrice({ sqft: sqft ?? 0, walks_lf: walkLf }, rateCard), [sqft, walkLf, rateCard]);
@@ -203,7 +239,7 @@ export function Wizard({ layers, rateCard, routes, existing, others = [] }: { ot
     <>
       <PageHeader title={existing ? `Add a site for ${existing.name}` : 'New customer'} subtitle={`Step ${step + 1} of ${STEPS.length}: ${STEPS[step]}`} />
       <Progress className="mb-4 max-w-3xl" value={step + 1} max={STEPS.length} label="Steps finished" />
-      <Card className="max-w-3xl">
+      <Card className="max-w-3xl" ref={stepCard} tabIndex={-1} aria-label={`Step ${step + 1}: ${STEPS[step]}`} data-testid="wizard-step">
         {step === 0 ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2"><Label htmlFor="name">Name</Label><Input id="name" data-testid="c-name" value={c.name} onChange={(e) => setC({ ...c, name: e.target.value })} /></div>
@@ -239,6 +275,7 @@ export function Wizard({ layers, rateCard, routes, existing, others = [] }: { ot
             ) : null}
             {hit ? (
               <div className="mt-3">
+                {lotTwin && lotTwin.customer_id !== existing?.id ? <p className="mb-2 rounded-md bg-warn-tint p-2 text-sm text-warn-ink" data-testid="lot-twin">You already have {lotTwin.customer}&apos;s {lotTwin.label} at {lotTwin.address}. <Link className="font-semibold underline" href={`/customers/${lotTwin.customer_id}`}>Open it instead</Link>, or keep going if this is a different lot.</p> : null}
                 <p className="mb-2 text-sm" data-testid="address-saved">Address on file: <b>{hit.label.replace(' (mock geocode)', '')}</b>{sameStreet(address, hit.label) ? null : <span className="ml-1 text-warn-ink">(not the street you typed)</span>}</p>
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <Badge tone="amber" data-testid="estimate-label">Estimate, drag to adjust</Badge>
@@ -292,7 +329,7 @@ export function Wizard({ layers, rateCard, routes, existing, others = [] }: { ot
           <div>
             <p className="mb-2 text-sm text-muted">Optional. Pick a type, then tap the map to drop a pin drivers will see.</p>
             <div className="mb-2 flex flex-wrap gap-2">
-              {PIN_KINDS.map((k) => <Button key={k} size="sm" variant={pinKind === k ? 'accent' : 'outline'} onClick={() => setPinKind(k)}>{k}</Button>)}
+              {PIN_KINDS.map((k) => <Button key={k} size="sm" variant={pinKind === k ? 'accent' : 'outline'} onClick={() => setPinKind(k)}>{PIN_WORD[k] ?? k}</Button>)}
               <Button size="sm" variant="outline" data-testid="add-pin" onClick={() => hit && setPins([...pins, { kind: pinKind, lat: hit.lat, lon: hit.lon, note: '' }])}>Add at center</Button>
             </div>
             {hit ? <MapView layers={layers} base="satellite" center={{ lat: hit.lat, lon: hit.lon }} zoom={18} polygon={polygon} mode="pin" pins={pins.map((p, i) => ({ id: String(i), lat: p.lat, lon: p.lon, label: p.kind }))} onPin={(lat, lon) => setPins((list) => [...list, { kind: pinKind, lat, lon, note: '' }])} /> : null}

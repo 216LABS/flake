@@ -8,7 +8,7 @@ import QRCode from 'qrcode';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StopSheet } from './stop-sheet';
 import { sendRoutesBody } from './send-routes';
-import { api } from '@/lib/client';
+import { api, possessive } from '@/lib/client';
 import { stormStatus } from '@/lib/labels';
 import { useConfirm } from '@/components/confirm';
 import { MapView, type MapPin, type TileLayers } from '@/components/map-view';
@@ -110,6 +110,16 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
     };
   }, []);
 
+  // A 200-stop storm is one long list (issue 146): find a lot by name or address, or show one status.
+  const [boardFind, setBoardFind] = useState('');
+  const [boardStatus, setBoardStatus] = useState('');
+  const shows = (s: any) => (!boardStatus || s.status === boardStatus) && (!boardFind.trim() || `${s.label} ${s.address ?? ''}`.toLowerCase().includes(boardFind.trim().toLowerCase()));
+  // Swapping drivers while one is on a lot (issue 154): they can still finish it from their link, so say so first.
+  const reassign = async (r: any, crewId: string) => {
+    const onsite = (r.stops as any[]).filter((x) => x.status === 'onsite');
+    if (onsite.length && r.crew?.id !== crewId && !(await ask({ title: `Change the driver for ${r.name}?`, body: `${r.crew?.name ?? 'The current driver'} is on site at ${onsite.map((x) => x.label).join(', ')}. They can still finish ${onsite.length === 1 ? 'it' : 'those'} from their link, and the new driver gets the rest.`, confirm: 'Change driver' }))) return;
+    await act(() => api(`/api/runs/${r.id}`, { method: 'PATCH', body: { crew_id: crewId } }));
+  };
   const act = async (fn: () => Promise<unknown>) => {
     setError(null);
     try {
@@ -222,7 +232,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
             <div className="col-span-2 flex flex-wrap items-center gap-2 sm:col-span-1">
               <Badge tone={stormStatus(live.storm.status).tone} data-testid="storm-closed">{stormStatus(live.storm.status).word}</Badge>
               {canEdit && live.storm.status === 'closed' ? <Button className={DARK_RING} variant="outline" data-testid="reopen-storm" onClick={async () => {
-                if (!(await ask({ title: 'Reopen this storm?', body: 'Route links work again and drivers can keep going. Invoice drafts still in review are dropped, and made again when you close it.', confirm: 'Reopen' }))) return;
+                if (!(await ask({ title: 'Reopen this storm?', body: 'Route links work again and drivers can keep going. Invoice drafts still in review are dropped, and made again when you close it. Bills you voided stay voided.', confirm: 'Reopen' }))) return;
                 await act(() => api(`/api/storms/${stormId}/reopen`, { method: 'POST' }));
                 router.refresh();
               }}>Reopen</Button> : null}
@@ -268,7 +278,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
         </Card>
       ) : null}
 
-      {notify ? <NotifyPanel stops={allStops} onClose={() => setNotify(false)} onSend={(siteIds, template, time) => act(async () => {
+      {notify ? <NotifyPanel tz={tz} stops={allStops} onClose={() => setNotify(false)} onSend={(siteIds, template, time) => act(async () => {
         setNotice(null);
         const out = await api<{ queued: number; unreachable: string[] }>(`/api/storms/${stormId}/notify`, { body: { siteIds, template, time } });
         setNotify(false);
@@ -280,7 +290,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
           <div className="flex flex-wrap items-center gap-4">
             <img src={linkFor.qr} alt={`QR code for ${linkFor.name}`} width={160} height={160} />
             <div className="min-w-0 flex-1">
-              <p className="font-medium">{linkFor.name}&apos;s route link</p>
+              <p className="font-medium">{possessive(linkFor.name)} route link</p>
               <Input readOnly value={linkFor.link} data-testid="run-link" className="mt-1" />
               <div className="mt-2 flex flex-wrap gap-2">
                 {/* From the dispatcher's own phone, until Flake's texting is live (issue 84). The link goes straight to the
@@ -297,6 +307,21 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
 
       {showMap ? <div className="mb-4"><MapView layers={layers} center={{ lat: allStops[0]?.lat ?? 41.48, lon: allStops[0]?.lon ?? -81.8 }} zoom={12} pins={pins} className="h-80" /></div> : null}
 
+      {allStops.length > 12 ? (
+        <div className="mb-3 flex flex-wrap gap-2" role="search" data-testid="board-filter">
+          <Input type="search" className="min-w-0 flex-1 sm:max-w-xs" aria-label="Find a lot on this storm" placeholder="Find a lot" value={boardFind} onChange={(e) => setBoardFind(e.target.value)} data-testid="board-find" />
+          <Select aria-label="Show stops" className="w-auto" value={boardStatus} onChange={(e) => setBoardStatus(e.target.value)} data-testid="board-status">
+            <option value="">Every stop</option>
+            <option value="open">Not started</option>
+            <option value="enroute">On the way</option>
+            <option value="onsite">On site</option>
+            <option value="problem">Problem</option>
+            <option value="done">Done</option>
+            <option value="skipped">Skipped</option>
+          </Select>
+          {boardFind.trim() || boardStatus ? <span className="self-center text-sm text-muted" data-testid="board-filter-count">{allStops.filter(shows).length} of {allStops.length} stops</span> : null}
+        </div>
+      ) : null}
       {live.runs.length > 1 ? (
         <nav aria-label="Trucks" className="-mx-1 mb-3 flex gap-2 overflow-x-auto px-1 pb-1 md:hidden" data-testid="truck-switcher">
           {live.runs.map((r: any) => (
@@ -329,7 +354,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
                 <div className="flex items-baseline justify-between gap-2"><div className="font-display text-lg font-semibold leading-tight">{r.name}{r.pass > 1 ? ` (pass ${r.pass})` : ''}</div><div className="tabular shrink-0 text-xs font-medium text-muted" data-testid="run-progress">{runProgress(r.stops)}</div></div>
                 <div className="text-sm text-muted">{r.crew?.name ?? 'No driver'}{r.crew?.kind === 'sub' ? ' (sub)' : ''}{r.crew?.callout_reply ? `, replied ${r.crew.callout_reply}` : ''}</div>
                 {editable ? (
-                  <Select aria-label={`Driver for ${r.name}`} data-testid="assign-driver" className="mt-1 h-8 py-0 text-xs" value={r.crew?.id ?? ''} onChange={(e) => e.target.value && void act(() => api(`/api/runs/${r.id}`, { method: 'PATCH', body: { crew_id: e.target.value } }))}>
+                  <Select aria-label={`Driver for ${r.name}`} data-testid="assign-driver" className="mt-1 h-8 py-0 text-xs" value={r.crew?.id ?? ''} onChange={(e) => e.target.value && void reassign(r, e.target.value)}>
                     <option value="">Choose a driver</option>
                     {live.crew.map((c: any) => <option key={c.id} value={c.id}>{c.name}{c.kind === 'sub' ? ' (sub)' : ''}</option>)}
                   </Select>
@@ -342,12 +367,12 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
                 {editable && r.stops.length > 1 ? <RunPlan runId={r.id} onDone={() => void load()} /> : null}
               </header>
               <ul className="space-y-2">
-                {r.stops.map((s: any) => (
+                {r.stops.map((s: any, n: number) => !shows(s) ? null : (
                   <li key={s.id} draggable={editable && s.status !== 'onsite' && s.status !== 'done'} onDragStart={(e) => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragging(s.id); }} onDragEnd={() => setDragging(null)} data-testid="stop-card" data-status={s.status} className={cn('rounded-row border border-line-faint bg-surface p-2 text-sm shadow-drop', (s.status === 'done' || s.status === 'skipped') && 'border-transparent bg-tint shadow-none', s.status === 'onsite' && 'border-beacon bg-warn-tint ring-2 ring-beacon', s.late && 'border-danger bg-danger-tint')}>
                     {/* The name opens the stop's visits and photos (issue 41); the buttons below stay their own targets. */}
-                    <button type="button" className="-m-1 block w-[calc(100%+0.5rem)] rounded p-1 text-left hover:bg-tint focus-visible:outline-2 focus-visible:outline-ink" data-testid="stop-open" aria-label={`${s.label}: details and photos`} onClick={() => setOpenStop(s.id)}>
+                    <button type="button" className="-m-1 block w-[calc(100%+0.5rem)] rounded p-1 text-left hover:bg-tint focus-visible:outline-2 focus-visible:outline-ink" data-testid="stop-open" aria-label={`${n + 1}. ${s.label}: details and photos`} onClick={() => setOpenStop(s.id)}>
                       <span className="flex items-start justify-between gap-2">
-                        <span className="min-w-0 font-medium wrap-anywhere">{s.seq}. {s.label}</span>
+                        <span className="min-w-0 font-medium wrap-anywhere">{n + 1}. {s.label}</span>
                         <Badge className="shrink-0" tone={STATUS_TONE[s.status]}>{STATUS_WORD[s.status] ?? s.status}</Badge>
                       </span>
                       <span className="block text-xs text-muted">{s.customer}</span>
@@ -413,11 +438,24 @@ function runProgress(stops: { status: string }[]) {
   return `${done} done${skipped ? `, ${skipped} skipped` : ''} of ${stops.length}`;
 }
 
-function NotifyPanel({ stops, onSend, onClose }: { stops: any[]; onSend: (siteIds: string[], template: string, time: string) => void; onClose: () => void }) {
+/** An hour from now in the company's time zone, rounded up to the quarter hour, as an <input type="time"> value. */
+function inAnHour(tz: string) {
+  const at = new Date(Math.ceil((Date.now() + 3_600_000) / 900_000) * 900_000);
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(at).map((x) => [x.type, x.value]));
+  return `${p.hour}:${p.minute}`;
+}
+/** "14:30" from the time picker as "2:30 PM", the way the message reads it. */
+const pickedClock = (hm: string) => {
+  const [h, m] = hm.split(':').map(Number) as [number, number];
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+};
+
+function NotifyPanel({ tz, stops, onSend, onClose }: { tz: string; stops: any[]; onSend: (siteIds: string[], template: string, time: string) => void; onClose: () => void }) {
   const open = stops.filter((s) => !['done', 'skipped'].includes(s.status));
   const [picked, setPicked] = useState<string[]>(open.map((s) => s.site_id));
   const [template, setTemplate] = useState('late');
-  const [time, setTime] = useState('8:00 AM');
+  // Not a fixed 8:00 AM (issue 148): an hour from now, which the office adjusts.
+  const [time, setTime] = useState(() => inAnHour(tz));
   return (
     <Card className="mb-3" data-testid="notify-panel">
       <h2 className="font-semibold">Notify customers</h2>
@@ -427,7 +465,7 @@ function NotifyPanel({ stops, onSend, onClose }: { stops: any[]; onSend: (siteId
           <option value="late">Running late</option>
           <option value="on_the_way">On the way</option>
         </Select>
-        {template === 'late' ? <Input aria-label="Expected time" className="w-32" value={time} onChange={(e) => setTime(e.target.value)} /> : null}
+        {template === 'late' ? <Input type="time" aria-label="Expected time" className="w-36" required value={time} onChange={(e) => setTime(e.target.value)} data-testid="notify-time" /> : null}
       </div>
       <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-sm">
         {open.map((s) => (
@@ -440,7 +478,7 @@ function NotifyPanel({ stops, onSend, onClose }: { stops: any[]; onSend: (siteId
         ))}
       </ul>
       <div className="mt-3 flex gap-2">
-        <Button variant="accent" disabled={!picked.length} data-testid="notify-send" onClick={() => onSend(picked, template, time)}>Send to {picked.length}</Button>
+        <Button variant="accent" disabled={!picked.length || (template === 'late' && !time)} data-testid="notify-send" onClick={() => onSend(picked, template, template === 'late' ? pickedClock(time) : '')}>Send to {picked.length}</Button>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
       </div>
     </Card>

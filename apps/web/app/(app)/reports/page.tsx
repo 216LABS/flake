@@ -1,4 +1,4 @@
-import { fmtLocal } from '@flake/core/time';
+import { fmtLocal, stormWhen } from '@flake/core/time';
 import { buttonVariants, Card, Eyebrow, Input, Label, PageHeader, Stat, Table, Td, Th } from '@flake/ui';
 import { sql } from '@flake/db';
 import { asUser, requirePage } from '@/lib/auth';
@@ -73,6 +73,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
         <div className="min-w-0"><Label htmlFor="to">To</Label><Input id="to" name="to" type="date" defaultValue={p.to} /></div>
         <button type="submit" className={buttonVariants({ variant: 'outline', className: 'h-11 sm:h-10' })} data-testid="period-show">Show</button>
       </form>
+      {p.invalid.length ? <p className="mb-4 rounded-md bg-warn-tint p-3 text-sm text-warn-ink" role="alert" data-testid="period-invalid">{p.invalid.join(' and ')} {p.invalid.length === 1 ? "isn't a valid date" : "aren't valid dates"}, so this shows {p.from} to {p.to} instead.</p> : null}
 
       <section className="mb-8" aria-labelledby="hours-title">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -80,7 +81,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
           {hours.length ? <a href={`/api/reports/hours.csv?from=${p.from}&to=${p.to}`} className={buttonVariants({ variant: 'outline', size: 'sm' })} data-testid="hours-csv">Download for payroll (CSV)</a> : null}
         </div>
         <p className="mb-3 max-w-2xl text-sm text-muted">
-          From each driver&apos;s first tap on their route link to their last, using their phone&apos;s taps and GPS. A quiet gap of two hours or more starts a new shift. Check anything with a note before you pay.
+          From each driver&apos;s first tap on their route link to their last, using their phone&apos;s taps and GPS. A quiet gap of two hours or more starts a new shift. A shift that runs past midnight counts in full on the day it started. Check anything with a note before you pay.
         </p>
         {hours.length ? (
           <>
@@ -122,7 +123,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
               <tbody>
                 {bills.map((b) => (
                   <tr key={b.id} data-testid="money-row">
-                    <Td><a className="text-link underline" href={`/billing?storm=${b.id}`}>{b.name}</a><span className="block text-xs text-muted">{fmtLocal(b.started_at, tz, { month: 'short', day: 'numeric' })}</span></Td>
+                    <Td><a className="text-link underline" href={`/billing?storm=${b.id}`}>{b.name}</a><span className="block text-xs text-muted">{stormWhen(b.started_at, tz, false)}</span></Td>
                     <Td label="Billed" className="tabular">{money(b.billed)}</Td>
                     <Td label="Paid" className="tabular">{money(b.paid)}</Td>
                     <Td label="Owed" className="tabular">{money(b.owed)}</Td>
@@ -149,12 +150,13 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
         <Eyebrow id="salt-title" className="mb-2">Salt</Eyebrow>
         <div className="mb-4 grid gap-3 sm:grid-cols-3">
           <Card data-testid="salt-on-hand">
-            <Stat label="On hand" value={tons(salt.stock.tons)} note={salt.stock.since ? `Counted ${fmtLocal(salt.stock.since, tz, { month: 'short', day: 'numeric' })}, less what drivers logged since` : 'Deliveries less what drivers logged. Add a count to set it exactly.'} />
+            <Stat label="On hand" value={salt.entries.length ? tons(salt.stock.tons) : 'Not counted'} note={salt.stock.since ? `Counted ${fmtLocal(salt.stock.since, tz, { month: 'short', day: 'numeric' })}, less what drivers logged since` : 'Deliveries less what drivers logged. Add a count to set it exactly.'} />
           </Card>
           <Card><Stat label="Storms left" value={salt.stormsLeft ?? '-'} note="At your average use per storm" /></Card>
           <Card><Stat label="Used these dates" value={tons(usedTons)} note={`${saltedVisits} salted visit${saltedVisits === 1 ? '' : 's'}`} /></Card>
         </div>
-        {salt.stock.tons < 0 ? <p className="mb-4 rounded-md bg-warn-tint p-3 text-sm text-warn-ink" data-testid="salt-negative">Drivers logged more salt than was delivered. Add the deliveries you are missing, or a count of the pile.</p> : null}
+        {!salt.entries.length ? <p className="mb-4 rounded-md bg-tint p-3 text-sm text-ink-2" data-testid="salt-no-stock">No deliveries or counts logged yet, so there&apos;s no stock to show. Add a count of the pile to start.</p> : null}
+        {salt.entries.length > 0 && salt.stock.tons < 0 ? <p className="mb-4 rounded-md bg-warn-tint p-3 text-sm text-warn-ink" data-testid="salt-negative">Drivers logged more salt than was delivered. Add the deliveries you are missing, or a count of the pile.</p> : null}
         {salt.storms.length ? (
           <Table stack className="mb-4" data-testid="salt-storms">
             <thead><tr><Th>Storm</Th><Th>Salted visits</Th><Th className="text-right">Tons</Th><Th className="text-right">Applications</Th></tr></thead>

@@ -44,9 +44,9 @@ async function finish(id: string, status: string, providerId: string | null) {
   await serviceDb().execute(sql`update message_log set status = ${status}, provider_id = ${providerId} where id = ${id}`);
 }
 
-export async function sendSms(t: TenantRow, opts: { to: string; template: TemplateKey; vars: Record<string, string | number>; key: string; related?: Record<string, unknown> }): Promise<boolean> {
+export async function sendSms(t: TenantRow, opts: { to: string; template: TemplateKey; vars: Record<string, string | number>; key: string; related?: Record<string, unknown>; lang?: 'en' | 'es' }): Promise<boolean> {
   if (!canTextFrom(t) || !(await hasSmsConsent(t.id, opts.to))) return false;
-  const body = renderTemplate(opts.template, opts.vars);
+  const body = renderTemplate(opts.template, opts.vars, opts.lang);
   const id = await reserve(t, 'sms', opts.to, opts.template, body, `sms:${opts.key}`, opts.related ?? null);
   if (!id) return false;
   try {
@@ -73,11 +73,11 @@ async function failed(id: string, err: unknown): Promise<false> {
   throw err;
 }
 
-export async function sendEmail(t: TenantRow, opts: { to: string; template: string; subject: string; text: string; key: string; related?: Record<string, unknown>; attachments?: { filename: string; content: Uint8Array }[]; fromName?: string; replyTo?: string | null }): Promise<boolean> {
+export async function sendEmail(t: TenantRow, opts: { to: string; template: string; subject: string; text: string; key: string; related?: Record<string, unknown>; attachments?: { filename: string; content: Uint8Array }[]; fromName?: string; replyTo?: string | null; lang?: 'en' | 'es' }): Promise<boolean> {
   // Every email ends with who sent it, how to reach them, and how to stop (a pass found them bare).
   const a = t.address as { line1?: string; city?: string; state?: string; zip?: string } | null;
   const address = a?.line1 ? [a.line1, [a.city, [a.state, a.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join(', ') : null;
-  const text = `${opts.text}${emailFooter(opts.template, { name: t.name, phone: t.contact_phone, email: t.contact_email, address })}`;
+  const text = `${opts.text}${emailFooter(opts.template, { name: t.name, phone: t.contact_phone, email: t.contact_email, address }, opts.lang)}`;
   const id = await reserve(t, 'email', opts.to, opts.template, text, `email:${opts.key}`, opts.related ?? null);
   if (!id) return false;
   try {
@@ -96,6 +96,8 @@ export interface PartyMessage {
   subject: string;
   key: string;
   related?: Record<string, unknown>;
+  /** A crew member's language, for the crew messages that have a Spanish version (issue 151). */
+  lang?: 'en' | 'es';
 }
 export interface Party { phone?: string | null; email?: string | null; wantsSms?: boolean | null; wantsEmail?: boolean | null }
 
@@ -179,6 +181,7 @@ export async function notifyParty(t: TenantRow, party: { phone?: string | null; 
   key: string;
   related?: Record<string, unknown>;
   now?: Date;
+  lang?: 'en' | 'es';
 }) {
   const vars = { company: t.name, ...msg.vars };
   const now = msg.now ?? new Date();
@@ -188,11 +191,11 @@ export async function notifyParty(t: TenantRow, party: { phone?: string | null; 
       // Invoice texts go out 8 AM to 8 PM local. Storm and service notices have no quiet hours.
       await enqueue('notify.invoice_sms', { tenantId: t.id, to: party.phone, vars, key: msg.key, related: msg.related }, { dedupeKey: `invoice_sms:${t.id}:${msg.key}`, runAt: nextInvoiceWindow(now, t.timezone) });
     } else {
-      sent.sms = await sendSms(t, { to: party.phone, template: msg.template, vars, key: msg.key, related: msg.related });
+      sent.sms = await sendSms(t, { to: party.phone, template: msg.template, vars, key: msg.key, related: msg.related, lang: msg.lang });
     }
   }
   if (party.email && party.wantsEmail !== false) {
-    sent.email = await sendEmail(t, { to: party.email, template: msg.template, subject: msg.subject, text: renderTemplate(msg.template, vars).replace(/\s*Reply STOP to opt out\.?/i, ''), key: msg.key, related: msg.related });
+    sent.email = await sendEmail(t, { to: party.email, template: msg.template, subject: msg.subject, text: renderTemplate(msg.template, vars, msg.lang).replace(/\s*(Reply STOP to opt out|Responde STOP para no recibir más)\.?/i, ''), key: msg.key, related: msg.related, lang: msg.lang });
   }
   return sent;
 }

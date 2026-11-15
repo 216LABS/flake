@@ -51,7 +51,7 @@ export function SiteEditor({ site, pins, layers }: { site: any; pins: any[]; lay
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <Button size="sm" variant={mode === 'edit' ? 'accent' : 'outline'} onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}>Draw / edit area</Button>
         <Button size="sm" variant={mode === 'pin' ? 'accent' : 'outline'} onClick={() => setMode(mode === 'pin' ? 'view' : 'pin')}>Drop pin</Button>
-        {mode === 'pin' ? <Select aria-label="Pin type" className="h-8 w-32 py-0" value={pinKind} onChange={(e) => setPinKind(e.target.value)}>{['stake', 'pile', 'ada', 'entrance', 'hazard', 'other'].map((k) => <option key={k}>{k}</option>)}</Select> : null}
+        {mode === 'pin' ? <Select aria-label="Pin type" className="h-8 w-32 py-0" value={pinKind} onChange={(e) => setPinKind(e.target.value)}>{([['stake', 'Stake'], ['pile', 'Snow pile'], ['ada', 'Accessible parking'], ['entrance', 'Entrance'], ['hazard', 'Hazard'], ['other', 'Other']] as const).map(([k, w]) => <option key={k} value={k}>{w}</option>)}</Select> : null}
       </div>
       <MapView layers={layers} base="satellite" center={{ lat: site.lat, lon: site.lon }} zoom={18} polygon={polygon} mode={mode} pins={pins.filter((p) => p.lat !== null).map((p) => ({ id: p.id, lat: p.lat, lon: p.lon, label: p.kind }))} onPolygon={(p, a) => { setPolygon(p); setSqft(a); }} onPin={(lat, lon) => void addPin(lat, lon)} />
       <div className="mt-3 grid gap-3 sm:grid-cols-3">

@@ -2,7 +2,7 @@
 
 import { Badge, Button, Card, Input, Label, Table, Td, Th } from '@flake/ui';
 import { useState } from 'react';
-import { api, money } from '@/lib/client';
+import { api, money, possessive } from '@/lib/client';
 import { useConfirm } from '@/components/confirm';
 
 interface Supplier {
@@ -43,7 +43,7 @@ export function SaltAdmin({ initial }: { initial: Data }) {
   const copy = async (s: Supplier) => {
     try {
       await navigator.clipboard.writeText(s.link);
-      setMsg(`Copied ${s.name}'s link.`);
+      setMsg(`Copied ${possessive(s.name)} link.`);
     } catch {
       setMsg(s.link);
     }

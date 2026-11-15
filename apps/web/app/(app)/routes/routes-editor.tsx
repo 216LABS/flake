@@ -16,6 +16,9 @@ export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ route: string; index: number } | null>(null);
+  // Long routes on a phone (issue 146): type a position instead of tapping Up 148 times, and find a lot by name.
+  const [moving, setMoving] = useState<{ route: string; id: string; to: string } | null>(null);
+  const [find, setFind] = useState<Record<string, string>>({});
   const [ask, dialog] = useConfirm();
   // The order a route had before "Use this order", kept a minute so it can be put back (issue 81).
   const [undo, setUndo] = useState<{ routeId: string; ids: string[] } | null>(null);
@@ -61,6 +64,7 @@ export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]
     <div>
       {dialog}
       {error ? <p className="mb-3 text-sm text-danger" role="alert">{error}</p> : null}
+      {!list.length ? <p className="mb-4 max-w-2xl rounded-md bg-tint p-3 text-sm text-ink-2" data-testid="routes-empty">A route is the lots one truck plows, in order. Add one below, put its lots on it, and Suggest order sorts them by drive time. A storm starts from your routes.</p> : null}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {list.map((r) => (
           <Card key={r.id} data-testid="route-card">
@@ -74,15 +78,23 @@ export function RoutesEditor({ routes, sites, crew, yard = null }: { routes: R[]
               {crew.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
             {!r.site_ids.length ? <p className="mt-3 text-sm text-muted" data-testid="route-empty">No sites yet. Add them below; an empty route is left out of storms.</p> : null}
+            {r.site_ids.length > 10 ? <Input type="search" className="mt-3" aria-label={`Find a lot on ${r.name}`} placeholder="Find a lot on this route" value={find[r.id] ?? ''} onChange={(e) => setFind({ ...find, [r.id]: e.target.value })} data-testid="route-find" /> : null}
             <ol className="mt-3 space-y-1">
-              {r.site_ids.map((id, i) => (
+              {r.site_ids.map((id, i) => !(find[r.id] ?? '').trim() || label(id).toLowerCase().includes(find[r.id]!.trim().toLowerCase()) ? (
                 <li key={id} draggable onDragStart={(e) => { e.dataTransfer.setData('text/plain', id); setDrag({ route: r.id, index: i }); }} onDragOver={(e) => e.preventDefault()} onDrop={() => { if (drag?.route === r.id) moveTo(r, drag.index, i); setDrag(null); }} className="flex items-center gap-1 rounded-row border bg-surface px-2 py-1 text-sm shadow-drop">
-                  <span className="min-w-0 flex-1">{i + 1}. {label(id)}{elsewhere(id, r.id).length ? <span className="block text-xs text-warn-ink">Also on {elsewhere(id, r.id).join(', ')}</span> : null}{sites.find((x) => x.id === id)?.contracted === false ? <span className="block text-xs font-medium text-warn-ink" data-testid="route-no-contract">No accepted contract: won&apos;t be billed</span> : null}</span>
+                  <span className="min-w-0 flex-1">
+                    {moving?.route === r.id && moving.id === id ? (
+                      <Input autoFocus type="number" inputMode="numeric" min={1} max={r.site_ids.length} className="mr-1 inline-block h-8 w-16 px-1 py-0" aria-label={`New position for ${label(id)}, 1 to ${r.site_ids.length}`} value={moving.to} data-testid="route-position-input"
+                        onChange={(e) => setMoving({ ...moving, to: e.target.value })}
+                        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setMoving(null); }}
+                        onBlur={() => { const to = Math.round(Number(moving.to)); if (to >= 1 && to <= r.site_ids.length && to !== i + 1) moveTo(r, i, to - 1); setMoving(null); }} />
+                    ) : <button type="button" className="mr-1 rounded px-1 font-medium underline decoration-dotted underline-offset-2 hover:bg-tint" aria-label={`${label(id)} is number ${i + 1}. Move it to another position`} data-testid="route-position" onClick={() => setMoving({ route: r.id, id, to: String(i + 1) })}>{i + 1}.</button>}
+                    {label(id)}{elsewhere(id, r.id).length ? <span className="block text-xs text-warn-ink">Also on {elsewhere(id, r.id).join(', ')}</span> : null}{sites.find((x) => x.id === id)?.contracted === false ? <span className="block text-xs font-medium text-warn-ink" data-testid="route-no-contract">No accepted contract: won&apos;t be billed</span> : null}</span>
                   <Button size="sm" variant="ghost" className="h-10 w-10 shrink-0 p-0 md:h-8 md:w-8" aria-label={`Move ${label(id)} up`} data-testid="route-up" disabled={i === 0} onClick={() => moveTo(r, i, i - 1)}><ArrowUp size={18} aria-hidden="true" /></Button>
                   <Button size="sm" variant="ghost" className="h-10 w-10 shrink-0 p-0 md:h-8 md:w-8" aria-label={`Move ${label(id)} down`} data-testid="route-down" disabled={i === r.site_ids.length - 1} onClick={() => moveTo(r, i, i + 1)}><ArrowDown size={18} aria-hidden="true" /></Button>
                   <Button size="sm" variant="ghost" className="h-10 w-10 shrink-0 p-0 hover:bg-danger-tint hover:text-danger md:h-8 md:w-8" aria-label={`Remove ${label(id)}`} data-testid="route-remove" onClick={() => update({ ...r, site_ids: r.site_ids.filter((x) => x !== id) })}><X size={18} aria-hidden="true" /></Button>
                 </li>
-              ))}
+              ) : null)}
             </ol>
             {/* On by default once there's a yard; some routes are run from somewhere else (issue 64). */}
             {yard ? (

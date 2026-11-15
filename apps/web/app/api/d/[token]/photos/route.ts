@@ -1,4 +1,4 @@
-import { driverPhotoMeta } from '@flake/contracts';
+import { driverPhotoMeta, PHOTO_TYPES } from '@flake/contracts';
 import { MAX_PHOTO_BYTES, resolveToken, savePhoto } from '@/lib/driver';
 import {driverRateLimit, HttpError, route } from '@/lib/http';
 
@@ -12,7 +12,9 @@ export const POST = route<{ params: Promise<{ token: string }> }>(async (req, { 
   if (!(file instanceof Blob)) throw new HttpError(422, 'file is required');
   if (file.size > MAX_PHOTO_BYTES) throw new HttpError(413, 'File too large');
   const type = file.type || 'image/jpeg';
-  if (!/^(image|audio|video\/webm)/.test(type)) throw new HttpError(415, 'Unsupported file type');
+  // Camera photos, and the voice note formats browsers record (issue 155). Nothing that can carry script.
+  const base = type.split(';')[0]!.trim().toLowerCase();
+  if (!(PHOTO_TYPES as readonly string[]).includes(base) && !/^(audio\/(webm|mp4|ogg|mpeg|aac|x-m4a)|video\/webm)$/.test(base)) throw new HttpError(415, 'Unsupported file type');
   const parsed = driverPhotoMeta.safeParse(Object.fromEntries(['client_uuid', 'visit_client_uuid', 'phase', 'taken_at', 'problem_client_uuid'].flatMap((k) => (form.get(k) ? [[k, form.get(k)]] : []))));
   if (!parsed.success) throw new HttpError(422, 'Invalid photo metadata');
   return savePhoto(rs, { ...parsed.data, bytes: new Uint8Array(await file.arrayBuffer()), contentType: type });

@@ -40,7 +40,12 @@ export interface ProofVisit {
   entered_by?: 'phone' | 'office_recorded' | 'office_done';
   /** Set when the visit was voided (Undo, or skipped after arriving): it's on file, but wasn't work done. */
   voided_reason?: string | null;
+  /** When the phone wasn't at the lot on arrival, how far off it was, as billing review says it (issue 152). */
+  gps_note?: string | null;
 }
+
+/** One signed agreement in force for part of the packet's period (issue 158). */
+export interface ProofAgreement { season: string; services: unknown; accepted_at: string | null; accepted_name: string | null }
 
 export interface ProofInput {
   contractor: { name: string; timezone: string };
@@ -48,6 +53,8 @@ export interface ProofInput {
   site: { id: string; label: string; address: string; lat: number; lon: number };
   period: { from: string; to: string };
   contract: { season: string; services: unknown; salt_pricing: unknown; terms_md: string | null; accepted_at: string | null; accepted_name: string | null } | null;
+  /** Every agreement that priced a visit in the period, oldest first, when there was more than one (a re-sign). */
+  agreements?: ProofAgreement[];
   storms: { id: string; name: string; started_at: string; closed_at: string | null; snapshots: ProofSnapshot[] }[];
   visits: ProofVisit[];
   messages: { id: string; channel: string; template: string; body: string; created_at: string; status: string | null }[];

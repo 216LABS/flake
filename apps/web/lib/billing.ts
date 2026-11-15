@@ -1,7 +1,7 @@
 import { and, or, ne, asc, asService, contract, customer, membership, desc, eq, inArray, installment_invoice, invoice_draft, notInArray, isNotNull, isNull, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type DraftStatus, type Tx } from '@flake/db';
 import { applyCorrections, draftInvoices, flagKey, isDraftClean, type BillingContract, type BillingFlag, type BillingVisit } from '@flake/core/billing';
 import { applicationFeeCents, feeRate, proFeaturesEnabled, type Plan } from '@flake/core/fees';
-import { seasonalInstallments, type ContractService, type Pricing, type SaltPricing, type StormDepthContext } from '@flake/core/pricing';
+import { seasonalRemaining, type ContractService, type Pricing, type SaltPricing, type StormDepthContext } from '@flake/core/pricing';
 import { qboCsv, type QboRow } from '@flake/core/qbo';
 import { contractsInForce, currentSeason, fmtLocal, isLaterSeason, localHm, todayIn } from '@flake/core/time';
 import { sumOverlap } from '@flake/core/trigger';
@@ -95,6 +95,27 @@ export async function visitsMissedByDrafts(ctx: Ctx, stormId: string) {
   });
 }
 
+/**
+ * A visit undone or voided after its bill was approved (issue 159). Drafts in review are remade, but an approved,
+ * sent or charged bill is left as it was, so this names the lots it still bills for work that no longer counts.
+ */
+export async function visitsUndoneOnBills(ctx: Ctx, stormId: string) {
+  return withUser(ctx.userId, async (tx) => {
+    const drafts = (await tx.select().from(invoice_draft).where(eq(invoice_draft.storm_id, stormId))).filter((d) => d.status !== 'draft' && d.status !== 'void');
+    if (!drafts.length) return [];
+    const corrections = await tx.select({ visit_id: visit_correction.visit_id, new_value: visit_correction.new_value }).from(visit_correction)
+      .innerJoin(visit, eq(visit.id, visit_correction.visit_id)).where(and(eq(visit.storm_id, stormId), eq(visit_correction.field, 'voided'))).orderBy(visit_correction.created_at);
+    const last = new Map<string, boolean>();
+    for (const c of corrections) last.set(c.visit_id, c.new_value === true);
+    const voided = new Set([...last].filter(([, v]) => v).map(([k]) => k));
+    if (!voided.size) return [];
+    const hits = drafts.flatMap((d) => (d.lines as { site_id?: string; source_visit_ids: string[] }[]).filter((l) => l.source_visit_ids.some((id) => voided.has(id))).map((l) => ({ siteId: l.site_id, status: d.status })));
+    const sites = hits.length ? await tx.select({ id: site.id, label: site.label }).from(site).where(inArray(site.id, hits.flatMap((x) => (x.siteId ? [x.siteId] : [])))) : [];
+    const out: { site: string; status: DraftStatus | null }[] = hits.map((x) => ({ site: sites.find((st) => st.id === x.siteId)?.label ?? 'A lot', status: x.status }));
+    return out;
+  });
+}
+
 /** Regenerating replaces drafts still in review. Anything already approved or charged is left alone. */
 export async function generateDrafts(ctx: Ctx, stormId: string) {
   return withUser(ctx.userId, async (tx) => {
@@ -115,6 +136,7 @@ export async function generateDrafts(ctx: Ctx, stormId: string) {
       depth,
       waived: s.waived_flags,
       season: currentSeason(new Date(s.started_at), t!.timezone),
+      window: { start: s.started_at, end: s.closed_at, timezone: t!.timezone },
     });
     const rate = tenantFeeRate(t!);
     // The engine prices; this says where and when, so a customer with several sites can read the invoice.
@@ -122,7 +144,8 @@ export async function generateDrafts(ctx: Ctx, stormId: string) {
       for (const l of d.lines) {
         const place = sites.find((x) => x.id === l.site_id)?.label ?? 'Site';
         const first = billingVisits.find((v) => v.id === l.source_visit_ids[0]);
-        const when = l.source_visit_ids.length === 1 && first ? fmtLocal(first.arrived_at, t!.timezone) : s.name;
+        // With the zone, so a line made before the company changed time zones still reads right (issue 152).
+        const when = l.source_visit_ids.length === 1 && first ? fmtLocal(first.arrived_at, t!.timezone, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) : s.name;
         l.description = `${place}: ${l.description}, ${when}`;
       }
     }
@@ -399,15 +422,21 @@ export async function reviseDraft(ctx: Ctx, draftId: string, to: 'draft' | 'void
     if (!mine) throw new HttpError(404, 'Invoice not found');
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`charge:${draftId}`}))`);
     const [now] = await tx.select({ status: invoice_draft.status }).from(invoice_draft).where(eq(invoice_draft.id, draftId));
-    const from = to === 'void' ? ['draft', 'approved', 'failed'] : ['approved', 'failed'];
+    // A voided bill can come back to review (issue 147): a storm reopened and closed again keeps it voided until then.
+    const from = to === 'void' ? ['draft', 'approved', 'failed'] : to === 'draft' ? ['approved', 'failed', 'void'] : ['approved', 'failed'];
     if (!now || !from.includes(now.status!)) throw new HttpError(409, NOT_REVISABLE[now?.status ?? 'void'] ?? 'This invoice can no longer be changed.', 'not_revisable');
-    const detail = { void: 'Voided by the office', draft: 'Taken back for review', paid: 'Paid outside Stripe, marked by the office' }[to];
+    const unvoid = now.status === 'void';
+    if (unvoid) {
+      const [s] = await tx.select({ status: storm.status }).from(storm).where(eq(storm.id, mine.storm_id));
+      if (s?.status === 'active') throw new HttpError(409, 'This storm is running again. Close it first, then bring the bill back.', 'storm_active');
+    }
+    const detail = { void: 'Voided by the office', draft: unvoid ? 'Unvoided by the office' : 'Taken back for review', paid: 'Paid outside Stripe, marked by the office' }[to];
     await asService(tx, ctx.tenantId, () => tx.update(invoice_draft).set({ status: to, status_detail: detail }).where(and(eq(invoice_draft.id, draftId), eq(invoice_draft.tenant_id, ctx.tenantId))));
     // A storm counts as billed once nothing is left in review, so taking one back reopens its billing, and voiding the
     // last one in review finishes it.
     if (to === 'draft') await tx.update(storm).set({ status: 'closed' }).where(and(eq(storm.id, mine.storm_id), eq(storm.status, 'billed')));
     else await settleStorm(tx, mine.storm_id);
-    return { ok: true, status: to };
+    return { ok: true, status: to, unvoid, stormId: mine.storm_id };
   });
 }
 
@@ -624,13 +653,13 @@ async function billInstallment(r: InstallmentRow, pricing: Extract<Pricing, { ty
     if (row.period !== period) [row] = await db.update(installment_invoice).set({ period }).where(eq(installment_invoice.id, row.id)).returning();
   } else {
     const seq = r.contract.installments_billed + 1;
-    if (seq > pricing.installments) return false;
     // A re-sign mid-season (issue 112): what was already billed for this lot and season counts, and the rest of the
-    // new total is spread over the installments left, so the season adds up to the price signed.
+    // new total is spread over the installments left, so the season adds up to the price signed. The quote said the
+    // same (issue 156), through seasonalRemaining.
     const [{ billed }] = await db.select({ billed: sql<number>`coalesce(sum(${installment_invoice.amount_cents}), 0)::int` }).from(installment_invoice)
       .innerJoin(contract, eq(contract.id, installment_invoice.contract_id))
       .where(and(eq(contract.site_id, r.site.id), eq(contract.season, r.contract.season))) as [{ billed: number }];
-    const amount = seasonalInstallments(Math.max(0, pricing.total_cents - billed), pricing.installments - seq + 1)[0]!;
+    const amount = seasonalRemaining(pricing.total_cents, pricing.installments, { cents: billed, count: seq - 1 })[0] ?? 0;
     if (amount <= 0) return false;
     [row] = await db.insert(installment_invoice).values({ tenant_id: r.tenant.id, contract_id: r.contract.id, seq, amount_cents: amount, status: 'pending', period }).onConflictDoNothing().returning();
     if (!row) return false; // another run took this one

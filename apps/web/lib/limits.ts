@@ -1,4 +1,23 @@
 /** The rate card's limits, the same as the server's, as a sentence (issues 21 and 27). Null when everything is fine. */
+/**
+ * The depth tiers behind suggested tier prices (issue 153), as typed: each depth deeper than the last, the last tier
+ * "above that", and each a multiple of the push price.
+ */
+export function tierProblem(tiers: { depth: string; mult: string }[]): string | null {
+  if (tiers.length < 2) return 'Keep at least two tiers.';
+  let last = 0;
+  for (const [i, t] of tiers.entries()) {
+    const m = Number(t.mult);
+    if (t.mult.trim() === '' || !Number.isFinite(m) || m < 0.1 || m > 10) return `Tier ${i + 1}: the multiple of the push price must be between 0.1 and 10.`;
+    if (i === tiers.length - 1) break;
+    const d = Number(t.depth);
+    if (t.depth.trim() === '' || !Number.isFinite(d) || d <= 0 || d > 120) return `Tier ${i + 1}: enter a depth in inches, from 0.5 to 120.`;
+    if (d <= last) return `Tier ${i + 1}: each depth has to be deeper than the one before.`;
+    last = d;
+  }
+  return null;
+}
+
 export function rateCardProblem(f: Record<'rate' | 'min' | 'walk' | 'salt' | 'pushes', string>): string | null {
   const n = (v: string) => (v.trim() === '' ? NaN : Number(v));
   const checks: [string, number, number, number, boolean?][] = [

@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { isProd } from './lib/env';
+import { safeNext } from './lib/next-path';
 
 const APP_PREFIXES = ['/admin', '/dashboard', '/alerts', '/storms', '/customers', '/sites', '/routes', '/billing', '/proof', '/reports', '/settings', '/onboarding'];
 
@@ -24,8 +25,10 @@ export async function proxy(request: NextRequest) {
   const { data } = await supabase.auth.getUser();
   if (!data.user && APP_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     const url = request.nextUrl.clone();
+    // Back to this page after signing in, e.g. from an alert email opened on a signed-out phone (issue 142).
+    const next = safeNext(`${pathname}${request.nextUrl.search}`);
     url.pathname = '/login';
-    url.search = '';
+    url.search = next === '/dashboard' ? '' : `?next=${encodeURIComponent(next)}`;
     return NextResponse.redirect(url);
   }
   return response;

@@ -31,7 +31,7 @@ export const pricingLabel = (type: string) => PRICING_LABEL[type] ?? type.replac
 
 /** The message log's columns, as a person reads them. */
 export const MESSAGE_LABEL: Record<string, string> = {
-  call_out: 'Call-out', completion_report: 'Service record', crew_invite: 'Crew invite', crew_link: 'Driver link', done: 'Lot done',
+  call_out: 'Call-out', completion_report: 'Service record', crew_invite: 'Crew invite', crew_link: 'Driver link', done: 'Lot done', done_no_photo: 'Lot done',
   invoice: 'Invoice', bill: 'Bill', late: 'Running late', on_the_way: 'On the way', owner_alert: 'Owner alert', portal: 'Records link', quote: 'Quote',
   receipt: 'Receipt', route_changed: 'Route changed', salt_supplier: 'Salt order', team_invite: 'Team invite',
 };

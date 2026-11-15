@@ -1,5 +1,5 @@
 import { subPayStatement, type SubRateCard } from '@flake/core/subpay';
-import { fmtLocal } from '@flake/core/time';
+import { stormWhen } from '@flake/core/time';
 import { asc, crew_member, eq, inArray, site, storm, visit, visit_correction } from '@flake/db';
 import { Card, EmptyState, PageHeader, Table, Td, Th } from '@flake/ui';
 import { notFound } from 'next/navigation';
@@ -36,7 +36,7 @@ export default async function SubPay({ params }: { params: Promise<{ id: string 
   }
   return (
     <>
-      <PageHeader title={`Sub pay: ${data.s.name}`} subtitle={fmtLocal(data.s.started_at, ctx.tenant.timezone)} />
+      <PageHeader title={`Sub pay: ${data.s.name}`} subtitle={stormWhen(data.s.started_at, ctx.tenant.timezone)} />
       {!subs.size ? <EmptyState title="No subcontractor visits in this storm" /> : null}
       <div className="space-y-4">
         {[...subs.values()].map(({ crew, rows }) => {

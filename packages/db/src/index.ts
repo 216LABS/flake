@@ -65,6 +65,9 @@ export async function asService<T>(tx: Tx, tenantId: string, fn: () => Promise<T
  * Scoped queries for driver link tokens. Driver requests have no Supabase user, so they use the service
  * connection. Going through this helper keeps a tenant filter on every read (BUILD_SPEC section 2).
  */
+/** The visit's stop belongs to this run, now or before it was moved. */
+export const visitOnRun = (runId: string) => sql`exists (select 1 from run_stop rs where rs.id = ${schema.visit.run_stop_id} and (rs.storm_run_id = ${runId} or ${runId}::uuid = any(rs.previous_run_ids)))`;
+
 export function driverScope(db: Conn, scope: { tenantId: string; runId: string; crewId: string | null; stormId: string }) {
   return {
     ...scope,
@@ -78,8 +81,12 @@ export function driverScope(db: Conn, scope: { tenantId: string; runId: string; 
         .where(and(eq(schema.run_stop.tenant_id, scope.tenantId), eq(schema.run_stop.id, stopId), sql`(${schema.run_stop.storm_run_id} = ${scope.runId} or ${scope.runId}::uuid = any(${schema.run_stop.previous_run_ids}))`));
       return rows[0] ?? null;
     },
+    /**
+     * A visit started on one of this run's stops, by whoever held the run then. The office can swap a run's driver
+     * while the first one is on a lot (issue 154): that driver still finishes their own visit from the same link.
+     */
     visit: async (clientUuid: string) => {
-      const rows = await db.select().from(schema.visit).where(and(eq(schema.visit.tenant_id, scope.tenantId), eq(schema.visit.client_uuid, clientUuid), eq(schema.visit.crew_id, scope.crewId ?? '00000000-0000-0000-0000-000000000000')));
+      const rows = await db.select().from(schema.visit).where(and(eq(schema.visit.tenant_id, scope.tenantId), eq(schema.visit.client_uuid, clientUuid), visitOnRun(scope.runId)));
       return rows[0] ?? null;
     },
   };

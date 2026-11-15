@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api, dollarsToCents, money, phone } from '@/lib/client';
 import { useConfirm } from '@/components/confirm';
-import { rateCardProblem } from '@/lib/limits';
+import { rateCardProblem, tierProblem } from '@/lib/limits';
 
 function useAction() {
   const [msg, setMsg] = useState<string | null>(null);
@@ -30,9 +30,12 @@ function useAction() {
 export function RateCardForm({ card }: { card: RateCard }) {
   // Kept as typed, so "-1" stays "-1" and is caught here instead of being turned into something else.
   const [f, setF] = useState({ rate: String(card.per_sqft_cents_per_push), min: String(card.min_push_cents / 100), walk: String(card.walks_per_lf_cents), salt: String(card.salt_bag_cents / 100), pushes: String(card.season_pushes) });
+  // The depth tiers are the owner's too (issue 153): 2", 6", 12" and above is as common as 4", 8" and above.
+  const [tiers, setTiers] = useState(() => card.tiers.map((t) => ({ depth: t.up_to_in === null ? '' : String(t.up_to_in), mult: String(t.multiplier) })));
   const { msg, busy, run } = useAction();
   const [shown, setShown] = useState(false);
-  const problem = rateCardProblem(f);
+  const problem = rateCardProblem(f) ?? tierProblem(tiers);
+  const setTier = (i: number, patch: Partial<{ depth: string; mult: string }>) => { setShown(false); setTiers(tiers.map((t, k) => (k === i ? { ...t, ...patch } : t))); };
   const field = (key: keyof typeof f, label: string, attrs: { step?: string; min: number; max: number }, testId?: string) => (
     <div><Label htmlFor={`rc-${key}`}>{label}</Label><Input id={`rc-${key}`} type="number" inputMode="decimal" {...attrs} value={f[key]} onChange={(e) => { setShown(false); setF({ ...f, [key]: e.target.value }); }} {...(testId ? { 'data-testid': testId } : {})} /></div>
   );
@@ -47,9 +50,30 @@ export function RateCardForm({ card }: { card: RateCard }) {
         {field('salt', 'Salt per 50 lb bag ($)', { step: '0.01', min: 0, max: 100000 })}
         {field('pushes', 'Pushes per season', { step: '1', min: 1, max: 100 })}
       </div>
+      <fieldset className="mt-4" data-testid="rate-tiers">
+        <legend className="text-sm font-medium">Depth tiers</legend>
+        <p className="text-xs text-muted">A per-inch quote suggests each tier as a multiple of the push price.</p>
+        <ul className="mt-2 space-y-2">
+          {tiers.map((t, i) => (
+            <li key={i} className="flex flex-wrap items-end gap-2" data-testid="rate-tier">
+              {i < tiers.length - 1 ? (
+                <div><Label htmlFor={`tier-d-${i}`}>Up to (inches)</Label><Input id={`tier-d-${i}`} className="w-24" type="number" inputMode="decimal" step="0.5" min={0.5} max={120} value={t.depth} onChange={(e) => setTier(i, { depth: e.target.value })} data-testid="tier-depth" /></div>
+              ) : <div className="w-24 pb-2 text-sm font-medium">Above that</div>}
+              <div><Label htmlFor={`tier-m-${i}`}>Times the push price</Label><Input id={`tier-m-${i}`} className="w-24" type="number" inputMode="decimal" step="0.1" min={0.1} max={10} value={t.mult} onChange={(e) => setTier(i, { mult: e.target.value })} data-testid="tier-mult" /></div>
+              {i < tiers.length - 1 && tiers.length > 2 ? <Button type="button" size="sm" variant="ghost" aria-label={`Remove tier ${i + 1}`} onClick={() => { setShown(false); setTiers(tiers.filter((_, k) => k !== i)); }}>Remove</Button> : null}
+            </li>
+          ))}
+        </ul>
+        {tiers.length < 8 ? <Button type="button" size="sm" variant="outline" className="mt-2" data-testid="tier-add" onClick={() => {
+          setShown(false);
+          const before = tiers.slice(0, -1);
+          const deepest = Number(before.at(-1)?.depth || 0);
+          setTiers([...before, { depth: String(deepest ? deepest + 4 : 4), mult: tiers.at(-1)!.mult }, tiers.at(-1)!]);
+        }}>Add a tier</Button> : null}
+      </fieldset>
       {problem ? <p className="mt-3 text-sm text-danger" role="alert" data-testid="rate-problem">{problem}</p> : null}
       <div className="mt-4 flex items-center gap-2">
-        <Button disabled={busy || Boolean(problem)} data-testid="rate-save" onClick={() => { setShown(true); void run(() => api('/api/settings/rate-card', { method: 'PUT', body: { ...card, per_sqft_cents_per_push: Number(f.rate), min_push_cents: dollarsToCents(f.min), walks_per_lf_cents: Number(f.walk), salt_bag_cents: dollarsToCents(f.salt), season_pushes: Number(f.pushes) } })); }}>Save</Button>
+        <Button disabled={busy || Boolean(problem)} data-testid="rate-save" onClick={() => { setShown(true); void run(() => api('/api/settings/rate-card', { method: 'PUT', body: { ...card, per_sqft_cents_per_push: Number(f.rate), min_push_cents: dollarsToCents(f.min), walks_per_lf_cents: Number(f.walk), salt_bag_cents: dollarsToCents(f.salt), season_pushes: Number(f.pushes), tiers: tiers.map((t, i) => ({ up_to_in: i === tiers.length - 1 ? null : Number(t.depth), multiplier: Number(t.mult) })) } })); }}>Save</Button>
         {msg && shown ? <span className={msg === 'Saved' ? 'text-sm font-medium text-ok-ink' : 'text-sm text-danger'} role={msg === 'Saved' ? 'status' : 'alert'} data-testid="rate-msg">{msg}</span> : null}
       </div>
     </Card>
@@ -257,7 +281,10 @@ const ZONES = [
 /** What customers and crew see: the name on every message, the office's reply address and phone, and the clock. */
 export function CompanyForm({ tenant }: { tenant: any }) {
   const router = useRouter();
-  const [f, setF] = useState({ name: tenant.name ?? '', timezone: tenant.timezone ?? 'America/New_York', contact_email: tenant.contact_email ?? '', contact_phone: tenant.contact_phone ?? '', yard_address: tenant.yard?.address ?? '' });
+  const [f, setF] = useState({ name: tenant.name ?? '', timezone: tenant.timezone ?? 'America/New_York', contact_email: tenant.contact_email ?? '', contact_phone: tenant.contact_phone ?? '', yard_address: tenant.yard?.address ?? '',
+    // The mailing address every customer email ends with (issue 149), here where every company sees it, not only
+    // under Text messages. The toll-free form shares it.
+    business_legal_name: tenant.business_legal_name ?? '', line1: tenant.address?.line1 ?? '', city: tenant.address?.city ?? '', state: tenant.address?.state ?? '', zip: tenant.address?.zip ?? '' });
   // Real matches as the owner types, and again when a typed address can't be found (issue 79).
   const [yardHits, setYardHits] = useState<{ label: string; lat: number; lon: number }[]>([]);
   const [yardPoint, setYardPoint] = useState<{ lat: number; lon: number } | null>(null);
@@ -287,6 +314,15 @@ export function CompanyForm({ tenant }: { tenant: any }) {
         </div>
         <div><Label htmlFor="co-email">Office email</Label><Input id="co-email" type="email" data-testid="co-email" value={f.contact_email} onChange={(e) => setF({ ...f, contact_email: e.target.value })} /></div>
         <div><Label htmlFor="co-phone">Office phone</Label><Input id="co-phone" type="tel" data-testid="co-phone" value={f.contact_phone} onChange={(e) => setF({ ...f, contact_phone: e.target.value })} /></div>
+        <div className="sm:col-span-2"><Label htmlFor="co-legal">Legal business name (optional)</Label><Input id="co-legal" data-testid="co-legal" maxLength={200} placeholder={f.name || 'As registered'} value={f.business_legal_name} onChange={(e) => setF({ ...f, business_legal_name: e.target.value })} /></div>
+        <fieldset className="grid gap-2 sm:col-span-2 sm:grid-cols-6" data-testid="co-mailing">
+          <legend className="mb-1 text-sm font-medium">Mailing address</legend>
+          <p className="-mt-1 mb-1 text-xs text-muted sm:col-span-6">Printed at the bottom of every email to customers, as the law asks for business email.</p>
+          <div className="sm:col-span-6"><Label htmlFor="co-line1">Street</Label><Input id="co-line1" data-testid="co-line1" maxLength={200} autoComplete="address-line1" value={f.line1} onChange={(e) => setF({ ...f, line1: e.target.value })} /></div>
+          <div className="sm:col-span-3"><Label htmlFor="co-city">City</Label><Input id="co-city" data-testid="co-city" maxLength={100} autoComplete="address-level2" value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })} /></div>
+          <div className="sm:col-span-1"><Label htmlFor="co-state">State</Label><Input id="co-state" data-testid="co-state" maxLength={40} autoComplete="address-level1" value={f.state} onChange={(e) => setF({ ...f, state: e.target.value })} /></div>
+          <div className="sm:col-span-2"><Label htmlFor="co-zip">ZIP</Label><Input id="co-zip" data-testid="co-zip" maxLength={20} inputMode="numeric" autoComplete="postal-code" value={f.zip} onChange={(e) => setF({ ...f, zip: e.target.value })} /></div>
+        </fieldset>
         <div className="sm:col-span-2">
           <Label htmlFor="co-yard">Yard address (optional)</Label>
           <Input id="co-yard" data-testid="co-yard" maxLength={300} autoComplete="off" placeholder="Where your trucks start and end a storm" value={f.yard_address} onChange={(e) => { setF({ ...f, yard_address: e.target.value }); setYardPoint(null); setYardMissed(false); }} />
@@ -302,7 +338,8 @@ export function CompanyForm({ tenant }: { tenant: any }) {
       <div className="mt-3 flex items-center gap-2">
         <Button disabled={busy || f.name.trim().length < 2} data-testid="co-save" onClick={() => run(async () => {
           try {
-            await api('/api/settings', { method: 'PATCH', body: { name: f.name, timezone: f.timezone, contact_email: f.contact_email, contact_phone: f.contact_phone, ...(f.yard_address.trim() !== (tenant.yard?.address ?? '') ? { yard_address: f.yard_address.trim() || null, yard_point: yardPoint } : {}) } });
+            if (f.line1.trim() && (!f.city.trim() || !f.state.trim() || !f.zip.trim())) throw new Error('Add the city, state and ZIP to the mailing address, or clear the street.');
+            await api('/api/settings', { method: 'PATCH', body: { name: f.name, timezone: f.timezone, contact_email: f.contact_email, contact_phone: f.contact_phone, business_legal_name: f.business_legal_name, address: f.line1.trim() ? { line1: f.line1.trim(), city: f.city.trim(), state: f.state.trim(), zip: f.zip.trim() } : null, ...(f.yard_address.trim() !== (tenant.yard?.address ?? '') ? { yard_address: f.yard_address.trim() || null, yard_point: yardPoint } : {}) } });
           } catch (e) {
             // No exact match: offer the nearest ones instead of a dead end (issue 79).
             if ((e as { code?: string }).code !== 'address_not_found') throw e;

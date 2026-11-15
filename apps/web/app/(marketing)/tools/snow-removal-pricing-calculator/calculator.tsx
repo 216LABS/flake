@@ -55,7 +55,9 @@ export function Calculator() {
       {error && error !== problem ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
       {out ? (
         <div className="mt-4 rounded-md bg-tint p-4" data-testid="calc-result">
-          <p className="text-sm text-muted">{Number(out.sqft).toLocaleString()} sq ft{out.measured ? ', an estimate from public map data for the address you entered. Confirm it on site.' : ''}</p>
+          {/* The parcel the map matched, up front (issue 153): "14519 DETROIT RD" for a typed "Detroit Ave" is a different lot. */}
+          {out.measured ? <p className="mb-2 rounded-md bg-surface p-2 text-sm" data-testid="calc-matched">Measured: <b>{out.measured.label}</b>. Not the right place? Enter the lot size instead.</p> : null}
+          <p className="text-sm text-muted">{Number(out.sqft).toLocaleString()} sq ft{out.measured ? ', an estimate from public map data. Confirm it on site.' : ''}</p>
           <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-3">
             <div><dt className="text-muted">Per push</dt><dd className="text-xl font-semibold" data-testid="calc-push">{money(out.estimate.per_push_cents)}</dd></div>
             <div><dt className="text-muted">Per event</dt><dd className="text-xl font-semibold">{money(out.estimate.per_event_cents)}</dd></div>

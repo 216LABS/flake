@@ -9,6 +9,9 @@ import { api } from '@/lib/client';
 export function CustomerEditor({ customer }: { customer: { id: string; name: string; kind: string; contact_name: string | null; email: string | null; phone_e164: string | null; billing_mode: string } }) {
   const router = useRouter();
   const [f, setF] = useState({ name: customer.name, kind: customer.kind, contact_name: customer.contact_name ?? '', email: customer.email ?? '', phone_e164: customer.phone_e164 ?? '', billing_mode: customer.billing_mode });
+  // What the server had when this form loaded or last saved. Only changed fields are sent, with what they were, so a
+  // second tab can't overwrite edits it never saw (issue 144).
+  const [base, setBase] = useState(() => ({ name: customer.name, kind: customer.kind, contact_name: customer.contact_name, email: customer.email, phone_e164: customer.phone_e164, billing_mode: customer.billing_mode }));
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const text = (key: 'name' | 'contact_name' | 'email' | 'phone_e164', label: string, type = 'text') => (
@@ -32,7 +35,11 @@ export function CustomerEditor({ customer }: { customer: { id: string; name: str
           setBusy(true);
           setMsg(null);
           try {
-            await api(`/api/customers/${customer.id}`, { method: 'PATCH', body: { ...f, name: f.name.trim(), phone_e164: toE164(f.phone_e164) } });
+            const next = { ...f, name: f.name.trim(), contact_name: f.contact_name.trim() || null, email: f.email.trim() || null, phone_e164: toE164(f.phone_e164) || null };
+            const keys = (Object.keys(next) as (keyof typeof next)[]).filter((k) => (next[k] ?? null) !== (base[k] ?? null));
+            if (!keys.length) return setMsg({ ok: true, text: 'Saved' });
+            const saved = await api<typeof base>(`/api/customers/${customer.id}`, { method: 'PATCH', body: { ...Object.fromEntries(keys.map((k) => [k, next[k] ?? ''])), expected: Object.fromEntries(keys.map((k) => [k, base[k] ?? null])) } });
+            setBase({ name: saved.name, kind: saved.kind, contact_name: saved.contact_name, email: saved.email, phone_e164: saved.phone_e164, billing_mode: saved.billing_mode });
             setMsg({ ok: true, text: 'Saved' });
             router.refresh();
           } catch (e) {
@@ -73,7 +80,7 @@ export function ArchiveCustomer({ id, name, archived }: { id: string; name: stri
     <>
       {dialog}
       <Button variant="outline" data-testid={archived ? 'restore-customer' : 'archive-customer'} onClick={async () => {
-        if (!archived && !(await ask({ title: `Archive ${name}?`, body: 'Their sites are retired: they come off routes, any storm still running, and seasonal billing. Their visits, invoices and records stay on file. You can restore the customer later, and then each site.', confirm: 'Archive customer', danger: true }))) return;
+        if (!archived && !(await ask({ title: `Archive ${name}?`, body: 'Their sites are retired: they come off routes, any storm still running, and seasonal billing. Their visits, invoices and records stay on file. Restoring the customer later brings these sites back too. Unsigned quotes for them are withdrawn.', confirm: 'Archive customer', danger: true }))) return;
         setError(null);
         try {
           await api(`/api/customers/${id}`, { method: 'PATCH', body: { archived: !archived } });

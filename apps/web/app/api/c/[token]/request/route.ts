@@ -3,6 +3,7 @@ import { and, customer, eq, serviceDb, site, tenant } from '@flake/db';
 import { z } from 'zod';
 import { baseUrl } from '@/lib/env';
 import { clientIp, HttpError, parseJson, rateLimit, route } from '@/lib/http';
+import { phone } from '@/lib/client';
 import { notifyOffice } from '@/lib/messaging';
 import { resolvePortal } from '@/lib/portal';
 
@@ -22,8 +23,13 @@ export const POST = route<{ params: Promise<{ token: string }> }>(async (req, { 
   const [row] = await db.select({ site, customer, tenant }).from(site)
     .innerJoin(customer, eq(customer.id, site.customer_id))
     .innerJoin(tenant, eq(tenant.id, site.tenant_id))
-    .where(and(eq(site.id, site_id), eq(site.customer_id, who.customerId), eq(site.tenant_id, who.tenantId), eq(site.active, true)));
+    .where(and(eq(site.id, site_id), eq(site.customer_id, who.customerId), eq(site.tenant_id, who.tenantId)));
   if (!row) throw new HttpError(404, 'Site not found');
+  // A retired lot, or an archived customer (issue 150): say who to call, not "not found". A page opened before the
+  // change can still show the form.
+  if (!row.site.active || row.customer.archived_at) {
+    throw new HttpError(409, `${row.tenant.name} isn't scheduling service at ${row.site.label} right now.${row.tenant.contact_phone ? ` Call them at ${phone(row.tenant.contact_phone)}.` : ' Contact them directly.'}`, 'not_scheduling');
+  }
   const hour = Math.floor(Date.now() / 3_600_000);
   const said = note ? ` "${note.replace(/\s+/g, ' ')}"` : '';
   await notifyOffice(row.tenant, {

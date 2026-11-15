@@ -1,4 +1,5 @@
 import { and, asc, asService, contract, crew_member, customer, desc, driver_position, eq, inArray, invoice_draft, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, visit, visit_photo, visitNotVoided, withUser, sms_consent, type Tx } from '@flake/db';
+import { CREW_SUBJECT } from '@flake/core/messages';
 import { clock12 } from './labels';
 import { isLate, liveContracts, localHm } from '@flake/core/time';
 import { replanFrom } from '@flake/core/routing';
@@ -186,8 +187,9 @@ export async function sendRunLink(tenantId: string, runId: string) {
   const link = await shortLink(tenantId, new URL(url).pathname);
   await notifyParty(row.tenant, { phone: row.crew.phone_e164, email: row.crew.email }, {
     template: 'crew_link',
-    vars: { route: row.route?.name ?? 'your route', n: stops.length, link },
-    subject: `${row.tenant.name}: storm on, your route is ready`,
+    vars: { route: row.route?.name ?? (row.crew.language === 'es' ? 'tu ruta' : 'your route'), n: stops.length, link },
+    subject: CREW_SUBJECT[(row.crew.language === 'es' ? 'es' : 'en') as 'en' | 'es'].crew_link(row.tenant.name),
+    lang: (row.crew.language === 'es' ? 'es' : 'en') as 'en' | 'es',
     key: `crew_link:${runId}:${row.crew.id}`,
     related: { storm_run_id: runId },
   });
@@ -316,7 +318,7 @@ export async function notifyRouteChanged(tenantId: string, runId: string, key: s
   // routes to crew, which sends the whole route (issue 91).
   if (!row?.crew || !url || !row.run.published_at) return;
   const link = await shortLink(tenantId, new URL(url).pathname);
-  await notifyParty(row.tenant, { phone: row.crew.phone_e164, email: row.crew.email }, { template: 'route_changed', vars: { link }, subject: `${row.tenant.name}: your route changed`, key: `route_changed:${key}:${runId}`, related: { storm_run_id: runId } });
+  await notifyParty(row.tenant, { phone: row.crew.phone_e164, email: row.crew.email }, { template: 'route_changed', vars: { link }, subject: CREW_SUBJECT[(row.crew.language === 'es' ? 'es' : 'en') as 'en' | 'es'].route_changed(row.tenant.name), lang: (row.crew.language === 'es' ? 'es' : 'en') as 'en' | 'es', key: `route_changed:${key}:${runId}`, related: { storm_run_id: runId } });
 }
 
 /** Each site gets one message per template per storm, however many times the button is pressed. */
@@ -333,16 +335,16 @@ export async function notifyCustomers(ctx: Ctx, stormId: string, input: z.infer<
     return who.filter(({ customer: c }) => !((c.notify_sms && c.phone_e164) || (c.email && c.notify_email !== false))).map((x) => x.label);
   });
   for (const siteId of input.siteIds) {
-    await enqueue('notify.customer', { tenantId: ctx.tenantId, siteId, stormId, template: input.template, time: input.time ?? 'soon', key: `${input.template}:${stormId}:${siteId}` }, { dedupeKey: `notify:${input.template}:${stormId}:${siteId}` });
+    await enqueue('notify.customer', { tenantId: ctx.tenantId, siteId, stormId, template: input.template, time: input.time ?? '', key: `${input.template}:${stormId}:${siteId}` }, { dedupeKey: `notify:${input.template}:${stormId}:${siteId}` });
   }
   return { queued: input.siteIds.length - unreachable.length, unreachable };
 }
 
-export async function notifyCustomer(p: { tenantId: string; siteId: string; template: 'late' | 'on_the_way' | 'done'; time?: string; link?: string; key: string; stormId?: string; visitId?: string }) {
+export async function notifyCustomer(p: { tenantId: string; siteId: string; template: 'late' | 'on_the_way' | 'done' | 'done_no_photo'; time?: string; link?: string; key: string; stormId?: string; visitId?: string }) {
   const db = serviceDb();
   const [row] = await db.select({ site, customer, tenant }).from(site).innerJoin(customer, eq(customer.id, site.customer_id)).innerJoin(tenant, eq(tenant.id, site.tenant_id)).where(and(eq(site.id, p.siteId), eq(site.tenant_id, p.tenantId)));
   if (!row) return;
-  const subjects = { late: 'Running late', on_the_way: 'Your plow is on the way', done: 'Service completed' };
+  const subjects = { late: 'Running late', on_the_way: 'Your plow is on the way', done: 'Service completed', done_no_photo: 'Service completed' };
   await notifyParty(row.tenant, { phone: row.customer.notify_sms ? row.customer.phone_e164 : null, email: row.customer.email, wantsEmail: row.customer.notify_email }, {
     template: p.template,
     vars: { site: row.site.label, time: p.time ?? '', link: p.link ?? '' },
@@ -415,7 +417,7 @@ export async function reopenStorm(ctx: Ctx, stormId: string) {
     const busy = stops.length ? await tx.select({ name: storm.name }).from(run_stop).innerJoin(storm_run, eq(storm_run.id, run_stop.storm_run_id)).innerJoin(storm, eq(storm.id, storm_run.storm_id))
       .where(and(eq(storm.status, 'active'), inArray(run_stop.site_id, stops.map((x) => x.site_id)))).limit(1) : [];
     if (busy.length) throw new HttpError(409, `Some of these lots are on ${busy[0]!.name}, which is running now. Close it first.`, 'busy_sites');
-    if (drafts.length) await asService(tx, ctx.tenantId, () => tx.delete(invoice_draft).where(and(eq(invoice_draft.storm_id, stormId), eq(invoice_draft.tenant_id, ctx.tenantId), inArray(invoice_draft.status, ['draft', 'void']))));
+    if (drafts.length) await asService(tx, ctx.tenantId, () => tx.delete(invoice_draft).where(and(eq(invoice_draft.storm_id, stormId), eq(invoice_draft.tenant_id, ctx.tenantId), eq(invoice_draft.status, 'draft'))));
     const [open] = await tx.update(storm).set({ status: 'active', closed_at: null }).where(eq(storm.id, stormId)).returning();
     if (runs.length) await tx.update(storm_run).set({ link_expires_at: new Date(Date.now() + FAR_FUTURE_DAYS * 86400000).toISOString() }).where(inArray(storm_run.id, runs.map((r) => r.id)));
     return open!;

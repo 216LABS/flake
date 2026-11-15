@@ -83,7 +83,14 @@ const customerBase = z.object({
 });
 export const customerCreate = customerBase.extend({ billing_mode: billingMode.default('card_on_file') });
 // Update schemas come from the base: zod 4 applies defaults even through .partial(), which would reset fields.
-export const customerUpdate = customerBase.partial().extend({ archived: z.boolean().optional() });
+export const customerUpdate = customerBase.partial().extend({
+  archived: z.boolean().optional(),
+  /**
+   * What the editor last saw in each field it changes (issue 144). A field someone else changed since is refused, so a
+   * stale tab can't quietly undo a newer edit.
+   */
+  expected: z.partialRecord(z.enum(['name', 'kind', 'contact_name', 'phone_e164', 'email', 'billing_mode']), z.string().nullable()).optional(),
+});
 
 /** One row of a customer list pasted or uploaded as CSV. Each field is checked again when the row is saved. */
 const csvText = (max: number) => z.string().trim().max(max).nullable().optional();
@@ -216,7 +223,9 @@ export const runStopPatch = z.object({
 });
 
 export const runPatch = z.object({ crew_id: uuid });
-export const stormNotify = z.object({ siteIds: z.array(uuid).min(1), template: z.enum(['late', 'on_the_way']), time: z.string().max(40).optional() });
+export const stormNotify = z.object({ siteIds: z.array(uuid).min(1), template: z.enum(['late', 'on_the_way']), time: z.string().trim().max(40).optional() })
+  // "We expect to reach X by ." helps nobody (issue 148): a running-late message says when.
+  .refine((b) => b.template !== 'late' || Boolean(b.time), { message: 'Pick the time you expect to get there.', path: ['time'] });
 export const stormClose = z.object({ force: z.boolean().default(false) });
 export const stormCallOut = z.object({ time: z.string().max(40) });
 
@@ -295,12 +304,17 @@ export const driverPhotoMeta = z.object({
 });
 
 /** Direct-to-storage upload for full-size photos, which exceed the host's request body limit. */
+/**
+ * Photo formats a phone camera makes (issue 155). SVG and other script-capable types are refused: customers open these
+ * photos through their records links.
+ */
+export const PHOTO_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/avif', 'image/gif'] as const;
 export const driverPhotoUpload = z.object({
   client_uuid: uuid,
   visit_client_uuid: uuid,
   phase: z.enum(['before', 'after', 'issue']),
   taken_at: z.iso.datetime({ offset: true }).optional(),
-  content_type: z.string().regex(/^image\/[a-z0-9.+-]+$/),
+  content_type: z.enum(PHOTO_TYPES, { error: 'Send a JPEG, PNG, WebP or HEIC photo.' }),
 });
 
 export const quoteAccept = z.object({

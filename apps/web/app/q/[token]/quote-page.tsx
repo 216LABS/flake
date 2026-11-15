@@ -39,7 +39,7 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
             {many ? <><h2 className="font-semibold">{l.site.label}</h2><p className="text-sm text-muted">{l.site.address}{l.site.area_sqft ? `. About ${Number(l.site.area_sqft).toLocaleString()} sq ft.` : ''}</p></> : <h2 className="font-semibold">Scope and price, season {l.contract.season}</h2>}
             <ul className="mt-2 space-y-1 text-sm">
               {l.contract.services.map((s: any, i: number) => (
-                <li key={i} data-testid="scope-line"><b className="capitalize">{s.service}</b>: {s.service === 'salt' && l.contract.salt_pricing ? `${money(l.contract.salt_pricing.amount_cents)} per ${l.contract.salt_pricing.unit === 'bag50lb' ? '50 lb bag' : l.contract.salt_pricing.unit}` : priceText(s.pricing, l.contract.season)}{s.trigger_in === 0 ? '. Starts with any measurable snow.' : s.trigger_in != null ? `. Starts at ${s.trigger_in}" of snow.` : ''}</li>
+                <li key={i} data-testid="scope-line"><b className="capitalize">{s.service}</b>: {s.service === 'salt' && l.contract.salt_pricing ? `${money(l.contract.salt_pricing.amount_cents)} per ${l.contract.salt_pricing.unit === 'bag50lb' ? '50 lb bag' : l.contract.salt_pricing.unit}` : priceText(s.pricing, l.contract.season, l.contract.prior)}{s.trigger_in === 0 ? '. Starts with any measurable snow.' : s.trigger_in != null ? `. Starts at ${s.trigger_in}" of snow.` : ''}</li>
               ))}
             </ul>
             {many && l.contract.status === 'accepted' ? <p className="mt-1 text-sm text-ok-ink">Signed.</p> : null}

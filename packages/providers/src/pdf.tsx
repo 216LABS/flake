@@ -10,7 +10,13 @@ import type { ReactElement } from 'react';
 // The built-in PDF fonts only cover Western European letters: "Nguyễn" or "Łódź" came out garbled, and an emoji
 // cut the rest of the line off. Noto Sans covers every Latin script plus Greek and Cyrillic.
 Font.register({ family: 'Noto Sans', fonts: [{ src: NOTO_SANS_REGULAR }, { src: NOTO_SANS_BOLD, fontWeight: 'bold' }] });
-Font.registerHyphenationCallback((word) => [word]);
+// No hyphens in ordinary words, but a run of letters longer than a line (a 200-character lot label, a typed signer
+// name) breaks into pieces instead of running off the page (issue 158).
+Font.registerHyphenationCallback((word) => (word.length > 40 ? word.match(/.{1,30}/gu) ?? [word] : [word]));
+
+/** A service as the customer reads it, "Plow" and not the stored "plow" (issue 145). */
+const SERVICE_WORD: Record<string, string> = { plow: 'Plow', salt: 'Salt', walks: 'Walks', haul: 'Haul' };
+const serviceWord = (s: string) => SERVICE_WORD[s] ?? s;
 
 /** Letters Noto Sans has: Latin (with Vietnamese), IPA, accents, Greek, Cyrillic, and common punctuation and symbols. */
 const COVERED = /[^\t\n\r\u0020-\u052F\u1E00-\u1FFF\u2000-\u206F\u20A0-\u20CF\u2100-\u22FF]/gu;
@@ -61,7 +67,20 @@ function Table({ cols, rows, widths }: { cols: string[]; rows: string[][]; width
   );
 }
 
-function servicesText(services: unknown): string[] {
+/** Seasonal installments billed under an earlier agreement for the same lot and season (issue 156). */
+export interface PdfPriorBilled { cents: number; count: number }
+
+function seasonalText(p: { total_cents: number; installments: number }, prior?: PdfPriorBilled | null): string {
+  const money = (c: number) => `$${(c / 100).toFixed(2)}`;
+  if (!prior || (prior.cents <= 0 && prior.count <= 0)) return `${money(p.total_cents)} for the season, in ${p.installments} monthly installments`;
+  const left = Math.max(0, p.total_cents - prior.cents);
+  const n = Math.max(1, p.installments - prior.count);
+  const head = `${money(p.total_cents)} for the season, ${money(prior.cents)} already billed under the earlier agreement`;
+  if (!left) return `${head}, so nothing more is billed this season`;
+  return `${head}; the remaining ${money(left)} in ${n === 1 ? 'one installment' : `${n} monthly installments`}`;
+}
+
+function servicesText(services: unknown, prior?: PdfPriorBilled | null): string[] {
   if (!Array.isArray(services)) return [];
   return services.map((x: any) => {
     const p = x.pricing;
@@ -70,9 +89,9 @@ function servicesText(services: unknown): string[] {
       : p.type === 'per_push' ? `${money(p.amount_cents)} per push`
       : p.type === 'per_event' ? `${money(p.amount_cents)} per event`
       : p.type === 'hourly' ? `${money(p.rate_cents)} per hour`
-      : p.type === 'seasonal' ? `${money(p.total_cents)} for the season, in ${p.installments} monthly installments`
+      : p.type === 'seasonal' ? seasonalText(p, prior)
       : 'per-inch tiers';
-    return `${x.service}: ${price}${x.trigger_in === 0 ? ', zero tolerance (any measurable snow)' : x.trigger_in != null ? `, trigger ${x.trigger_in}"` : ''}`;
+    return `${serviceWord(x.service)}: ${price}${x.trigger_in === 0 ? ', zero tolerance (any measurable snow)' : x.trigger_in != null ? `, trigger ${x.trigger_in}"` : ''}`;
   });
 }
 
@@ -125,6 +144,17 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
             <Text>Season: {m.contract.season}</Text>
             {servicesText(m.contract.services).map((line) => <Text key={line}>{line}</Text>)}
             <Text>Accepted: {m.contract.accepted_at ? `${when(m.contract.accepted_at)} by ${m.contract.accepted_name ?? unavailable}` : 'not accepted in Flake'}</Text>
+            {m.agreements?.length ? (
+              <View style={{ marginTop: 6 }}>
+                <Text style={s.h3}>Agreements in force during this period</Text>
+                {m.agreements.map((a, n) => (
+                  <View key={`${a.season}-${a.accepted_at}`} style={{ marginBottom: 4 }}>
+                    <Text>{a.season}, signed {a.accepted_at ? when(a.accepted_at) : unavailable}{a.accepted_name ? ` by ${a.accepted_name}` : ''}{m.agreements![n + 1]?.accepted_at ? `, until ${when(m.agreements![n + 1]!.accepted_at)}` : ''}:</Text>
+                    {servicesText(a.services).map((line) => <Text key={line}>  {line}</Text>)}
+                  </View>
+                ))}
+              </View>
+            ) : null}
           </View>
         ) : <Text style={s.muted}>No contract on file for this site.</Text>}
 
@@ -156,8 +186,8 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
             `${v.crew_name}${v.voided_reason ? `\nVOIDED: ${v.voided_reason}` : ''}${v.entered_by === 'office_recorded' ? '\nRecorded by the office' : v.entered_by === 'office_done' ? '\nDone entered by the office' : ''}`,
             `${v.entered_by === 'office_recorded' ? 'Office' : 'Phone'}: ${when(v.arrived_device_at)}\nServer: ${when(v.arrived_received_at)}`,
             `${v.entered_by && v.entered_by !== 'phone' ? 'Office' : 'Phone'}: ${when(v.departed_device_at)}\nServer: ${when(v.departed_received_at)}`,
-            v.arrive_lat === null ? unavailable : `${v.arrive_lat.toFixed(5)}, ${v.arrive_lon?.toFixed(5)} (${val(v.arrive_acc_m, ' m')})`,
-            v.services.join(', ') + (v.is_replow ? ' (re-plow)' : ''),
+            v.arrive_lat === null ? unavailable : `${v.arrive_lat.toFixed(5)}, ${v.arrive_lon?.toFixed(5)} (${val(v.arrive_acc_m, ' m')})${v.gps_note ? `\n${v.gps_note}` : ''}`,
+            v.services.map(serviceWord).join(', ') + (v.is_replow ? ' (re-plow)' : ''),
             Array.isArray(v.salt) && v.salt.length ? (v.salt as any[]).map((x) => `${x.qty} ${x.unit}`).join(', ') : '-',
             val(v.depth_in, '"'),
             String(v.photos.length),
@@ -169,7 +199,7 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
       {m.visits.length ? (
         <Page size="LETTER" style={s.page}>
           <Text style={s.h2}>Photos</Text>
-          {!visitsWithPhotos.length ? <Text>No photos were taken on these {m.visits.length === 1 ? 'visit' : `${m.visits.length} visits`}. The times, GPS and weather above are the record.</Text> : null}
+          {!visitsWithPhotos.length ? <Text>No photos were taken on {m.visits.length === 1 ? 'this visit' : `these ${m.visits.length} visits`}. The times, GPS and weather above are the record.</Text> : null}
           {visitsWithPhotos.length && visitsWithPhotos.length < m.visits.length ? <Text style={s.muted}>{m.visits.length - visitsWithPhotos.length} of {m.visits.length} visits have no photos.</Text> : null}
           {visitsWithPhotos.map((v) => (
             <View key={v.id} wrap={false}>
@@ -216,18 +246,22 @@ export interface ContractPdfInput {
   site: string;
   season: string;
   services: unknown;
+  /** Set on a mid-season re-sign, so the PDF states what is left to bill. */
+  prior?: PdfPriorBilled | null;
   saltText?: string | null;
   /** How the client pays, in a sentence. */
   payment?: string | null;
   terms: string | null;
   acceptance?: { name: string; at: string; ip: string | null } | null;
+  /** The company's time zone, for the acceptance time (issue 145). UTC when missing. */
+  timezone?: string;
   disclaimer?: string;
   footerCta?: string;
   serviceLines?: string[];
 }
 
 function ContractDoc(i: ContractPdfInput) {
-  const lines = i.serviceLines ?? servicesText(i.services);
+  const lines = i.serviceLines ?? servicesText(i.services, i.prior);
   return (
     <Document title={`Snow removal contract - ${i.site}`} author={i.company}>
       <Page size="LETTER" style={s.page}>
@@ -249,7 +283,7 @@ function ContractDoc(i: ContractPdfInput) {
         {i.acceptance ? (
           <View>
             <Text style={s.h2}>Acceptance</Text>
-            <Text>Accepted electronically by {i.acceptance.name} on {i.acceptance.at} from IP {i.acceptance.ip ?? unavailable}.</Text>
+            <Text>Accepted electronically by {i.acceptance.name} on {fmtLocal(i.acceptance.at, i.timezone ?? 'UTC', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })} from IP {i.acceptance.ip ?? unavailable}.</Text>
           </View>
         ) : (
           <View style={{ marginTop: 30 }}>
@@ -266,4 +300,54 @@ function ContractDoc(i: ContractPdfInput) {
 
 export async function renderContractPdf(input: ContractPdfInput): Promise<Buffer> {
   return renderToBuffer(<ContractDoc {...pdfSafe(input)} /> as ReactElement<any>);
+}
+
+export interface InvoicePdfInput {
+  company: { name: string; address?: string | null; phone?: string | null; email?: string | null };
+  customer: { name: string };
+  /** A short number the customer can write on a check. */
+  number: string;
+  issuedAt: string;
+  timezone: string;
+  storm: string;
+  lines: { description: string; quantity: number; amount_cents: number }[];
+  totalCents: number;
+  /** "Paid", "Due on receipt", "Due within 30 days" and so on. */
+  terms: string;
+  payInstructions?: string | null;
+  payLink?: string | null;
+}
+
+/** A printable bill for a customer who pays by check (issue 146): number, lines, total, terms and how to pay. */
+function InvoiceDoc(i: InvoicePdfInput) {
+  const money = (c: number) => `$${(c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return (
+    <Document title={`Invoice ${i.number} - ${i.company.name}`} author={i.company.name}>
+      <Page size="LETTER" style={s.page}>
+        <Text style={s.h2}>{i.company.name}</Text>
+        {i.company.address ? <Text>{i.company.address}</Text> : null}
+        {[i.company.phone, i.company.email].filter(Boolean).length ? <Text>{[i.company.phone, i.company.email].filter(Boolean).join(' | ')}</Text> : null}
+        <Text style={s.h1}>Invoice {i.number}</Text>
+        <Text>Bill to: {i.customer.name}</Text>
+        <Text>Date: {fmtLocal(i.issuedAt, i.timezone, { year: 'numeric', month: 'short', day: 'numeric' })}</Text>
+        <Text>For: snow service, {i.storm}</Text>
+        <Text style={s.h2}>Services</Text>
+        <Table widths={[5, 1, 1.4]} cols={['Description', 'Qty', 'Amount']} rows={i.lines.map((l) => [l.description, String(l.quantity), money(l.amount_cents)])} />
+        <Text style={[s.h2, { textAlign: 'right' }]}>Total: {money(i.totalCents)}</Text>
+        <Text style={{ textAlign: 'right' }}>{i.terms}</Text>
+        {i.payInstructions ? (
+          <View style={{ marginTop: 12 }}>
+            <Text style={s.h3}>How to pay</Text>
+            <Text>{i.payInstructions}</Text>
+          </View>
+        ) : null}
+        {i.payLink ? <Text style={{ marginTop: 8 }}>Pay online: {i.payLink}</Text> : null}
+        <Text style={[s.muted, { marginTop: 18 }]}>Please write invoice {i.number} on your check. Thank you for your business.</Text>
+      </Page>
+    </Document>
+  );
+}
+
+export async function renderInvoicePdf(input: InvoicePdfInput): Promise<Buffer> {
+  return renderToBuffer(<InvoiceDoc {...pdfSafe(input)} /> as ReactElement<any>);
 }

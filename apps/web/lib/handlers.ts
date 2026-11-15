@@ -40,8 +40,8 @@ async function visitDone(tenantId: string, visitId: string) {
   const db = serviceDb();
   const [row] = await db.select({ visit, tenant }).from(visit).innerJoin(tenant, eq(tenant.id, visit.tenant_id)).where(and(eq(visit.id, visitId), eq(visit.tenant_id, tenantId)));
   if (!row?.visit.departed_device_at || (await isVoided(tenantId, visitId))) return;
-  const link = (await photoLink(tenantId, visitId)) ?? `${baseUrl()}/b/${row.tenant.slug}`;
-  await notifyCustomer({ tenantId, siteId: row.visit.site_id, template: 'done', time: fmtLocal(row.visit.departed_device_at, row.tenant.timezone, { hour: 'numeric', minute: '2-digit' }), link, key: `done:${visitId}`, stormId: row.visit.storm_id, visitId });
+  const link = await photoLink(tenantId, visitId);
+  await notifyCustomer({ tenantId, siteId: row.visit.site_id, template: link ? 'done' : 'done_no_photo', time: fmtLocal(row.visit.departed_device_at, row.tenant.timezone, { hour: 'numeric', minute: '2-digit' }), link: link ?? '', key: `done:${visitId}`, stormId: row.visit.storm_id, visitId });
 }
 
 /** report.completion: per-visit email to commercial and HOA customers within 30 minutes of Done, if they want emails. */
@@ -63,7 +63,7 @@ async function completionReport(tenantId: string, visitId: string) {
     '',
     `Arrived: ${when(row.visit.arrived_device_at)}`,
     `Departed: ${when(row.visit.departed_device_at)}`,
-    `Services: ${row.visit.services.join(', ') || 'unavailable'}`,
+    `Services: ${row.visit.services.map((x) => ({ plow: 'Plow', salt: 'Salt', walks: 'Walks', haul: 'Haul' } as Record<string, string>)[x] ?? x).join(', ') || 'unavailable'}`,
     `Depth reported: ${row.visit.depth_in === null ? 'unavailable' : `${row.visit.depth_in}"`}`,
     `Salt: ${salt}`,
     `Crew: ${row.crew.name}`,

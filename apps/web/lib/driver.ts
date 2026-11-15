@@ -1,5 +1,5 @@
-import { and, asc, contract, crew_member, desc, driver_action, driver_position, driverScope, eq, inArray, problem_report, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, visit, visit_correction, visit_photo, visitNotVoided, type DriverScope, type Tx } from '@flake/db';
-import { driverAction, type DriverAction } from '@flake/contracts';
+import { and, asc, contract, crew_member, desc, driver_action, driver_position, driverScope, eq, inArray, problem_report, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, visit, visit_correction, visit_photo, visitNotVoided, visitOnRun, type DriverScope, type Tx } from '@flake/db';
+import { driverAction, saltUnit, serviceKind, type DriverAction } from '@flake/contracts';
 import { gpsMatches } from '@flake/core/geo';
 import { liveContracts } from '@flake/core/time';
 import type { ContractService } from '@flake/core/pricing';
@@ -36,6 +36,30 @@ const STARTS_WORK = new Set(['enroute', 'arrive', 'problem']);
  */
 const CLOSE_SLACK_MS = 60 * 1000;
 const ON_THE_WAY_FRESH_MS = 15 * 60 * 1000;
+/** The most of each salt unit one visit can plausibly use. More is a typo or a bad queue, and is held for the office. */
+const SALT_MAX: Record<string, number> = { bag50lb: 400, lb: 20000, ton: 10, application: 20 };
+
+/**
+ * What a Done keeps (issue 155): only real services and salt units, so a stale app or a tampered link can't put junk
+ * on the customer's records page. A visit is never refused for it; the rest of the Done still counts, and billing review
+ * flags salt it can't price.
+ */
+export function cleanDone(services: string[], salt: { unit: string; qty: number }[] | null | undefined) {
+  const kept = [...new Set(services.filter((x) => serviceKind.safeParse(x).success))];
+  const bags = (salt ?? []).filter((e) => saltUnit.safeParse(e.unit).success && e.qty > 0 && e.qty <= (SALT_MAX[e.unit] ?? 0));
+  return { services: kept, salt: bags.length ? bags : null };
+}
+/** Actions that change what a closed storm's bills should say: a late Done, an Undo, a skip after arriving (issue 159). */
+const CHANGES_BILLING = new Set(['arrive', 'done', 'undo_last', 'problem']);
+
+/**
+ * Work that lands after the close remakes the drafts still in review, half a minute later so a burst of synced actions
+ * remakes them once. Approved bills are left alone; the billing page names what changed on them.
+ */
+async function queueRedraft(tenantId: string, stormId: string) {
+  const slot = Math.floor(Date.now() / 30_000);
+  await enqueue('billing.redraft', { tenantId, stormId }, { dedupeKey: `redraft:${stormId}:${slot}`, runAt: new Date((slot + 1) * 30_000 + 5_000) });
+}
 
 export interface RunScope {
   scope: DriverScope;
@@ -104,6 +128,11 @@ export async function loadRun(rs: RunScope) {
   const siteIds = rows.map((r) => r.site.id);
   const contracts = liveContracts(siteIds.length ? await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), inArray(contract.site_id, siteIds), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)) : [], rs.storm.started_at, rs.tenant.timezone);
   const pins = siteIds.length ? await db.select().from(site_pin).where(and(eq(site_pin.tenant_id, tenantId), inArray(site_pin.site_id, siteIds))) : [];
+  // A stop this run's driver is on site at, with the visit they started (issue 143): a phone opening the link fresh, after
+  // a phone swap or a cleared browser, picks that visit up and can finish it instead of reading the stop as someone
+  // else's. A visit the run's previous driver started stays theirs (issue 154).
+  const open = rows.length ? await db.select({ stop: visit.run_stop_id, client_uuid: visit.client_uuid, arrived_at: visit.arrived_device_at }).from(visit)
+    .where(and(eq(visit.tenant_id, tenantId), inArray(visit.run_stop_id, rows.map((r) => r.stop.id)), eq(visit.crew_id, rs.run.crew_id ?? '00000000-0000-0000-0000-000000000000'), sql`${visit.departed_device_at} is null`, visitNotVoided, visitOnRun(runId))) : [];
   const stormVisits = await db.select({ id: visit.id }).from(visit).where(and(eq(visit.tenant_id, tenantId), eq(visit.storm_id, stormId), eq(visit.crew_id, rs.run.crew_id ?? '00000000-0000-0000-0000-000000000000')));
   return {
     company: rs.tenant.name,
@@ -124,6 +153,7 @@ export async function loadRun(rs: RunScope) {
         pins: pins.filter((p) => p.site_id === st.id).map((p) => ({ id: p.id, kind: p.kind, note: p.note, has_photo: Boolean(p.photo_path) })),
         services,
         salt_unit: salt?.unit ?? (services.includes('salt') ? 'bag50lb' : null),
+        open_visit: stop.status === 'onsite' ? (open.filter((o) => o.stop === stop.id).map((o) => ({ client_uuid: o.client_uuid, arrived_at: new Date(o.arrived_at).toISOString() }))[0] ?? null) : null,
       };
     }),
   };
@@ -202,12 +232,12 @@ export async function processAction(rs: RunScope, a: DriverAction): Promise<Ack>
         // Ledger only. Salt totals are final on Done; photos arrive through the upload endpoint.
         break;
       case 'done': {
-        const [v] = await tx.select().from(visit).where(and(eq(visit.tenant_id, tenantId), eq(visit.client_uuid, a.visit_client_uuid), eq(visit.crew_id, crewId)));
+        const [v] = await tx.select().from(visit).where(and(eq(visit.tenant_id, tenantId), eq(visit.client_uuid, a.visit_client_uuid), visitOnRun(runId)));
         if (!v) throw new HttpError(409, 'visit_missing');
         if (v.departed_device_at) break;
         await tx.update(visit).set({
           departed_device_at: a.at, departed_received_at: new Date().toISOString(), depart_lat: a.gps?.lat ?? null, depart_lon: a.gps?.lon ?? null,
-          services: a.services, depth_in: a.depth_in ?? null, salt: a.salt?.length ? a.salt : null,
+          ...cleanDone(a.services, a.salt), depth_in: a.depth_in ?? null,
         }).where(eq(visit.id, v.id));
         await setStop(tx, rs, stop!.id, 'done');
         after.push(async () => {
@@ -237,7 +267,7 @@ export async function processAction(rs: RunScope, a: DriverAction): Promise<Ack>
         break;
       }
       case 'undo_last': {
-        const [v] = await tx.select().from(visit).where(and(eq(visit.tenant_id, tenantId), eq(visit.client_uuid, a.visit_client_uuid), eq(visit.crew_id, crewId)));
+        const [v] = await tx.select().from(visit).where(and(eq(visit.tenant_id, tenantId), eq(visit.client_uuid, a.visit_client_uuid), visitOnRun(runId)));
         if (!v) throw new HttpError(409, 'visit_missing');
         const last = Date.parse(v.departed_device_at ?? v.arrived_device_at);
         if (Date.parse(a.at) - last > UNDO_WINDOW_MS) throw new HttpError(409, 'undo_window_passed');
@@ -251,7 +281,10 @@ export async function processAction(rs: RunScope, a: DriverAction): Promise<Ack>
     if (err instanceof HttpError) return { client_uuid: a.client_uuid, status: 'rejected', reason: err.message };
     throw err;
   });
-  if (result.status === 'ok') for (const fn of after) await fn();
+  if (result.status === 'ok') {
+    for (const fn of after) await fn();
+    if (rs.storm.status === 'closed' && CHANGES_BILLING.has(a.kind)) await queueRedraft(tenantId, stormId);
+  }
   return result;
 }
 
@@ -342,10 +375,7 @@ async function recordPhoto(rs: RunScope, visitId: string, path: string, input: {
   // Remake the drafts in review, half a minute later so a burst of photos remakes them once.
   if (input.phase === 'after') {
     const [v] = await serviceDb().select({ storm_id: visit.storm_id, status: storm.status }).from(visit).innerJoin(storm, eq(storm.id, visit.storm_id)).where(and(eq(visit.tenant_id, tenantId), eq(visit.id, visitId)));
-    if (v && v.status === 'closed') {
-      const slot = Math.floor(Date.now() / 30_000);
-      await enqueue('billing.redraft', { tenantId, stormId: v.storm_id }, { dedupeKey: `redraft:${v.storm_id}:${slot}`, runAt: new Date((slot + 1) * 30_000 + 5_000) });
-    }
+    if (v && v.status === 'closed') await queueRedraft(tenantId, v.storm_id);
   }
   return { status: 'ok', id: rows[0]!.id };
 }

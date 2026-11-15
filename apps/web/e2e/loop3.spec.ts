@@ -104,7 +104,8 @@ test('a "not before" time saves on the site, keeps its open-by time, and the dri
     expect(after!.service_window).toMatchObject({ open_by: '07:00', not_before: '05:30' });
     const d = await page.context().newPage();
     await d.goto(runs[0]!.link);
-    await expect(d.getByTestId('not-before-tag')).toContainText('05:30');
+    // In 12-hour time like the open-by time beside it (issue 145).
+    await expect(d.getByTestId('not-before-tag')).toContainText('5:30 AM');
   } finally {
     await sql`update site set service_window = ${before!.service_window ? sql.json(before!.service_window) : null} where id = ${siteId}`;
     await sql`update storm set status = 'closed', closed_at = now() where id = ${id}`;

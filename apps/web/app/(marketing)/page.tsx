@@ -1,4 +1,5 @@
 import { buttonVariants, Progress } from '@flake/ui';
+import { SessionLink } from './session-link';
 import Link from 'next/link';
 
 const STEPS = [
@@ -52,7 +53,7 @@ export default function Home() {
             <h1 className="font-display mt-2 text-4xl font-bold leading-[1.02] tracking-tight md:text-6xl">Your drivers tap a text link, your customers get proof, and you get paid the night of the storm.</h1>
             <p className="mt-5 text-lg text-slate-300">Snow plow operations software for companies with 1 to 25 trucks: weather alerts that tell you when to roll, a no-install driver check-in, automatic proof of service and one-click billing.</p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <Link href="/login" className={buttonVariants({ variant: 'accent', size: 'lg' })}>Start free</Link>
+              <SessionLink className={buttonVariants({ variant: 'accent', size: 'lg' })} signedOut="Start free" />
               <Link href="/pricing" className={buttonVariants({ variant: 'outline', size: 'lg' })}>See pricing</Link>
             </div>
             <p className="mt-4 text-sm text-slate-300">Free for early testers through April 30, 2027. Flake earns a small fee on payments you process through it.</p>

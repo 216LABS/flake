@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useConfirm } from '@/components/confirm';
 import { api, dollarsToCents } from '@/lib/client';
-import { scopeLine } from '@/lib/scope';
+import { scopeLine, type PriorBilled } from '@/lib/scope';
 
 type PricingType = 'per_push' | 'per_inch_tier' | 'per_event' | 'seasonal' | 'hourly';
 
@@ -90,7 +90,7 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [] 
   );
 }
 
-export interface ContractRow { id: string; status: string; season: string; services: any[]; salt_pricing: any; accepted_name: string | null; accepted_at: string | null; created_at: string | null; installments_billed: number; quote_url?: string | null; decline_reason?: string | null }
+export interface ContractRow { id: string; status: string; season: string; services: any[]; salt_pricing: any; accepted_name: string | null; accepted_at: string | null; created_at: string | null; installments_billed: number; quote_url?: string | null; decline_reason?: string | null; prior?: PriorBilled | null; in_force?: boolean }
 
 const TONE: Record<string, 'green' | 'amber' | 'gray' | 'blue' | 'red'> = { accepted: 'green', sent: 'blue', draft: 'amber', void: 'gray', declined: 'red' };
 
@@ -120,8 +120,8 @@ export function ContractList({ contracts, canEdit, pdf }: { contracts: ContractR
       <ul className="mt-2 space-y-3 text-sm">
         {contracts.map((k) => (
           <li key={k.id} data-testid="contract-row" data-status={k.status} className={k.status === 'void' ? 'text-faint' : ''}>
-            <div className="flex flex-wrap items-center gap-2"><Badge tone={TONE[k.status] ?? 'gray'}>{k.status === 'sent' ? 'quote sent' : k.status}</Badge><span className="font-medium">{k.season}</span></div>
-            <ul className="mt-1 text-ink-2">{k.services.map((s, i) => <li key={i}>{scopeLine(s, k.salt_pricing)}</li>)}</ul>
+            <div className="flex flex-wrap items-center gap-2"><Badge tone={TONE[k.status] ?? 'gray'}>{k.status === 'sent' ? 'quote sent' : k.status}</Badge><span className="font-medium">{k.season}</span>{k.in_force ? <Badge tone="blue" data-testid="in-force">prices storms this winter</Badge> : null}</div>
+            <ul className="mt-1 text-ink-2">{k.services.map((s, i) => <li key={i}>{scopeLine(s, k.salt_pricing, k.prior)}</li>)}</ul>
             {k.status === 'declined' ? <div className="text-ink-2" data-testid="declined-note">Declined by the customer{k.decline_reason ? `: "${k.decline_reason}"` : '.'} Send a new quote to try again.</div> : null}
             {k.accepted_name ? <div className="text-muted">Signed by {k.accepted_name}{k.installments_billed ? `. ${k.installments_billed} installment${k.installments_billed === 1 ? '' : 's'} billed.` : '.'}</div> : null}
             {links[k.id] ? <Input readOnly value={links[k.id]} className="mt-1" data-testid="resent-url" aria-label="New quote link" />

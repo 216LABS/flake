@@ -15,6 +15,8 @@ interface Stop {
   pins: { id: string; kind: string | null; note: string | null; has_photo: boolean }[];
   services: string[];
   salt_unit: string | null;
+  /** This driver's unfinished visit here, when the stop is on site (issue 143). */
+  open_visit?: { client_uuid: string; arrived_at: string } | null;
 }
 interface RunData {
   company: string;
@@ -32,6 +34,8 @@ interface LocalState {
   nextStopId: string | null;
   depthGiven: boolean;
   last: { stopId: string; visit: string; at: number } | null;
+  /** Stops the server said another phone has (issue 54). This phone doesn't pick up their visit (issue 143). */
+  refused?: string[];
 }
 const EMPTY: LocalState = { visits: {}, statuses: {}, nextStopId: null, depthGiven: false, last: null };
 const DEPTHS = [0.5, 1, 2, 3, 4, 5, 6, 8, 10, 12];
@@ -107,12 +111,19 @@ export function DriverApp({ token }: { token: string }) {
     const wanted: Lang = data.crew?.language === 'es' ? 'es' : 'en';
     langRef.current = wanted;
     setLang(wanted);
+    document.documentElement.lang = wanted;
     await kvSet(runKey, data);
     // Once nothing is queued, the server's view of each stop wins over the phone's.
     const before = generation.current;
     const p = await pending(token);
     // A tap during that read isn't in the count yet, and clearing now would undo it on screen.
-    if (generation.current === before && p.actions === 0 && Object.keys(localRef.current.statuses).length) saveLocal({ ...localRef.current, statuses: {} });
+    if (generation.current !== before || p.actions !== 0) return;
+    // A visit this driver started on another phone, or before the browser was cleared (issue 143): pick it up, so the
+    // stop shows Done instead of "someone else is here".
+    const missing = data.stops.filter((s) => s.status === 'onsite' && s.open_visit && !localRef.current.visits[s.id] && !localRef.current.refused?.includes(s.id));
+    const visits = { ...localRef.current.visits };
+    for (const s of missing) visits[s.id] = { visit: s.open_visit!.client_uuid, arrived_at: s.open_visit!.arrived_at, depth: null, services: s.services, salt: 0, before: false, after: false };
+    if (missing.length || Object.keys(localRef.current.statuses).length) saveLocal({ ...localRef.current, visits, statuses: {} });
   }, [runKey, token, saveLocal, flashToast]);
 
   const refresh = useCallback(async () => {
@@ -138,7 +149,8 @@ export function DriverApp({ token }: { token: string }) {
     if (a.kind === 'arrive' && stopId) {
       const { [stopId]: _visit, ...visits } = localRef.current.visits;
       const { [stopId]: _status, ...statuses } = localRef.current.statuses;
-      saveLocal({ ...localRef.current, visits, statuses, last: localRef.current.last?.stopId === stopId ? null : localRef.current.last });
+      const refused = reason === 'stop_taken' ? [...new Set([...(localRef.current.refused ?? []), stopId])] : localRef.current.refused;
+      saveLocal({ ...localRef.current, visits, statuses, refused, last: localRef.current.last?.stopId === stopId ? null : localRef.current.last });
     }
     flashToast(translate(langRef.current, reason === 'stop_taken' ? 'stop_taken' : 'storm_closed_title'));
   }, [saveLocal, flashToast]);
@@ -176,6 +188,8 @@ export function DriverApp({ token }: { token: string }) {
       if (cachedRun?.crew?.language === 'es') {
         langRef.current = 'es';
         setLang('es');
+        // Screen readers pick their voice from this (issue 145).
+        document.documentElement.lang = 'es';
       }
       const p = await pending(token);
       if (p.actions || p.photos) setSync('saved');
@@ -493,13 +507,14 @@ export function DriverApp({ token }: { token: string }) {
           <div className="text-base text-slate-200" data-testid="progress">{skippedCount ? t('of_done_skipped', { d: doneCount, s: skippedCount, n: stops.length }) : t('of_done', { d: doneCount, n: stops.length })}</div>
         </div>
         <div className="flex items-center gap-2">
-          <span data-testid="sync-badge" data-state={sync} className={cn('shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold', sync === 'synced' ? 'bg-emerald-400 text-black' : sync === 'sending' ? 'bg-sky-300 text-black' : 'bg-amber-300 text-black')}>{badge}</span>
+          <span data-testid="sync-badge" aria-live="polite" data-state={sync} className={cn('shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold', sync === 'synced' ? 'bg-emerald-400 text-black' : sync === 'sending' ? 'bg-sky-300 text-black' : 'bg-amber-300 text-black')}>{badge}</span>
           {run.office_phone ? <a href={`tel:${run.office_phone}`} className="inline-flex min-h-[60px] items-center rounded-xl bg-slate-700 px-4 text-center text-base font-bold text-white [overflow-wrap:normal]" data-testid="call-office">{t('call_office')}</a> : null}
         </div>
       </header>
 
       {locationOff ? <div role="alert" className="mx-4 mb-2 rounded-lg bg-amber-300 p-3 text-base font-semibold text-black" data-testid="location-off">{t('location_off')}</div> : null}
-      {toast ? <div role="status" className="mx-4 mb-2 rounded-lg bg-sky-300 p-3 text-center text-lg font-bold text-black">{toast}</div> : null}
+      {/* Always mounted, so a screen reader hears every toast, not only ones it happened to catch appearing (issue 158). */}
+      <div role="status" aria-live="polite" data-testid="toast-region">{toast ? <div className="mx-4 mb-2 rounded-lg bg-sky-300 p-3 text-center text-lg font-bold text-black">{toast}</div> : null}</div>
 
       {here && next && next.status !== 'onsite' && run.storm.status === 'active' ? (
         <button type="button" onClick={() => arrive(next)} className={cn(bigButtonClass('go', 'tall'), 'mx-4 mb-3 w-[calc(100%-2rem)]')} data-testid="geofence-banner">{t('here_arrive')}</button>
@@ -572,6 +587,9 @@ export function DriverApp({ token }: { token: string }) {
 const Shell = ({ children }: { children: React.ReactNode }) => <div className="min-h-dvh bg-slate-950 text-white">{children}</div>;
 
 type T = (key: DictKey, vars?: Record<string, string | number>) => string;
+/** A pin's kind in the driver's language (issue 145), not the stored word. */
+const PIN_KEYS = new Set(['stake', 'pile', 'ada', 'entrance', 'hazard', 'other']);
+const pinWord = (t: T, kind: string | null) => (kind && PIN_KEYS.has(kind) ? t(`pin_${kind}` as DictKey) : (kind ?? t('pin_other')));
 
 function NextStop({ t, token, stop, awayM, index, total, onNavigate, onArrive, onProblem }: { t: T; token: string; stop: Stop; awayM: number | null; index: number; total: number; onNavigate: () => void; onArrive: () => void; onProblem: () => void }) {
   const away = awayM === null ? null : (({ d, unit }) => t(unit === 'ft' ? 'away_ft' : 'away_mi', { d }))(usDistance(awayM));
@@ -587,9 +605,9 @@ function NextStop({ t, token, stop, awayM, index, total, onNavigate, onArrive, o
       <div className="mt-3 flex flex-wrap gap-2 text-base">
         {/* A driver needs "do this first", not the office's priority number (issue 80). */}
         {stop.site.priority === 1 ? <span className="rounded-lg bg-amber-300 px-3 py-2 font-bold text-black" data-testid="priority">{t('do_first')}</span> : null}
-        {stop.site.not_before ? <span className="rounded-lg bg-slate-700 px-3 py-2" data-testid="not-before-tag">{t('not_before')} {stop.site.not_before}</span> : null}
+        {stop.site.not_before ? <span className="rounded-lg bg-slate-700 px-3 py-2" data-testid="not-before-tag">{t('not_before')} {clock12(stop.site.not_before)}</span> : null}
         {stop.site.open_by ? <span className="rounded-lg bg-slate-700 px-3 py-2">{t('window')} {clock12(stop.site.open_by)}</span> : null}
-        {stop.pins.map((p) => <span key={p.id} className="rounded-lg bg-slate-700 px-3 py-2">{p.kind}{p.note ? `: ${p.note}` : ''}</span>)}
+        {stop.pins.map((p) => <span key={p.id} className="rounded-lg bg-slate-700 px-3 py-2">{pinWord(t, p.kind)}{p.note ? `: ${p.note}` : ''}</span>)}
       </div>
       {stop.site.notes ? <p className="mt-3 text-lg text-slate-100"><b>{t('notes')}:</b> {stop.site.notes}</p> : null}
       <div className="mt-4 grid gap-3">
@@ -602,8 +620,8 @@ function NextStop({ t, token, stop, awayM, index, total, onNavigate, onArrive, o
         <div className="mt-4 grid grid-cols-3 gap-2">
           {stop.pins.filter((p) => p.has_photo).map((p) => (
             <figure key={p.id} className="m-0">
-              <img src={`/api/d/${token}/pins/${p.id}`} alt={[p.kind, p.note].filter(Boolean).join(': ')} className="h-24 w-full rounded-lg object-cover" data-testid={`driver-pin-${p.id}`} />
-              <figcaption className="mt-1 truncate text-sm text-slate-300">{p.kind}</figcaption>
+              <img src={`/api/d/${token}/pins/${p.id}`} alt={[pinWord(t, p.kind), p.note].filter(Boolean).join(': ')} className="h-24 w-full rounded-lg object-cover" data-testid={`driver-pin-${p.id}`} />
+              <figcaption className="mt-1 truncate text-sm text-slate-300">{pinWord(t, p.kind)}</figcaption>
             </figure>
           ))}
         </div>

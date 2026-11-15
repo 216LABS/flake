@@ -80,7 +80,7 @@ test('customer records page: visits with photos and salt, private to that custom
 
 test('a customer asks for another visit from their records page, and the office hears about it once', async ({ page, browser, baseURL }) => {
   await login(page);
-  const [c] = await sql`select c.id, c.name, s.id as site_id, s.label from customer c join site s on s.customer_id = c.id join tenant t on t.id = c.tenant_id where t.slug = 'lakeshore-demo' order by c.name limit 1`;
+  const [c] = await sql`select c.id, c.name, s.id as site_id, s.label from customer c join site s on s.customer_id = c.id join tenant t on t.id = c.tenant_id where t.slug = 'lakeshore-demo' and c.archived_at is null and s.active order by c.name limit 1`;
   const { url } = await (await page.request.get(`/api/customers/${c!.id}/portal`)).json();
   const guest = await browser.newContext({ baseURL });
   const g = await guest.newPage();
