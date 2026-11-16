@@ -9,6 +9,7 @@ export const GET = route(async (req) => {
   const q = new URL(req.url).searchParams;
   const p = period(q.get('from') ?? undefined, q.get('to') ?? undefined, ctx.tenant.timezone);
   if (p.backward) throw new HttpError(422, `The From date (${p.backward.from}) is after the To date (${p.backward.to}).`, 'backward_range');
-  const rows = await asUser(ctx, (tx) => crewHours(tx, p, ctx.tenant.timezone));
+  // Employees only unless asked: a sub run through payroll by mistake is a real cost (issue 160).
+  const rows = (await asUser(ctx, (tx) => crewHours(tx, p, ctx.tenant.timezone))).filter((r) => q.get('subs') === '1' || r.kind !== 'sub');
   return new Response(hoursCsv(rows), { headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="flake-hours-${p.from}-to-${p.to}.csv"` } });
 });

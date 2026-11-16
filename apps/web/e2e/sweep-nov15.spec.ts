@@ -194,3 +194,22 @@ test('feedback goes to the Flake team with the page, and the storm-night guide o
   await page.getByTestId('help-link').click();
   await expect(page.getByRole('heading', { name: 'Storm-night guide' })).toBeVisible();
 });
+
+/** Issue 163: an incident packet from the moment of a slip, with its summary and station weather. */
+test('an incident packet is made from the time it happened, and the hash repeats', async ({ page }) => {
+  await login(page);
+  const [c1] = await sql`select s.id from site s join tenant t on t.id = s.tenant_id where t.slug = 'lakeshore-demo' and s.label = 'Madison Ave Retail Lot'`;
+  await page.goto(`/proof?site=${c1!.id}`);
+  await page.getByTestId('proof-mode').getByText('Incident').click();
+  await page.getByTestId('proof-incident').fill('2025-12-13T08:30');
+  const generate = async () => {
+    await page.getByTestId('proof-generate').click();
+    await expect(page.getByTestId('proof-ready')).toBeVisible({ timeout: 60000 });
+    return page.getByTestId('manifest-hash').textContent();
+  };
+  const a = await generate();
+  expect(a).toMatch(/^[0-9a-f]{64}$/);
+  const [row] = await sql`select manifest from proof_packet where manifest_sha256 = ${a} limit 1`;
+  expect((row!.manifest as { incident_at?: string }).incident_at).toBeTruthy();
+  expect(await generate()).toBe(a);
+});

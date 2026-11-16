@@ -82,7 +82,7 @@ export function RateCardForm({ card }: { card: RateCard }) {
 
 export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boolean }) {
   const router = useRouter();
-  const blank = { name: '', phone_e164: '', email: '', kind: 'employee', language: 'en', per_visit: '', hourly: '' };
+  const blank = { name: '', phone_e164: '', email: '', kind: 'employee', language: 'en', per_visit: '', hourly: '', per_storm: '', per_season: '' };
   const [f, setF] = useState(blank);
   const [editing, setEditing] = useState<string | null>(null);
   const [invite, setInvite] = useState<string | null>(null);
@@ -91,11 +91,11 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
   const load = (c: any) => {
     setEditing(c.id);
     setInvite(null);
-    setF({ name: c.name, phone_e164: c.phone_e164 ?? '', email: c.email ?? '', kind: c.kind, language: c.language, per_visit: c.sub_rate_card?.per_visit_cents ? String(c.sub_rate_card.per_visit_cents / 100) : '', hourly: c.sub_rate_card?.hourly_cents ? String(c.sub_rate_card.hourly_cents / 100) : '' });
+    setF({ name: c.name, phone_e164: c.phone_e164 ?? '', email: c.email ?? '', kind: c.kind, language: c.language, per_visit: c.sub_rate_card?.per_visit_cents ? String(c.sub_rate_card.per_visit_cents / 100) : '', hourly: c.sub_rate_card?.hourly_cents ? String(c.sub_rate_card.hourly_cents / 100) : '', per_storm: c.sub_rate_card?.flat_per_storm_cents ? String(c.sub_rate_card.flat_per_storm_cents / 100) : '', per_season: c.sub_rate_card?.flat_per_season_cents ? String(c.sub_rate_card.flat_per_season_cents / 100) : '' });
   };
   const body = () => {
-    const { per_visit, hourly, ...rest } = f;
-    return { ...rest, kind: f.kind, sub_rate_card: f.kind === 'sub' ? { ...(per_visit ? { per_visit_cents: dollarsToCents(per_visit) } : {}), ...(hourly ? { hourly_cents: dollarsToCents(hourly) } : {}) } : null };
+    const { per_visit, hourly, per_storm, per_season, ...rest } = f;
+    return { ...rest, kind: f.kind, sub_rate_card: f.kind === 'sub' ? { ...(per_visit ? { per_visit_cents: dollarsToCents(per_visit) } : {}), ...(hourly ? { hourly_cents: dollarsToCents(hourly) } : {}), ...(per_storm ? { flat_per_storm_cents: dollarsToCents(per_storm) } : {}), ...(per_season ? { flat_per_season_cents: dollarsToCents(per_season) } : {}) } : null };
   };
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -149,6 +149,9 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
             <div className="grid grid-cols-2 gap-2">
               <div><Label htmlFor="sub-visit">Pay per visit ($)</Label><Input id="sub-visit" type="number" value={f.per_visit} onChange={(e) => setF({ ...f, per_visit: e.target.value })} /></div>
               <div><Label htmlFor="sub-hour">Pay per hour ($)</Label><Input id="sub-hour" type="number" value={f.hourly} onChange={(e) => setF({ ...f, hourly: e.target.value })} /></div>
+              <div><Label htmlFor="sub-storm">Flat per storm ($)</Label><Input id="sub-storm" type="number" value={f.per_storm} onChange={(e) => setF({ ...f, per_storm: e.target.value })} data-testid="sub-per-storm" /></div>
+              <div><Label htmlFor="sub-season">Flat per season ($)</Label><Input id="sub-season" type="number" value={f.per_season} onChange={(e) => setF({ ...f, per_season: e.target.value })} data-testid="sub-per-season" /></div>
+              <p className="col-span-2 text-xs text-muted">A season rate is paid in five equal months, November through March, while they&apos;re on the crew.</p>
             </div>
           ) : null}
         </div>

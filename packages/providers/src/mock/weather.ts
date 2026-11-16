@@ -1,7 +1,7 @@
 import lakeEffect from '../../fixtures/weather/lakewood-lake-effect-2025-12.json';
 import quiet from '../../fixtures/weather/quiet.json';
 import refreeze from '../../fixtures/weather/refreeze.json';
-import type { FetchResult, FetchedDoc, GridRef, NohrscResult, WeatherProvider } from '../types';
+import type { FetchResult, FetchedDoc, GridRef, NohrscResult, StationHistory, WeatherProvider } from '../types';
 
 export const WEATHER_FIXTURES = {
   'lakewood-lake-effect-2025-12': lakeEffect,
@@ -47,6 +47,17 @@ export class MockWeather implements WeatherProvider {
     const series = this.fixture.gridpoint.temperature.values;
     const hit = series.filter((v) => Date.parse(v.validTime.split('/')[0]!) <= at.getTime()).at(-1);
     return doc(`mock://api.weather.gov/stations/${station}/observations/latest?fixture=${this.name}`, { _synthetic: true, properties: { timestamp: at.toISOString(), textDescription: 'Synthetic', temperature: { unitCode: 'wmoUnit:degC', value: hit?.value ?? null } } }, null);
+  }
+
+  /** Synthetic hourly reports: a thaw in the afternoon and a freeze at night, every day, so a packet shows both. */
+  async fetchStationHistory(station: string, from: Date, to: Date): Promise<StationHistory | null> {
+    const rows = [];
+    for (let t = Math.ceil(from.getTime() / 3_600_000) * 3_600_000; t <= to.getTime() && rows.length < 500; t += 3_600_000) {
+      const hour = new Date(t).getUTCHours();
+      rows.push({ t: new Date(t).toISOString(), temp_f: Math.round((31 + 6 * Math.sin(((hour - 13) / 24) * 2 * Math.PI)) * 10) / 10, precip_in: hour === 6 ? 0.02 : 0, wx: hour === 6 ? '-SN' : null, snow_depth_in: 3 });
+    }
+    const url = `mock://mesonet.agron.iastate.edu/asos?station=${station}&sts=${from.toISOString()}&ets=${to.toISOString()}&fixture=${this.name}`;
+    return { url, raw: enc.encode(JSON.stringify({ _synthetic: true, rows })), rows, provider: 'Synthetic demo data', synthetic: true };
   }
 
   async fetchNohrsc(hours: 6 | 24, at: Date, points: { id: string; lat: number; lon: number }[]): Promise<NohrscResult | null> {

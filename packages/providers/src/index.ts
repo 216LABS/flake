@@ -21,7 +21,7 @@ export { LiveRouteMatrix, noRouter } from './live/router';
 export { MockPayments, signMockWebhook, MOCK_WEBHOOK_SECRET } from './mock/payments';
 export { MockSms, signTwilio, MOCK_TWILIO_TOKEN } from './mock/sms';
 export { MockFootprints, MockGeocoder, MockOsm, MockParcels, MockTiles } from './mock/geo';
-export { LiveWeather, nearestValidCell, nohrscCellToInches, nohrscUrl } from './live/weather';
+export { LiveWeather, nearestValidCell, nohrscCellToInches, nohrscUrl, parseStationCsv, stationHistoryUrl } from './live/weather';
 export { LivePush, MockPush } from './live/push';
 export { LiveEmail } from './live/email';
 export { LiveSms } from './live/sms';

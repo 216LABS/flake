@@ -388,3 +388,20 @@ export async function stormWeather(tenantId: string, s: { status: string; starte
   }
   return { forecast_in, observed_in, synthetic: grids.some((g) => Boolean(g.summary.synthetic)), note };
 }
+
+/**
+ * Observed weather at a lot's nearest airport station for a past window (issue 163): every report's temperature,
+ * precipitation, weather codes and snow depth. Kept as a weather snapshot with its request URL and hash like the other
+ * evidence. The same station and window reuse the saved snapshot, so a packet made again hashes the same.
+ */
+export async function stationHistory(station: string, from: string, to: string): Promise<typeof weather_snapshot.$inferSelect | null> {
+  const db = serviceDb();
+  const [saved] = await db.select().from(weather_snapshot).where(and(eq(weather_snapshot.source, 'nws_obs'), eq(weather_snapshot.station, station), sql`${weather_snapshot.summary}->>'from' = ${from}`, sql`${weather_snapshot.summary}->>'to' = ${to}`)).limit(1);
+  if (saved) return saved;
+  const { weather } = await getProviders();
+  const got = await weather.fetchStationHistory(station, new Date(from), new Date(to));
+  if (!got) return null;
+  const now = new Date();
+  const { path, sha256 } = await archive('station', station, now, got.raw, got.url.includes('format=onlycomma') ? 'csv' : 'json');
+  return insertSnapshot({ source: 'nws_obs', station, fetchedAt: now, lastModified: null, url: got.url, path, sha256, summary: { kind: 'history', from, to, provider: got.provider, rows: got.rows, ...(got.synthetic ? { synthetic: true } : {}) } });
+}

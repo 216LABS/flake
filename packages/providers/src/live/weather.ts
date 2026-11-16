@@ -1,4 +1,4 @@
-import type { FetchResult, FetchedDoc, GridRef, NohrscResult, WeatherProvider } from '../types';
+import type { FetchResult, FetchedDoc, GridRef, NohrscResult, StationHistory, StationHour, WeatherProvider } from '../types';
 
 const BASE = 'https://api.weather.gov';
 
@@ -8,6 +8,37 @@ export function nohrscUrl(hours: 6 | 24, issued: Date): string {
   const ym = `${issued.getUTCFullYear()}${pad(issued.getUTCMonth() + 1)}`;
   const stamp = `${ym}${pad(issued.getUTCDate())}${pad(issued.getUTCHours())}`;
   return `https://www.nohrsc.noaa.gov/snowfall_v2/data/${ym}/sfav2_CONUS_${hours}h_${stamp}.tif`;
+}
+
+/**
+ * The Iowa Environmental Mesonet's archive of every US airport station's reports (ASOS/AWOS), kept for decades and free.
+ * The NWS's own observations API only keeps about a week, too short for a claim months later. CONUS stations drop the
+ * K (KCLE is CLE); Alaska, Hawaii and territories keep all four letters.
+ */
+export function stationHistoryUrl(station: string, from: Date, to: Date): string {
+  const id = /^K[A-Z0-9]{3}$/.test(station) ? station.slice(1) : station;
+  const iso = (d: Date) => `${d.toISOString().slice(0, 16)}Z`;
+  const q = new URLSearchParams({ station: id, sts: iso(from), ets: iso(to), tz: 'Etc/UTC', format: 'onlycomma', latlon: 'no', elev: 'no', missing: 'null', trace: '0.0001', direct: 'no' });
+  for (const d of ['tmpf', 'p01i', 'wxcodes', 'snowdepth']) q.append('data', d);
+  // Routine hourly and special reports only, not the 5-minute feed, which is mostly blank.
+  q.append('report_type', '3');
+  q.append('report_type', '4');
+  return `https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py?${q.toString()}`;
+}
+
+/** The archive's CSV, one row per report: station,valid,tmpf,p01i,wxcodes,snowdepth. */
+export function parseStationCsv(text: string): StationHour[] {
+  const [head, ...lines] = text.trim().split(/\r?\n/);
+  const cols = (head ?? '').split(',');
+  const at = (name: string) => cols.indexOf(name);
+  const num = (v: string | undefined) => (v === undefined || v === '' || v === 'null' || v === 'M' ? null : Number.isFinite(Number(v)) ? Number(v) : null);
+  return lines.map((l) => l.split(',')).filter((c) => c[at('valid')]).map((c) => ({
+    t: new Date(`${c[at('valid')]!.replace(' ', 'T')}Z`).toISOString(),
+    temp_f: num(c[at('tmpf')]),
+    precip_in: num(c[at('p01i')]),
+    wx: c[at('wxcodes')] && c[at('wxcodes')] !== 'null' && c[at('wxcodes')] !== 'M' ? c[at('wxcodes')]! : null,
+    snow_depth_in: num(c[at('snowdepth')]),
+  }));
 }
 
 export class LiveWeather implements WeatherProvider {
@@ -27,6 +58,15 @@ export class LiveWeather implements WeatherProvider {
     if (!res.ok) throw new Error(`NWS ${res.status} for ${url}`);
     const raw = new Uint8Array(await res.arrayBuffer());
     return { notModified: false, url, raw, json: JSON.parse(new TextDecoder().decode(raw)), lastModified: res.headers.get('last-modified') };
+  }
+
+  async fetchStationHistory(station: string, from: Date, to: Date): Promise<StationHistory | null> {
+    const url = stationHistoryUrl(station, from, to);
+    const res = await this.fetchImpl(url, { headers: { 'User-Agent': this.userAgent } });
+    if (!res.ok) throw new Error(`Station archive ${res.status} for ${url}`);
+    const raw = new Uint8Array(await res.arrayBuffer());
+    const rows = parseStationCsv(new TextDecoder().decode(raw));
+    return rows.length ? { url, raw, rows, provider: 'Iowa Environmental Mesonet ASOS archive (NWS/FAA airport station reports)' } : null;
   }
 
   async pointToGrid(lat: number, lon: number): Promise<GridRef> {

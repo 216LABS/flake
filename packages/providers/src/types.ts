@@ -29,12 +29,26 @@ export interface NohrscResult {
   synthetic?: boolean;
 }
 
+/** One observation from an airport weather station (ASOS/AWOS). null is "not reported", never zero. */
+export interface StationHour { t: string; temp_f: number | null; precip_in: number | null; wx: string | null; snow_depth_in: number | null }
+
+export interface StationHistory {
+  url: string;
+  raw: Uint8Array;
+  /** Who keeps the archive, in words for a proof packet. */
+  provider: string;
+  rows: StationHour[];
+  synthetic?: boolean;
+}
+
 export interface WeatherProvider {
   pointToGrid(lat: number, lon: number): Promise<GridRef>;
   fetchGridpoint(office: string, x: number, y: number, ifModifiedSince?: string | null): Promise<FetchResult>;
   fetchAlerts(lat: number, lon: number, at: Date): Promise<FetchedDoc>;
   fetchObservation(station: string, at: Date): Promise<FetchedDoc>;
   fetchNohrsc(hours: 6 | 24, at: Date, points: { id: string; lat: number; lon: number }[]): Promise<NohrscResult | null>;
+  /** Observed weather at a station for any past window, not only the last few days the NWS keeps (issue 163). */
+  fetchStationHistory(station: string, from: Date, to: Date): Promise<StationHistory | null>;
 }
 
 export interface Parcel {

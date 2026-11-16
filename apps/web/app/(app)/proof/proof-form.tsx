@@ -8,7 +8,8 @@ import { api } from '@/lib/client';
 
 export function ProofForm({ sites, packets, preselect, tz }: { sites: { id: string; label: string; customer: string }[]; packets: any[]; preselect?: string; tz: string }) {
   const [siteId, setSiteId] = useState(preselect ?? sites[0]?.id ?? '');
-  const [mode, setMode] = useState<'range' | 'claim'>('range');
+  const [mode, setMode] = useState<'range' | 'claim' | 'incident'>('range');
+  const [incident, setIncident] = useState('');
   // This season so far: snow seasons start in the fall, so before July it's the one that began last October.
   // Dates are the company's calendar: the UTC date is already tomorrow on a storm evening.
   const [from, setFrom] = useState(() => {
@@ -22,9 +23,16 @@ export function ProofForm({ sites, packets, preselect, tz }: { sites: { id: stri
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ visits: number; visits_with_photos: number; photos: number } | null>(null);
 
-  const span = () => mode === 'claim'
-    ? (claim ? { start: zonedDayStart(addDays(claim, -2), tz), end: zonedDayEnd(addDays(claim, 2), tz) } : null)
-    : (from && to ? { start: zonedDayStart(from, tz), end: zonedDayEnd(to, tz) } : null);
+  // A slip-and-fall (issue 163): the moment it happened, and 72 hours before (the storm and the night after) to 24 after.
+  const incidentAt = () => {
+    const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/.exec(incident);
+    return m ? new Date(zonedDayStart(m[1]!, tz).getTime() + (Number(m[2]) * 60 + Number(m[3])) * 60_000) : null;
+  };
+  const span = () => mode === 'incident'
+    ? (incidentAt() ? { start: new Date(incidentAt()!.getTime() - 72 * 3_600_000), end: new Date(incidentAt()!.getTime() + 24 * 3_600_000) } : null)
+    : mode === 'claim'
+      ? (claim ? { start: zonedDayStart(addDays(claim, -2), tz), end: zonedDayEnd(addDays(claim, 2), tz) } : null)
+      : (from && to ? { start: zonedDayStart(from, tz), end: zonedDayEnd(to, tz) } : null);
   // How many visits and photos the packet will hold, before anyone waits for a PDF (issue 43).
   useEffect(() => {
     setPreview(null);
@@ -44,7 +52,7 @@ export function ProofForm({ sites, packets, preselect, tz }: { sites: { id: stri
       live = false;
       clearTimeout(t);
     };
-  }, [siteId, mode, from, to, claim, tz]);
+  }, [siteId, mode, from, to, claim, incident, tz]);
 
   const open = async (id: string) => {
     // Safari only allows a new tab during the tap itself, so it opens first and gets its address after.
@@ -68,9 +76,9 @@ export function ProofForm({ sites, packets, preselect, tz }: { sites: { id: stri
     try {
       // These are the operator's calendar days. A 9 PM visit on the last day belongs in the range.
       // Whole local days on both ends, so a DST day ends at 11:59:59 PM, not an hour early or late (issue 16).
-      const start = zonedDayStart(mode === 'claim' ? addDays(claim, -2) : from, tz);
-      const end = zonedDayEnd(mode === 'claim' ? addDays(claim, 2) : to, tz);
-      const { id } = await api<{ id: string }>('/api/proof', { body: { siteId, from: start.toISOString(), to: end.toISOString() } });
+      const range = span();
+      if (!range) throw new Error('Pick the dates first.');
+      const { id } = await api<{ id: string }>('/api/proof', { body: { siteId, from: range.start.toISOString(), to: range.end.toISOString(), ...(mode === 'incident' ? { incident_at: incidentAt()!.toISOString() } : {}) } });
       for (let i = 0; i < 90; i++) {
         const r = await api(`/api/proof/${id}`);
         if (r.status === 'ready') {
@@ -92,14 +100,20 @@ export function ProofForm({ sites, packets, preselect, tz }: { sites: { id: stri
       <Card>
         <Label htmlFor="site">Site</Label>
         <Select id="site" value={siteId} data-testid="proof-site" onChange={(e) => setSiteId(e.target.value)}>{sites.map((s) => <option key={s.id} value={s.id}>{s.label.startsWith(s.customer) || s.customer.startsWith(s.label) ? s.label : `${s.label} (${s.customer})`}</option>)}</Select>
-        <Segmented className="mt-3" label="Which dates" name="proof-mode" testId="proof-mode" value={mode} options={[['range', 'Date range'], ['claim', 'Claim date ± 48 h']] as const} onChange={setMode} />
+        <Segmented className="mt-3" label="Which dates" name="proof-mode" testId="proof-mode" value={mode} options={[['range', 'Date range'], ['claim', 'Claim date ± 48 h'], ['incident', 'Incident']] as const} onChange={setMode} />
         {mode === 'range' ? (
           <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div className="min-w-0"><Label htmlFor="from">From</Label><Input id="from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
             <div className="min-w-0"><Label htmlFor="to">To</Label><Input id="to" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
           </div>
-        ) : (
+        ) : mode === 'claim' ? (
           <div className="mt-2"><Label htmlFor="claim">Claim date</Label><Input id="claim" type="date" value={claim} onChange={(e) => setClaim(e.target.value)} /></div>
+        ) : (
+          <div className="mt-2">
+            <Label htmlFor="incident">When it happened</Label>
+            <Input id="incident" type="datetime-local" value={incident} onChange={(e) => setIncident(e.target.value)} data-testid="proof-incident" />
+            <p className="mt-1 text-xs text-muted">For a slip or damage claim. The packet starts with a plain summary: the last service before and the next after, the weather each hour from the nearest airport station with every freeze marked, the crew&apos;s problem reports, and what the contract covers. It covers 72 hours before to 24 hours after.</p>
+          </div>
         )}
         {preview ? (
           <p className={preview.visits && !preview.photos ? 'mt-3 rounded-md bg-warn-tint p-2 text-sm text-warn-ink' : 'mt-3 text-sm text-muted'} data-testid="proof-preview">
@@ -107,7 +121,7 @@ export function ProofForm({ sites, packets, preselect, tz }: { sites: { id: stri
               : `${preview.visits} visit${preview.visits === 1 ? '' : 's'}, ${preview.photos} photo${preview.photos === 1 ? '' : 's'}.${!preview.photos ? ' None of these visits has photos; the packet will say so.' : preview.visits_with_photos < preview.visits ? ` ${preview.visits - preview.visits_with_photos} visit${preview.visits - preview.visits_with_photos === 1 ? ' has' : 's have'} no photos.` : ''}`}
           </p>
         ) : null}
-        <Button variant="accent" className="mt-4 w-full" disabled={!siteId || state === 'working' || (mode === 'claim' && !claim)} data-testid="proof-generate" onClick={() => void generate()}>{state === 'working' ? 'Generating...' : 'Generate'}</Button>
+        <Button variant="accent" className="mt-4 w-full" disabled={!siteId || state === 'working' || (mode === 'claim' && !claim) || (mode === 'incident' && !incidentAt())} data-testid="proof-generate" onClick={() => void generate()}>{state === 'working' ? 'Generating...' : 'Generate'}</Button>
         {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
         {result ? (
           <div className="mt-3 rounded-md bg-ok-tint p-3 text-sm" data-testid="proof-ready">

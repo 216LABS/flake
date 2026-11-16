@@ -133,3 +133,13 @@ Sam picked these; the details are mine. **[J]**
 - **A route's default truck** goes onto each storm's run and the next pass; the board can change it. Proof packets name the truck at each visit. Truck is optional everywhere, so a one-truck company never sees it until it adds one.
 - **The equipment log** takes fuel (gallons, optional cost), meter hours, maintenance (what was done, optional cost) and notes, optionally against a storm. Reports shows per truck: storm routes, fuel, fuel cost, maintenance cost and the latest meter reading.
 - **Maintenance reminders** (every N hours or days) need one more table; they come next, as their own migration.
+
+## D15. Sub pay and incident packets (Nov 16, 2026; issues 160 and 163)
+STAR asked open questions on both; these are the answers. **[J]**
+- **Sub pay across storms** is a Reports section for owners and dispatchers on Pro: per sub, storms, visits, hours, bags and total, priced exactly like each storm's Sub pay page, with a CSV for 1099 bookkeeping. Viewers don't see pay.
+- **Crew hours are for payroll**, so they list employees only; "Show subs too" adds subcontractors.
+- **Flat sub pay**: per storm is one line per storm worked; per season is paid in five equal months, November through March, while the sub is on the crew. A sub who leaves stops getting later months.
+- **Per-lot sub rates, sub companies and a sub login** wait for a later round (they need tables and a new role).
+- **Incident packet** is a third proof mode: pick the lot and the moment, and it covers 72 hours before to 24 after. It opens with a plain summary (last service before, next after, hours between, freezes after the last service, precipitation, what the contract covers), and adds the crew's problem reports and every hourly observation from the lot's airport station.
+- **Observed station weather** comes from the Iowa Environmental Mesonet's archive of NWS/FAA airport reports, which keeps decades; the NWS's own feed keeps about a week, too short for a claim. It's saved as evidence with its request URL and hash, and reused for the same window so a packet made again hashes the same.
+- **Proof packet headings** no longer overlap the line under them.

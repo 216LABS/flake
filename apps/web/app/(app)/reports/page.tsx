@@ -3,7 +3,8 @@ import { buttonVariants, Card, Eyebrow, Input, Label, PageHeader, Stat, Table, T
 import { sql } from '@flake/db';
 import { asUser, requirePage } from '@/lib/auth';
 import { money } from '@/lib/client';
-import { crewHours, equipmentReport, period, saltReport } from '@/lib/reports';
+import { crewHours, equipmentReport, period, saltReport, subPayReport } from '@/lib/reports';
+import { tenantHasPro } from '@/lib/billing';
 import { contractorSalt, saltOrderingReady } from '@/lib/salt-orders';
 import { SaltOrder } from './salt-order';
 import { SaltStockForm } from './salt-stock';
@@ -12,7 +13,7 @@ export const metadata = { title: 'Reports' };
 
 const tons = (n: number) => `${n.toLocaleString('en-US', { maximumFractionDigits: 2 })} t`;
 
-export default async function Reports({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
+export default async function Reports({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; subs?: string }> }) {
   const q = await searchParams;
   const ctx = await requirePage();
   const tz = ctx.tenant.timezone;
@@ -34,8 +35,10 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
       </>
     );
   }
-  const { hours, salt, bills, equipment } = await asUser(ctx, async (tx) => ({
+  const showPay = ctx.role !== 'viewer' && tenantHasPro(ctx.tenant);
+  const { hours: allHours, salt, bills, equipment, subPay } = await asUser(ctx, async (tx) => ({
     equipment: await equipmentReport(tx, p),
+    subPay: showPay ? await subPayReport(tx, p) : [],
     hours: await crewHours(tx, p, tz),
     salt: await saltReport(tx, ctx.tenantId, p),
     // Storm bills past review, by storm started in the period; seasonal installments by the month they were billed.
@@ -54,6 +57,10 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
       coalesce(sum(amount_cents) filter (where status in ('manual', 'sent', 'failed')), 0)::int as owed,
       coalesce(sum(amount_cents) filter (where status = 'pending'), 0)::int as processing
     from installment_invoice where period >= ${p.from.slice(0, 7)} and period <= ${p.to.slice(0, 7)}`)) as unknown as { billed: number; paid: number; owed: number; processing: number }[])[0] ?? { billed: 0, paid: 0, owed: 0, processing: 0 };
+  // Crew hours are for payroll: employees only, unless asked. Subs are paid from Sub pay (issue 160).
+  const withSubs = q.subs === '1';
+  const hours = allHours.filter((h) => withSubs || h.kind !== 'sub');
+  const subsHidden = !withSubs && allHours.some((h) => h.kind === 'sub');
   // Billed = Paid + Owed + In progress, always (issue 132): a card or bank payment under way is neither yet.
   const billTotal = (k: 'billed' | 'paid' | 'owed' | 'processing') => bills.reduce((n, b) => n + b[k], 0) + installments[k];
   const people = [...new Set(hours.map((h) => h.crewId))].map((id) => {
@@ -79,11 +86,12 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
       <section className="mb-8" aria-labelledby="hours-title">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <Eyebrow id="hours-title">Crew hours</Eyebrow>
-          {hours.length ? <a href={`/api/reports/hours.csv?from=${p.from}&to=${p.to}`} className={buttonVariants({ variant: 'outline', size: 'sm' })} data-testid="hours-csv">Download for payroll (CSV)</a> : null}
+          {hours.length ? <a href={`/api/reports/hours.csv?from=${p.from}&to=${p.to}${withSubs ? '&subs=1' : ''}`} className={buttonVariants({ variant: 'outline', size: 'sm' })} data-testid="hours-csv">Download for payroll (CSV)</a> : null}
         </div>
         <p className="mb-3 max-w-2xl text-sm text-muted">
           From each driver&apos;s first tap on their route link to their last, using their phone&apos;s taps and GPS. A quiet gap of two hours or more starts a new shift. A shift that runs past midnight counts in full on the day it started. Check anything with a note before you pay.
         </p>
+        {subsHidden ? <p className="mb-3 text-sm text-ink-2" data-testid="subs-hidden">Employees only: subcontractors are paid from Sub pay{showPay ? ' below' : ''}, not payroll. <a className="text-link underline" href={`/reports?from=${p.from}&to=${p.to}&subs=1`}>Show subs too</a></p> : null}
         {hours.length ? (
           <>
             <Table stack data-testid="hours-summary">
@@ -146,6 +154,31 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
           </>
         ) : <p className="text-sm text-muted">Nothing billed in these dates yet. Approved storm bills and seasonal installments show here.</p>}
       </section>
+
+      {subPay.length ? (
+        <section className="mb-8" aria-labelledby="subpay-title" data-testid="subpay-report">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <Eyebrow id="subpay-title">Sub pay</Eyebrow>
+            <a href={`/api/reports/subpay.csv?from=${p.from}&to=${p.to}`} className={buttonVariants({ variant: 'outline', size: 'sm' })} data-testid="subpay-csv">Download (CSV)</a>
+          </div>
+          <Table stack>
+            <thead><tr><Th>Subcontractor</Th><Th>Storms</Th><Th>Visits</Th><Th>Hours</Th><Th>Bags</Th><Th className="text-right">Total</Th></tr></thead>
+            <tbody>
+              {subPay.map((r) => (
+                <tr key={r.crew_id} data-testid="subpay-row">
+                  <Td className="font-medium wrap-anywhere">{r.name}{r.checks ? <span className="block text-xs font-medium text-warn-ink">{r.checks} visit{r.checks === 1 ? '' : 's'} to check before paying</span> : null}</Td>
+                  <Td label="Storms">{r.storms.length ? r.storms.map((s, i) => <span key={s.id}>{i ? ', ' : ''}<a className="text-link underline" href={`/storms/${s.id}/pay`}>{s.name}</a></span>) : '-'}{r.season_cents ? <span className="block text-xs text-muted">Season flat rate {money(r.season_cents)}</span> : null}</Td>
+                  <Td label="Visits" className="tabular">{r.visits}</Td>
+                  <Td label="Hours" className="tabular">{r.hours.toFixed(2)}</Td>
+                  <Td label="Bags" className="tabular">{r.bags}</Td>
+                  <Td label="Total" className="tabular text-right font-semibold">{money(r.total_cents)}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+          <p className="mt-1 text-xs text-muted">Storms that started in these dates, priced like each storm&apos;s Sub pay page: undone visits aren&apos;t paid, corrected salt is.</p>
+        </section>
+      ) : null}
 
       {equipment.length ? (
         <section className="mb-8" aria-labelledby="equipment-title" data-testid="equipment-report">

@@ -187,6 +187,8 @@ export const subRateCard = z.object({
   per_visit_cents: cents.optional(),
   hourly_cents: cents.optional(),
   per_bag_cents: cents.optional(),
+  flat_per_storm_cents: cents.optional(),
+  flat_per_season_cents: cents.optional(),
 });
 
 const crewBase = z.object({
@@ -287,7 +289,7 @@ export const flagFix = z.discriminatedUnion('action', [
 ]);
 
 /** One packet covers up to two seasons. A wider range is a mistake, and its photos would not fit in one PDF. */
-export const proofRequest = z.object({ siteId: uuid, from: z.iso.datetime({ offset: true }), to: z.iso.datetime({ offset: true }) })
+export const proofRequest = z.object({ siteId: uuid, from: z.iso.datetime({ offset: true }), to: z.iso.datetime({ offset: true }), incident_at: z.iso.datetime({ offset: true }).optional() })
   .refine((r) => Date.parse(r.from) < Date.parse(r.to), { message: 'The start date must be before the end date', path: ['from'] })
   .refine((r) => Date.parse(r.to) - Date.parse(r.from) <= 731 * 86_400_000, { message: 'Choose two years or less', path: ['to'] });
 

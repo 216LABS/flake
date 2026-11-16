@@ -36,8 +36,9 @@ export function pdfSafe<T>(value: T): T {
 
 const s = StyleSheet.create({
   page: { padding: 40, fontSize: 10, fontFamily: 'Noto Sans', color: '#111827', lineHeight: 1.35 },
-  h1: { fontSize: 20, fontFamily: 'Noto Sans', fontWeight: 'bold', marginBottom: 6 },
-  h2: { fontSize: 13, fontFamily: 'Noto Sans', fontWeight: 'bold', marginTop: 14, marginBottom: 6 },
+  // Headings set their own line height: the page's is sized for 10 pt text, which let a 20 pt title overlap the next line.
+  h1: { fontSize: 20, fontFamily: 'Noto Sans', fontWeight: 'bold', marginBottom: 8, lineHeight: 1.25 },
+  h2: { fontSize: 13, fontFamily: 'Noto Sans', fontWeight: 'bold', marginTop: 14, marginBottom: 6, lineHeight: 1.25 },
   h3: { fontSize: 10.5, fontFamily: 'Noto Sans', fontWeight: 'bold', marginTop: 8, marginBottom: 3 },
   muted: { color: '#4b5563' },
   mono: { fontFamily: 'Courier', fontSize: 8 },
@@ -120,6 +121,25 @@ export interface ProofPdfInput {
   images: Record<string, Uint8Array>;
 }
 
+/**
+ * The incident cover page's facts (issue 163), worked out from the manifest so they always match the visit rows: the
+ * last service before the incident and the next after, and every freeze between the last service and the incident.
+ */
+export function incidentFacts(m: ProofManifest) {
+  const at = Date.parse(m.incident_at!);
+  const done = m.visits.filter((v) => !v.voided_reason);
+  const before = done.filter((v) => Date.parse(v.arrived_device_at) <= at).at(-1) ?? null;
+  const after = done.find((v) => Date.parse(v.arrived_device_at) > at) ?? null;
+  const since = before ? Date.parse(before.departed_device_at ?? before.arrived_device_at) : Date.parse(m.period.from);
+  const rows = (m.observations?.rows ?? []).filter((r) => r.temp_f !== null);
+  const freezes = rows.filter((r, i) => i > 0 && rows[i - 1]!.temp_f! > 32 && r.temp_f! <= 32 && Date.parse(r.t) > since && Date.parse(r.t) <= at).map((r) => r.t);
+  const last24 = rows.filter((r) => Date.parse(r.t) <= at && Date.parse(r.t) > at - 86_400_000).map((r) => r.temp_f!);
+  const precip = (m.observations?.rows ?? []).filter((r) => Date.parse(r.t) > since && Date.parse(r.t) <= at && (r.precip_in ?? 0) > 0);
+  return { before, after, freezes, low: last24.length ? Math.min(...last24) : null, high: last24.length ? Math.max(...last24) : null, precipIn: Math.round(precip.reduce((n, r) => n + (r.precip_in ?? 0), 0) * 100) / 100, wx: [...new Set(precip.map((r) => r.wx).filter(Boolean))] as string[] };
+}
+
+const hoursBetween = (a: string, b: number) => Math.round((b - Date.parse(a)) / 360_000) / 10;
+
 function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdfInput) {
   const tz = m.contractor.timezone;
   const when = (iso: string | null | undefined) => (iso ? fmtLocal(iso, tz, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' }) : unavailable);
@@ -127,6 +147,37 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
   const visitsWithPhotos = m.visits.filter((v) => v.photos.length);
   return (
     <Document title={`Proof packet - ${m.site.label}`} author="Flake by 216LABS">
+      {m.incident_at ? (() => {
+        const f = incidentFacts(m);
+        const at = Date.parse(m.incident_at);
+        const visitLine = (v: NonNullable<typeof f.before>) => `${v.services.map(serviceWord).join(' + ') || 'Visit'}: arrived ${when(v.arrived_device_at)}${v.departed_device_at ? `, left ${when(v.departed_device_at)}` : ''}${Array.isArray(v.salt) && v.salt.length ? `, salt ${(v.salt as { qty: number; unit: string }[]).map((x) => `${x.qty} ${x.unit}`).join(', ')}` : ''}. ${v.crew_name}${v.truck_name ? `, ${v.truck_name}` : ''}.`;
+        return (
+          <Page size="LETTER" style={s.page}>
+            <Text style={s.h2}>{m.contractor.name}</Text>
+            <Text style={s.h1}>Incident summary</Text>
+            {m.observations?.synthetic ? <Text style={s.warn}>This packet contains SYNTHETIC weather test data from demo mode. It is not a real observation.</Text> : null}
+            <Text>Site: {m.site.label}, {m.site.address}</Text>
+            <Text>Customer: {m.customer.name}</Text>
+            <Text>Incident reported for: {when(m.incident_at)}</Text>
+            <Text style={s.h3}>Last service before the incident</Text>
+            <Text>{f.before ? `${visitLine(f.before)} That was ${hoursBetween(f.before.departed_device_at ?? f.before.arrived_device_at, at)} hours before the incident.` : 'No service recorded in this window before the incident.'}</Text>
+            <Text style={s.h3}>Next service after</Text>
+            <Text>{f.after ? visitLine(f.after) : 'No service recorded in this window after the incident.'}</Text>
+            <Text style={s.h3}>Weather</Text>
+            {m.observations ? (
+              <View>
+                <Text>{`At ${m.observations.station}, the 24 hours before the incident ran from ${f.low ?? unavailable} F to ${f.high ?? unavailable} F.`}</Text>
+                <Text>{f.freezes.length ? `The temperature fell to freezing ${f.freezes.length === 1 ? 'once' : `${f.freezes.length} times`} after the last service and before the incident: ${f.freezes.map((t) => when(t)).join('; ')}.` : 'The temperature did not fall through freezing between the last service and the incident.'}</Text>
+                <Text>{f.precipIn ? `${f.precipIn} in of precipitation fell in that time${f.wx.length ? ` (reported as ${f.wx.join(', ')})` : ''}.` : 'No precipitation was reported in that time.'}</Text>
+              </View>
+            ) : <Text style={s.muted}>Observed station weather is unavailable for this lot.</Text>}
+            <Text style={s.h3}>What the contract covers</Text>
+            {m.contract ? servicesText(m.contract.services).map((line) => <Text key={line}>{line}</Text>) : <Text style={s.muted}>No contract on file for this site.</Text>}
+            {m.problems?.length ? <Text style={{ marginTop: 6 }}>{m.problems.length} problem report{m.problems.length === 1 ? '' : 's'} from the crew on this lot in the window, listed with the weather.</Text> : null}
+            <Text style={[s.muted, { marginTop: 12 }]}>Times are {m.contractor.name}&apos;s local time. Every fact here comes from the records that follow: visits as the phone recorded them, corrections listed separately, and weather with its source and hash.</Text>
+          </Page>
+        );
+      })() : null}
       <Page size="LETTER" style={s.page}>
         <Text style={s.h2}>{m.contractor.name}</Text>
         <Text style={s.h1}>Proof of service packet</Text>
@@ -196,6 +247,34 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
           ])}
         />
       </Page>
+
+      {m.incident_at && (m.observations || m.problems?.length) ? (
+        <Page size="LETTER" style={s.page}>
+          {m.problems?.length ? (
+            <View>
+              <Text style={s.h2}>Problem reports from the crew</Text>
+              {m.problems.map((p) => <Text key={p.id}>{when(p.at)}: {p.kind}{p.crew_name ? ` (${p.crew_name})` : ''}{p.note ? `. "${p.note}"` : ''}</Text>)}
+            </View>
+          ) : null}
+          {m.observations ? (
+            <View>
+              <Text style={s.h2}>Observed weather at {m.observations.station}</Text>
+              {m.observations.synthetic ? <Text style={s.warn}>SYNTHETIC weather test data from demo mode. It is not a real observation.</Text> : null}
+              <Text style={s.muted}>{m.observations.provider}. Fetched {when(m.observations.fetched_at)}.</Text>
+              <Text style={s.mono}>{m.observations.request_url}</Text>
+              <Text style={s.mono}>sha256 {m.observations.sha256}</Text>
+              <Table
+                widths={[2.4, 1, 1, 1.6, 1.2]}
+                cols={['Time', 'Temp F', 'Precip in', 'Weather', 'Snow depth in']}
+                rows={m.observations.rows.map((r, i, all) => [
+                  `${when(r.t)}${i > 0 && all[i - 1]!.temp_f !== null && r.temp_f !== null && all[i - 1]!.temp_f! > 32 && r.temp_f <= 32 ? '  FREEZE' : ''}`,
+                  r.temp_f === null ? '-' : String(r.temp_f), r.precip_in === null ? '-' : String(r.precip_in), r.wx ?? '-', r.snow_depth_in === null ? '-' : String(r.snow_depth_in),
+                ])}
+              />
+            </View>
+          ) : null}
+        </Page>
+      ) : null}
 
       {m.site_walk?.length ? (
         <Page size="LETTER" style={s.page}>

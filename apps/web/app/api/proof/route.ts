@@ -18,10 +18,10 @@ export const GET = route(async () => {
 export const POST = route(async (req) => {
   const ctx = await requireApi('viewer');
   rateLimit(`proof:${ctx.userId}`, 10, 60_000);
-  const { siteId, from, to } = await parseJson(req, proofRequest);
+  const { siteId, from, to, incident_at } = await parseJson(req, proofRequest);
   const [st] = await asUser(ctx, (tx) => tx.select({ id: site.id }).from(site).where(eq(site.id, siteId)));
   if (!st) throw new HttpError(404, 'Site not found');
   const packetId = randomUUID();
-  await enqueue('proof.render', { tenantId: ctx.tenantId, siteId, from, to, packetId, createdBy: ctx.userId }, { dedupeKey: `proof:${packetId}` });
+  await enqueue('proof.render', { tenantId: ctx.tenantId, siteId, from, to, packetId, createdBy: ctx.userId, ...(incident_at ? { incidentAt: incident_at } : {}) }, { dedupeKey: `proof:${packetId}` });
   return NextResponse.json({ id: packetId, status: 'queued' }, { status: 202 });
 });

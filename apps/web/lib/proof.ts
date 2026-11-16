@@ -1,4 +1,4 @@
-import { and, asc, contract, crew_member, customer, desc, eq, gte, inArray, lte, message_log, proof_packet, run_stop, serviceDb, site, site_walk_item, sql, storm, storm_run, tenant, truck, visit, visit_correction, visit_photo, weather_snapshot } from '@flake/db';
+import { and, asc, contract, crew_member, customer, desc, eq, gte, inArray, lte, message_log, problem_report, proof_packet, run_stop, serviceDb, site, site_walk_item, sql, storm, storm_run, tenant, truck, visit, visit_correction, visit_photo, weather_snapshot } from '@flake/db';
 import { distanceMeters, distanceToPolygonMeters } from '@flake/core/geo';
 import { usDistanceText } from '@flake/core/units';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -6,6 +6,7 @@ import { contractsInForce, currentSeason } from '@flake/core/time';
 import { photoOrder } from '@flake/core/proof';
 import { buildManifest, type ProofInput, type ProofSnapshot, type ProofVisit } from '@flake/core/proof';
 import { getBlob, putBlob } from './blob';
+import { stationHistory } from './weather';
 import { sha256Hex } from './tokens';
 
 /** Only this site's value survives from a shared NOHRSC row, and the hourly detail stays out of the packet. */
@@ -17,7 +18,7 @@ function snapshotForPacket(s: typeof weather_snapshot.$inferSelect, siteId: stri
 }
 
 /** Assembles the same input for the same records, so the manifest hash is reproducible. */
-export async function assembleProof(tenantId: string, siteId: string, from: string, to: string): Promise<ProofInput> {
+export async function assembleProof(tenantId: string, siteId: string, from: string, to: string, incidentAt?: string): Promise<ProofInput> {
   const db = serviceDb();
   const [row] = await db.select({ site, customer, tenant }).from(site).innerJoin(customer, eq(customer.id, site.customer_id)).innerJoin(tenant, eq(tenant.id, site.tenant_id)).where(and(eq(site.id, siteId), eq(site.tenant_id, tenantId)));
   if (!row) throw new Error('Site not found for tenant');
@@ -79,12 +80,37 @@ export async function assembleProof(tenantId: string, siteId: string, from: stri
     site: { id: row.site.id, label: row.site.label, address: row.site.address, lat: row.site.lat, lon: row.site.lon },
     period: { from, to },
     contract: c ? { season: c.season, services: c.services, salt_pricing: c.salt_pricing, terms_md: c.terms_md, accepted_at: c.accepted_at, accepted_name: c.accepted_name } : null,
+    ...(incidentAt ? await incidentExtras(tenantId, siteId, row.site.nws_station, from, to, incidentAt) : {}),
     ...(walk.length ? { site_walk: walk.map((w) => ({ id: w.id, season: w.season, kind: w.kind, note: w.note, taken_at: w.taken_at, photo: w.photo_path ? { storage_path: w.photo_path, sha256: w.photo_sha256 } : null })) } : {}),
     ...(agreements.length > 1 ? { agreements: agreements.map((k) => ({ season: k.season, services: k.services, accepted_at: k.accepted_at, accepted_name: k.accepted_name })) } : {}),
     storms: storms.map((s) => ({ id: s.id, name: s.name, started_at: s.started_at, closed_at: s.closed_at, snapshots: snapshots.filter((x) => (s.forecast_snapshot_ids ?? []).includes(x.id) && relevant(x)).map((x) => snapshotForPacket(x, siteId)) })),
     visits: proofVisits,
     messages: messages.map((m) => ({ id: m.id, channel: m.channel!, template: m.template, body: m.body, created_at: m.created_at!, status: m.status })),
     corrections: corrections.map((c2) => ({ id: c2.id, visit_id: c2.visit_id, field: c2.field, old_value: c2.old_value, new_value: c2.new_value, reason: c2.reason, created_at: c2.created_at! })),
+  };
+}
+
+/**
+ * What an incident packet adds (issue 163): driver problem reports on the lot in the window, and observed weather at
+ * the nearest airport station for every hour of it, storm or not, since a slip often happens the morning after.
+ */
+async function incidentExtras(tenantId: string, siteId: string, station: string | null, from: string, to: string, incidentAt: string): Promise<Pick<ProofInput, 'incident_at' | 'problems' | 'observations'>> {
+  const db = serviceDb();
+  const problems = await db.select({ p: problem_report, crew: crew_member.name }).from(problem_report).leftJoin(crew_member, eq(crew_member.id, problem_report.crew_id))
+    .where(and(eq(problem_report.tenant_id, tenantId), eq(problem_report.site_id, siteId), gte(problem_report.created_at, from), lte(problem_report.created_at, to))).orderBy(asc(problem_report.created_at));
+  let observations: ProofInput['observations'];
+  if (station) {
+    try {
+      const snap = await stationHistory(station, from, to);
+      if (snap) observations = { station, provider: snap.summary.provider, request_url: snap.request_url, sha256: snap.sha256, fetched_at: snap.fetched_at, rows: snap.summary.rows, ...(snap.summary.synthetic ? { synthetic: true } : {}) };
+    } catch {
+      // The archive didn't answer: the packet says observed weather is unavailable rather than failing.
+    }
+  }
+  return {
+    incident_at: incidentAt,
+    problems: problems.map(({ p, crew }) => ({ id: p.id, kind: p.kind ?? 'other', note: p.note, crew_name: crew, at: p.created_at! })),
+    ...(observations ? { observations } : {}),
   };
 }
 
@@ -117,8 +143,8 @@ async function imagesFor(input: ProofInput): Promise<Record<string, Uint8Array>>
 }
 
 /** proof.render: manifest, then PDF, then hash, then storage. */
-export async function renderProof(p: { tenantId: string; siteId: string; from: string; to: string; packetId?: string; createdBy?: string | null }) {
-  const input = await assembleProof(p.tenantId, p.siteId, p.from, p.to);
+export async function renderProof(p: { tenantId: string; siteId: string; from: string; to: string; packetId?: string; createdBy?: string | null; incidentAt?: string }) {
+  const input = await assembleProof(p.tenantId, p.siteId, p.from, p.to, p.incidentAt);
   const { manifest, hash } = buildManifest(input);
   const { renderProofPdf } = await import('@flake/providers/pdf');
   const pdf = await renderProofPdf({ manifest, manifestSha256: hash, generatedAt: new Date().toISOString(), images: await imagesFor(input) });

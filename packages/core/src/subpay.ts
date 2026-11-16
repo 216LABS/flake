@@ -4,6 +4,19 @@ export interface SubRateCard {
   per_visit_cents?: number;
   hourly_cents?: number;
   per_bag_cents?: number;
+  /** One amount for each storm the sub worked, however many lots (issue 160). */
+  flat_per_storm_cents?: number;
+  /** One amount for the season, paid in five equal months, November through March (issue 160). */
+  flat_per_season_cents?: number;
+}
+
+/** The months a season flat rate is paid in: November through March. */
+export const SEASON_PAY_MONTHS = [11, 12, 1, 2, 3];
+
+/** A season flat rate's monthly amounts, the remainder on the first so they add up exactly. */
+export function seasonFlatMonths(totalCents: number): number[] {
+  const base = Math.floor(totalCents / SEASON_PAY_MONTHS.length);
+  return SEASON_PAY_MONTHS.map((_, i) => base + (i === 0 ? totalCents - base * SEASON_PAY_MONTHS.length : 0));
 }
 
 export interface SubVisit {
@@ -41,5 +54,7 @@ export function subPayStatement(card: SubRateCard | null, visits: SubVisit[]): {
         : undefined;
       return { visit_id: v.id, description: `${v.site_label} (${hours} h${bags ? `, ${bags} bags` : ''})`, amount_cents: amount, ...(check ? { check } : {}) };
     });
+  // A flat rate per storm is one line for the storm, on top of any per-lot pay, once there's a finished visit.
+  if (c.flat_per_storm_cents && lines.length) lines.push({ visit_id: '', description: 'Flat rate for this storm', amount_cents: c.flat_per_storm_cents });
   return { lines, total_cents: lines.reduce((s, l) => s + l.amount_cents, 0) };
 }

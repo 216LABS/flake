@@ -46,6 +46,12 @@ export interface ProofVisit {
   truck_name?: string | null;
 }
 
+/** A driver's problem report on this lot in the period: blocked, damage, a hazard, a note. */
+export interface ProofProblem { id: string; kind: string; note: string | null; crew_name: string | null; at: string }
+
+/** Observed weather at the nearest airport station across the period, for an incident packet. */
+export interface ProofObservations { station: string; provider: string; request_url: string; sha256: string; fetched_at: string; synthetic?: boolean; rows: { t: string; temp_f: number | null; precip_in: number | null; wx: string | null; snow_depth_in: number | null }[] }
+
 /** A pre-season site walk item: what the lot looked like before the first snow. */
 export interface ProofWalkItem { id: string; season: string; kind: string; note: string | null; taken_at: string | null; photo: { storage_path: string; sha256: string | null } | null }
 
@@ -62,6 +68,10 @@ export interface ProofInput {
   agreements?: ProofAgreement[];
   /** The site walk for the seasons the period covers. */
   site_walk?: ProofWalkItem[];
+  /** For an incident packet (issue 163): when it happened, so the cover page can say what came before and after. */
+  incident_at?: string;
+  problems?: ProofProblem[];
+  observations?: ProofObservations;
   storms: { id: string; name: string; started_at: string; closed_at: string | null; snapshots: ProofSnapshot[] }[];
   visits: ProofVisit[];
   messages: { id: string; channel: string; template: string; body: string; created_at: string; status: string | null }[];

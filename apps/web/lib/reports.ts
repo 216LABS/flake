@@ -1,5 +1,6 @@
 import { app_setting, eq, serviceDb, sql, type Conn, type Tx } from '@flake/db';
 import { hoursOf, saltOnHand, saltTons, shiftsFrom, type HoursRow, type StockEntry } from '@flake/core/reports';
+import { SEASON_PAY_MONTHS, seasonFlatMonths, subPayStatement, type SubRateCard } from '@flake/core/subpay';
 import { fmtLocal, localHm, zonedDayStart } from '@flake/core/time';
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
@@ -173,4 +174,72 @@ export async function equipmentReport(tx: Tx, p: Period): Promise<TruckReport[]>
   return rows
     .map((r) => ({ ...r, gallons: r.gallons === null ? 0 : Math.round(Number(r.gallons) * 10) / 10, last_hours: r.last_hours === null ? null : Number(r.last_hours) }))
     .filter((r) => r.storms || r.gallons || r.fuel_cents || r.maintenance_cents);
+}
+
+export interface SubPayRow { crew_id: string; name: string; storms: { id: string; name: string; total_cents: number; visits: number }[]; season_cents: number; visits: number; hours: number; bags: number; total_cents: number; checks: number }
+
+/**
+ * Sub pay across storms for a period (issue 160): each storm that started in the period, priced the same way as that
+ * storm's pay page (corrections count: an undone visit isn't paid, a corrected salt amount is), plus any season flat
+ * rate for the months whose first day falls in the period while the sub is on the crew.
+ */
+export async function subPayReport(tx: Tx, p: Period): Promise<SubPayRow[]> {
+  const rows = rowsOf<{ crew_id: string; name: string; active: boolean; card: SubRateCard | null; storm_id: string | null; storm: string | null; visit_id: string | null; label: string | null; arrived: string | null; departed: string | null; salt: { unit: string; qty: number }[] | null }>(await tx.execute(sql`
+    select c.id as crew_id, c.name, c.active, c.sub_rate_card as card, s.id as storm_id, s.name as storm, v.id as visit_id, st.label,
+      v.arrived_device_at as arrived, v.departed_device_at as departed,
+      coalesce((select k.new_value from visit_correction k where k.visit_id = v.id and k.field = 'salt' order by k.created_at desc limit 1), v.salt) as salt
+    from crew_member c
+    left join visit v on v.crew_id = c.id
+      and not exists (select 1 from visit_correction k where k.visit_id = v.id and k.field = 'voided' and k.new_value = 'true'::jsonb)
+      and v.storm_id in (select id from storm where started_at >= ${p.startAt} and started_at < ${p.endAt})
+    left join storm s on s.id = v.storm_id
+    left join site st on st.id = v.site_id
+    where c.kind = 'sub'
+    order by c.name, s.started_at`));
+  const months = monthsStarting(p);
+  const out = new Map<string, SubPayRow>();
+  for (const r of rows) {
+    const e = out.get(r.crew_id) ?? { crew_id: r.crew_id, name: r.name, storms: [], season_cents: 0, visits: 0, hours: 0, bags: 0, total_cents: 0, checks: 0 };
+    out.set(r.crew_id, e);
+    if (!r.visit_id || !r.storm_id) continue;
+    let s = e.storms.find((x) => x.id === r.storm_id);
+    if (!s) { s = { id: r.storm_id, name: r.storm ?? 'Storm', total_cents: 0, visits: 0 }; e.storms.push(s); }
+    s.visits++;
+  }
+  // Price each sub's storms with the same statement the storm's pay page uses.
+  for (const e of out.values()) {
+    const mine = rows.filter((r) => r.crew_id === e.crew_id);
+    const card = mine[0]?.card ?? null;
+    for (const s of e.storms) {
+      const visits = mine.filter((r) => r.storm_id === s.id && r.visit_id).map((r) => ({ id: r.visit_id!, site_label: r.label ?? 'Lot', arrived_at: new Date(r.arrived!).toISOString(), departed_at: r.departed ? new Date(r.departed).toISOString() : null, salt: r.salt }));
+      const st = subPayStatement(card, visits);
+      s.total_cents = st.total_cents;
+      e.checks += st.lines.filter((l) => l.check).length;
+      for (const v of visits.filter((x) => x.departed_at)) {
+        e.visits++;
+        e.hours += Math.ceil(Math.max(0, Date.parse(v.departed_at!) - Date.parse(v.arrived_at)) / 900_000) / 4;
+        e.bags += (v.salt ?? []).filter((x) => x.unit === 'bag50lb').reduce((n, x) => n + Number(x.qty), 0);
+      }
+    }
+    if (card?.flat_per_season_cents && mine[0]?.active) {
+      const amounts = seasonFlatMonths(card.flat_per_season_cents);
+      e.season_cents = months.reduce((n, m) => n + (SEASON_PAY_MONTHS.includes(m) ? amounts[SEASON_PAY_MONTHS.indexOf(m)]! : 0), 0);
+    }
+    e.total_cents = e.storms.reduce((n, s) => n + s.total_cents, 0) + e.season_cents;
+  }
+  return [...out.values()].filter((e) => e.storms.length || e.season_cents);
+}
+
+/** The calendar months (1 to 12) whose first day falls inside the period, in the company's time zone. */
+function monthsStarting(p: Period): number[] {
+  const out: number[] = [];
+  const [y0, m0] = p.from.split('-').map(Number) as [number, number];
+  for (let y = y0, m = m0, i = 0; i < 24; i++) {
+    const first = `${y}-${String(m).padStart(2, '0')}-01`;
+    if (first > p.to) break;
+    if (first >= p.from) out.push(m);
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return out;
 }
