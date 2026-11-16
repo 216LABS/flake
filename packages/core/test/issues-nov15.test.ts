@@ -77,3 +77,16 @@ describe('nationwide depth: driver and NOAA far apart', () => {
     expect(close.flags.map((f) => f.code)).not.toContain('depth_disagrees');
   });
 });
+
+describe('issue 161: salt logged on a contract with no salt price', () => {
+  it('is flagged instead of going out free, and a priced salt contract is not', () => {
+    const salty = v({ services: ['plow', 'salt'], salt: [{ unit: 'bag50lb', qty: 4 }] });
+    const [d] = draftInvoices(input(perPush, [salty]));
+    expect(d!.flags.find((f) => f.code === 'salt_no_price')?.message).toMatch(/logged 4 bag50lb of salt, but the contract has no salt price/);
+    const priced: BillingContract = { ...perPush, services: [...perPush.services, { service: 'salt' }], salt_pricing: { unit: 'bag50lb', amount_cents: 1800 } };
+    expect(draftInvoices(input(priced, [salty]))[0]!.flags.map((f) => f.code)).not.toContain('salt_no_price');
+    // Salt on the contract but no price for it is the same gap.
+    const unpriced: BillingContract = { ...perPush, services: [...perPush.services, { service: 'salt' }] };
+    expect(draftInvoices(input(unpriced, [salty]))[0]!.flags.map((f) => f.code)).toContain('salt_no_price');
+  });
+});

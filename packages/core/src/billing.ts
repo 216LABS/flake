@@ -22,7 +22,8 @@ export type FlagCode =
   | 'salt_unit'
   | 'below_trigger'
   | 'time_outside_storm'
-  | 'depth_disagrees';
+  | 'depth_disagrees'
+  | 'salt_no_price';
 
 /**
  * How much a flag matters at a dawn billing review (issue 78): money at risk first, then missing proof, then lots
@@ -30,7 +31,7 @@ export type FlagCode =
  */
 export type FlagTier = 'money' | 'proof' | 'not_done' | 'info';
 export const FLAG_TIER: Record<FlagCode, FlagTier> = {
-  no_contract: 'money', no_service: 'money', missing_salt_qty: 'money', salt_unit: 'money', missing_depth: 'money', duplicate: 'money', odd_duration: 'money', below_trigger: 'money', time_outside_storm: 'money', depth_disagrees: 'money',
+  no_contract: 'money', no_service: 'money', missing_salt_qty: 'money', salt_unit: 'money', missing_depth: 'money', duplicate: 'money', odd_duration: 'money', below_trigger: 'money', time_outside_storm: 'money', depth_disagrees: 'money', salt_no_price: 'money',
   no_after_photo: 'proof', no_gps_match: 'proof',
   missing_visit: 'not_done',
   seasonal_info: 'info', prior_season: 'money', office_recorded: 'info',
@@ -40,7 +41,7 @@ export const TIER_ORDER: FlagTier[] = ['money', 'proof', 'not_done', 'info'];
 /** Each flag in the few words a billing summary line uses. */
 const TIER_REASON: Record<FlagCode, string> = {
   no_contract: 'no price', no_service: 'nothing ticked', missing_salt_qty: 'salt missing', salt_unit: 'salt missing',
-  missing_depth: 'depth missing', duplicate: 'a possible duplicate', odd_duration: 'an odd time on site', below_trigger: 'under the trigger', time_outside_storm: 'a wrong phone clock', depth_disagrees: 'depth in question',
+  missing_depth: 'depth missing', duplicate: 'a possible duplicate', odd_duration: 'an odd time on site', below_trigger: 'under the trigger', time_outside_storm: 'a wrong phone clock', depth_disagrees: 'depth in question', salt_no_price: 'salt with no price',
   no_after_photo: 'no after photo', no_gps_match: 'no or far-off location',
   missing_visit: 'not reached', seasonal_info: 'seasonal', office_recorded: 'recorded by the office', prior_season: 'no contract this season',
 };
@@ -198,6 +199,11 @@ function flagsForSite(site: BillingSite, contract: BillingContract | undefined, 
       add('missing_salt_qty', `${site.label}: salt service logged with no quantity.`, v.id, 'review', saltUnit ? { unit: saltUnit } : {});
     }
     // Salt logged in bags on a per-ton contract (or the other way) can't be priced, so it would go out free.
+    // Salt the driver logged on a lot whose contract has no salt price: it would go out free with no word (issue 161).
+    const salted = v.services.includes('salt') && (v.salt ?? []).some((e) => e.qty > 0);
+    if (salted && contract && (!contract.services.some((x) => x.service === 'salt') || !saltUnit)) {
+      add('salt_no_price', `${site.label}: the driver logged ${v.salt!.filter((e) => e.qty > 0).map((e) => `${e.qty} ${e.unit}`).join(', ')} of salt, but the contract has no salt price, so it isn't billed. Add salt to the contract and Regenerate to bill it, or waive if it was included.`, v.id);
+    }
     const odd = v.services.includes('salt') && saltUnit ? (v.salt ?? []).filter((e) => e.qty > 0 && e.unit !== saltUnit) : [];
     if (odd.length) {
       add('salt_unit', `${site.label}: salt logged as ${odd.map((e) => `${e.qty} ${e.unit}`).join(', ')}, but the contract prices salt per ${saltUnit}. Enter the quantity in ${saltUnit} to bill it.`, v.id, 'review', { unit: saltUnit });

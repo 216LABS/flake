@@ -61,7 +61,8 @@ describe('draftInvoices flags', () => {
   it('missing_salt_qty for salt with no quantity', () => {
     expect(flagsOf(input({ visits: [v('s1', { services: ['plow', 'salt'] })] }))).toEqual(['missing_salt_qty']);
     expect(flagsOf(input({ visits: [v('s1', { services: ['plow', 'salt'], salt: [{ unit: 'bag50lb', qty: 0 }] })] }))).toEqual(['missing_salt_qty']);
-    expect(flagsOf(input({ visits: [v('s1', { services: ['plow', 'salt'], salt: [{ unit: 'bag50lb', qty: 1 }] })] }))).toEqual([]);
+    // This contract has no salt price, so a real quantity is flagged as unbilled salt instead (issue 161).
+    expect(flagsOf(input({ visits: [v('s1', { services: ['plow', 'salt'], salt: [{ unit: 'bag50lb', qty: 1 }] })] }))).toEqual(['salt_no_price']);
   });
   it('a seasonal lot with nothing to charge makes no draft to approve (issue 102)', () => {
     const contracts: BillingContract[] = [{ site_id: 's1', services: [{ service: 'plow', pricing: { type: 'seasonal', total_cents: 100, installments: 5 } }] }];

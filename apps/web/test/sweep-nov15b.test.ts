@@ -127,3 +127,31 @@ describe('admin pages on a hosted staging copy', () => {
     }
   });
 });
+
+describe('proof packet status right as the render finishes', () => {
+  it('a packet saved between the two reads is ready, not "could not be made"', async () => {
+    const { GET } = await import('@/app/api/proof/[id]/route');
+    const auth = await import('@/lib/auth');
+    const { vi } = await import('vitest');
+    const { job, proof_packet } = await import('@flake/db');
+    const w = await makeWorld();
+    const id = randomUUID();
+    const db = serviceDb();
+    await db.insert(job).values({ kind: 'proof.render', payload: { tenantId: w.tenantId, packetId: id }, dedupe_key: `proof:${id}`, done_at: new Date().toISOString() });
+    await db.insert(proof_packet).values({ id, tenant_id: w.tenantId, site_id: w.siteIds[0]!, from_ts: new Date(Date.now() - 86_400_000).toISOString(), to_ts: new Date().toISOString(), pdf_path: `${w.tenantId}/${id}.pdf`, sha256: 'a'.repeat(64), manifest: {}, manifest_sha256: 'b'.repeat(64) });
+    const spy = vi.spyOn(auth, 'requireApi').mockResolvedValue({ userId: w.userId, tenantId: w.tenantId, role: 'owner' } as never);
+    // The first read runs before the render saved the packet.
+    const real = auth.asUser;
+    let first = true;
+    const spy2 = vi.spyOn(auth, 'asUser').mockImplementation(((ctx: never, fn: never) => {
+      if (first) { first = false; return Promise.resolve([]); }
+      return real(ctx, fn);
+    }) as never);
+    const { req } = await import('./helpers');
+    const res = await GET(req(`/api/proof/${id}`), { params: Promise.resolve({ id }) });
+    spy.mockRestore();
+    spy2.mockRestore();
+    expect(res.status).toBe(200);
+    expect((await res.json()).status).toBe('ready');
+  });
+});
