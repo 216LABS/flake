@@ -4,7 +4,7 @@ const AUDIENCE: Record<string, 'customer' | 'crew' | 'office' | 'flake'> = {
   on_the_way: 'customer', done: 'customer', done_no_photo: 'customer', late: 'customer', invoice: 'customer', receipt: 'customer', quote: 'customer', portal: 'customer', completion_report: 'customer', help: 'customer',
   crew_link: 'crew', route_changed: 'crew', crew_invite: 'crew', call_out: 'crew',
   owner_alert: 'office', team_invite: 'office',
-  salt_supplier: 'flake',
+  salt_supplier: 'flake', feedback: 'flake',
 };
 
 /**

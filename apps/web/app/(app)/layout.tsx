@@ -5,6 +5,7 @@ import { requirePage } from '@/lib/auth';
 import { isProd, isTestEnv } from '@/lib/env';
 import { AppNav, MobileTabs } from './app-nav';
 import { ViewOnly } from './view-only';
+import { FeedbackButton } from './feedback-button';
 
 /**
  * A sidebar on a desk. On a phone, one compact header row that stays at the top, and a tab bar at the bottom
@@ -32,6 +33,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       <main id="main" tabIndex={-1} className="mx-auto w-full outline-none min-w-0 max-w-[1500px] px-4 pt-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:px-8 md:py-8">
         {ctx.role === 'viewer' ? <p className="mb-4 rounded-md bg-tint-3 p-3 text-sm text-ink" data-testid="view-only">You have view-only access. An owner can change that in Settings.</p> : null}
         {ctx.role === 'viewer' ? <ViewOnly>{children}</ViewOnly> : children}
+        <FeedbackButton />
       </main>
       <MobileTabs showDev={!isProd()} />
     </div>

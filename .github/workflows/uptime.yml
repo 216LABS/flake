@@ -1,0 +1,43 @@
+name: uptime
+# Checks production every 15 minutes. Down twice in a row opens an "outage" issue, which GitHub emails to the repo's
+# watchers; the next good check comments and closes it. /api/health returns timings only, nothing private.
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+permissions:
+  issues: write
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check /api/health
+        id: health
+        run: |
+          check() { curl -s -o body.json -w '%{http_code}' --max-time 20 https://flake.216labs.dev/api/health || echo 000; }
+          code=$(check)
+          if [ "$code" != "200" ]; then sleep 60; code=$(check); fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "Health answered $code"
+          head -c 500 body.json 2>/dev/null || true
+      - name: Open or close the outage issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CODE: ${{ steps.health.outputs.code }}
+        run: |
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --label outage --state open --json number --jq '.[0].number // empty')
+          if [ "$CODE" != "200" ]; then
+            body="Claude: uptime check: /api/health answered $CODE twice, a minute apart, at $(date -u +'%Y-%m-%d %H:%M UTC'). Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            if [ -z "$open" ]; then
+              gh label create outage --repo "$GITHUB_REPOSITORY" --color B60205 --description "Production is down" 2>/dev/null || true
+              gh issue create --repo "$GITHUB_REPOSITORY" --label outage --title "Flake production is down" --body "$body"
+            fi
+            exit 1
+          elif [ -n "$open" ]; then
+            gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body "Claude: uptime check: /api/health is answering 200 again as of $(date -u +'%Y-%m-%d %H:%M UTC')."
+            gh issue close "$open" --repo "$GITHUB_REPOSITORY"
+          fi

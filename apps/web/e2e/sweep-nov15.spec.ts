@@ -178,3 +178,19 @@ test('site walk: a note saves on the lot page', async ({ page }) => {
     await sql`delete from site_walk_item where note = ${note}`;
   }
 });
+
+/** Pilot feedback: sent from any page, kept for the Flake team with the page it came from, and the guide is one tap away. */
+test('feedback goes to the Flake team with the page, and the storm-night guide opens', async ({ page }) => {
+  await login(page);
+  await page.goto('/billing');
+  const text = `Could not find the void button ${randomUUID().slice(0, 4)}`;
+  await page.getByTestId('feedback-open').click();
+  await page.getByTestId('feedback-message').fill(text);
+  await page.getByTestId('feedback-send').click();
+  await expect(page.getByTestId('feedback-sent')).toBeVisible();
+  await page.goto('/admin/feedback');
+  await expect(page.getByTestId('feedback-item').filter({ hasText: text })).toContainText('on /billing');
+  await page.goto('/dashboard');
+  await page.getByTestId('help-link').click();
+  await expect(page.getByRole('heading', { name: 'Storm-night guide' })).toBeVisible();
+});
