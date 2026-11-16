@@ -20,15 +20,14 @@ async function inviteDriver(page: Page, browser: Browser, name: string, phone: s
   await page.goto('/settings?tab=crew');
   await page.getByTestId('crew-name').fill(name);
   await page.getByLabel('Mobile').fill(phone);
-  await expect(page.getByTestId('crew-email-hint')).toBeVisible();
+  // A new company can't text yet, so the office is told drivers open their route from the board's QR or link.
+  await expect(page.getByTestId('crew-text-hint')).toBeVisible();
   await page.getByTestId('crew-invite').click();
   const invite = await page.getByTestId('invite-url').inputValue();
   const ctx = await browser.newContext();
   const join = await ctx.newPage();
   await join.goto(invite);
-  // Texting isn't approved for a new company, so Join waits for an email.
-  await expect(join.getByTestId('join')).toBeDisabled();
-  await join.getByTestId('join-email').fill(`${name.split(' ')[0]!.toLowerCase()}-${phone.slice(-4)}@flake.test`);
+  // No email for drivers (D16): the office already has the mobile, so the driver just agrees to texts.
   await join.getByTestId('crew-consent').check();
   await join.getByTestId('join').click();
   await expect(join.getByTestId('joined')).toBeVisible();
@@ -153,9 +152,10 @@ test('a new plow company runs a whole storm from sign up to paid invoices', asyn
   await page.waitForURL(/\/storms\/[0-9a-f-]+$/);
   const stormId = page.url().split('/').pop()!;
   await expect(page.getByTestId('run-column')).toHaveCount(2);
-  // Texting isn't approved yet, but the drivers gave an email when they joined, so their links go by email.
-  await expect(page.getByTestId('no-reach')).toHaveCount(0);
-  await expect.poll(async () => (await sql`select count(*)::int as n from message_log where tenant_id = ${tenantId} and template = 'crew_link' and channel = 'email'`)[0]!.n, { timeout: 30000 }).toBe(2);
+  // Texting isn't set up yet and drivers are never emailed (D16), so the board says to show each driver the QR code.
+  await expect(page.getByTestId('no-reach')).toHaveCount(2);
+  await expect(page.getByTestId('no-reach').first()).toContainText("can't text");
+  expect((await sql`select count(*)::int as n from message_log where tenant_id = ${tenantId} and template = 'crew_link' and channel = 'email'`)[0]!.n).toBe(0);
   const links: Record<string, string> = {};
   for (const route of ['North', 'South']) {
     const col = page.getByTestId('run-column').filter({ hasText: new RegExp(`^${route}[0-9]`) });

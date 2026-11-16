@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import { and, closeDb, crew_member, eq, invoice_draft, job, message_log, run_stop, serviceDb, site, sql, storm, visit, visit_photo, weather_snapshot } from '@flake/db';
-import { MOCK_REJECTED_DOMAIN } from '@flake/providers';
+import { MOCK_REJECTED_PHONE } from '@flake/providers';
 import { processActions, resolveToken } from '@/lib/driver';
 import { closeStormAndDraft, publishStorm, stormLive } from '@/lib/storms';
 import { officePhotoUrl, stopDetail } from '@/lib/stop-detail';
 import { decryptToken } from '@/lib/tokens';
 import { plainJobError } from '@/lib/usage';
 import { stormWeather } from '@/lib/weather';
-import { createStorm, ctxOf, drain, makeWorld, stopActions } from './helpers';
+import { consent, createStorm, ctxOf, drain, makeWorld, stopActions } from './helpers';
 
 // Stops finished here queue notices that run a minute later. Clear them so they can't land in another file's job tests.
 afterAll(async () => {
@@ -55,33 +55,36 @@ describe('issue 48: closing a storm drafts its invoices', () => {
 });
 
 describe('issue 49: an address the provider rejects is not retried', () => {
-  it('marks the message rejected, finishes the job, and a fixed address goes out', async () => {
-    const w = await makeWorld();
+  // Drivers get texts only (D16), so a rejected driver number stands in for a rejected address.
+  it('marks the message rejected, finishes the job, and a fixed number goes out', async () => {
+    const w = await makeWorld({ smsApproved: true });
     const ctx = ctxOf(w);
-    const bad = `typo@${MOCK_REJECTED_DOMAIN}`;
-    await serviceDb().update(crew_member).set({ email: bad }).where(eq(crew_member.id, w.crewId));
+    await serviceDb().update(crew_member).set({ phone_e164: MOCK_REJECTED_PHONE }).where(eq(crew_member.id, w.crewId));
+    await consent(w.tenantId, MOCK_REJECTED_PHONE);
     const out = await createStorm(ctx, { name: 'S', routeIds: [w.routeId], crewAssignments: {} });
     await publishStorm(ctx, out.storm.id);
     await drain();
     const sent = () => serviceDb().select().from(message_log).where(and(eq(message_log.tenant_id, w.tenantId), eq(message_log.template, 'crew_link')));
     const [first] = await sent();
-    expect(first).toMatchObject({ status: 'rejected', to_addr: bad });
+    expect(first).toMatchObject({ status: 'rejected', to_addr: MOCK_REJECTED_PHONE });
     const jobs = await serviceDb().select().from(job).where(sql`payload->>'runId' = ${out.runs[0]!.id}`);
     expect(jobs.every((j) => j.done_at && !j.dead_at)).toBe(true);
 
-    // The office fixes the address on the driver; the route link goes again, to the new one.
-    const good = `fixed-${randomUUID().slice(0, 8)}@example.com`;
-    await serviceDb().update(crew_member).set({ email: good }).where(eq(crew_member.id, w.crewId));
+    // The office fixes the number on the driver; the route link goes again, to the new one.
+    const good = '+12165550177';
+    await serviceDb().update(crew_member).set({ phone_e164: good }).where(eq(crew_member.id, w.crewId));
+    await consent(w.tenantId, good);
     const { enqueue } = await import('@/lib/jobs');
     await enqueue('storm.publish_links', { tenantId: w.tenantId, runId: out.runs[0]!.id }, { dedupeKey: `publish:${out.runs[0]!.id}:fix` });
     await drain();
-    const [after] = await sent();
-    expect(after).toMatchObject({ status: 'sent', to_addr: good });
+    const after = (await sent()).find((m) => m.to_addr === good);
+    expect(after).toMatchObject({ status: 'sent' });
   });
-  it('the same rejected address is not sent again', async () => {
-    const w = await makeWorld();
+  it('the same rejected number is not sent again', async () => {
+    const w = await makeWorld({ smsApproved: true });
     const ctx = ctxOf(w);
-    await serviceDb().update(crew_member).set({ email: `x@${MOCK_REJECTED_DOMAIN}` }).where(eq(crew_member.id, w.crewId));
+    await serviceDb().update(crew_member).set({ phone_e164: MOCK_REJECTED_PHONE }).where(eq(crew_member.id, w.crewId));
+    await consent(w.tenantId, MOCK_REJECTED_PHONE);
     const out = await createStorm(ctx, { name: 'S', routeIds: [w.routeId], crewAssignments: {} });
     await publishStorm(ctx, out.storm.id);
     await drain();

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { and, closeDb, eq, message_log, run_stop, serviceDb, sql } from '@flake/db';
 import { addStopToRun, patchRunStop, publishStorm } from '@/lib/storms';
-import { createStorm, ctxOf, drain, makeWorld } from './helpers';
+import { createStorm, ctxOf, drain, makeWorld, consent } from './helpers';
 
 afterAll(async () => {
   await drain();
@@ -13,7 +13,10 @@ const routeChanged = async (tenantId: string) => serviceDb().select().from(messa
 
 describe('issue 91: nothing reaches the crew before Send routes to crew', () => {
   it('moving or adding a stop on a route never sent stays quiet, and is announced once it was sent', async () => {
-    const w = await makeWorld();
+    // Drivers are told by text only (D16), so texting is on and both drivers said yes.
+    const w = await makeWorld({ smsApproved: true });
+    await consent(w.tenantId, '+12165550191');
+    await consent(w.tenantId, '+12165550192');
     const ctx = ctxOf(w);
     const out = await createStorm(ctx, { name: 'S', routeIds: [w.routeId, w.route2Id], crewAssignments: {} });
     const r1 = out.runs.find((r) => r.route_id === w.routeId)!;

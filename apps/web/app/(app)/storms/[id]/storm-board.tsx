@@ -369,7 +369,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
                 {/* Did the driver get the link? Known the moment their phone opens it, not only once they tap something (issue 86). */}
                 {r.opened_at ? <p className="mt-1 text-xs text-ink-2" data-testid="link-opened">Opened {clock(r.opened_at, tz)}</p>
                   : r.crew && !closed ? <p className="mt-1 text-xs font-medium text-warn-ink" data-testid="link-opened">Not opened yet</p> : null}
-                {r.published_at && r.link && r.crew && !r.crew.reachable ? <p className="mt-1 text-xs font-medium text-warn-ink" data-testid="no-reach">We can&apos;t text or email {r.crew.name}, so they don&apos;t have this route. Show them the QR code.</p> : null}
+                {r.published_at && r.link && r.crew && !r.crew.reachable ? <p className="mt-1 text-xs font-medium text-warn-ink" data-testid="no-reach">We can&apos;t text {r.crew.name} yet, so they don&apos;t have this route. Show them the QR code, or send the link from your phone.</p> : null}
                 {r.link && !closed ? <Button size="sm" variant="ghost" className="-ml-3" data-testid="show-link" onClick={() => showLink(r)}>{r.published_at ? 'QR / copy link' : 'QR / copy link (no message sent)'}</Button> : null}
                 {editable && r.stops.length > 1 ? <RunPlan runId={r.id} onDone={() => void load()} /> : null}
               </header>

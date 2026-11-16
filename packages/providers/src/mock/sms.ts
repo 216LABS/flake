@@ -2,6 +2,8 @@ import { createHmac, randomUUID } from 'node:crypto';
 import type { SmsProvider, SmsSend, TollFreePayload } from '../types';
 
 export const MOCK_TWILIO_TOKEN = 'mock-twilio-token';
+/** A number the mock refuses the way Twilio refuses a landline or a bad number (error 21614), for testing. */
+export const MOCK_REJECTED_PHONE = '+12165550000';
 
 /** Twilio's documented scheme: HMAC-SHA1 of the URL plus sorted params, base64. */
 export function signTwilio(token: string, url: string, params: Record<string, string>): string {
@@ -11,7 +13,8 @@ export function signTwilio(token: string, url: string, params: Record<string, st
 
 /** The app logs every message to message_log, which is what /dev/inbox shows. Nothing leaves the machine. */
 export class MockSms implements SmsProvider {
-  async send(_msg: SmsSend) {
+  async send(msg: SmsSend) {
+    if (msg.to === MOCK_REJECTED_PHONE) throw Object.assign(new Error("Mock 400: 'To' number is not a valid mobile number"), { rejected: true });
     return { id: `SM_mock_${randomUUID()}`, status: 'sent' };
   }
   async provisionTenant(friendlyName: string) {

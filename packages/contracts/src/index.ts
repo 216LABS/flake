@@ -446,5 +446,6 @@ export const pushUnsubscribe = z.object({ endpoint: z.string().max(1000) });
 /** expand: after a save found nothing, also try the numbers next door and the street (issue 87). */
 export const addressSuggest = z.object({ q: z.string().trim().min(3).max(200), expand: z.boolean().optional() });
 export const teamAdd = z.object({ email, role: z.enum(['owner', 'dispatcher', 'viewer']) });
-export const crewJoin = z.object({ consent: z.boolean(), email: z.union([z.email().max(254), z.literal('')]).optional() });
+/** Joining the crew: the driver's mobile for route links by text, and whether they agree to texts. No email (D16). */
+export const crewJoin = z.object({ consent: z.boolean(), phone: z.union([e164, z.literal('')]).optional() });
 export const proCheckout = z.object({ interval: z.enum(['monthly', 'yearly']) });

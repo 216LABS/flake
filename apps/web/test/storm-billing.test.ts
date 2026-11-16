@@ -63,19 +63,19 @@ describe('storm lifecycle', () => {
     expect(stops).toHaveLength(2);
   });
 
-  it('crew link goes by email always, and by SMS only with consent', async () => {
+  it('crew link goes by text only, and only with consent; drivers are never emailed (D16)', async () => {
     const out = await createStorm(ctxOf(w), { name: 'Links', routeIds: [w.routeId], crewAssignments: {} });
     await publishStorm(ctxOf(w), out.storm.id);
     await drain();
     const rows = await serviceDb().select().from(message_log).where(and(eq(message_log.tenant_id, w.tenantId), eq(message_log.template, 'crew_link'), sql`related->>'storm_run_id' = ${out.runs[0]!.id}`));
-    expect(rows.map((r) => r.channel)).toEqual(['email']);
+    expect(rows.map((r) => r.channel)).toEqual([]);
     await consent(w.tenantId, '+12165550191');
     const out2 = await createStorm(ctxOf(w), { name: 'Links2', routeIds: [w.routeId], crewAssignments: {} });
     await publishStorm(ctxOf(w), out2.storm.id);
     await publishStorm(ctxOf(w), out2.storm.id);
     await drain();
     const rows2 = await serviceDb().select().from(message_log).where(and(eq(message_log.tenant_id, w.tenantId), eq(message_log.template, 'crew_link'), sql`related->>'storm_run_id' = ${out2.runs[0]!.id}`));
-    expect(rows2.map((r) => r.channel).sort()).toEqual(['email', 'sms']);
+    expect(rows2.map((r) => r.channel).sort()).toEqual(['sms']);
   });
 
   it('Notify customers sends to each selected customer once, however often it is pressed', async () => {
@@ -101,6 +101,9 @@ describe('storm lifecycle', () => {
   });
 
   it('moving a stop notifies both drivers, and is blocked while on site', async () => {
+    // Both drivers said yes to texts: they're told by text only (D16).
+    await consent(w.tenantId, '+12165550191');
+    await consent(w.tenantId, '+12165550192');
     const out = await createStorm(ctxOf(w), { name: 'Move', routeIds: [w.routeId, w.route2Id], crewAssignments: {} });
     await publishStorm(ctxOf(w), out.storm.id);
     const r1 = out.runs.find((r) => r.route_id === w.routeId)!;

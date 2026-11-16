@@ -159,7 +159,8 @@ test('Send routes to crew says who gets what first, and Cancel sends nothing (is
     await page.getByTestId('publish').click();
     const list = page.getByTestId('send-routes-list');
     await expect(list).toContainText('Teo Placeholder');
-    await expect(list).toContainText(/by (text and )?email/);
+    // Drivers get their route by text only (D16).
+    await expect(list).toContainText(/by text/);
     await page.getByTestId('confirm-no').click();
     expect((await sql`select count(*)::int as n from storm_run where storm_id = ${id} and published_at is not null`)[0]!.n).toBe(0);
     await page.getByTestId('publish').click();

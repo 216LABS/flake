@@ -19,7 +19,10 @@ describe('Spanish-speaking drivers (issue 151)', () => {
     expect(emailFooter('crew_link', { name: 'Co' }, 'es')).toContain('Recibes esto porque estás en el equipo de Co');
 
     const { sendRunLink, publishStorm } = await import('@/lib/storms');
-    const w = await makeWorld();
+    // Drivers get texts only (D16): texting on, and the driver said yes.
+    const w = await makeWorld({ smsApproved: true });
+    const { consent } = await import('./helpers');
+    await consent(w.tenantId, '+12165550191');
     const db = serviceDb();
     await db.update(crew_member).set({ language: 'es' }).where(eq(crew_member.id, w.crewId));
     const out = await createStorm(ctxOf(w), { name: `Tormenta ${randomUUID().slice(0, 4)}`, routeIds: [w.routeId], crewAssignments: {} });
@@ -28,8 +31,7 @@ describe('Spanish-speaking drivers (issue 151)', () => {
     await drain();
     const sent = await db.select().from(message_log).where(and(eq(message_log.tenant_id, w.tenantId), eq(message_log.template, 'crew_link')));
     expect(sent.length).toBeGreaterThan(0);
-    expect(sent.every((m) => m.body.includes('Hay tormenta. Ruta Route A'))).toBe(true);
-    expect(sent.some((m) => m.body.includes('Responde STOP'))).toBe(false);
+    expect(sent.every((m) => m.channel === 'sms' && m.body.includes('Hay tormenta. Ruta Route A'))).toBe(true);
   });
 });
 

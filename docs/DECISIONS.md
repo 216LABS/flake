@@ -143,3 +143,10 @@ STAR asked open questions on both; these are the answers. **[J]**
 - **Incident packet** is a third proof mode: pick the lot and the moment, and it covers 72 hours before to 24 after. It opens with a plain summary (last service before, next after, hours between, freezes after the last service, precipitation, what the contract covers), and adds the crew's problem reports and every hourly observation from the lot's airport station.
 - **Observed station weather** comes from the Iowa Environmental Mesonet's archive of NWS/FAA airport reports, which keeps decades; the NWS's own feed keeps about a week, too short for a claim. It's saved as evidence with its request URL and hash, and reused for the same window so a packet made again hashes the same.
 - **Proof packet headings** no longer overlap the line under them.
+
+## D16. Text, not email (Nov 16, 2026)
+Sam: "i dont want to email drivers ever, i want all the communication to be text." **[S]**
+- **Drivers are never emailed.** Route links, route changes and call-outs go by text, only to a driver who said yes to texts. Until a company's texting is set up, the storm board's QR code and "send from my phone" link are how a driver gets the route, and the board says so.
+- **Crew invites** aren't emailed either: the office gets the join link with "Text it from my phone", which opens its own phone's messages. The join page asks for the driver's mobile and their yes to texts; there is no email field, and the crew form has none.
+- **Customers and office alerts** move to text next, then owner sign-in by a code sent by text, so Flake needs no email service.
+- **Texting's limits stay**: a person must opt in before a company texts them, and texting needs Twilio and a verified number per company.

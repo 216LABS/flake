@@ -70,7 +70,7 @@ describe('import preview edge cases (issue 123)', () => {
 });
 
 describe('a crew join link after the driver joins (issue 133)', () => {
-  it('a second post cannot change the email, and a new link from the office is a fresh invite', async () => {
+  it('a second post cannot change the number, and a new link from the office is a fresh invite', async () => {
     const { crew_member } = await import('@flake/db');
     const { hashToken } = await import('@/lib/tokens');
     const { jsonReq } = await import('./helpers');
@@ -79,14 +79,14 @@ describe('a crew join link after the driver joins (issue 133)', () => {
     const db = serviceDb();
     const token = `t-${Date.now()}`;
     await db.update(crew_member).set({ invite_token_hash: hashToken(token), joined_at: null }).where(eq(crew_member.id, w.crewId));
-    const post = (email: string) => join(jsonReq(`/api/join/${token}`, { consent: false, email }), { params: Promise.resolve({ token }) });
-    expect((await post('driver@example.com')).status).toBe(200);
-    const again = await post('someone-else@example.com');
+    const post = (phone: string) => join(jsonReq(`/api/join/${token}`, { consent: true, phone }), { params: Promise.resolve({ token }) });
+    expect((await post('+12165550133')).status).toBe(200);
+    const again = await post('+12165550144');
     expect(again.status).toBe(409);
-    expect((await db.select().from(crew_member).where(eq(crew_member.id, w.crewId)))[0]!.email).toBe('driver@example.com');
+    expect((await db.select().from(crew_member).where(eq(crew_member.id, w.crewId)))[0]!.phone_e164).toBe('+12165550133');
     // The office sends a new link: the driver can join again with it.
     await db.update(crew_member).set({ invite_token_hash: hashToken(`${token}2`), joined_at: null }).where(eq(crew_member.id, w.crewId));
-    expect((await join(jsonReq(`/api/join/${token}2`, { consent: false, email: 'new@example.com' }), { params: Promise.resolve({ token: `${token}2` }) })).status).toBe(200);
+    expect((await join(jsonReq(`/api/join/${token}2`, { consent: false, phone: '' }), { params: Promise.resolve({ token: `${token}2` }) })).status).toBe(200);
   });
 });
 

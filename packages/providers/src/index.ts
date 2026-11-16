@@ -16,6 +16,7 @@ import type { EmailProvider, PaymentsProvider, Providers, SmsProvider } from './
 export * from './types';
 export { MockWeather, WEATHER_FIXTURES, type WeatherFixtureName } from './mock/weather';
 export { MockEmail, MOCK_REJECTED_DOMAIN } from './mock/email';
+export { MOCK_REJECTED_PHONE } from './mock/sms';
 export { MockRouteMatrix } from './mock/router';
 export { LiveRouteMatrix, noRouter } from './live/router';
 export { MockPayments, signMockWebhook, MOCK_WEBHOOK_SECRET } from './mock/payments';

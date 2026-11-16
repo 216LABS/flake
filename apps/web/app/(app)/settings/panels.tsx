@@ -86,6 +86,7 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
   const [f, setF] = useState(blank);
   const [editing, setEditing] = useState<string | null>(null);
   const [invite, setInvite] = useState<string | null>(null);
+  const [invitePhone, setInvitePhone] = useState<string | null>(null);
   const { msg, busy, run } = useAction();
   const [ask, dialog] = useConfirm();
   const load = (c: any) => {
@@ -116,7 +117,7 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
                 <Td>{c.active ? (
                   <div className="flex flex-wrap gap-0.5 max-md:mt-1">
                     <Button size="sm" variant="ghost" className="px-2" data-testid="crew-edit" onClick={() => load(c)}>Edit</Button>
-                    <Button size="sm" variant="ghost" className="px-2" data-testid="crew-reinvite" onClick={() => run(async () => { setInvite((await api(`/api/crew/${c.id}/invite`, { method: 'POST' })).invite_url); }, 'New link ready')}>New link</Button>
+                    <Button size="sm" variant="ghost" className="px-2" data-testid="crew-reinvite" onClick={() => run(async () => { setInvitePhone(c.phone_e164 ?? null); setInvite((await api(`/api/crew/${c.id}/invite`, { method: 'POST' })).invite_url); }, 'New link ready')}>New link</Button>
                     <Button size="sm" variant="ghost" className="px-2" data-testid="crew-remove" onClick={async () => {
                       if (!(await ask({ title: `Take ${c.name} off the crew?`, body: 'Any route link they have open stops working now. Work they already finished stays on record.', confirm: 'Take off the crew', danger: true }))) return;
                       void run(async () => { await api(`/api/crew/${c.id}`, { method: 'DELETE' }); router.refresh(); }, 'Removed');
@@ -136,11 +137,7 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
         <div className="mt-2 space-y-2">
           <div><Label htmlFor="crew-name">Name</Label><Input id="crew-name" data-testid="crew-name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
           <div><Label htmlFor="crew-phone">Mobile</Label><Input id="crew-phone" value={f.phone_e164} onChange={(e) => setF({ ...f, phone_e164: e.target.value })} /></div>
-          <div>
-            <Label htmlFor="crew-email">Email</Label>
-            <Input id="crew-email" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} aria-describedby="crew-email-hint" />
-            {!canText ? <p id="crew-email-hint" className="mt-1 text-xs text-warn-ink" data-testid="crew-email-hint">Texting isn&apos;t approved yet, so route links go by email. Add it here, or the driver adds it when they join.</p> : null}
-          </div>
+          {!canText ? <p className="text-xs text-warn-ink" data-testid="crew-text-hint">Texting isn&apos;t set up yet, so drivers open their route from the QR code or link on the storm board.</p> : null}
           <div className="grid grid-cols-2 gap-2">
             <div><Label htmlFor="crew-kind">Kind</Label><Select id="crew-kind" value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}><option value="employee">Employee</option><option value="sub">Subcontractor</option></Select></div>
             <div><Label htmlFor="crew-lang">Language</Label><Select id="crew-lang" data-testid="crew-lang" value={f.language} onChange={(e) => setF({ ...f, language: e.target.value })}><option value="en">English</option><option value="es">Spanish</option></Select></div>
@@ -163,13 +160,21 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
         ) : (
           <Button className="mt-3 w-full" disabled={busy || !f.name} data-testid="crew-invite" onClick={() => run(async () => {
             const out = await api('/api/crew', { body: body() });
+            setInvitePhone(out.phone_e164 ?? null);
             setInvite(out.invite_url);
             setF(blank);
             router.refresh();
           }, 'Invited')}>Invite</Button>
         )}
         {msg ? <p className="mt-2 text-sm text-muted" data-testid="crew-msg">{msg}</p> : null}
-        {invite ? <div className="mt-2"><Label>Invite link</Label><Input readOnly value={invite} data-testid="invite-url" /></div> : null}
+        {invite ? (
+          <div className="mt-2">
+            <Label>Join link</Label>
+            <Input readOnly value={invite} data-testid="invite-url" onFocus={(e) => e.target.select()} />
+            <p className="mt-1 text-xs text-muted">Send it from your own phone. The driver opens it, confirms their mobile and says yes to texts.</p>
+            <a className="mt-1 inline-block text-sm font-semibold text-link underline" href={`sms:${invitePhone ?? ''}${typeof navigator !== 'undefined' && /iPhone|iPad/.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent(`Join our snow crew on Flake: ${invite}`)}`} data-testid="invite-sms">Text it from my phone</a>
+          </div>
+        ) : null}
       </Card>
     </div>
   );

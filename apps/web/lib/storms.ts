@@ -192,7 +192,8 @@ export async function sendRunLink(tenantId: string, runId: string) {
   const url = runLink(row.run);
   if (!url) return;
   const link = await shortLink(tenantId, new URL(url).pathname);
-  await notifyParty(row.tenant, { phone: row.crew.phone_e164, email: row.crew.email }, {
+  // Drivers get texts only, never email (D16). Without texting, the board shows the QR code and copy link.
+  await notifyParty(row.tenant, { phone: row.crew.phone_e164 }, {
     template: 'crew_link',
     vars: { route: row.route?.name ?? (row.crew.language === 'es' ? 'tu ruta' : 'your route'), n: stops.length, link },
     subject: CREW_SUBJECT[(row.crew.language === 'es' ? 'es' : 'en') as 'en' | 'es'].crew_link(row.tenant.name),
@@ -325,7 +326,7 @@ export async function notifyRouteChanged(tenantId: string, runId: string, key: s
   // routes to crew, which sends the whole route (issue 91).
   if (!row?.crew || !url || !row.run.published_at) return;
   const link = await shortLink(tenantId, new URL(url).pathname);
-  await notifyParty(row.tenant, { phone: row.crew.phone_e164, email: row.crew.email }, { template: 'route_changed', vars: { link }, subject: CREW_SUBJECT[(row.crew.language === 'es' ? 'es' : 'en') as 'en' | 'es'].route_changed(row.tenant.name), lang: (row.crew.language === 'es' ? 'es' : 'en') as 'en' | 'es', key: `route_changed:${key}:${runId}`, related: { storm_run_id: runId } });
+  await notifyParty(row.tenant, { phone: row.crew.phone_e164 }, { template: 'route_changed', vars: { link }, subject: CREW_SUBJECT[(row.crew.language === 'es' ? 'es' : 'en') as 'en' | 'es'].route_changed(row.tenant.name), lang: (row.crew.language === 'es' ? 'es' : 'en') as 'en' | 'es', key: `route_changed:${key}:${runId}`, related: { storm_run_id: runId } });
 }
 
 /** Each site gets one message per template per storm, however many times the button is pressed. */
@@ -519,7 +520,7 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     }
     const pos = data.positions.find((p) => p.storm_run_id === run.id);
     return {
-      id: run.id, pass: run.pass, name: r?.name ?? 'Run', truck_id: run.truck_id, crew: crew ? { id: crew.id, name: crew.name, kind: crew.kind, callout_reply: crew.callout_reply_at && Date.parse(crew.callout_reply_at) >= started ? crew.callout_reply : null, reachable: Boolean(crew.email) || textable.has(crew.phone_e164), reach: { email: Boolean(crew.email), text: textable.has(crew.phone_e164) } } : null,
+      id: run.id, pass: run.pass, name: r?.name ?? 'Run', truck_id: run.truck_id, crew: crew ? { id: crew.id, name: crew.name, kind: crew.kind, callout_reply: crew.callout_reply_at && Date.parse(crew.callout_reply_at) >= started ? crew.callout_reply : null, reachable: textable.has(crew.phone_e164), reach: { email: false, text: textable.has(crew.phone_e164) } } : null,
       published_at: run.published_at, started_at: run.started_at, opened_at: run.link_opened_at, // The link exists from the start; showing a QR in person shouldn't need Publish, which messages the crew (issue 58).
       link: ctx.role !== 'viewer' ? runLink(run) : null, stops,
       position: pos ? { lat: pos.lat, lon: pos.lon, at: pos.device_at } : null,
