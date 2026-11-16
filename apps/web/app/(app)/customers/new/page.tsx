@@ -23,5 +23,5 @@ export default async function NewCustomer({ searchParams }: { searchParams: Prom
   }));
   const { tiles } = await getProviders();
   const card = (Object.keys(ctx.tenant.rate_card as object).length ? ctx.tenant.rate_card : DEFAULT_RATE_CARD) as RateCard;
-  return <Wizard others={others} knownLots={lots.map((l) => ({ ...l, customer: others.find((o) => o.id === l.customer_id)?.name ?? '' })).filter((l) => l.customer)} existing={existing ? { id: existing.id, name: existing.name, kind: existing.kind, email: existing.email ?? '' } : undefined} layers={tiles.layers()} rateCard={card} routes={routes.map((r) => ({ id: r.id, name: r.name, site_ids: stops.filter((s) => s.route_id === r.id).map((s) => s.site_id) }))} />;
+  return <Wizard paymentsReady={Boolean(ctx.tenant.stripe_account_id && ctx.tenant.stripe_charges_enabled)} others={others} knownLots={lots.map((l) => ({ ...l, customer: others.find((o) => o.id === l.customer_id)?.name ?? '' })).filter((l) => l.customer)} existing={existing ? { id: existing.id, name: existing.name, kind: existing.kind, email: existing.email ?? '' } : undefined} layers={tiles.layers()} rateCard={card} routes={routes.map((r) => ({ id: r.id, name: r.name, site_ids: stops.filter((s) => s.route_id === r.id).map((s) => s.site_id) }))} />;
 }

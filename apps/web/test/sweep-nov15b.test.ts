@@ -106,3 +106,24 @@ describe('weather across the country', () => {
     expect(line.description).toMatch(/for 5" of snow, measured at a lot nearby/);
   });
 });
+
+describe('admin pages on a hosted staging copy', () => {
+  it('only ADMIN_EMAILS are platform admins on staging; a laptop or test run lets anyone in', async () => {
+    const { isPlatformAdmin } = await import('@/lib/salt-orders');
+    const { canSeeUsage } = await import('@/lib/usage');
+    const before = { env: process.env.APP_ENV, admins: process.env.ADMIN_EMAILS };
+    try {
+      process.env.ADMIN_EMAILS = 'owner@216labs.example';
+      process.env.APP_ENV = 'staging';
+      expect(isPlatformAdmin('someone@example.com')).toBe(false);
+      expect(canSeeUsage('someone@example.com')).toBe(false);
+      expect(isPlatformAdmin('Owner@216labs.example')).toBe(true);
+      process.env.APP_ENV = 'test';
+      expect(isPlatformAdmin('someone@example.com')).toBe(true);
+    } finally {
+      process.env.APP_ENV = before.env;
+      process.env.ADMIN_EMAILS = before.admins;
+      if (before.admins === undefined) delete process.env.ADMIN_EMAILS;
+    }
+  });
+});

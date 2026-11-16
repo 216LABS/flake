@@ -1,5 +1,5 @@
 import { serviceDb, sql } from '@flake/db';
-import { isTestEnv } from './env';
+import { isLocalOrTest } from './env';
 
 const MB = 1024 * 1024;
 
@@ -18,7 +18,7 @@ export async function deploymentUsage(): Promise<Usage> {
 }
 
 export function canSeeUsage(email: string | null) {
-  if (isTestEnv()) return true;
+  if (isLocalOrTest()) return true;
   const admins = (process.env.ADMIN_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
   return Boolean(email && admins.includes(email.toLowerCase()));
 }

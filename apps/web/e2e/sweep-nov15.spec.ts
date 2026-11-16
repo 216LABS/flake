@@ -196,7 +196,7 @@ test('feedback goes to the Flake team with the page, and the storm-night guide o
 });
 
 /** Issue 163: an incident packet from the moment of a slip, with its summary and station weather. */
-test('an incident packet is made from the time it happened, and the hash repeats', async ({ page }) => {
+test('an incident packet is made from the time it happened', async ({ page }) => {
   await login(page);
   const [c1] = await sql`select s.id from site s join tenant t on t.id = s.tenant_id where t.slug = 'lakeshore-demo' and s.label = 'Madison Ave Retail Lot'`;
   await page.goto(`/proof?site=${c1!.id}`);
@@ -211,5 +211,37 @@ test('an incident packet is made from the time it happened, and the hash repeats
   expect(a).toMatch(/^[0-9a-f]{64}$/);
   const [row] = await sql`select manifest from proof_packet where manifest_sha256 = ${a} limit 1`;
   expect((row!.manifest as { incident_at?: string }).incident_at).toBeTruthy();
-  expect(await generate()).toBe(a);
+  // The hash repeating is checked in the integration test, without another render here.
+});
+
+/** First-run walk: a brand-new company's first lot lands on a new route, so its first storm has somewhere to go. */
+test('a new company\'s first customer goes onto a new route from the wizard', async ({ page }) => {
+  const email = `route-${randomUUID().slice(0, 6)}@flake.test`;
+  const signup = await page.request.post(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/signup`, { headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! }, data: { email, password: 'flake-demo-only' } });
+  expect(signup.ok()).toBe(true);
+  await page.request.post('/api/dev/login', { data: { email } });
+  await page.goto('/onboarding');
+  await page.getByTestId('company').fill('Route First LLC');
+  await page.getByTestId('create-company').click();
+  await page.waitForURL('**/dashboard');
+  await page.goto('/customers/new');
+  await page.getByTestId('c-name').fill('First Lot Co');
+  await page.getByTestId('next').click();
+  await page.getByTestId('address').fill('14701 Detroit Ave, Lakewood, OH');
+  await page.getByTestId('find').click();
+  await expect(page.getByTestId('sqft')).toContainText('sq ft');
+  await page.getByTestId('next').click();
+  await page.getByTestId('price').fill('60.00');
+  await page.getByTestId('next').click();
+  await page.getByTestId('next').click();
+  await expect(page.getByTestId('route-select')).toHaveValue('new');
+  await expect(page.getByTestId('wizard-new-route')).toHaveValue('Route 1');
+  await page.getByTestId('next').click();
+  await page.getByTestId('send-quote').click();
+  await expect(page.getByTestId('quote-note')).toBeVisible();
+  await page.goto('/dashboard');
+  await expect(page.getByRole('main').getByRole('link', { name: 'Start a storm' })).toBeVisible();
+  await expect(page.getByTestId('needs-route')).toHaveCount(0);
+  await page.goto('/routes');
+  await expect(page.getByTestId('route-card')).toContainText('14701 Detroit Ave');
 });

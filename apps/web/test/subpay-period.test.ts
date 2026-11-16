@@ -38,7 +38,9 @@ describe('sub pay across storms (issue 160)', () => {
     await serviceDb().insert(visit_correction).values({ tenant_id: w.tenantId, visit_id: undone!.id, field: 'voided', old_value: false, new_value: true, reason: 'Wrong lot', by_user: w.userId });
     const tz = 'America/New_York';
     const today = new Date().toLocaleDateString('en-CA', { timeZone: tz });
-    const p = period(today, today, tz);
+    // From yesterday, so a run just after midnight still holds visits made 90 minutes ago.
+    const yesterday = new Date(Date.now() - 86_400_000).toLocaleDateString('en-CA', { timeZone: tz });
+    const p = period(yesterday, today, tz);
     const [row] = await withUser(w.userId, (tx) => subPayReport(tx, p));
     expect([row!.name, row!.visits, row!.total_cents, row!.storms.map((s) => s.total_cents).sort()]).toEqual(['Crew Two', 5, 25000, [10000, 15000]]);
     // Payroll hours list employees only by default; the sub is on Sub pay.
@@ -49,12 +51,12 @@ describe('sub pay across storms (issue 160)', () => {
     const { vi } = await import('vitest');
     const spy = vi.spyOn(auth, 'requireApi').mockResolvedValue({ userId: w.userId, tenantId: w.tenantId, role: 'owner', tenant: { timezone: tz, plan: 'pro', free_season_until: null } } as never);
     const { req } = await import('./helpers');
-    const csv = await (await GET(req(`/api/reports/hours.csv?from=${today}&to=${today}`), {} as never)).text();
+    const csv = await (await GET(req(`/api/reports/hours.csv?from=${yesterday}&to=${today}`), {} as never)).text();
     expect(csv).not.toContain('Crew Two');
-    expect(await (await GET(req(`/api/reports/hours.csv?from=${today}&to=${today}&subs=1`), {} as never)).text()).toContain('Crew Two');
+    expect(await (await GET(req(`/api/reports/hours.csv?from=${yesterday}&to=${today}&subs=1`), {} as never)).text()).toContain('Crew Two');
     // The sub pay CSV total matches the screen.
     const { GET: subCsv } = await import('@/app/api/reports/subpay.csv/route');
-    const out = await (await subCsv(req(`/api/reports/subpay.csv?from=${today}&to=${today}`), {} as never)).text();
+    const out = await (await subCsv(req(`/api/reports/subpay.csv?from=${yesterday}&to=${today}`), {} as never)).text();
     expect(out).toContain('Crew Two,Total,5,250.00');
     spy.mockRestore();
   });

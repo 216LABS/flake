@@ -6,6 +6,11 @@ export const appEnv = () => process.env.APP_ENV ?? (process.env.VERCEL_ENV === '
 export const isProd = () => appEnv() === 'production';
 export const isMock = () => (process.env.PROVIDERS_MODE ?? 'mock') !== 'live';
 export const isTestEnv = () => appEnv() !== 'production';
+/**
+ * A laptop or the automated test run, never a hosted copy. Staging is hosted (the live site runs it until launch), so
+ * anything that hands out admin rights or loosens a limit checks this, not isTestEnv.
+ */
+export const isLocalOrTest = () => ['local', 'test'].includes(appEnv());
 /** Demo accounts have a password in this public repo, so a hosted copy has to opt in. */
 export const demoLoginEnabled = () => ['local', 'test'].includes(appEnv()) || process.env.DEMO_LOGIN === '1';
 export const emailConfigured = () => isMock() || Boolean(process.env.RESEND_API_KEY);

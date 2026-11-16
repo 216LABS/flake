@@ -31,7 +31,7 @@ const sameLot = (a: string, b: string) => {
   return Boolean(num(a)) && num(a) === num(b) && sameStreet(a, b);
 };
 
-export function Wizard({ layers, rateCard, routes, existing, others = [], knownLots = [] }: { others?: { id: string; name: string }[]; knownLots?: { customer_id: string; customer: string; label: string; address: string }[]; layers: TileLayers; rateCard: RateCard; routes: { id: string; name: string; site_ids: string[] }[]; existing?: { id: string; name: string; kind: string; email: string } }) {
+export function Wizard({ layers, rateCard, routes, existing, others = [], knownLots = [], paymentsReady = false }: { paymentsReady?: boolean; others?: { id: string; name: string }[]; knownLots?: { customer_id: string; customer: string; label: string; address: string }[]; layers: TileLayers; rateCard: RateCard; routes: { id: string; name: string; site_ids: string[] }[]; existing?: { id: string; name: string; kind: string; email: string } }) {
   const router = useRouter();
   const firstStep = existing ? 1 : 0;
   // Each step is a history entry (?step=2), so the browser's Back, or a swipe back on a phone, goes to the step before
@@ -73,7 +73,9 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
   const [suggestions, setSuggestions] = useState<{ label: string; lat: number; lon: number }[]>([]);
   const [photoNote, setPhotoNote] = useState<string | null>(null);
   const [pinKind, setPinKind] = useState('stake');
-  const [routeId, setRouteId] = useState('');
+  // A company with no routes yet makes its first one right here, so the lot isn't left on none (first-run walk).
+  const [routeId, setRouteId] = useState(routes.length ? '' : 'new');
+  const [newRoute, setNewRoute] = useState('Route 1');
   const [position, setPosition] = useState('');
   const [quoteUrl, setQuoteUrl] = useState<string | null>(null);
   const [emailed, setEmailed] = useState(false);
@@ -197,7 +199,11 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
         // A photo that won't upload shouldn't stop the quote. It can be added from the site page.
         if (file) await uploadPinPhoto(pin.id, file).catch(() => setPhotoNote('A pin photo did not upload. You can add it from the site page.'));
       }
-      if (routeId && !saved.current.routed) {
+      if (routeId === 'new' && newRoute.trim() && !saved.current.routed) {
+        // A new route holding just this lot.
+        await api('/api/routes', { body: { name: newRoute.trim(), site_ids: [siteId] } });
+        saved.current.routed = true;
+      } else if (routeId && routeId !== 'new' && !saved.current.routed) {
         // Just this stop, so someone editing the same route at the same time keeps their change.
         await api(`/api/routes/${routeId}/stops`, { body: { site_id: siteId, ...(position ? { position: Math.max(1, Number(position)) } : {}) } });
         saved.current.routed = true;
@@ -343,9 +349,14 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
         {step === 4 ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <div><Label htmlFor="route">Add to route</Label>
-              <Select id="route" data-testid="route-select" value={routeId} onChange={(e) => setRouteId(e.target.value)}><option value="">Not yet</option>{routes.map((r) => <option key={r.id} value={r.id}>{r.name} ({r.site_ids.length} stops)</option>)}</Select>
+              <Select id="route" data-testid="route-select" value={routeId} onChange={(e) => setRouteId(e.target.value)}><option value="">Not yet</option>{routes.map((r) => <option key={r.id} value={r.id}>{r.name} ({r.site_ids.length} stops)</option>)}<option value="new">New route...</option></Select>
             </div>
-            <div><Label htmlFor="pos">Position (blank for last)</Label><Input id="pos" type="number" min={1} value={position} onChange={(e) => setPosition(e.target.value)} /></div>
+            {routeId === 'new' ? (
+              <div><Label htmlFor="new-route-name">Route name</Label><Input id="new-route-name" maxLength={120} value={newRoute} onChange={(e) => setNewRoute(e.target.value)} data-testid="wizard-new-route" /></div>
+            ) : routeId ? (
+              <div><Label htmlFor="pos">Position (blank for last)</Label><Input id="pos" type="number" min={1} value={position} onChange={(e) => setPosition(e.target.value)} /></div>
+            ) : null}
+            <p className="text-xs text-muted sm:col-span-2">A storm sends each route to one truck. A lot on no route is left out of storms until you add it on the Routes page.</p>
           </div>
         ) : null}
         {step === 5 ? (
@@ -353,7 +364,7 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
             <p><b>{c.name}</b>, {label || address}</p>
             <p>{sqft ? `${sqft.toLocaleString()} sq ft` : 'Area not set'}{walkLf ? `, ${walkLf} ft of walks` : ''}</p>
             <p>{pricingLabel(pricingType)}{pricingType !== 'per_inch_tier' ? `: $${price}` : ''}, {trigger === 0 ? 'zero tolerance' : <>{trigger}&quot; trigger</>}{withSalt ? ', plus salt' : ''}</p>
-            <p className="mt-2 text-muted">Sending goes to {c.email || 'no email yet, so you will get a link to share'}. The customer sees the scope, price and terms, signs, and can put a card or bank account on file.</p>
+            <p className="mt-2 text-muted">Sending goes to {c.email || 'no email yet, so you will get a link to share'}. The customer sees the scope, price and terms, and signs.{paymentsReady ? ' They can put a card or bank account on file.' : ' Payments are not connected yet, so they pay the way you set under How customers pay you.'}</p>
           </div>
         ) : null}
         {error ? <p className="mt-3 text-sm text-danger" role="alert">{error}</p> : null}

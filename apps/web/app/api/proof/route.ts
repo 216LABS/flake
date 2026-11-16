@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { asUser, requireApi } from '@/lib/auth';
 import { HttpError, parseJson, rateLimit, route } from '@/lib/http';
 import { enqueue } from '@/lib/jobs';
+import { isLocalOrTest } from '@/lib/env';
 
 export const GET = route(async () => {
   const ctx = await requireApi('viewer');
@@ -17,7 +18,8 @@ export const GET = route(async () => {
 // for (issue 135). Each one renders a PDF and stores it, so anyone gets ten a minute.
 export const POST = route(async (req) => {
   const ctx = await requireApi('viewer');
-  rateLimit(`proof:${ctx.userId}`, 10, 60_000);
+  // The test run signs dozens of parallel browsers in as one demo user, so it gets more room than a real person needs.
+  rateLimit(`proof:${ctx.userId}`, isLocalOrTest() ? 120 : 10, 60_000);
   const { siteId, from, to, incident_at } = await parseJson(req, proofRequest);
   const [st] = await asUser(ctx, (tx) => tx.select({ id: site.id }).from(site).where(eq(site.id, siteId)));
   if (!st) throw new HttpError(404, 'Site not found');

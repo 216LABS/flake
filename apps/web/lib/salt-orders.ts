@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { and, desc, eq, inArray, salt_order, salt_pool, salt_supplier, serviceDb, sql, tenant, type SaltOrderStatus, type Tx } from '@flake/db';
 import { orderCostCents, orderPath, pickSupplier, referralFeeCents, reorderAdvice, stopsFor, type OrderPath } from '@flake/core/salt';
-import { baseUrl, isTestEnv, required } from './env';
+import { baseUrl, isLocalOrTest, required } from './env';
 import { HttpError, isUuid } from './http';
 import { enqueue } from './jobs';
 import { notifyOffice, sendEmail } from './messaging';
@@ -23,7 +23,7 @@ export async function saltOrderingReady(): Promise<boolean> {
 
 /** 216LABS staff who manage partner suppliers. Everyone in local and test, so tests and demos can reach it. */
 export function isPlatformAdmin(email: string | null | undefined): boolean {
-  if (isTestEnv()) return true;
+  if (isLocalOrTest()) return true;
   const admins = (process.env.ADMIN_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
   return Boolean(email && admins.includes(email.toLowerCase()));
 }

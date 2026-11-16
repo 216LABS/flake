@@ -63,7 +63,9 @@ export default async function Dashboard() {
   ];
   return (
     <>
-      <PageHeader title="Dashboard" subtitle={ctx.tenant.name} actions={canEdit && data.customers[0]!.n > 0 ? <Link href="/storms#start" className={buttonVariants({ variant: 'accent' })}>Start a storm</Link> : null} />
+      <PageHeader title="Dashboard" subtitle={ctx.tenant.name} actions={canEdit && data.routed[0]!.n > 0 ? <Link href="/storms#start" className={buttonVariants({ variant: 'accent' })}>Start a storm</Link> : null} />
+      {/* Customers but no lot on a route: a storm would have nothing to send, so say the next step (first-run walk). */}
+      {canEdit && data.customers[0]!.n > 0 && data.routed[0]!.n === 0 ? <p className="mb-4 rounded-md bg-info-tint p-3 text-sm text-ink" data-testid="needs-route">Next: put your lots on a route. A storm sends each route to one truck. <Link className="font-semibold underline" href="/routes">Open Routes</Link></p> : null}
       {usage?.near_limit ? <p className="mb-4 rounded-md bg-danger-tint p-3 text-sm text-danger" data-testid="usage-warning">Storage is nearly full ({usage.files_mb} of {usage.files_limit_mb} MB of files, {usage.db_mb} of {usage.db_limit_mb} MB of database). <Link className="underline" href="/settings?tab=system">See details</Link></p> : null}
       {failedMessages ? <p className="mb-4 rounded-md bg-danger-tint p-3 text-sm text-danger" data-testid="messages-failed">{failedMessages === 1 ? '1 message' : `${failedMessages} messages`} could not be sent in the last 24 hours. {retrying ? 'Flake is still retrying.' : 'Flake has stopped retrying. Check the address, then send again from the driver or customer.'} <Link className="underline" href="/settings?tab=system">See why</Link></p> : null}
       {rejectedMessages ? <p className="mb-4 rounded-md bg-warn-tint p-3 text-sm text-warn-ink" data-testid="messages-rejected">{rejectedMessages === 1 ? '1 message was' : `${rejectedMessages} messages were`} not delivered because the email address or phone number was rejected. Fix it on the driver or customer, and route links go out again. <Link className="underline" href="/settings?tab=system">See which</Link></p> : null}
