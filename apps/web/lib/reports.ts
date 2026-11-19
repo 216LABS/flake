@@ -1,5 +1,6 @@
-import { app_setting, eq, serviceDb, sql, type Conn, type Tx } from '@flake/db';
-import { hoursOf, saltOnHand, saltTons, shiftsFrom, type HoursRow, type StockEntry } from '@flake/core/reports';
+import { and, eq, salt_ledger, serviceDb, sql, type Conn, type Tx } from '@flake/db';
+import { hoursOf, saltTons, shiftsFrom, type HoursRow, type StockEntry } from '@flake/core/reports';
+import { yardStock, yardsFor } from './yards';
 import { SEASON_PAY_MONTHS, seasonFlatMonths, subPayStatement, type SubRateCard } from '@flake/core/subpay';
 import { fmtLocal, localHm, zonedDayStart } from '@flake/core/time';
 
@@ -131,39 +132,43 @@ async function saltVisits(tx: Tx, since: string | null, until?: string): Promise
     order by v.arrived_device_at`)).map((v) => ({ ...v, at: new Date(v.at).toISOString() }));
 }
 
-const stockKey = (tenantId: string) => `salt_stock:${tenantId}`;
-
+/**
+ * Salt stock lives in each yard's ledger (issue 169). These keep the first yard's Reports view and the salt-order
+ * delivery hook working as before; Salt yards shows every yard.
+ */
 export async function stockEntries(tenantId: string): Promise<StockEntry[]> {
-  const [row] = await serviceDb().select().from(app_setting).where(eq(app_setting.key, stockKey(tenantId)));
-  return (row?.value?.entries ?? []) as StockEntry[];
+  const [first] = await yardsFor(tenantId);
+  const rows = await serviceDb().select().from(salt_ledger).where(and(eq(salt_ledger.tenant_id, tenantId), eq(salt_ledger.yard_id, first!.id)));
+  return rows.map((l) => ({ id: l.salt_order_id ? `salt-order-${l.salt_order_id}` : l.id, kind: l.source === 'count' ? 'count' : 'delivery', at: new Date(l.at).toISOString(), tons: Number(l.qty_tons), ...(l.note ? { note: l.note } : {}) }));
 }
 
 /**
- * Appends in one statement, so two people logging a delivery at once both count. An entry whose id is already there
- * is not added again, so a retried delivery counts once. Pass a transaction to make it part of a bigger change.
+ * Adds a delivery or count to the first yard. A salt order's delivery (id salt-order-<order id>) is linked to its
+ * order and counted once, however often it is retried. Pass a transaction to make it part of a bigger change.
  */
-export async function addStockEntry(tenantId: string, entry: StockEntry, db: Conn = serviceDb()) {
-  const key = stockKey(tenantId);
-  const first = { entries: [entry] };
-  await db.execute(sql`
-    insert into app_setting (key, value) values (${key}, ${JSON.stringify(first)}::jsonb)
-    on conflict (key) do update set value = jsonb_build_object('entries', coalesce(app_setting.value->'entries', '[]'::jsonb) || ${JSON.stringify([entry])}::jsonb)
-    where not coalesce(app_setting.value->'entries', '[]'::jsonb) @> ${JSON.stringify([{ id: entry.id }])}::jsonb`);
+export async function addStockEntry(tenantId: string, entry: StockEntry & { cost_cents?: number | null; yard_id?: string; created_by?: string | null }, db: Conn = serviceDb()) {
+  const yardId = entry.yard_id ?? (await yardsFor(tenantId, db))[0]!.id;
+  const orderId = entry.id.startsWith('salt-order-') ? entry.id.slice('salt-order-'.length) : null;
+  if (orderId) {
+    const [seen] = await db.select({ id: salt_ledger.id }).from(salt_ledger).where(eq(salt_ledger.salt_order_id, orderId));
+    if (seen) return;
+  }
+  if (entry.kind !== 'count' && !entry.tons) return;
+  await db.insert(salt_ledger).values({ tenant_id: tenantId, yard_id: yardId, qty_tons: entry.tons, cost_cents: entry.cost_cents ?? null, source: orderId ? 'order' : entry.kind === 'count' ? 'count' : 'delivery', salt_order_id: orderId, note: entry.note ?? null, at: entry.at, created_by: entry.created_by ?? null });
 }
 
 export async function removeStockEntry(tenantId: string, id: string) {
-  await serviceDb().execute(sql`
-    update app_setting set value = jsonb_build_object('entries', coalesce((select jsonb_agg(e) from jsonb_array_elements(value->'entries') e where e->>'id' <> ${id}), '[]'::jsonb))
-    where key = ${stockKey(tenantId)}`);
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return;
+  await serviceDb().delete(salt_ledger).where(and(eq(salt_ledger.tenant_id, tenantId), eq(salt_ledger.id, id)));
 }
 
 const tonsOfVisit = (v: SaltVisit) => (v.salt ?? []).reduce((n, e) => n + (saltTons(e.unit, Number(e.qty)) ?? 0), 0);
 
 export async function saltReport(tx: Tx, tenantId: string, p: Period) {
   const entries = await stockEntries(tenantId);
-  const lastCount = entries.filter((e) => e.kind === 'count').map((e) => e.at).sort().pop() ?? null;
-  const sinceCount = await saltVisits(tx, lastCount);
-  const stock = saltOnHand(entries, sinceCount.map((v) => ({ at: v.at, tons: tonsOfVisit(v) })));
+  // On hand across every yard (issue 169); one yard reads exactly as before.
+  const yards = await yardStock(tenantId);
+  const stock = yards.length === 1 ? { tons: yards[0]!.tons, since: yards[0]!.since } : { tons: Math.round(yards.reduce((a, y) => a + y.tons, 0) * 100) / 100, since: null };
   const inPeriod = await saltVisits(tx, new Date(Date.parse(p.startAt) - 1).toISOString(), p.endAt);
   const byStorm = new Map<string, { storm: string; visits: number; tons: number; applications: number }>();
   for (const v of inPeriod) {

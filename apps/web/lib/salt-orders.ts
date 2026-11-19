@@ -369,7 +369,9 @@ export async function supplierUpdate(s: Supplier, orderId: string, change: { del
       const took = await tx.update(salt_order).set({ status: 'delivered', delivered_tons: change.delivered_tons, delivery_date: o.delivery_date ?? now.slice(0, 10), updated_at: now })
         .where(and(eq(salt_order.id, o.id), inArray(salt_order.status, ['ordered', 'scheduled']))).returning({ id: salt_order.id });
       // The delivery goes straight onto the contractor's salt count on the Reports page.
-      if (took.length) await addStockEntry(o.tenant_id, { id: `salt-order-${o.id}`, kind: 'delivery', at: now, tons: change.delivered_tons, note: `Delivered by ${s.name}` }, tx);
+      // Into the yard it was ordered for, with what it cost, so profit per lot knows the salt's price (issues 167, 169).
+      const cost = Math.round(change.delivered_tons * (o.price_per_ton_cents + o.referral_fee_per_ton_cents) + o.stop_fee_cents);
+      if (took.length) await addStockEntry(o.tenant_id, { id: `salt-order-${o.id}`, kind: 'delivery', at: now, tons: change.delivered_tons, note: `Delivered by ${s.name}`, cost_cents: cost, ...(o.yard_id ? { yard_id: o.yard_id } : {}) }, tx);
       return took.length > 0;
     });
     if (!done) return { ok: true };

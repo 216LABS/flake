@@ -55,12 +55,13 @@ describe('salt ordering', () => {
     const big = await placeOrder(c, { tons: 30, address: '4 Main St, Lakewood, OH' });
     const [sup] = await serviceDb().select().from(salt_supplier).where(eq(salt_supplier.id, big.order.supplier_id));
     await supplierUpdate(sup!, big.order.id, { delivered_tons: 28.5 });
-    const [stock] = (await serviceDb().execute(sql`select value from app_setting where key = ${`salt_stock:${b.tenantId}`}`)) as unknown as { value: { entries: { tons: number; note: string }[] } }[];
-    expect(stock!.value.entries.some((e) => e.tons === 28.5 && e.note.includes(sup!.name))).toBe(true);
+    // It lands in the yard's salt ledger, linked to the order (issue 169).
+    const ledger = () => serviceDb().execute(sql`select qty_tons::float as tons, note, salt_order_id from salt_ledger where tenant_id = ${b.tenantId}`) as unknown as Promise<{ tons: number; note: string; salt_order_id: string }[]>;
+    const stock = await ledger();
+    expect(stock.some((e) => e.tons === 28.5 && e.note.includes(sup!.name) && e.salt_order_id === big.order.id)).toBe(true);
     // Marking it delivered twice adds nothing.
     await supplierUpdate(sup!, big.order.id, { delivered_tons: 28.5 });
-    const [again] = (await serviceDb().execute(sql`select value from app_setting where key = ${`salt_stock:${b.tenantId}`}`)) as unknown as { value: { entries: unknown[] } }[];
-    expect(again!.value.entries).toHaveLength(stock!.value.entries.length);
+    expect(await ledger()).toHaveLength(stock.length);
     // Bad and old links resolve to nothing.
     expect(await resolveSupplier('nonsense')).toBeNull();
     expect(await resolveSupplier(`x.${sup!.link_rev}.${'A'.repeat(32)}`)).toBeNull();
@@ -152,7 +153,7 @@ describe('salt ordering', () => {
       const big = await placeOrder(c, { tons: 22, address: '1 Main St, Lakewood, OH' });
       const [sup] = await serviceDb().select().from(salt_supplier).where(eq(salt_supplier.id, sid));
       await expect(supplierUpdate(sup!, big.order!.id, { delivered_tons: 220 })).rejects.toMatchObject({ status: 422 });
-      const count = async () => ((await serviceDb().execute(sql`select value from app_setting where key = ${`salt_stock:${a.tenantId}`}`)) as unknown as { value: { entries: { id: string }[] } }[])[0]?.value.entries.filter((e) => e.id === `salt-order-${big.order!.id}`).length ?? 0;
+      const count = async () => ((await serviceDb().execute(sql`select count(*)::int as n from salt_ledger where salt_order_id = ${big.order!.id}`)) as unknown as { n: number }[])[0]!.n;
       await Promise.all([supplierUpdate(sup!, big.order!.id, { delivered_tons: 22 }), supplierUpdate(sup!, big.order!.id, { delivered_tons: 22 })]);
       expect(await count()).toBe(1);
       // A date can't be set on a delivered load.

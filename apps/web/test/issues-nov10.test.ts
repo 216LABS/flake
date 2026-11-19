@@ -135,12 +135,15 @@ describe('issue 10: re-signing a seasonal contract keeps its place in the schedu
 });
 
 describe('issue 14: a salt delivery counts once', () => {
-  it('adding the same delivery twice keeps one entry', async () => {
+  // A salt order's delivery counting once, under two quick taps, is in salt-orders.test.ts with a real order. Since
+  // yards (issue 169), stock is a ledger: a count can say the pile is empty, and a delivery of nothing isn't a row.
+  it('an empty pile can be counted, and a delivery of 0 tons adds nothing', async () => {
     const w = await makeWorld();
-    const entry = { id: `salt-order-${uuid()}`, kind: 'delivery' as const, at: new Date().toISOString(), tons: 12 };
-    await addStockEntry(w.tenantId, entry);
-    await addStockEntry(w.tenantId, entry);
-    expect((await stockEntries(w.tenantId)).filter((e) => e.id === entry.id)).toHaveLength(1);
+    await addStockEntry(w.tenantId, { id: uuid(), kind: 'delivery', at: new Date(Date.now() - 60_000).toISOString(), tons: 12 });
+    await addStockEntry(w.tenantId, { id: uuid(), kind: 'delivery', at: new Date().toISOString(), tons: 0 });
+    await addStockEntry(w.tenantId, { id: uuid(), kind: 'count', at: new Date().toISOString(), tons: 0 });
+    const entries = await stockEntries(w.tenantId);
+    expect(entries.map((e) => [e.kind, e.tons]).sort()).toEqual([['count', 0], ['delivery', 12]]);
   });
 });
 

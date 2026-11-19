@@ -6,6 +6,7 @@ import { asUser, requirePage } from '@/lib/auth';
 import { stormStatus } from '@/lib/labels';
 import { money } from '@/lib/client';
 import { listMaintenance } from '@/lib/maintenance';
+import { yardStock } from '@/lib/yards';
 import { canSeeUsage, deploymentUsage } from '@/lib/usage';
 import { tenantWeatherHeader } from '@/lib/weather';
 
@@ -36,6 +37,8 @@ export default async function Dashboard() {
     // Truck service due soon or overdue (issue 161).
     service: (await listMaintenance(tx)).filter((m) => m.status.state !== 'ok'),
   }));
+  // Salt at or under a yard's reorder point (issue 169). Dashboard only; nothing is ordered by itself.
+  const lowSalt = ctx.role === 'viewer' ? [] : (await yardStock(ctx.tenantId)).filter((y) => y.low);
   const owedTotal = data.owed.reduce((n, r) => n + r.cents, 0);
   // Customers' "come back" requests from their records page, one per lot and hour, for a week (issue 5).
   const requests = (await serviceDb().execute(sql`
@@ -133,6 +136,14 @@ export default async function Dashboard() {
                   </>
                 ) : null}
               </div>
+            </section>
+          ) : null}
+          {lowSalt.length ? (
+            <section data-testid="salt-reorder">
+              <Eyebrow className="mb-2">Salt</Eyebrow>
+              <ul className="space-y-1 rounded-md border border-warn-line bg-warn-tint p-3 text-sm text-warn-ink">
+                {lowSalt.map((y) => <li key={y.yard.id}>Reorder salt, {y.yard.name}: {y.tons} tons on hand (reorder at {Number(y.yard.reorder_tons)}). <Link className="font-semibold underline" href="/reports">Order salt</Link></li>)}
+              </ul>
             </section>
           ) : null}
           {data.service.length ? (

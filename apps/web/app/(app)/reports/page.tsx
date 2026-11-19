@@ -207,6 +207,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
         <Eyebrow id="salt-title" className="mb-2">Salt</Eyebrow>
         <div className="mb-4 grid gap-3 sm:grid-cols-3">
           <Card data-testid="salt-on-hand">
+            <a className="float-right text-sm text-link underline" href="/salt" data-testid="open-salt-yards">Salt yards</a>
             <Stat label="On hand" value={salt.entries.length ? tons(salt.stock.tons) : 'Not counted'} note={salt.stock.since ? `Counted ${fmtLocal(salt.stock.since, tz, { month: 'short', day: 'numeric' })}, less what drivers logged since` : 'Deliveries less what drivers logged. Add a count to set it exactly.'} />
           </Card>
           <Card><Stat label="Storms left" value={salt.stormsLeft ?? '-'} note="At your average use per storm" /></Card>
