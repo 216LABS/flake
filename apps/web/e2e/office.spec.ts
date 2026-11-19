@@ -201,7 +201,7 @@ test('settings: rate card, Stripe onboarding in mock, crew invite with opt-in, S
   await page.goto('/settings?tab=system');
   await expect(page.getByTestId('breaker')).toBeVisible();
   await page.goto('/settings?tab=plan');
-  await expect(page.getByTestId('plan')).toBeVisible();
+  await expect(page.getByTestId('free-season')).toBeVisible();
 });
 
 test('a brand new user can set up a company, connect mock Stripe and sees the free season', async ({ page }) => {
@@ -221,7 +221,8 @@ test('a brand new user can set up a company, connect mock Stripe and sees the fr
   await page.getByTestId('mock-finish').click();
   await expect(page.getByTestId('stripe-status')).toHaveText('Charges enabled');
   await page.goto('/settings?tab=plan');
-  await expect(page.getByTestId('free-season')).toContainText('Free first season through April 30, 2027');
+  await expect(page.getByTestId('free-season')).toContainText('Free for the 2026-27 season, through April 30, 2027');
+  await expect(page.locator('main')).not.toContainText(/Go Pro|\$79|25 sites|1%/);
   await page.goto('/storms');
   await expect(page.getByText('No storms yet')).toBeVisible();
 });

@@ -15,7 +15,7 @@ export function OnboardingForm() {
   return (
     <AuthShell>
         <h1 className="font-display text-3xl font-semibold tracking-tight">Set up your company</h1>
-        <p className="mt-1 text-sm text-muted">Free through April 30, 2027. No card needed.</p>
+        <p className="mt-1 text-sm text-muted">Free for the 2026-27 season. No card needed.</p>
         <Label className="mt-4" htmlFor="company">Company name</Label>
         <Input id="company" value={name} onChange={(e) => setName(e.target.value)} data-testid="company" />
         <label className="mt-4 flex items-start gap-2 text-sm">

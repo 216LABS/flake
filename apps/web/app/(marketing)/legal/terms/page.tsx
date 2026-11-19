@@ -13,7 +13,7 @@ export default function Terms() {
       <h2 className="text-xl font-semibold">Weather data</h2>
       <p>Forecasts come from the National Weather Service and observed totals from NOHRSC, as retrieved at the time shown. They may be wrong, late or revised. If data is missing, Flake says it is unavailable rather than guess. Check conditions yourself before you rely on them.</p>
       <h2 className="text-xl font-semibold">Payments</h2>
-      <p>Payments run through your own Stripe account, under Stripe&apos;s terms. You pay Stripe&apos;s fees, and Stripe handles disputes and losses. Flake charges an application fee on each payment, shown in billing review. The current plans and fees are on the pricing page.</p>
+      <p>Payments run through your own Stripe account, under Stripe&apos;s terms. You pay Stripe&apos;s fees, and Stripe handles disputes and losses. Flake charges an application fee on each payment it processes, and the amount is shown in billing review before you send the bill. Flake is free for the 2026-27 season. Any later charge for Flake, or change to its fees, will be shown and agreed before it applies.</p>
       <h2 className="text-xl font-semibold">Records</h2>
       <p>Visit records are append-only and are kept for 7 years by default, because claims can arrive months or years later. You can export your data at any time. Proof packets and contract templates are not legal advice.</p>
       <h2 className="text-xl font-semibold">Text messages</h2>

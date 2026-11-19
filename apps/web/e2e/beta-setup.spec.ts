@@ -28,9 +28,10 @@ test('a Spanish-speaking driver reads the join page in Spanish (issue 177)', asy
 test('without Stripe keys, Payments and Plan explain instead of offering buttons that fail (issue 175)', async ({ page }) => {
   await login(page);
   await sql`insert into app_setting (key, value) values ('dev.unconfigured', '{"payments": true}'::jsonb) on conflict (key) do update set value = excluded.value`;
-  const [t] = await sql`select stripe_charges_enabled, stripe_account_id from tenant where slug = 'lakeshore-demo'`;
+  const [t] = await sql`select stripe_charges_enabled, stripe_account_id, free_season_until from tenant where slug = 'lakeshore-demo'`;
   try {
-    await sql`update tenant set stripe_charges_enabled = false, stripe_account_id = null where slug = 'lakeshore-demo'`;
+    // After the free season, when plans show again (issue 182 hides them during it).
+    await sql`update tenant set stripe_charges_enabled = false, stripe_account_id = null, free_season_until = null where slug = 'lakeshore-demo'`;
     await page.goto('/settings?tab=payments');
     await expect(page.getByTestId('stripe-unavailable')).toBeVisible();
     await expect(page.getByTestId('stripe-connect')).toHaveCount(0);
@@ -44,8 +45,17 @@ test('without Stripe keys, Payments and Plan explain instead of offering buttons
     await sql`delete from app_setting where key = 'dev.unconfigured'`;
     await sql`update tenant set stripe_charges_enabled = ${t!.stripe_charges_enabled}, stripe_account_id = ${t!.stripe_account_id} where slug = 'lakeshore-demo'`;
   }
+  try {
+    await page.goto('/settings?tab=plan');
+    await expect(page.getByRole('button', { name: 'Go Pro monthly' })).toBeVisible();
+  } finally {
+    await sql`update tenant set free_season_until = ${t!.free_season_until} where slug = 'lakeshore-demo'`;
+  }
+  // In the season: no plans, prices or upgrade buttons (issue 182).
   await page.goto('/settings?tab=plan');
-  await expect(page.getByRole('button', { name: 'Go Pro monthly' })).toBeVisible();
+  await expect(page.getByTestId('free-season')).toContainText('Free for the 2026-27 season');
+  await expect(page.getByRole('button', { name: /Go Pro/ })).toHaveCount(0);
+  await expect(page.locator('main')).not.toContainText(/\$79|25 sites|1%/);
 });
 
 test('crew import: preview flags a bad row, the good rows are added and nobody is texted (issue 174)', async ({ page }) => {
@@ -90,7 +100,7 @@ test('a new owner signs up: terms are linked and required, sending starts off, t
     await page.waitForURL('**/dashboard');
     const [t] = await sql`select id, terms_accepted_at, terms_version, outbound_enabled from tenant where name = ${name}`;
     expect(t!.terms_accepted_at).not.toBeNull();
-    expect(t!.terms_version).toContain('terms 2026-11-10');
+    expect(t!.terms_version).toContain('terms 2026-11-19');
     expect(t!.outbound_enabled).toBe(false);
 
     // Sending is off and the office is told.

@@ -390,6 +390,9 @@ test('settings: rate card saves, business details save, text verification submit
 
 test('plan: upgrading goes to checkout and comes back without an error', async ({ page }) => {
   await login(page);
+  // Plans show only after the free season (issue 182).
+  const [{ free_season_until: until }] = await sql`select free_season_until from tenant where slug = 'lakeshore-demo'` as unknown as [{ free_season_until: string | null }];
+  await sql`update tenant set free_season_until = null where slug = 'lakeshore-demo'`;
   await page.goto('/settings?tab=plan');
   const monthly = page.getByRole('button', { name: /monthly/i });
   await expect(monthly).toBeVisible();
@@ -398,7 +401,7 @@ test('plan: upgrading goes to checkout and comes back without an error', async (
   expect((await res).status()).toBeLessThan(400);
   await page.waitForLoadState('networkidle');
   await expect(page.locator('body')).not.toContainText('Something went wrong');
-  await sql`update tenant set plan = 'free' where slug = 'lakeshore-demo'`;
+  await sql`update tenant set plan = 'free', free_season_until = ${until} where slug = 'lakeshore-demo'`;
 });
 
 test('proof packet: a finished packet opens from the list', async ({ page, context }) => {

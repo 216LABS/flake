@@ -54,9 +54,9 @@ export default function Home() {
             <p className="mt-5 text-lg text-slate-300">Snow plow operations software for companies with 1 to 25 trucks: weather alerts that tell you when to roll, a no-install driver check-in, automatic proof of service and one-click billing.</p>
             <div className="mt-6 flex flex-wrap gap-3">
               <SessionLink className={buttonVariants({ variant: 'accent', size: 'lg' })} signedOut="Start free" />
-              <Link href="/pricing" className={buttonVariants({ variant: 'outline', size: 'lg' })}>See pricing</Link>
+              <Link href="/compare" className={buttonVariants({ variant: 'outline', size: 'lg' })}>Compare Flake</Link>
             </div>
-            <p className="mt-4 text-sm text-slate-300">Free for early testers through April 30, 2027. Flake earns a small fee on payments you process through it.</p>
+            <p className="mt-4 text-sm text-slate-300">Free for the 2026-27 season: every feature, unlimited sites, no card needed. <Link className="text-white underline underline-offset-2" href="/free-season">How the free season works</Link></p>
             <p className="mt-2 text-sm"><Link className="font-semibold text-white underline underline-offset-2" href="/compare" data-testid="home-compare">Using Jobber or Yeti? See how Flake compares</Link></p>
           </div>
           <PhoneSample />

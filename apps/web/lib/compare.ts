@@ -67,7 +67,7 @@ export const ROWS: Row[] = [
   { feature: 'Profit per lot or job costing', cells: {
     Flake: y(), Jobber: y('Grow plan and up'), Yeti: y('Job costing reports'), 'Service Autopilot': y('From Pro'), Plowdesk: u() } },
   { feature: 'Subcontractor pay statements', cells: {
-    Flake: y('Pro'), Jobber: u(), Yeti: y('Sub rates and payables'), 'Service Autopilot': u(), Plowdesk: u() } },
+    Flake: y(), Jobber: u(), Yeti: y('Sub rates and payables'), 'Service Autopilot': u(), Plowdesk: u() } },
   { feature: 'Crew and customer spreadsheet import', cells: {
     Flake: y(), Jobber: u('Client import from QuickBooks Online is documented'), Yeti: u(), 'Service Autopilot': u(), Plowdesk: p('Customers by CSV or QuickBooks import; crew import not confirmed') } },
   { feature: 'Self-serve sign-up and setup', cells: {
@@ -76,7 +76,7 @@ export const ROWS: Row[] = [
 
 /** Published entry prices, in the vendor's own terms. Shown as the grid's last row and in the recap. */
 export const PRICES: Record<Product, string> = {
-  Flake: 'Free through April 30, 2027. Then Free (up to 25 sites) or Pro at $79/mo ($790/year). 1% fee on payments through Flake (0.5% on Pro), $0.50 minimum, $25 maximum, plus Stripe\'s own fees.',
+  Flake: 'Free for the 2026-27 season',
   Jobber: 'Core $29/mo billed annually ($49 month to month) for 1 user; extra users $29/mo. Connect from $99/mo, Grow from $149/mo, Plus from $399/mo, billed annually.',
   Yeti: 'High Performance $66.50/mo billed annually ($798/year) for 1 to 25 sites, unlimited users. Weather reporting is an add-on.',
   'Service Autopilot': 'Startup $49/mo, Pro Plus $499/mo, annual subscription, each plus a sign-up fee. Snow Dispatch starts at Pro.',
@@ -84,7 +84,7 @@ export const PRICES: Record<Product, string> = {
 };
 
 export const SOURCES: { product: Product; links: [string, string][] }[] = [
-  { product: 'Flake', links: [['Pricing', '/pricing'], ['Home', '/']] },
+  { product: 'Flake', links: [['Free season', '/free-season'], ['Home', '/']] },
   { product: 'Jobber', links: [
     ['Snow removal', 'https://www.getjobber.com/industries/snow-removal/'],
     ['Pricing', 'https://www.getjobber.com/pricing/'],

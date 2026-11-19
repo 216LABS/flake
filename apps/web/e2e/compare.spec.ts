@@ -20,7 +20,8 @@ test.describe('issue 181: /compare', () => {
     await expect(page.getByTestId('compare-footnote')).toContainText('As of November 2026, based on public information.');
     await page.getByTestId('compare-sources').locator('summary').click();
     await expect(page.getByRole('link', { name: 'Charge types' })).toHaveAttribute('href', /support\.yetisoftware\.com/);
-    await expect(page.getByTestId('compare-flake-price')).toContainText('1% on payments');
+    await expect(page.getByTestId('compare-flake-price')).toContainText('Flake is free for the 2026-27 season');
+    await expect(page.locator('a[href="/pricing"]')).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Start free' }).first()).toHaveAttribute('href', '/login');
     await expect(page.locator('header').getByRole('link', { name: 'Compare' })).toHaveAttribute('href', '/compare');
     await expect(page.locator('footer').getByRole('link', { name: 'Compare' })).toHaveAttribute('href', '/compare');

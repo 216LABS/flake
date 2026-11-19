@@ -1,6 +1,7 @@
 'use client';
 
-import { FREE_SITE_LIMIT } from '@flake/core/fees';
+import { FREE_SITE_LIMIT, seasonLabel } from '@flake/core/fees';
+import { longDate } from '@/lib/legal';
 import type { RateCard } from '@flake/core/quote';
 import { Badge, Button, Card, Input, Label, Select, Table, Td, Textarea, Th } from '@flake/ui';
 import Link from 'next/link';
@@ -443,6 +444,16 @@ export function BusinessForm({ tenant }: { tenant: any }) {
 
 export function PlanPanel({ plan, freeUntil, inSeason, available = true }: { plan: string; freeUntil: string | null; inSeason: boolean; available?: boolean }) {
   const { msg, busy, run } = useAction();
+  // Issue 182: during the free season there are no plans, prices or upgrade buttons to show, only what's true now.
+  if (inSeason && plan !== 'pro') {
+    return (
+      <Card className="max-w-xl">
+        <h2 className="font-semibold">Plan</h2>
+        <p className="mt-2 text-sm text-ink-2" data-testid="free-season">Free for the {seasonLabel(freeUntil ?? undefined)} season, through {freeUntil ? longDate(freeUntil) : 'the end of the season'}: every feature is on, with <b>unlimited sites</b>. No card needed. Pricing for next season will be announced before it starts, and nobody is charged without agreeing first.</p>
+        <p className="mt-2 text-sm text-muted">Card and bank payments through Flake carry Stripe&apos;s fees and a small Flake fee. Both are shown on each bill before you send it.</p>
+      </Card>
+    );
+  }
   return (
     <Card className="max-w-xl">
       <h2 className="font-semibold">Plan</h2>

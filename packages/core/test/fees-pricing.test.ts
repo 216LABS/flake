@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applicationFeeCents, estimateStripeFeeCents, feeRate, inFreeSeason, proFeaturesEnabled } from '../src/fees';
+import { applicationFeeCents, estimateStripeFeeCents, feeRate, inFreeSeason, proFeaturesEnabled, seasonLabel } from '../src/fees';
 import { billableQuarterHours, priceSalt, priceSiteForStorm, priceVisit, seasonalInstallments, stormDepth, stormDepthIn, tierAmountCents, type ContractService, type PricedVisit } from '../src/pricing';
 
 describe('application fee', () => {
@@ -141,5 +141,12 @@ describe('priceSiteForStorm', () => {
     expect(withSalt.map((l) => l.amount_cents)).toEqual([100, 3600]);
     expect(priceSiteForStorm([{ service: 'plow', pricing: { type: 'per_push', amount_cents: 100 } }], sp, [v], none)).toHaveLength(1);
     expect(priceSiteForStorm([{ service: 'walks', pricing: { type: 'per_event', amount_cents: 100 } }], sp, [v], none)).toEqual([]);
+  });
+});
+
+describe('seasonLabel (issue 182)', () => {
+  it('names the winter that ends in the given spring', () => {
+    expect(seasonLabel()).toBe('2026-27');
+    expect(seasonLabel('2028-04-30')).toBe('2027-28');
   });
 });

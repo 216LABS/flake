@@ -20,7 +20,6 @@ describe('issue 181: the /compare grid', () => {
     expect(cell('Payroll file for Gusto or ADP', 'Yeti').v).toBe('no');
     expect(cell('Customer portal', 'Service Autopilot').v).toBe('addon');
     expect(cell('Forecast and weather evidence', 'Jobber').v).toBe('unverified');
-    expect(cell('Subcontractor pay statements', 'Flake').note).toBe('Pro');
   });
 
   it('cites a public page for every competitor and carries the as-of footnote', () => {
@@ -31,8 +30,9 @@ describe('issue 181: the /compare grid', () => {
     expect(AS_OF).toBe('As of November 2026, based on public information. Features, plan limits, and prices change; confirm with each vendor.');
   });
 
-  it('shows the payment fee in Flake\'s price', () => {
-    expect(PRICES.Flake).toContain('1% fee');
-    expect(PRICES.Flake).toContain('April 30, 2027');
+  it('issue 182: Flake shows the free season, with no plan, price or fee figure', () => {
+    expect(PRICES.Flake).toBe('Free for the 2026-27 season');
+    const flake = JSON.stringify([PRICES.Flake, ROWS.map((r) => r.cells.Flake)]);
+    expect(flake).not.toMatch(/\$|%|\bPro\b|Free plan/);
   });
 });

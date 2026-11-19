@@ -39,3 +39,9 @@ export function proFeaturesEnabled(plan: Plan, freeSeasonUntil: string | null | 
 
 export const FREE_SITE_LIMIT = 25;
 export const FREE_SEASON_END = '2027-04-30';
+
+/** "2026-27" for a season ending in spring 2027: what prospects and owners see instead of plans and prices (issue 182). */
+export const seasonLabel = (until: string = FREE_SEASON_END) => {
+  const y = Number(until.slice(0, 4));
+  return `${y - 1}-${String(y).slice(2)}`;
+};

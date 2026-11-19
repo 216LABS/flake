@@ -109,10 +109,10 @@ test('a route stop moves to a typed position', async ({ page }) => {
 });
 
 /** Issue 153: the pricing page answers who pays for texts, with the Stripe fee as a footnote under the plans. */
-test('pricing answers the first questions', async ({ page }) => {
-  await page.goto('/pricing');
-  await expect(page.getByTestId('pricing-faq')).toContainText('Who pays for the texts?');
-  await expect(page.getByTestId('stripe-fees')).toBeVisible();
+test('the free-season page answers the first questions (issue 182 replaced pricing)', async ({ page }) => {
+  await page.goto('/free-season');
+  await expect(page.getByTestId('free-season-faq')).toContainText('Who pays for the texts?');
+  await expect(page.getByTestId('free-season-faq')).toContainText('a small Flake fee');
 });
 
 /** Issue 164: a stale tab's second save doesn't undo another tab's rename. */

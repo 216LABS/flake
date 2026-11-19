@@ -178,3 +178,10 @@ Sam: "just make all the descions yourself." **[J]**
 - **No keys, no dead buttons (175).** Without Stripe keys, Connect Stripe and Go Pro are replaced by a note; without Twilio keys, the texting submit is. They come back by themselves once the keys are set.
 - **Rate limits are shared (176)** through a Postgres counter per key and minute, after a quick per-instance check. Driver links keep the per-instance check only: drivers' phones call them all night and the links can't be guessed. If the counter can't be reached, the request goes through.
 - **Sentry (180)** is allowed in the CSP for the DSN's own host only.
+
+## D20. No public prices this season (Nov 19, 2026; issues 181 and 182)
+Flip is reworking pricing for next season. **[J]**
+- **/pricing redirects (308) to /free-season**: free for the 2026-27 season, every feature, unlimited sites, no card, next season's pricing announced before it starts and nobody charged without agreeing. Nav, footer, home page and sitemap no longer list Pricing. /compare shows "Free for the 2026-27 season" for Flake and keeps competitors' published prices.
+- **In the app, a company inside its free season sees no plans, prices or upgrade buttons** on Settings, Plan. After the season (or for a company without one) the old Plan panel comes back unchanged. Billing logic, plans and the site cap are unchanged.
+- **The Flake fee on payments through Flake is still charged (D5), so it isn't hidden**: the free-season page, Plan and Terms say there is a small Flake fee on card and bank payments, and billing review shows its amount on each bill before it is sent. No percentage is published while pricing is reworked. Stripe isn't connected on production, so nobody pays it yet.
+- **Terms** no longer point to a pricing page: the fee's amount is shown in billing review before a bill is sent, and any later charge or fee change is shown and agreed before it applies. Terms date moved to Nov 19, 2026.

@@ -13,6 +13,8 @@ const nextConfig = {
   // Paths people type or guess, sent to the page they mean (issue 39 follow-up). Not permanent, so they can change.
   async redirects() {
     return [
+      // Issue 182: no public prices this season; the old pricing link lands on the free-season page.
+      { source: '/pricing', destination: '/free-season', permanent: true },
       { source: '/terms', destination: '/legal/terms', permanent: false },
       { source: '/privacy', destination: '/legal/privacy', permanent: false },
       { source: '/sites', destination: '/customers', permanent: false },

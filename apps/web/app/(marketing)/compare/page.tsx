@@ -21,7 +21,6 @@ export default function Compare() {
           <p className="mt-4 max-w-2xl text-lg text-slate-300">Flake compared with Jobber, Yeti, Service Autopilot and Plowdesk, for small plow companies. Every cell comes from each company&apos;s own website. Where we couldn&apos;t confirm something, it says Unverified.</p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link href="/login" className={buttonVariants({ variant: 'accent', size: 'lg' })}>Start free</Link>
-            <Link href="/pricing" className={buttonVariants({ variant: 'outline', size: 'lg' })}>See pricing</Link>
           </div>
         </div>
       </section>
@@ -72,14 +71,13 @@ export default function Compare() {
       <section className="mx-auto max-w-3xl px-4 py-12">
         <h2 className="font-display text-3xl font-semibold tracking-tight">What it costs</h2>
         <Card className="mt-4 border-info-line bg-info-tint" data-testid="compare-flake-price">
-          <b>Flake is free for early testers through April 30, 2027</b>, with Pro features on, including unlimited sites. After that, Free covers up to 25 sites, or Pro is $79 a month ($790 a year). Flake charges 1% on payments processed through it (0.5% on Pro), with a $0.50 minimum and a $25 maximum, and Stripe&apos;s own processing fees apply too. Bill a customer by hand and there&apos;s no Flake fee.
+          <b>Flake is free for the 2026-27 season</b>: every feature on, unlimited sites, no card needed. Pricing for next season will be announced before it starts, and nobody is charged without agreeing first. <Link className="text-link underline underline-offset-2" href="/free-season">How the free season works</Link>
         </Card>
         <ul className="mt-4 space-y-2 text-sm text-ink-2">
           {PRODUCTS.filter((p) => p !== 'Flake').map((p) => <li key={p}><b className="text-ink">{p}:</b> {PRICES[p]}</li>)}
         </ul>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link href="/login" className={buttonVariants({ variant: 'accent', size: 'lg' })}>Start free</Link>
-          <Link href="/pricing" className={buttonVariants({ variant: 'outline', size: 'lg' })}>Flake pricing</Link>
         </div>
 
         <details className="mt-10 rounded-md border border-line-faint bg-surface p-4" data-testid="compare-sources">
