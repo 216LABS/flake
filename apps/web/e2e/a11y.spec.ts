@@ -16,7 +16,7 @@ async function expectAccessible(page: Page, name: string) {
 }
 
 test('public pages have no serious accessibility problems', async ({ page }) => {
-  for (const url of ['/', '/pricing', '/login', '/tools/snow-removal-contract', '/tools/snow-removal-pricing-calculator', '/legal/terms']) {
+  for (const url of ['/', '/pricing', '/compare', '/login', '/tools/snow-removal-contract', '/tools/snow-removal-pricing-calculator', '/legal/terms']) {
     await page.goto(url);
     await expectAccessible(page, url);
   }

@@ -225,7 +225,7 @@ for (const size of SIZES) {
     const guest = await browser.newContext({ baseURL, viewport: size });
     const g = await guest.newPage();
     const links = [new URL(run.link).pathname, new URL(portal.url).pathname, new URL(quote.url).pathname];
-    for (const path of [...links, '/', '/pricing', '/login', '/b/lakeshore-demo', '/b/lakeshore-demo/sms', '/legal/terms', '/legal/privacy', '/legal/sms-terms', '/tools/snow-removal-contract', '/tools/snow-removal-pricing-calculator']) await check(g, path);
+    for (const path of [...links, '/', '/pricing', '/compare', '/login', '/b/lakeshore-demo', '/b/lakeshore-demo/sms', '/legal/terms', '/legal/privacy', '/legal/sms-terms', '/tools/snow-removal-contract', '/tools/snow-removal-pricing-calculator']) await check(g, path);
     await guest.close();
     await sql`update storm set status = 'closed', closed_at = now() where id = ${id}`;
     // Token links stay out of failure messages: report the page kind, not the token.

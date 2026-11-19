@@ -14,7 +14,7 @@ const BEFORE: [string, string, string][] = [
 
 const NIGHT: [string, string][] = [
   ['Start the storm', 'Dashboard or Storms, Start a storm, pick the routes. Check each route has its driver.'],
-  ['Send routes to the crew', 'On the storm board. Each driver gets a link by text or email; show the QR code to anyone who didn\'t.'],
+  ['Send routes to the crew', 'On the storm board. Each driver who said yes to texts gets a link by text; show the QR code, or send it from your phone, to anyone who didn\'t.'],
   ['Watch the board', 'Lots turn blue on the way, amber on site, green when done. A red lot is past its deadline; a problem shows at the top.'],
   ['Change things live', 'Drag a lot to another truck, add a lot a customer called about, or start a second pass. Drivers see it within seconds.'],
   ['Close the storm', 'When every lot is done or skipped. Flake takes you to billing.'],

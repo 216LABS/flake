@@ -17,7 +17,7 @@ async function seriousProblems(page: Page) {
 
 test('in dark mode every screen turns dark and still passes contrast', async ({ page, browser, baseURL }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
-  for (const url of ['/', '/pricing', '/login']) {
+  for (const url of ['/', '/pricing', '/compare', '/login']) {
     await page.goto(url);
     expect(await seriousProblems(page), `${url} in dark`).toEqual([]);
   }

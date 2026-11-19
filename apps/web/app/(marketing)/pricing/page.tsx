@@ -9,11 +9,11 @@ const PRO = ['Unlimited sites', 'Subcontractor pay statements', 'QuickBooks Onli
 
 /** What an owner asks first (issue 153). */
 const FAQ: [string, string][] = [
-  ['Who pays for the texts?', 'Texts and emails are included on both plans. Flake sets up your company\'s own verified toll-free number and pays for it and for the texts it sends. Until the number is verified, route links go by email and QR code.'],
+  ['Who pays for the texts?', 'Texts and emails are included on both plans. Flake sets up your company\'s own verified toll-free number and pays for it and for the texts it sends. Until the number is verified, drivers get their route link from the storm board\'s QR code or from your own phone.'],
   ['What counts as a site?', 'Each lot or property you plow, with its own address. A customer with three lots is three sites. Lots you retire don\'t count.'],
   ['What happens after April 30, 2027 if I have more than 25 sites?', 'Nothing is turned off or deleted. Every site you have keeps working, with its history. Adding or restoring a site past 25 needs Pro.'],
   ['Can I turn payments off?', 'Yes. Set a customer to Manual billing and Flake never charges them: you send the bill and record the check, and there\'s no Flake fee on it.'],
-  ['Do my drivers need an app?', 'No. Each driver gets a link by text or email that opens in the phone\'s browser, works with no signal, and can be added to the home screen.'],
+  ['Do my drivers need an app?', 'No. Each driver gets a link by text that opens in the phone\'s browser, works with no signal, and can be added to the home screen.'],
 ];
 
 export default function Pricing() {

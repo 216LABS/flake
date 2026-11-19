@@ -57,6 +57,7 @@ export default function Home() {
               <Link href="/pricing" className={buttonVariants({ variant: 'outline', size: 'lg' })}>See pricing</Link>
             </div>
             <p className="mt-4 text-sm text-slate-300">Free for early testers through April 30, 2027. Flake earns a small fee on payments you process through it.</p>
+            <p className="mt-2 text-sm"><Link className="font-semibold text-white underline underline-offset-2" href="/compare" data-testid="home-compare">Using Jobber or Yeti? See how Flake compares</Link></p>
           </div>
           <PhoneSample />
         </div>
