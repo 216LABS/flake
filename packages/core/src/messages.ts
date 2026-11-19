@@ -1,7 +1,7 @@
 /** SMS templates from ADDENDUM_SMS section 4: company name first, two segments at most. */
 /** Who an email is for decides why the footer says they got it. */
 const AUDIENCE: Record<string, 'customer' | 'crew' | 'office' | 'flake'> = {
-  on_the_way: 'customer', done: 'customer', done_no_photo: 'customer', late: 'customer', invoice: 'customer', receipt: 'customer', quote: 'customer', portal: 'customer', completion_report: 'customer', help: 'customer',
+  on_the_way: 'customer', done: 'customer', done_no_photo: 'customer', late: 'customer', invoice: 'customer', overdue: 'customer', receipt: 'customer', quote: 'customer', portal: 'customer', completion_report: 'customer', help: 'customer',
   crew_link: 'crew', route_changed: 'crew', crew_invite: 'crew', call_out: 'crew',
   owner_alert: 'office', team_invite: 'office',
   salt_supplier: 'flake', feedback: 'flake',
@@ -25,7 +25,7 @@ export function emailFooter(template: string, c: { name: string; phone?: string 
   return `\n\n--\n${lines.join('\n')}`;
 }
 
-export type TemplateKey = 'team_invite' | 'receipt' | 'crew_link' | 'call_out' | 'on_the_way' | 'done' | 'done_no_photo' | 'late' | 'invoice' | 'bill' | 'help' | 'route_changed' | 'quote' | 'owner_alert' | 'crew_invite' | 'portal';
+export type TemplateKey = 'team_invite' | 'receipt' | 'crew_link' | 'call_out' | 'on_the_way' | 'done' | 'done_no_photo' | 'late' | 'invoice' | 'bill' | 'help' | 'route_changed' | 'quote' | 'owner_alert' | 'crew_invite' | 'portal' | 'overdue';
 
 const TEMPLATES: Record<TemplateKey, string> = {
   crew_link: '{company}: Storm on. Route {route} - {n} stops. Start: {link} Reply STOP to opt out.',
@@ -46,6 +46,8 @@ const TEMPLATES: Record<TemplateKey, string> = {
   crew_invite: '{company} invited you to get route links. Join: {link}',
   team_invite: '{company} added you to Flake. Sign in with this email: {link}',
   portal: '{company}: Your snow service records, with every visit and photo: {link}',
+  // Sent only when the office presses Send reminder on Receivables (issue 168).
+  overdue: '{company}: A reminder that ${amount} is past due for snow service. Details: {link} Questions? {phone}',
 };
 
 /**

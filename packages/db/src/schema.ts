@@ -33,6 +33,10 @@ export const tenant = pgTable('tenant', {
   pay_instructions: text('pay_instructions'),
   rate_card: jsonb('rate_card').notNull().default(sql`'{}'::jsonb`),
   created_at: createdAt(),
+  /** When renewal reminders start each year, MM-DD (issue 166). */
+  renewal_start: text('renewal_start').notNull().default('08-01'),
+  /** Pay period, workweek start (0 = Sunday) and holidays for the payroll export (issue 170). */
+  payroll: jsonb('payroll').$type<{ period?: 'weekly' | 'biweekly'; week_start?: number; anchor?: string; holidays?: string[] }>().notNull().default(sql`'{}'::jsonb`),
 });
 
 export const membership = pgTable('membership', {
@@ -55,6 +59,12 @@ export const crew_member = pgTable('crew_member', {
   joined_at: ts('joined_at'),
   callout_reply: text('callout_reply'),
   callout_reply_at: ts('callout_reply_at'),
+  /** Employee pay for the payroll export (issue 170). Ignored for subs. */
+  pay_regular_cents: integer('pay_regular_cents'),
+  pay_ot_cents: integer('pay_ot_cents'),
+  pay_storm_cents: integer('pay_storm_cents'),
+  pay_holiday_cents: integer('pay_holiday_cents'),
+  payroll_id: text('payroll_id'),
   created_at: createdAt(),
 });
 
@@ -211,6 +221,8 @@ export const storm_run = pgTable('storm_run', {
   started_at: ts('started_at'),
   /** The truck that ran this route in this storm, for damage questions and fuel per storm. */
   truck_id: uuid('truck_id'),
+  /** The yard this run loads salt from (issue 169). */
+  yard_id: uuid('yard_id'),
   created_at: createdAt(),
 });
 
@@ -313,6 +325,8 @@ export const invoice_draft = pgTable('invoice_draft', {
   pay_link: text('pay_link'),
   disputed: boolean('disputed').notNull().default(false),
   application_fee_cents: integer('application_fee_cents'),
+  /** A due date the office set on this bill (issue 168). */
+  due_on: date('due_on', { mode: 'string' }),
   /** QuickBooks sync state, written only by the server's sync job (issue 162). */
   qbo_invoice_id: text('qbo_invoice_id'),
   qbo_sync_token: text('qbo_sync_token'),
@@ -331,6 +345,7 @@ export const installment_invoice = pgTable('installment_invoice', {
   status: text('status').notNull().default('sent'),
   /** The month billed, like 2026-11. One installment per contract per month. */
   period: text('period'),
+  due_on: date('due_on', { mode: 'string' }),
   qbo_invoice_id: text('qbo_invoice_id'),
   qbo_sync_token: text('qbo_sync_token'),
   qbo_synced_at: ts('qbo_synced_at'),
@@ -508,6 +523,7 @@ export const salt_order = pgTable('salt_order', {
   created_by: uuid('created_by'),
   created_at: createdAt(),
   updated_at: ts('updated_at').defaultNow(),
+  yard_id: uuid('yard_id'),
 });
 
 /** What a lot looked like before the first snow: damage already there, where piles go, hazards. */
@@ -590,3 +606,104 @@ export const qbo_item_map = pgTable('qbo_item_map', {
   qbo_item_id: text('qbo_item_id').notNull(),
   qbo_item_name: text('qbo_item_name'),
 }, (t) => [primaryKey({ columns: [t.tenant_id, t.flake_key] })]);
+
+/** A certificate of insurance or W-9: the company's own when crew_id is null, else a sub's (issue 165). */
+export const certificate = pgTable('certificate', {
+  id: id(),
+  tenant_id: tenantId(),
+  crew_id: uuid('crew_id'),
+  kind: text('kind').$type<'general_liability' | 'auto' | 'workers_comp' | 'umbrella' | 'w9' | 'other'>().notNull(),
+  insurer: text('insurer'),
+  policy_number: text('policy_number'),
+  effective_on: date('effective_on', { mode: 'string' }),
+  expires_on: date('expires_on', { mode: 'string' }),
+  file_path: text('file_path'),
+  file_sha256: text('file_sha256'),
+  file_name: text('file_name'),
+  is_default: boolean('is_default').notNull().default(false),
+  notes: text('notes'),
+  created_by: uuid('created_by'),
+  created_at: createdAt(),
+});
+
+/** A claim on a lot and where it stands, with its incident packets (issue 165). */
+export const claim = pgTable('claim', {
+  id: id(),
+  tenant_id: tenantId(),
+  site_id: uuid('site_id').notNull(),
+  incident_at: ts('incident_at').notNull(),
+  reference: text('reference'),
+  adjuster: text('adjuster'),
+  status: text('status').$type<'open' | 'pending' | 'closed' | 'denied'>().notNull().default('open'),
+  notes: text('notes'),
+  proof_packet_ids: uuidArray('proof_packet_ids').notNull().default(sql`'{}'`),
+  created_by: uuid('created_by'),
+  created_at: createdAt(),
+  updated_at: ts('updated_at').notNull().defaultNow(),
+});
+
+export type BidStage = 'lead' | 'site_walk' | 'quote_sent' | 'won' | 'lost';
+/** A bid from lead to won or lost (issue 166). */
+export const bid = pgTable('bid', {
+  id: id(),
+  tenant_id: tenantId(),
+  customer_id: uuid('customer_id'),
+  prospect_name: text('prospect_name'),
+  prospect_contact: text('prospect_contact'),
+  site_ids: uuidArray('site_ids').notNull().default(sql`'{}'`),
+  stage: text('stage').$type<BidStage>().notNull().default('lead'),
+  season: text('season').notNull(),
+  estimated_cents: integer('estimated_cents'),
+  notes: text('notes'),
+  lost_reason: text('lost_reason'),
+  contract_id: uuid('contract_id'),
+  created_by: uuid('created_by'),
+  created_at: createdAt(),
+  updated_at: ts('updated_at').notNull().defaultNow(),
+});
+
+/** Money received outside a card: a check, ACH or cash, against one bill or installment (issue 168). */
+export const payment = pgTable('payment', {
+  id: id(),
+  tenant_id: tenantId(),
+  customer_id: uuid('customer_id').notNull(),
+  draft_id: uuid('draft_id'),
+  installment_id: uuid('installment_id'),
+  amount_cents: integer('amount_cents').notNull(),
+  method: text('method').$type<'check' | 'ach' | 'cash' | 'card' | 'other'>().notNull(),
+  reference: text('reference'),
+  paid_on: date('paid_on', { mode: 'string' }).notNull(),
+  voided_at: ts('voided_at'),
+  void_reason: text('void_reason'),
+  created_by: uuid('created_by'),
+  created_at: createdAt(),
+});
+
+/** Where salt is piled (issue 169). */
+export const yard = pgTable('yard', {
+  id: id(),
+  tenant_id: tenantId(),
+  name: text('name').notNull(),
+  address: text('address'),
+  lat: doublePrecision('lat'),
+  lon: doublePrecision('lon'),
+  reorder_tons: numeric('reorder_tons', { mode: 'number' }),
+  active: boolean('active').notNull().default(true),
+  created_at: createdAt(),
+});
+
+/** Salt into a yard (deliveries, with cost) and counted adjustments. Salt spread is read from visits (issue 169). */
+export const salt_ledger = pgTable('salt_ledger', {
+  id: id(),
+  tenant_id: tenantId(),
+  yard_id: uuid('yard_id').notNull(),
+  qty_tons: numeric('qty_tons', { mode: 'number' }).notNull(),
+  cost_cents: integer('cost_cents'),
+  source: text('source').$type<'order' | 'delivery' | 'adjustment' | 'count'>().notNull(),
+  salt_order_id: uuid('salt_order_id'),
+  supplier: text('supplier'),
+  note: text('note'),
+  at: ts('at').notNull().defaultNow(),
+  created_by: uuid('created_by'),
+  created_at: createdAt(),
+});

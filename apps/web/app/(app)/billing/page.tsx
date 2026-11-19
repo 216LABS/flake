@@ -2,6 +2,7 @@ import { customer, desc, eq, invoice_draft, storm } from '@flake/db';
 import { estimateStripeFeeCents } from '@flake/core/fees';
 import { stormWhen } from '@flake/core/time';
 import { EmptyState, PageHeader } from '@flake/ui';
+import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
 import { tenantFeeRate, tenantHasPro, visitsMissedByDrafts, visitsUndoneOnBills } from '@/lib/billing';
 import { isUuid } from '@/lib/http';
@@ -37,7 +38,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
   }));
   return (
     <>
-      <PageHeader title="Billing review" subtitle={`${data.selected.name}, ${stormWhen(data.selected.started_at, tz)}.${owner ? ` Your fee rate: ${(tenantFeeRate(ctx.tenant) * 100).toFixed(1)}%.` : ''}`} />
+      <PageHeader title="Billing review" subtitle={`${data.selected.name}, ${stormWhen(data.selected.started_at, tz)}.${owner ? ` Your fee rate: ${(tenantFeeRate(ctx.tenant) * 100).toFixed(1)}%.` : ''}`} actions={<Link className="inline-flex h-10 items-center rounded-md border px-3 text-sm font-semibold hover:bg-tint" href="/receivables" data-testid="billing-receivables">Receivables</Link>} />
       {data.missing ? <p className="mb-4 rounded-md bg-warn-tint p-3 text-sm text-warn-ink" data-testid="storm-not-found">That storm wasn't found. It may have been deleted. Showing the newest storm instead.</p> : null}
       <StormPicker storms={data.storms.map((s) => ({ id: s.id, name: `${s.name}, ${stormWhen(s.started_at, tz, false)}`, status: s.status ?? 'billed' }))} selected={data.selected.id} />
       {missed.length ? (

@@ -129,6 +129,7 @@ export default async function Dashboard() {
                       {data.owed.slice(0, 8).map((r) => <li key={r.id}><Link className="text-link underline" href={`/customers/${r.id}`}>{r.name}</Link>: <span className="tabular">{money(r.cents)}</span>{r.n > 1 ? ` (${r.n} bills)` : ''}</li>)}
                     </ul>
                     {data.owed.length > 8 ? <p className="mt-1 text-xs text-muted">And {data.owed.length - 8} more customers.</p> : null}
+                    <Link className="mt-1 inline-block text-link underline" href="/receivables" data-testid="open-receivables">Receivables: what's late, payments, reminders</Link>
                   </>
                 ) : null}
               </div>
