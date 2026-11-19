@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { logoUrl } from './logo';
 import { photoOrder } from '@flake/core/proof';
 import { and, app_setting, contract, customer, desc, eq, gte, inArray, installment_invoice, invoice_draft, proof_packet, serviceDb, site, sql, storm, tenant, visit, visit_correction, visit_photo, visitNotVoided } from '@flake/db';
 import { required } from './env';
@@ -80,7 +81,7 @@ export async function portalData(customerId: string, tenantId: string) {
   const owedOffline = row.c.billing_mode === 'manual' || !row.t.stripe_account_id || !row.t.stripe_charges_enabled;
   const saltOf = (id: string, own: { unit: string; qty: number }[] | null) => (corrections.filter((c) => c.visit_id === id).pop()?.new_value as typeof own | undefined) ?? own;
   return {
-    company: { name: row.t.name, phone: row.t.contact_phone, email: row.t.contact_email, timezone: row.t.timezone, pay_instructions: row.t.pay_instructions },
+    company: { name: row.t.name, phone: row.t.contact_phone, email: row.t.contact_email, timezone: row.t.timezone, pay_instructions: row.t.pay_instructions, logo: logoUrl(row.t) },
     customer: { name: row.c.name, archived: Boolean(row.c.archived_at) },
     sites: sites.map((s) => {
       // The signed agreement, even when a newer quote (a renewal, a price change) is waiting beside it.

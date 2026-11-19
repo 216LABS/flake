@@ -40,6 +40,7 @@ export const CHANNEL_LABEL: Record<string, string> = { email: 'Email', sms: 'Tex
 export const MESSAGE_STATUS: Record<string, string> = {
   sending: 'Sending', sent: 'Sent', delivered: 'Delivered', read: 'Read', failed: 'Failed', gone: 'Phone unsubscribed',
   not_sent: 'Not sent: email is off', rejected: 'Rejected: address not valid',
+  blocked: 'Not sent: sending is not on yet',
 };
 export const messageStatus = (status: string | null) => (status ? MESSAGE_STATUS[status] ?? status.replace(/_/g, ' ') : '');
 

@@ -15,7 +15,7 @@ const body = z.object({ site_id: z.string().uuid(), note: z.string().trim().max(
  * they say something new, which reaches the office too, so a fuller note sent after a short one isn't lost (issue 93).
  */
 export const POST = route<{ params: Promise<{ token: string }> }>(async (req, { params }) => {
-  rateLimit(`portal-request:${clientIp(req)}`, 10, 60_000);
+  await rateLimit(`portal-request:${clientIp(req)}`, 10, 60_000);
   const who = await resolvePortal((await params).token);
   if (!who) throw new HttpError(404, 'This link is no longer active.');
   const { site_id, note } = await parseJson(req, body);

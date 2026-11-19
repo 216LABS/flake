@@ -1,4 +1,5 @@
 import { and, asService, contract, customer, desc, eq, gt, inArray, installment_invoice, isNotNull, lt, ne, notInArray, or, serviceDb, site, sms_consent, sql, tenant, withUser } from '@flake/db';
+import { logoUrl } from './logo';
 import { billedBy, paymentText, type PriorBilled } from './scope';
 import { CUSTOMER_CONSENT_TEXT } from '@flake/core/messages';
 import { quoteAccept, quoteCreate, quoteDecline } from '@flake/contracts';
@@ -47,7 +48,7 @@ export async function createQuote(ctx: Ctx, input: z.infer<typeof quoteCreate>) 
     await queueNotify(row.tenant.id, { phone: row.customer.phone_e164, email: row.customer.email }, { template: 'quote', vars: { link }, subject: `${row.tenant.name}: your snow service quote`, key: `quote:${row.contract.id}`, related: { contract_id: row.contract.id } });
   }
   // Whether this quote went out by email now (issue 152): only when it was sent, to a customer with an address.
-  return { contract: row.contract, url, token, lots: row.lots, emailed: Boolean(input.send && row.customer.email && emailConfigured()) };
+  return { contract: row.contract, url, token, lots: row.lots, emailed: Boolean(input.send && row.customer.email && emailConfigured() && row.tenant.outbound_enabled), sending_off: !row.tenant.outbound_enabled };
 }
 
 /**
@@ -100,6 +101,7 @@ export async function getQuote(token: string) {
   const view = async (c: typeof contract.$inferSelect) => ({ id: c.id, season: c.season, services: c.services, salt_pricing: c.salt_pricing, terms_md: c.terms_md, status: c.status, accepted_at: c.accepted_at, accepted_name: c.accepted_name, declined_at: c.declined_at, prior: await priorBilled(c) });
   return {
     company: r.tenant.name,
+    company_logo: logoUrl(r.tenant),
     lots: await Promise.all([...r.lots].reverse().map(async (l) => ({ site: { label: l.site.label, address: l.site.address, area_sqft: l.site.area_confirmed_sqft ?? l.site.area_estimate_sqft }, contract: await view(l.contract) }))),
     customer: { name: r.customer.name, email: r.customer.email, phone: r.customer.phone_e164, billing_mode: r.customer.billing_mode },
     site: { label: r.site.label, address: r.site.address, area_sqft: r.site.area_confirmed_sqft ?? r.site.area_estimate_sqft },

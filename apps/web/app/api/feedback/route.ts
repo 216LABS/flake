@@ -9,7 +9,7 @@ const body = z.object({ message: z.string().trim().min(3, 'Say a little more.').
 /** "Send feedback" from any office screen. Anyone in a company can send it, viewers too. */
 export const POST = route(async (req) => {
   const ctx = await requireApi('viewer');
-  rateLimit(`feedback:${ctx.userId}`, 5, 10 * 60_000);
+  await rateLimit(`feedback:${ctx.userId}`, 5, 10 * 60_000);
   const { message, path } = await parseJson(req, body);
   const saved = await saveFeedback({ tenant_id: ctx.tenantId, company: ctx.tenant.name, email: ctx.email ?? null, role: ctx.role, path: path.startsWith('/') ? path : '/', message: plainText(message, 2000) });
   return { ok: true, id: saved.id };

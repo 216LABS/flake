@@ -30,6 +30,7 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
   const acceptedName = lots.find((l) => l.contract.accepted_name)?.contract.accepted_name;
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
+      {quote.company_logo ? <img src={quote.company_logo} alt={`${quote.company} logo`} className="mb-2 max-h-16 max-w-48 object-contain" data-testid="company-logo" /> : null}
       <p className="font-display text-lg font-semibold text-ink">{quote.company}</p>
       <h1 className="mt-1 text-4xl font-semibold leading-tight tracking-tight">Snow service for {many ? `${lots.length} properties` : lots[0]!.site.label}</h1>
       {many ? <p className="text-sm text-muted">Season {lots[0]!.contract.season}. One signature below covers every property listed.</p> : <p className="text-sm text-muted">{lots[0]!.site.address}{lots[0]!.site.area_sqft ? `. About ${Number(lots[0]!.site.area_sqft).toLocaleString()} sq ft.` : ''}</p>}

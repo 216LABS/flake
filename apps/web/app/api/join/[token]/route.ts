@@ -5,7 +5,7 @@ import { hashToken, inviteExpired, INVITE_DAYS } from '@/lib/tokens';
 
 /** The consent box starts unchecked. Saying no still joins the crew; route links then come from the board's QR code. */
 export const POST = route<{ params: Promise<{ token: string }> }>(async (req, { params }) => {
-  rateLimit(`join:${clientIp(req)}`, 30, 60000);
+  await rateLimit(`join:${clientIp(req)}`, 30, 60000);
   const { token } = await params;
   const { consent, phone } = await parseJson(req, crewJoin);
   const db = serviceDb();

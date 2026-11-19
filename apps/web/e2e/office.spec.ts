@@ -213,6 +213,7 @@ test('a brand new user can set up a company, connect mock Stripe and sees the fr
   await page.goto('/dashboard');
   await page.waitForURL('**/onboarding');
   await page.getByTestId('company').fill('Fresh Plow LLC');
+  await page.getByTestId('agree-terms').check();
   await page.getByTestId('create-company').click();
   await page.waitForURL('**/dashboard');
   await page.goto('/settings?tab=payments');

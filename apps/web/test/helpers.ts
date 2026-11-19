@@ -23,7 +23,7 @@ const LAT = 41.48;
 const LON = -81.8;
 
 /** A fresh tenant with one site per pricing type on one route, plus a second crew and route. */
-export async function makeWorld(opts: { plan?: 'free' | 'pro'; freeUntil?: string | null; smsApproved?: boolean; connected?: boolean } = {}): Promise<World> {
+export async function makeWorld(opts: { plan?: 'free' | 'pro'; freeUntil?: string | null; smsApproved?: boolean; connected?: boolean; outboundOff?: boolean } = {}): Promise<World> {
   const db = serviceDb();
   const tenantId = randomUUID();
   const userId = randomUUID();
@@ -35,6 +35,8 @@ export async function makeWorld(opts: { plan?: 'free' | 'pro'; freeUntil?: strin
     id: tenantId, name: 'Test Plow', slug: `t-${tenantId}`, plan: opts.plan ?? 'free', free_season_until: opts.freeUntil === undefined ? null : opts.freeUntil,
     stripe_account_id: opts.connected === false ? null : `acct_mock_${tenantId.slice(0, 8)}`, stripe_charges_enabled: opts.connected !== false,
     sms_status: opts.smsApproved ? 'approved' : 'none', sms_sender: opts.smsApproved ? `+1833${Math.floor(Math.random() * 9000000 + 1000000)}` : null, twilio_subaccount_sid: opts.smsApproved ? 'AC_mock' : null, contact_email: 'owner@flake.test',
+    // Tests that send need sending on; the issue 171 tests turn it off themselves.
+    outbound_enabled: opts.outboundOff ? false : true,
   });
   await db.insert(membership).values([{ tenant_id: tenantId, user_id: userId, role: 'owner' }, { tenant_id: tenantId, user_id: viewerId, role: 'viewer' }]);
   const crewId = randomUUID();

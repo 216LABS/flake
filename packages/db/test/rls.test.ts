@@ -72,7 +72,7 @@ beforeAll(async () => {
 afterAll(() => closeDb());
 
 const TENANT_TABLES = ['crew_member', 'customer', 'site', 'site_pin', 'contract', 'route', 'route_stop', 'trigger_alert', 'storm', 'storm_run', 'run_stop', 'visit', 'visit_photo', 'visit_correction', 'problem_report', 'invoice_draft', 'installment_invoice', 'message_log', 'sms_consent', 'proof_packet', 'driver_action', 'driver_position', 'push_subscription'] as const;
-const SERVER_ONLY = ['job', 'stripe_event', 'lead', 'short_link', 'cached_lookup', 'app_setting', 'weather_snapshot'] as const;
+const SERVER_ONLY = ['job', 'stripe_event', 'lead', 'short_link', 'cached_lookup', 'app_setting', 'weather_snapshot', 'rate_limit'] as const;
 
 /** Expects the statement to fail or touch nothing. Each attempt gets its own transaction. */
 /** Drizzle wraps Postgres errors; the database's own message is on the cause. */

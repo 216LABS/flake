@@ -79,6 +79,7 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
   const [position, setPosition] = useState('');
   const [quoteUrl, setQuoteUrl] = useState<string | null>(null);
   const [emailed, setEmailed] = useState(false);
+  const [sendingOff, setSendingOff] = useState(false);
   const [lots, setLots] = useState(1);
   // A new step takes keyboard focus (issue 158), so the next Tab is inside it, not back at the skip link and the nav.
   const stepCard = useRef<HTMLDivElement>(null);
@@ -214,6 +215,7 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
       ];
       const out = await api('/api/quotes', { body: { site_id: siteId, season, services, salt_pricing: withSalt ? { unit: 'bag50lb', amount_cents: suggestion.salt_bag_cents } : null, send } });
       setEmailed(send && Boolean(out.emailed && c.email));
+      setSendingOff(send && Boolean(out.sending_off));
       setLots(out.lots ?? 1);
       setQuoteUrl(out.url);
     } catch (e) {
@@ -227,7 +229,7 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
     return (
       <Card className="mx-auto max-w-xl" data-testid="quote-sent">
         <h1 className="text-3xl font-semibold tracking-tight">Quote ready</h1>
-        <p className="mt-1 text-sm text-muted" data-testid="quote-note">{emailed ? 'We are emailing the customer this link. You can also share it directly.' : 'Nothing was emailed, so share this link with the customer.'}</p>
+        <p className="mt-1 text-sm text-muted" data-testid="quote-note">{emailed ? 'We are emailing the customer this link. You can also share it directly.' : sendingOff ? 'Flake is not sending email or texts for your company yet, so nothing went out. Share this link with the customer.' : 'Nothing was emailed, so share this link with the customer.'}</p>
         {photoNote ? <p className="mt-1 text-sm text-warn-ink">{photoNote}</p> : null}
         {lots > 1 ? <p className="mt-1 text-sm" data-testid="quote-lots">This is the same link as their other quote{lots > 2 ? 's' : ''} waiting for a signature. It now covers all {lots} properties, and one signature accepts them all.</p> : null}
         <Input readOnly className="mt-3" value={quoteUrl} data-testid="quote-url" />

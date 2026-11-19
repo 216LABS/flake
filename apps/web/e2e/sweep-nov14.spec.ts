@@ -11,6 +11,7 @@ test('a new company sees a first-run card, an empty Proof page that explains its
   await page.goto('/dashboard');
   await page.waitForURL('**/onboarding');
   await page.getByTestId('company').fill('First Run QA');
+  await page.getByTestId('agree-terms').check();
   await page.getByTestId('create-company').click();
   await page.waitForURL('**/dashboard');
   await expect(page.getByTestId('first-run')).toContainText('Add your first customer');

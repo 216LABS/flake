@@ -39,6 +39,7 @@ test('a real day', async ({ browser }) => {
   await page.waitForURL('**/onboarding');
   await page.getByTestId('company').fill(company);
   await shot(page, 'onboarding');
+  await page.getByTestId('agree-terms').check();
   await page.getByTestId('create-company').click();
   await page.waitForURL('**/dashboard');
   const [t] = await sql`select id from tenant where id = (select tenant_id from membership m join auth.users u on u.id = m.user_id where u.email = ${email})`;

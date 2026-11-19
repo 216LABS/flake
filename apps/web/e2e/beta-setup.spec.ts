@@ -66,3 +66,78 @@ test('crew import: preview flags a bad row, the good rows are added and nobody i
     await sql`delete from crew_member where name like ${`${tag}%`}`;
   }
 });
+
+test('a new owner signs up: terms are linked and required, sending starts off, the checklist and logo work (issues 171-173)', async ({ browser, baseURL }) => {
+  const ctx = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  const email = `e2e-beta-${Date.now()}@flake.test`;
+  const name = `E2E Beta Plow ${Date.now() % 100000}`;
+  try {
+    await page.goto('/login');
+    await expect(page.getByTestId('legal-links').getByRole('link', { name: 'Terms of Service' })).toHaveAttribute('href', '/legal/terms');
+    await expect(page.getByTestId('legal-links').getByRole('link', { name: 'Privacy Policy' })).toHaveAttribute('href', '/legal/privacy');
+    await page.request.post(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/signup`, { headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! }, data: { email, password: 'flake-demo-only' } });
+    await page.request.post('/api/dev/login', { data: { email } });
+    await page.goto('/dashboard');
+    await page.waitForURL('**/onboarding');
+    await page.getByTestId('company').fill(name);
+    await expect(page.getByTestId('create-company')).toBeDisabled();
+    await expect(page.getByRole('link', { name: 'Privacy Policy' }).first()).toBeVisible();
+    // The server refuses it too.
+    expect((await page.request.post('/api/onboarding', { data: { name } })).status()).toBe(422);
+    await page.getByLabel(/I agree to the Terms of Service/).check();
+    await page.getByTestId('create-company').click();
+    await page.waitForURL('**/dashboard');
+    const [t] = await sql`select id, terms_accepted_at, terms_version, outbound_enabled from tenant where name = ${name}`;
+    expect(t!.terms_accepted_at).not.toBeNull();
+    expect(t!.terms_version).toContain('terms 2026-11-10');
+    expect(t!.outbound_enabled).toBe(false);
+
+    // Sending is off and the office is told.
+    await expect(page.getByTestId('sending-off')).toBeVisible();
+    // The checklist has every step, done or not.
+    const steps = page.getByTestId('setup-step');
+    await expect(page.getByTestId('setup-checklist')).toContainText('Check your prices');
+    await expect(page.getByTestId('setup-checklist')).toContainText('legal business name');
+    await expect(page.getByTestId('setup-checklist')).toContainText('Have a list? Import it');
+    await expect(steps.filter({ hasText: 'logo' })).toHaveAttribute('data-done', 'no');
+
+    // Checking the prices ticks its step.
+    await page.goto('/settings?tab=rate');
+    await page.getByTestId('rate-save').click();
+    await expect(page.getByTestId('rate-msg')).toHaveText('Saved');
+    await page.goto('/dashboard');
+    await expect(page.getByTestId('setup-step').filter({ hasText: 'Check your prices' })).toHaveAttribute('data-done', 'yes');
+
+    // A logo: a PNG is taken and shown, anything else is refused.
+    await page.goto('/settings?tab=company');
+    await page.getByTestId('logo-file').setInputFiles({ name: 'logo.txt', mimeType: 'image/png', buffer: Buffer.from('not an image') });
+    await expect(page.getByTestId('logo-msg')).toContainText('PNG or JPEG');
+    await page.getByTestId('logo-file').setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') });
+    await expect(page.getByTestId('logo-preview')).toBeVisible();
+    const src = await page.getByTestId('logo-preview').getAttribute('src');
+    expect((await page.request.get(src!)).headers()['content-type']).toBe('image/png');
+  } finally {
+    // The company stays, like the other signup tests' companies: its rows reference it everywhere.
+    await ctx.close();
+  }
+});
+
+test('216LABS turns sending on for one company from the admin page (issue 171)', async ({ page }) => {
+  await login(page);
+  const [demo] = await sql`select id, outbound_enabled from tenant where slug = 'lakeshore-demo'`;
+  try {
+    await sql`update tenant set outbound_enabled = false where id = ${demo!.id}`;
+    await page.goto('/settings?tab=system');
+    await page.getByTestId('admin-sending-link').click();
+    await page.getByTestId('sending-search').fill('Lakeshore Plow');
+    const row = page.getByTestId('sending-row').filter({ hasText: 'lakeshore-demo' });
+    await expect(row.getByTestId('sending-state')).toHaveText('Off');
+    await row.getByTestId('sending-toggle').click();
+    await page.getByTestId('confirm-yes').click();
+    await expect(row.getByTestId('sending-state')).toHaveText('On');
+    expect((await sql`select outbound_enabled from tenant where id = ${demo!.id}`)[0]!.outbound_enabled).toBe(true);
+  } finally {
+    await sql`update tenant set outbound_enabled = ${demo!.outbound_enabled} where id = ${demo!.id}`;
+  }
+});

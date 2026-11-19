@@ -42,7 +42,7 @@ describe('signing up', () => {
   it('a double tap on Continue makes one company', async () => {
     const u = await newUser();
     const name = `Double Tap ${randomUUID().slice(0, 6)}`;
-    const ids = await Promise.all([createTenantForUser(u, null, name, 'America/New_York'), createTenantForUser(u, null, name, 'America/New_York')]);
+    const ids = await Promise.all([createTenantForUser(u, null, name, 'America/New_York', { version: 'test' }), createTenantForUser(u, null, name, 'America/New_York', { version: 'test' })]);
     expect(ids[0]).toBe(ids[1]);
     expect(await serviceDb().select().from(membership).where(eq(membership.user_id, u))).toHaveLength(1);
   });
@@ -50,13 +50,13 @@ describe('signing up', () => {
   it('two companies with the same name at once both get set up', async () => {
     const [a, b] = [await newUser(), await newUser()];
     const name = `Same Name ${randomUUID().slice(0, 6)}`;
-    const [ta, tb] = await Promise.all([createTenantForUser(a, null, name, 'America/New_York'), createTenantForUser(b, null, name, 'America/New_York')]);
+    const [ta, tb] = await Promise.all([createTenantForUser(a, null, name, 'America/New_York', { version: 'test' }), createTenantForUser(b, null, name, 'America/New_York', { version: 'test' })]);
     expect(ta).not.toBe(tb);
   });
 
   it('a made-up time zone never reaches the database', () => {
-    expect(onboardTenant.parse({ name: 'Plow Co', timezone: 'Mars/Olympus' }).timezone).toBe('America/New_York');
-    expect(onboardTenant.parse({ name: 'Plow Co', timezone: 'America/Chicago' }).timezone).toBe('America/Chicago');
+    expect(onboardTenant.parse({ name: 'Plow Co', timezone: 'Mars/Olympus', agree_terms: true }).timezone).toBe('America/New_York');
+    expect(onboardTenant.parse({ name: 'Plow Co', timezone: 'America/Chicago', agree_terms: true }).timezone).toBe('America/Chicago');
     expect(tenantSettings.safeParse({ timezone: 'Not/AZone' }).success).toBe(false);
     expect(tenantSettings.safeParse({ timezone: 'America/Denver' }).success).toBe(true);
   });

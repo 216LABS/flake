@@ -10,7 +10,7 @@ import { getProviders } from '@/lib/providers';
  */
 export const POST = route(async (req) => {
   const ctx = await requireApi('dispatcher');
-  rateLimit(`suggest:${ctx.userId}`, 60, 60000);
+  await rateLimit(`suggest:${ctx.userId}`, 60, 60000);
   const { q, expand } = await parseJson(req, addressSuggest);
   const yard = ctx.tenant.yard;
   const near = yard ? { lat: yard.lat, lon: yard.lon }

@@ -9,7 +9,7 @@ async function strangerContext(browser: import('@playwright/test').Browser, base
   const res = await ctx.request.post(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/signup`, { headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! }, data: { email, password: 'flake-demo-only' } });
   expect(res.ok()).toBe(true);
   expect((await ctx.request.post('/api/dev/login', { data: { email } })).ok()).toBe(true);
-  expect((await ctx.request.post('/api/onboarding', { data: { name: 'Stranger Plow' } })).ok()).toBe(true);
+  expect((await ctx.request.post('/api/onboarding', { data: { name: 'Stranger Plow', agree_terms: true } })).ok()).toBe(true);
   return { ctx, email };
 }
 

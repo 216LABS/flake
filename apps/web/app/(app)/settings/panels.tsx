@@ -378,6 +378,33 @@ export function CompanyForm({ tenant }: { tenant: any }) {
   );
 }
 
+/** The company's logo on quotes, the records page and PDF bills (issue 173). Optional. */
+export function LogoForm({ url }: { url: string | null }) {
+  const router = useRouter();
+  const { msg, busy, run } = useAction();
+  return (
+    <Card className="max-w-xl" data-testid="logo-form">
+      <h2 className="font-semibold">Logo (optional)</h2>
+      <p className="mt-1 text-sm text-muted">Shown on your quotes, your customers&apos; records page and PDF bills. PNG or JPEG, up to 1 MB.</p>
+      {url ? <img src={url} alt="Your logo" className="mt-3 max-h-16 max-w-48 object-contain" data-testid="logo-preview" /> : null}
+      <Label className="mt-3" htmlFor="logo-file">{url ? 'Replace it' : 'Choose a file'}</Label>
+      <input id="logo-file" type="file" accept="image/png,image/jpeg" disabled={busy} className="mt-1 block text-base" data-testid="logo-file" onChange={(e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        void run(async () => {
+          const form = new FormData();
+          form.append('file', file);
+          const res = await fetch('/api/settings/logo', { method: 'POST', body: form });
+          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'That logo could not be saved.');
+          router.refresh();
+        }, 'Saved');
+      }} />
+      {url ? <Button size="sm" variant="ghost" className="mt-2" disabled={busy} data-testid="logo-remove" onClick={() => run(async () => { await api('/api/settings/logo', { method: 'DELETE' }); router.refresh(); }, 'Removed')}>Remove logo</Button> : null}
+      {msg ? <p className="mt-2 text-sm text-muted" role="status" data-testid="logo-msg">{msg}</p> : null}
+    </Card>
+  );
+}
+
 export function BusinessForm({ tenant }: { tenant: any }) {
   const router = useRouter();
   const v = tenant.sms_verification ?? {};

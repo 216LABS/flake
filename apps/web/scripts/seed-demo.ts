@@ -51,6 +51,8 @@ async function main() {
     stripe_account_id: 'acct_mock_demo', stripe_charges_enabled: true, twilio_subaccount_sid: 'AC_mock_demo', sms_sender: '+18335550100', sms_status: 'approved',
     business_legal_name: 'Lakeshore Plow Co. (Demo)', ein_last4: '0000', contact_email: 'demo@flake.test', contact_phone: '+12165550100',
     address: { line1: '100 Example St', city: 'Lakewood', state: 'OH', zip: '44107' }, sms_verification: { contact_name: 'Demo Owner' },
+    // Local providers are mocks, so the demo sends; a demo anywhere else stays off until an admin turns it on (issue 171).
+    outbound_enabled: (process.env.APP_ENV ?? 'local') !== 'production',
   }).onConflictDoNothing();
   await db.insert(membership).values([{ tenant_id: tenantId, user_id: ownerId, role: 'owner' }, { tenant_id: tenantId, user_id: dispatcherId, role: 'dispatcher' }]).onConflictDoNothing();
 

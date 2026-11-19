@@ -45,6 +45,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
     <div className="min-h-screen bg-tint">
       <header className="bg-slate-950 text-white">
         <div className="mx-auto max-w-3xl px-4 py-6">
+          {data.company.logo ? <img src={data.company.logo} alt={`${data.company.name} logo`} className="mb-2 max-h-14 max-w-44 rounded bg-white object-contain p-1" data-testid="company-logo" /> : null}
           <p className="font-display text-lg font-semibold">{data.company.name}</p>
           <h1 className="font-display mt-1 text-3xl font-semibold leading-tight md:text-4xl">Service records for {data.customer.name}</h1>
           <p className="mt-1 text-sm text-slate-300">Every visit, with the time, what was done and the driver&apos;s photos. Times are {possessive(data.company.name)} local time.</p>

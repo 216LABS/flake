@@ -198,6 +198,7 @@ test('a real magic link signs a new person in and lands on company setup', async
   await page.goto(link);
   await page.waitForURL('**/onboarding');
   await page.getByTestId('company').fill('Magic Link Plow');
+  await page.getByTestId('agree-terms').check();
   await page.getByTestId('create-company').click();
   await page.waitForURL('**/dashboard');
 });

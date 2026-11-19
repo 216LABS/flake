@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { z } from 'zod';
 import { readableIssue } from './issues';
+import { serviceDb, sql } from '@flake/db';
 import { log } from './log';
 
 export { readableIssue };
@@ -59,8 +60,8 @@ export function route<C = unknown>(handler: Handler<C>) {
 
 const buckets = new Map<string, { n: number; reset: number }>();
 
-/** Per-instance limiter for token and public routes. A coarse backstop, not a distributed quota. */
-export function rateLimit(key: string, max: number, windowMs: number) {
+/** This instance's own count: a quick first check that needs no database. */
+function localLimit(key: string, max: number, windowMs: number) {
   const now = Date.now();
   const b = buckets.get(key);
   if (!b || b.reset < now) {
@@ -71,6 +72,33 @@ export function rateLimit(key: string, max: number, windowMs: number) {
   if (++b.n > max) throw new HttpError(429, 'Too many requests');
 }
 
+/**
+ * A limit every server instance shares (issue 176): on Vercel one address's requests land on many instances, so a count
+ * kept in memory never reached the limit. Counts live in Postgres per key and fixed window. The memory count still runs
+ * first, so a flood from one instance is refused without a database write. If the database can't be reached the request
+ * goes through: a limit is a backstop, not a reason to take the site down.
+ */
+export async function rateLimit(key: string, max: number, windowMs: number) {
+  localLimit(key, max, windowMs);
+  // No address to count by (only tests and local tools call without one): everyone would share one bucket.
+  if (/:(null|unknown)$/.test(key)) return;
+  const start = new Date(Math.floor(Date.now() / windowMs) * windowMs).toISOString();
+  let n: number;
+  try {
+    const rows = (await serviceDb().execute(sql`
+      insert into rate_limit (key, window_start) values (${key.slice(0, 200)}, ${start})
+      on conflict (key, window_start) do update set n = rate_limit.n + 1
+      returning n`)) as unknown as { n: number }[];
+    n = rows[0]?.n ?? 0;
+    // Old windows are swept now and then, by whichever request happens to draw it.
+    if (Math.random() < 0.01) await serviceDb().execute(sql`delete from rate_limit where window_start < now() - interval '1 day'`);
+  } catch (err) {
+    log.error('rate limit store failed', err, { key: key.split(':')[0] });
+    return;
+  }
+  if (n > max) throw new HttpError(429, 'Too many requests');
+}
+
 export const clientIp = (req: Request) => req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || null;
 
 /**
@@ -79,9 +107,11 @@ export const clientIp = (req: Request) => req.headers.get('x-forwarded-for')?.sp
  * per-address cap still slows anyone trying made-up links.
  */
 export function driverRateLimit(req: Request, token: string, max = 600, kind = 'd') {
-  rateLimit(`${kind}:${token.slice(0, 64)}`, max, 60000);
+  // Kept in memory on purpose: drivers' phones call these all night, and the links are long random tokens nobody can
+  // guess, so a database write on every tap would cost more than it guards (issue 176, D19).
+  localLimit(`${kind}:${token.slice(0, 64)}`, max, 60000);
   const ip = clientIp(req);
-  if (ip) rateLimit(`${kind}ip:${ip}`, max * 20, 60000);
+  if (ip) localLimit(`${kind}ip:${ip}`, max * 20, 60000);
 }
 
 export function requireCron(req: Request) {

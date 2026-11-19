@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { longDate, TERMS_UPDATED } from '@/lib/legal';
 
 export const metadata: Metadata = { title: 'Terms of Service', description: 'The terms for using Flake by 216LABS.', alternates: { canonical: '/legal/terms' } };
 
@@ -6,7 +7,7 @@ export default function Terms() {
   return (
     <article className="mx-auto max-w-3xl space-y-4 px-4 py-12 text-ink-2">
       <h1 className="text-3xl font-bold text-ink">Terms of Service</h1>
-      <p className="text-sm text-muted">Last updated November 10, 2026. Effective when you create an account. 216LABS LLC operates Flake.</p>
+      <p className="text-sm text-muted">Last updated {longDate(TERMS_UPDATED)}. Effective when you create an account. 216LABS LLC operates Flake.</p>
       <h2 className="text-xl font-semibold">What Flake is</h2>
       <p>Flake is software that helps snow removal companies dispatch storms, record visits, and bill customers. You remain responsible for your service, your contracts and your decisions about when to send trucks. Flake never dispatches by itself.</p>
       <h2 className="text-xl font-semibold">Weather data</h2>

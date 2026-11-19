@@ -13,6 +13,7 @@ import { asUser, requirePage } from '@/lib/auth';
 import { baseUrl } from '@/lib/env';
 import { canTextFrom } from '@/lib/messaging';
 import { isPlatformAdmin, saltOrderingReady } from '@/lib/salt-orders';
+import { isOutboundAdmin } from '@/lib/outbound';
 import { SAMPLE_MESSAGES } from '@/lib/sms-admin';
 import { breakerOpen, breakerState } from '@/lib/weather';
 import { available, getProviders, getSetting } from '@/lib/providers';
@@ -20,7 +21,8 @@ import { listTeam } from '@/lib/team';
 import { CHANNEL_LABEL, jobLabel, messageLabel, messageStatus } from '@/lib/labels';
 import { PushPanel } from './push-panel';
 import { canSeeUsage, cronCalls, deploymentUsage, plainJobError } from '@/lib/usage';
-import { BusinessForm, CompanyForm, CrewPanel, PaymentsPanel, PlanPanel, RateCardForm, RetryJob, SmsSubmit, TeamPanel } from './panels';
+import { BusinessForm, CompanyForm, CrewPanel, LogoForm, PaymentsPanel, PlanPanel, RateCardForm, RetryJob, SmsSubmit, TeamPanel } from './panels';
+import { logoUrl } from '@/lib/logo';
 
 export const metadata = { title: 'Settings' };
 
@@ -50,7 +52,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         {TABS.filter(([k]) => owner || !OWNER_TABS.includes(k)).map(([k, label]) => <Link key={k} href={`/settings?tab=${k}`} data-testid={`tab-${k}`} aria-current={tab === k ? 'page' : undefined} className={`-mb-px border-b-2 px-3 py-2 font-medium ${tab === k ? 'border-ink font-semibold text-ink' : 'border-transparent text-muted hover:text-ink'}`}>{label}</Link>)}
       </nav>
       {!allowed ? <Card className="max-w-2xl" data-testid="owner-only"><p className="text-sm">Only an owner can open this.</p></Card> : null}
-      {allowed && tab === 'company' ? <CompanyForm tenant={JSON.parse(JSON.stringify(t))} /> : null}
+      {allowed && tab === 'company' ? <div className="space-y-4"><CompanyForm tenant={JSON.parse(JSON.stringify(t))} /><LogoForm url={logoUrl(t)} /></div> : null}
       {allowed && tab === 'rate' ? <RateCardForm card={(Object.keys(t.rate_card as object).length ? t.rate_card : DEFAULT_RATE_CARD) as RateCard} /> : null}
       {tab === 'crew' ? <fieldset disabled={readOnly} className={readOnly ? 'view-only contents' : 'contents'}><CrewPanel canText={canTextFrom(ctx.tenant)} cover={Object.fromEntries((await asUser(ctx, (tx) => complianceOverview(tx, tz))).subs.map((s) => [s.id, s.coverage]))} crew={JSON.parse(JSON.stringify(await asUser(ctx, (tx) => tx.select().from(crew_member).orderBy(crew_member.name))))} /></fieldset> : null}
       {tab === 'equipment' ? await (async () => {
@@ -73,9 +75,10 @@ export default async function Settings({ searchParams }: { searchParams: Promise
             <p className="mt-1 text-sm">Status: <Badge tone={t.sms_status === 'approved' ? 'green' : t.sms_status === 'rejected' ? 'red' : t.sms_status === 'pending' ? 'amber' : 'gray'} data-testid="sms-status">{t.sms_status}</Badge></p>
             {t.sms_sender ? <p className="mt-1 text-sm">Number: {t.sms_sender}</p> : null}
             {t.sms_status_detail ? <p className="mt-1 text-sm text-danger">Reason: {t.sms_status_detail}. Fix the details and resubmit.</p> : null}
-            <p className="mt-2 text-sm text-muted">Texts go out from your own verified toll-free number, in your legal business name. Verification takes 3 to 5 business days. Until then crew links go by email, QR and copy-link, and customer notices go by email.</p>
+            <p className="mt-2 text-sm text-muted">Texts go out from your own verified toll-free number, in your legal business name. Fill in the business details, then submit: verification takes 3 to 5 business days. Until then crew links go by QR and copy-link.</p>
             <p className="mt-2 text-sm">Your public opt-in page: <Link className="text-link underline" href={`/b/${t.slug}/sms`}>{baseUrl()}/b/{t.slug}/sms</Link></p>
-            <SmsSubmit status={t.sms_status ?? 'none'} />
+            {/* No Twilio keys on the platform: say so rather than a submit that can only fail (issue 173). */}
+            {(await available()).sms ? <SmsSubmit status={t.sms_status ?? 'none'} /> : <p className="mt-3 rounded-md bg-tint p-3 text-sm" data-testid="sms-unavailable">Texting isn&apos;t available in Flake yet, so there&apos;s nothing to submit. Your business details below are saved for when it is. Crew links work now by QR code and copy-link.</p>}
             <h3 className="mt-4 text-sm font-medium">Sample messages we submit</h3>
             <ul className="mt-1 list-disc pl-5 text-xs text-muted">{SAMPLE_MESSAGES(t.name).map((m) => <li key={m}>{m}</li>)}</ul>
           </Card>
@@ -146,10 +149,12 @@ async function SystemTab(tenantId: string, tz: string, email: string | null, can
           ) : <p className="mt-1 text-sm text-muted">Not available here: the scheduler&apos;s log can&apos;t be read from this deployment.</p>}
         </Card>
       ) : null}
-      {isPlatformAdmin(email) && (await saltOrderingReady()) ? (
+      {isOutboundAdmin(email) || (isPlatformAdmin(email) && (await saltOrderingReady())) ? (
         <Card className="max-w-2xl">
           <h2 className="font-semibold">216LABS</h2>
-          <p className="mt-1 text-sm"><Link className="text-link underline" href="/admin/salt" data-testid="admin-salt-link">Salt suppliers and referral fees</Link></p>
+          {isOutboundAdmin(email) ? <p className="mt-1 text-sm"><Link className="text-link underline" href="/admin/sending" data-testid="admin-sending-link">Which companies Flake sends for</Link></p> : null}
+          {isPlatformAdmin(email) && (await saltOrderingReady()) ? <p className="mt-1 text-sm"><Link className="text-link underline" href="/admin/salt" data-testid="admin-salt-link">Salt suppliers and referral fees</Link></p> : null}
+          {isPlatformAdmin(email) ? <p className="mt-1 text-sm"><Link className="text-link underline" href="/admin/feedback">Feedback</Link></p> : null}
         </Card>
       ) : null}
       <h2 className="font-semibold">Recent messages</h2>

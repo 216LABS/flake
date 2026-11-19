@@ -10,7 +10,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
   // The same per-address backstop as the other public token routes (issue 152). Loose, since many phones on one carrier
   // share an address on a storm night.
   try {
-    rateLimit(`short:${clientIp(req)}`, 120, 60_000);
+    await rateLimit(`short:${clientIp(req)}`, 120, 60_000);
   } catch (e) {
     if (e instanceof HttpError) return new NextResponse('Too many requests. Wait a minute and try again.', { status: 429 });
     throw e;

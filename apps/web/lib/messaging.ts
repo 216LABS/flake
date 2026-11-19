@@ -25,6 +25,15 @@ export async function hasSmsConsent(tenantId: string, phone: string): Promise<bo
 export const canTextFrom = (t: TenantRow) => t.sms_status === 'approved' && Boolean(t.sms_sender);
 
 /**
+ * Flake sends email and texts for a company only after a platform admin turns sending on for it (issue 171). Every
+ * company starts off, so a new signup, a QA company or a demo can't reach a real inbox or phone.
+ */
+export const outboundOn = (t: Pick<TenantRow, 'outbound_enabled'>) => t.outbound_enabled === true;
+
+/** What a send that sending-off stopped looks like in the message log. */
+const BLOCKED = 'blocked';
+
+/**
  * Reserves the idempotency key first. A second caller with the same key sends nothing; a previous failure
  * may be retried. Returns the row id when this caller should send.
  */
@@ -33,7 +42,7 @@ async function reserve(t: TenantRow, channel: 'sms' | 'email' | 'push', to: stri
     insert into message_log (tenant_id, channel, to_addr, template, body, related, status, idempotency_key)
     values (${t.id}, ${channel}, ${to}, ${template}, ${body}, ${related ? JSON.stringify(related) : null}::jsonb, 'sending', ${key})
     on conflict (tenant_id, idempotency_key) do update set status = 'sending', to_addr = excluded.to_addr, body = excluded.body
-      where message_log.status = 'failed' or (message_log.status = 'sending' and message_log.created_at < now() - interval '5 minutes')
+      where message_log.status in ('failed', 'blocked') or (message_log.status = 'sending' and message_log.created_at < now() - interval '5 minutes')
         -- A rejected address goes again only once it has been corrected.
         or (message_log.status = 'rejected' and message_log.to_addr <> excluded.to_addr)
     returning id`)) as unknown as { id: string }[];
@@ -49,6 +58,8 @@ export async function sendSms(t: TenantRow, opts: { to: string; template: Templa
   const body = renderTemplate(opts.template, opts.vars, opts.lang);
   const id = await reserve(t, 'sms', opts.to, opts.template, body, `sms:${opts.key}`, opts.related ?? null);
   if (!id) return false;
+  // Logged, not sent, and never thrown: the storm or bill around it carries on (issue 171).
+  if (!outboundOn(t)) return finish(id, BLOCKED, null).then(() => false);
   try {
     const { sms } = await getProviders();
     const res = await sms.send({ from: t.sms_sender!, to: opts.to, body, subaccountSid: t.twilio_subaccount_sid, statusCallback: `${baseUrl()}/api/webhooks/twilio/status` });
@@ -73,13 +84,17 @@ async function failed(id: string, err: unknown): Promise<false> {
   throw err;
 }
 
-export async function sendEmail(t: TenantRow, opts: { to: string; template: string; subject: string; text: string; key: string; related?: Record<string, unknown>; attachments?: { filename: string; content: Uint8Array }[]; fromName?: string; replyTo?: string | null; lang?: 'en' | 'es' }): Promise<boolean> {
+/**
+ * internal: mail to 216LABS itself (feedback to ADMIN_EMAILS), which goes whether or not the company's sending is on.
+ */
+export async function sendEmail(t: TenantRow, opts: { to: string; template: string; subject: string; text: string; key: string; related?: Record<string, unknown>; attachments?: { filename: string; content: Uint8Array }[]; fromName?: string; replyTo?: string | null; lang?: 'en' | 'es'; internal?: boolean }): Promise<boolean> {
   // Every email ends with who sent it, how to reach them, and how to stop (a pass found them bare).
   const a = t.address as { line1?: string; city?: string; state?: string; zip?: string } | null;
   const address = a?.line1 ? [a.line1, [a.city, [a.state, a.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join(', ') : null;
   const text = `${opts.text}${emailFooter(opts.template, { name: t.name, phone: t.contact_phone, email: t.contact_email, address }, opts.lang)}`;
   const id = await reserve(t, 'email', opts.to, opts.template, text, `email:${opts.key}`, opts.related ?? null);
   if (!id) return false;
+  if (!opts.internal && !outboundOn(t)) return finish(id, BLOCKED, null).then(() => false);
   try {
     const { email } = await getProviders();
     const res = await email.send({ fromName: opts.fromName ?? t.name, replyTo: opts.replyTo === undefined ? t.contact_email : opts.replyTo, to: opts.to, subject: opts.subject, text, idempotencyKey: opts.key, attachments: opts.attachments });

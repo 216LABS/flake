@@ -89,6 +89,7 @@ test('a new plow company runs a whole storm from sign up to paid invoices', asyn
   await page.goto('/dashboard');
   await page.waitForURL('**/onboarding');
   await page.getByTestId('company').fill(company);
+  await page.getByTestId('agree-terms').check();
   await page.getByTestId('create-company').click();
   await page.waitForURL('**/dashboard');
   const [t] = await sql`select id from tenant where name = ${company}`;

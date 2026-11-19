@@ -105,7 +105,7 @@ test('pin photos: a link for one run cannot fetch another company or run pin, an
   const email = `pin-${randomUUID()}@flake.test`;
   await stranger.request.post(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/signup`, { headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! }, data: { email, password: 'flake-demo-only' } });
   await stranger.request.post('/api/dev/login', { data: { email } });
-  await stranger.request.post('/api/onboarding', { data: { name: 'Other Plow' } });
+  await stranger.request.post('/api/onboarding', { data: { name: 'Other Plow', agree_terms: true } });
   expect((await stranger.request.get(`/api/pins/${pin.id}/photo`, { maxRedirects: 0 })).status()).toBe(404);
   expect((await stranger.request.post(`/api/pins/${pin.id}/photo`, { multipart: { file: { name: 'a.png', mimeType: 'image/png', buffer: png } } })).status()).toBe(404);
   await stranger.close();

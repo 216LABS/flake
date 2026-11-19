@@ -437,7 +437,12 @@ export const toolPrice = z.object({
   email: emptyToNull(email),
 });
 
-export const onboardTenant = z.object({ name: z.string().trim().min(2).max(120), timezone: timeZone.catch('America/New_York').default('America/New_York') });
+export const onboardTenant = z.object({
+  name: z.string().trim().min(2).max(120),
+  timezone: timeZone.catch('America/New_York').default('America/New_York'),
+  /** Issue 172: no company without agreeing to the Terms and the Privacy Policy. */
+  agree_terms: z.literal(true, { error: 'Agree to the Terms of Service and Privacy Policy to continue' }),
+});
 
 export const tenantSettings = z.object({
   name: z.string().trim().min(2).max(120).optional(),

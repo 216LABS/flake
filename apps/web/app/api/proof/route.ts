@@ -19,7 +19,7 @@ export const GET = route(async () => {
 export const POST = route(async (req) => {
   const ctx = await requireApi('viewer');
   // The test run signs dozens of parallel browsers in as one demo user, so it gets more room than a real person needs.
-  rateLimit(`proof:${ctx.userId}`, isLocalOrTest() ? 120 : 10, 60_000);
+  await rateLimit(`proof:${ctx.userId}`, isLocalOrTest() ? 120 : 10, 60_000);
   const { siteId, from, to, incident_at } = await parseJson(req, proofRequest);
   const [st] = await asUser(ctx, (tx) => tx.select({ id: site.id }).from(site).where(eq(site.id, siteId)));
   if (!st) throw new HttpError(404, 'Site not found');

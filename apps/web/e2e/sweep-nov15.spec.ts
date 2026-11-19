@@ -222,6 +222,7 @@ test('a new company\'s first customer goes onto a new route from the wizard', as
   await page.request.post('/api/dev/login', { data: { email } });
   await page.goto('/onboarding');
   await page.getByTestId('company').fill('Route First LLC');
+  await page.getByTestId('agree-terms').check();
   await page.getByTestId('create-company').click();
   await page.waitForURL('**/dashboard');
   await page.goto('/customers/new');

@@ -401,7 +401,7 @@ export async function renderContractPdf(input: ContractPdfInput): Promise<Buffer
 }
 
 export interface InvoicePdfInput {
-  company: { name: string; address?: string | null; phone?: string | null; email?: string | null };
+  company: { name: string; address?: string | null; phone?: string | null; email?: string | null; logo?: { data: Uint8Array; format: 'png' | 'jpg' } | null };
   customer: { name: string };
   /** A short number the customer can write on a check. */
   number: string;
@@ -422,6 +422,7 @@ function InvoiceDoc(i: InvoicePdfInput) {
   return (
     <Document title={`Invoice ${i.number} - ${i.company.name}`} author={i.company.name}>
       <Page size="LETTER" style={s.page}>
+        {i.company.logo ? <Image style={{ maxHeight: 48, maxWidth: 160, objectFit: 'contain', marginBottom: 6 }} src={{ data: Buffer.from(i.company.logo.data), format: i.company.logo.format }} /> : null}
         <Text style={s.h2}>{i.company.name}</Text>
         {i.company.address ? <Text>{i.company.address}</Text> : null}
         {[i.company.phone, i.company.email].filter(Boolean).length ? <Text>{[i.company.phone, i.company.email].filter(Boolean).join(' | ')}</Text> : null}

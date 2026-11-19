@@ -12,7 +12,7 @@ import { renewalQueue, renewalsOpen } from '@/lib/bids';
 import { localDay } from '@flake/core/receivables';
 import { canSeeUsage, deploymentUsage } from '@/lib/usage';
 import { tenantWeatherHeader } from '@/lib/weather';
-import { available } from '@/lib/providers';
+import { available, getSetting } from '@/lib/providers';
 
 export const metadata = { title: 'Dashboard' };
 
@@ -68,21 +68,28 @@ export default async function Dashboard() {
   const fmt = (v: number | null, unit = '"') => (v === null ? 'unavailable' : `${v}${unit}`);
   const canEdit = ctx.role !== 'viewer';
   const can = await available();
-  const setup = ctx.role !== 'owner' ? [] : [
-    { done: data.customers[0]!.n > 0, text: data.customers[0]!.all ? 'Add a customer' : 'Add your first customer', href: '/customers/new' },
-    { done: data.crew[0]!.n > 0, text: 'Invite your drivers', href: '/settings?tab=crew' },
+  // Issue 173: everything a new owner needs, in order, each finished in the app. Stripe and texting appear only when the
+  // platform has their keys (issue 175); the logo is optional.
+  const t = ctx.tenant;
+  const hasAddress = Boolean((t.address as { line1?: string } | null)?.line1);
+  const rateChecked = ctx.role === 'owner' ? Boolean(await getSetting(`setup.rate:${t.id}`)) : false;
+  const setup: { done: boolean; text: string; href: string; more?: { text: string; href: string }; optional?: boolean }[] = ctx.role !== 'owner' ? [] : [
+    { done: Boolean(t.business_legal_name?.trim()) && hasAddress, text: 'Add your legal business name and address', href: can.sms ? '/settings?tab=sms' : '/settings?tab=company' },
+    { done: rateChecked, text: 'Check your prices. Flake starts with typical ones.', href: '/settings?tab=rate' },
+    { done: data.customers[0]!.n > 0, text: data.customers[0]!.all ? 'Add a customer' : 'Add your first customer and lot', href: '/customers/new', more: { text: 'Have a list? Import it', href: '/customers/import' } },
+    { done: data.crew[0]!.n > 0, text: 'Add your drivers', href: '/settings?tab=crew', more: { text: 'Have a list? Import it', href: '/settings/crew-import' } },
     { done: data.routed[0]!.n > 0, text: 'Put your lots on a route, so a storm knows where to go', href: '/routes' },
-    // Only when card payments can work; without Stripe keys it would lead to an error (issue 175).
-    ...(can.payments ? [{ done: Boolean(ctx.tenant.stripe_charges_enabled), text: 'Connect Stripe to get paid', href: '/settings?tab=payments' }] : []),
-    // Customer emails carry the company's postal address (issue 149).
-    { done: Boolean((ctx.tenant.address as { line1?: string } | null)?.line1), text: 'Add your mailing address for customer emails', href: '/settings?tab=company' },
-    ...(can.sms ? [{ done: ctx.tenant.sms_status === 'approved', text: 'Verify your text number. Crew links go by QR and copy-link until then.', href: '/settings?tab=sms' }] : []),
+    ...(can.payments ? [{ done: Boolean(t.stripe_charges_enabled), text: 'Connect Stripe to get paid by card or bank', href: '/settings?tab=payments' }] : []),
+    ...(can.sms ? [{ done: t.sms_status === 'approved', text: t.sms_status === 'pending' ? 'Text number: waiting on verification (3 to 5 business days)' : 'Get your text number verified. Crew links go by QR and copy-link until then.', href: '/settings?tab=sms' }] : []),
+    { done: Boolean(t.logo_path), text: 'Add your logo for quotes and bills', href: '/settings?tab=company', optional: true },
   ];
   return (
     <>
       <PageHeader title="Dashboard" subtitle={ctx.tenant.name} actions={canEdit && data.routed[0]!.n > 0 ? <Link href="/storms#start" className={buttonVariants({ variant: 'accent' })}>Start a storm</Link> : null} />
       {/* Customers but no lot on a route: a storm would have nothing to send, so say the next step (first-run walk). */}
       {canEdit && data.customers[0]!.n > 0 && data.routed[0]!.n === 0 ? <p className="mb-4 rounded-md bg-info-tint p-3 text-sm text-ink" data-testid="needs-route">Next: put your lots on a route. A storm sends each route to one truck. <Link className="font-semibold underline" href="/routes">Open Routes</Link></p> : null}
+      {/* Issue 171: every company starts with sending off; say so where the office looks first. */}
+      {canEdit && !ctx.tenant.outbound_enabled ? <p className="mb-4 rounded-md bg-info-tint p-3 text-sm text-ink" data-testid="sending-off">Flake isn&apos;t sending email or texts for your company yet, so bills, quotes and notices stay inside Flake. 216LABS turns sending on when your company is approved. Until then, share links yourself: each quote, bill and driver page has one.</p> : null}
       {usage?.near_limit ? <p className="mb-4 rounded-md bg-danger-tint p-3 text-sm text-danger" data-testid="usage-warning">Storage is nearly full ({usage.files_mb} of {usage.files_limit_mb} MB of files, {usage.db_mb} of {usage.db_limit_mb} MB of database). <Link className="underline" href="/settings?tab=system">See details</Link></p> : null}
       {failedMessages ? <p className="mb-4 rounded-md bg-danger-tint p-3 text-sm text-danger" data-testid="messages-failed">{failedMessages === 1 ? '1 message' : `${failedMessages} messages`} could not be sent in the last 24 hours. {retrying ? 'Flake is still retrying.' : 'Flake has stopped retrying. Check the address, then send again from the driver or customer.'} <Link className="underline" href="/settings?tab=system">See why</Link></p> : null}
       {rejectedMessages ? <p className="mb-4 rounded-md bg-warn-tint p-3 text-sm text-warn-ink" data-testid="messages-rejected">{rejectedMessages === 1 ? '1 message was' : `${rejectedMessages} messages were`} not delivered because the email address or phone number was rejected. Fix it on the driver or customer, and route links go out again. <Link className="underline" href="/settings?tab=system">See which</Link></p> : null}
@@ -103,8 +110,8 @@ export default async function Dashboard() {
         </div>
       </section>
       )}
-      <div className={`mt-6 grid grid-cols-1 gap-6 ${setup.some((s) => !s.done) ? 'lg:grid-cols-3' : ''}`}>
-        <div className={`space-y-6 ${setup.some((s) => !s.done) ? 'lg:col-span-2' : ''}`}>
+      <div className={`mt-6 grid grid-cols-1 gap-6 ${setup.some((s) => !s.done && !s.optional) ? 'lg:grid-cols-3' : ''}`}>
+        <div className={`space-y-6 ${setup.some((s) => !s.done && !s.optional) ? 'lg:col-span-2' : ''}`}>
           <section>
             <Eyebrow className="mb-2">Trigger alerts</Eyebrow>
             {data.alerts.length ? (
@@ -209,11 +216,19 @@ export default async function Dashboard() {
             ) : <EmptyState title="No storm is running" body={canEdit ? 'Start one by hand, or wait for a trigger alert.' : 'The office starts one when snow is coming.'} />}
           </section>
         </div>
-        {setup.some((s) => !s.done) ? (
-          <section>
-            <Eyebrow className="mb-2">Finish setup</Eyebrow>
+        {setup.some((s) => !s.done && !s.optional) ? (
+          <section data-testid="setup-checklist">
+            <Eyebrow className="mb-2">Finish setup: {setup.filter((s) => s.done).length} of {setup.length} done</Eyebrow>
             <ul className="divide-y divide-line-faint rounded-md border border-line-faint bg-surface">
-              {setup.filter((s) => !s.done).map((s) => <li key={s.href}><Link className="block p-3 text-sm font-medium text-ink hover:bg-tint" href={s.href}>{s.text}</Link></li>)}
+              {setup.map((s) => (
+                <li key={s.text} className="p-3 text-sm" data-testid="setup-step" data-done={s.done ? 'yes' : 'no'}>
+                  {s.done ? (
+                    <span className="flex items-start gap-2 text-muted"><span aria-hidden="true" className="text-ok-ink">✓</span><span><span className="sr-only">Done: </span>{s.text}</span></span>
+                  ) : (
+                    <span className="flex items-start gap-2"><span aria-hidden="true" className="text-faint">○</span><span><Link className="font-medium text-ink underline-offset-2 hover:underline" href={s.href}>{s.text}</Link>{s.optional ? <span className="text-muted"> (optional)</span> : null}{s.more ? <Link className="mt-0.5 block text-xs text-link underline" href={s.more.href}>{s.more.text}</Link> : null}</span></span>
+                  )}
+                </li>
+              ))}
             </ul>
           </section>
         ) : null}

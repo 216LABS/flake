@@ -4,7 +4,7 @@ import { clientIp, parseJson, rateLimit, route } from '@/lib/http';
 
 /** Public, no account. The email is optional and only then becomes a lead. */
 export const POST = route(async (req) => {
-  rateLimit(`tool:${clientIp(req)}`, 20, 60000);
+  await rateLimit(`tool:${clientIp(req)}`, 20, 60000);
   const b = await parseJson(req, toolContract);
   if (b.email) await serviceDb().insert(lead).values({ source: 'tool_contract', email: b.email, business: b.company, payload: { pricing_type: b.pricing_type } });
   const { renderContractPdf } = await import('@flake/providers/pdf');

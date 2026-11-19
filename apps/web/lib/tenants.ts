@@ -9,14 +9,15 @@ const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').repla
  * Signup is the one write with no tenant to scope to yet, so it uses the service connection. A double tap on Continue
  * makes one company, and two companies with the same name at once each get their own address.
  */
-export async function createTenantForUser(userId: string, email: string | null, name: string, timezone: string) {
+/** The company and its owner. The owner's agreement to the Terms and Privacy Policy is stored with it (issue 172). */
+export async function createTenantForUser(userId: string, email: string | null, name: string, timezone: string, agreed: { version: string }) {
   return serviceDb().transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`signup:${userId}`}))`);
     const [existing] = await tx.select().from(membership).where(eq(membership.user_id, userId));
     if (existing) return existing.tenant_id;
     const base = slugify(name);
     const [taken] = await tx.select({ id: tenant.id }).from(tenant).where(eq(tenant.slug, base));
-    const values = { name, timezone, contact_email: email, free_season_until: FREE_SEASON_END, rate_card: DEFAULT_RATE_CARD };
+    const values = { name, timezone, contact_email: email, free_season_until: FREE_SEASON_END, rate_card: DEFAULT_RATE_CARD, terms_accepted_at: new Date().toISOString(), terms_accepted_by: userId, terms_version: agreed.version };
     let [t] = await tx.insert(tenant).values({ ...values, slug: taken ? `${base}-${randomBytes(3).toString('hex')}` : base }).onConflictDoNothing({ target: tenant.slug }).returning();
     if (!t) [t] = await tx.insert(tenant).values({ ...values, slug: `${base}-${randomBytes(3).toString('hex')}` }).returning();
     await tx.insert(membership).values({ tenant_id: t!.id, user_id: userId, role: 'owner' });

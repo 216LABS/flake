@@ -37,6 +37,16 @@ export const tenant = pgTable('tenant', {
   renewal_start: text('renewal_start').notNull().default('08-01'),
   /** Pay period, workweek start (0 = Sunday) and holidays for the payroll export (issue 170). */
   payroll: jsonb('payroll').$type<{ period?: 'weekly' | 'biweekly'; week_start?: number; anchor?: string; holidays?: string[]; adp_co_code?: string }>().notNull().default(sql`'{}'::jsonb`),
+  /** Flake sends email and texts for this company only once a platform admin turns this on (issue 171). */
+  outbound_enabled: boolean('outbound_enabled').notNull().default(false),
+  outbound_changed_at: ts('outbound_changed_at'),
+  outbound_changed_by: text('outbound_changed_by'),
+  /** Who agreed to the Terms and Privacy Policy at signup, when, and which versions (issue 172). */
+  terms_accepted_at: ts('terms_accepted_at'),
+  terms_accepted_by: uuid('terms_accepted_by'),
+  terms_version: text('terms_version'),
+  /** Storage path of the company's logo (issue 173). */
+  logo_path: text('logo_path'),
 });
 
 export const membership = pgTable('membership', {
@@ -466,6 +476,13 @@ export const cached_lookup = pgTable('cached_lookup', {
   value: jsonb('value').notNull(),
   fetched_at: ts('fetched_at').notNull().defaultNow(),
 });
+
+/** Rate-limit counts shared by every server instance (issue 176). Server only. */
+export const rate_limit = pgTable('rate_limit', {
+  key: text('key').notNull(),
+  window_start: timestamp('window_start', { withTimezone: true, mode: 'string' }).notNull(),
+  n: integer('n').notNull().default(1),
+}, (t) => [primaryKey({ columns: [t.key, t.window_start] })]);
 
 export const app_setting = pgTable('app_setting', {
   key: text('key').primaryKey(),

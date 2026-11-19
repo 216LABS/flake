@@ -1,4 +1,5 @@
 import { and, customer, eq, inArray, invoice_draft, serviceDb, storm, tenant } from '@flake/db';
+import { logoBytes } from './logo';
 import { phone } from './client';
 import { isUuid } from './http';
 
@@ -24,7 +25,7 @@ export async function invoicePdf(tenantId: string, draftId: string, customerId?:
   const paid = row.d.status === 'paid' || row.d.status === 'charged';
   const { renderInvoicePdf } = await import('@flake/providers/pdf');
   const pdf = await renderInvoicePdf({
-    company: { name: row.t.name, address, phone: row.t.contact_phone ? phone(row.t.contact_phone) : null, email: row.t.contact_email },
+    company: { name: row.t.name, address, phone: row.t.contact_phone ? phone(row.t.contact_phone) : null, email: row.t.contact_email, logo: await logoBytes(row.t) },
     customer: { name: row.c.name }, number, issuedAt: row.d.created_at!, timezone: row.t.timezone, storm: row.s.name,
     lines: (row.d.lines as { description: string; quantity: number; amount_cents: number }[]).map((l) => ({ description: l.description, quantity: l.quantity, amount_cents: l.amount_cents })),
     totalCents: row.d.subtotal_cents, terms: paid ? 'Paid. Thank you.' : (TERMS[row.c.billing_mode] ?? 'Due on receipt'),

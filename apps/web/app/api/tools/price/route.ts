@@ -7,7 +7,7 @@ import { getProviders } from '@/lib/providers';
 
 /** Public estimate. The defaults are editable assumptions and are labeled that way, never as market data. */
 export const POST = route(async (req) => {
-  rateLimit(`tool:${clientIp(req)}`, 20, 60000);
+  await rateLimit(`tool:${clientIp(req)}`, 20, 60000);
   const b = await parseJson(req, toolPrice);
   let sqft = b.sqft ?? null;
   let measured: { method: string; label: string } | null = null;

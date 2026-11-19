@@ -20,7 +20,7 @@ const QUEUE_LATE_MIN = 15;
  */
 export async function GET(req: Request) {
   try {
-    rateLimit(`health:${clientIp(req) ?? 'unknown'}`, 60, 60_000);
+    await rateLimit(`health:${clientIp(req) ?? 'unknown'}`, 60, 60_000);
   } catch {
     return NextResponse.json({ ok: false, error: 'Too many requests' }, { status: 429 });
   }

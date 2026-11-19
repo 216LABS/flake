@@ -9,7 +9,7 @@ const change = z.union([
 
 /** The supplier's private link sets a delivery date or marks a load delivered. No login. */
 export const POST = route<{ params: Promise<{ token: string; id: string }> }>(async (req, { params }) => {
-  rateLimit(`supplier:${clientIp(req) ?? 'unknown'}`, 120, 60_000);
+  await rateLimit(`supplier:${clientIp(req) ?? 'unknown'}`, 120, 60_000);
   const { token, id } = await params;
   const s = await resolveSupplier(token);
   if (!s) throw new HttpError(404, 'This link is no longer active.');

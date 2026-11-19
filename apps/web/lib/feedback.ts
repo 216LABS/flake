@@ -28,6 +28,7 @@ export async function saveFeedback(f: Omit<Feedback, 'id' | 'at'>): Promise<Feed
         to, template: 'feedback', subject: `Flake feedback from ${f.company}`, fromName: 'Flake feedback', replyTo: f.email,
         text: `${f.message}\n\nFrom: ${f.email ?? 'unknown'} (${f.role}) at ${f.company}\nPage: ${f.path}\nSent: ${entry.at}`,
         key: `feedback:${entry.id}:${to}`,
+        internal: true,
       });
     } catch (err) {
       // Saved above; the admin page shows it even when the email didn't go.
