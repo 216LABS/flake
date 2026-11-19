@@ -8,6 +8,8 @@ import { money } from '@/lib/client';
 import { listMaintenance } from '@/lib/maintenance';
 import { yardStock } from '@/lib/yards';
 import { complianceAlerts } from '@/lib/compliance';
+import { renewalQueue, renewalsOpen } from '@/lib/bids';
+import { localDay } from '@flake/core/receivables';
 import { canSeeUsage, deploymentUsage } from '@/lib/usage';
 import { tenantWeatherHeader } from '@/lib/weather';
 
@@ -42,6 +44,9 @@ export default async function Dashboard() {
   const lowSalt = ctx.role === 'viewer' ? [] : (await yardStock(ctx.tenantId)).filter((y) => y.low);
   // Certificates ending or ended, and subs without current cover (issue 165).
   const insurance = await asUser(ctx, (tx) => complianceAlerts(tx, tz));
+  // Renewals for next winter, from the company's start date (issue 166).
+  const renewals = ctx.role === 'viewer' ? null : await asUser(ctx, (tx) => renewalQueue(tx, tz));
+  const renewNow = renewals && renewals.rows.length && renewalsOpen(localDay(new Date(), tz), ctx.tenant.renewal_start ?? '08-01', renewals.season) ? renewals : null;
   const owedTotal = data.owed.reduce((n, r) => n + r.cents, 0);
   // Customers' "come back" requests from their records page, one per lot and hour, for a week (issue 5).
   const requests = (await serviceDb().execute(sql`
@@ -139,6 +144,12 @@ export default async function Dashboard() {
                   </>
                 ) : null}
               </div>
+            </section>
+          ) : null}
+          {renewNow ? (
+            <section data-testid="renewals-due">
+              <Eyebrow className="mb-2">Renewals</Eyebrow>
+              <p className="rounded-md border border-line-faint bg-surface p-3 text-sm">{renewNow.rows.length} {renewNow.rows.length === 1 ? 'lot has' : 'lots have'} nothing yet for {renewNow.next}. <Link className="font-semibold text-link underline" href="/bids">Renew them</Link></p>
             </section>
           ) : null}
           {insurance.length ? (
