@@ -198,6 +198,12 @@ const crewBase = z.object({
   kind: z.enum(['employee', 'sub']),
   language: z.enum(['en', 'es']),
   sub_rate_card: subRateCard.nullable().optional(),
+  /** Employee pay for the payroll export (issue 170). Null clears it. */
+  pay_regular_cents: cents.nullable().optional(),
+  pay_ot_cents: cents.nullable().optional(),
+  pay_storm_cents: cents.nullable().optional(),
+  pay_holiday_cents: cents.nullable().optional(),
+  payroll_id: emptyToNull(z.string().trim().max(50)),
 });
 export const crewCreate = crewBase.extend({ language: z.enum(['en', 'es']).default('en') });
 export const crewUpdate = crewBase.partial().extend({ active: z.boolean().optional() });
@@ -442,6 +448,14 @@ export const tenantSettings = z.object({
   yard_address: z.string().trim().max(300).nullish(),
   /** The point of a suggestion the owner picked, so it isn't looked up again and can't miss (issue 79). */
   yard_point: z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) }).nullish(),
+  /** Pay period, workweek start, holidays and ADP company code for the payroll export (issue 170). */
+  payroll: z.object({
+    period: z.enum(['weekly', 'biweekly']).optional(),
+    week_start: z.number().int().min(0).max(6).optional(),
+    anchor: z.iso.date().optional(),
+    holidays: z.array(z.iso.date()).max(40).optional(),
+    adp_co_code: z.string().trim().max(10).optional(),
+  }).optional(),
 });
 export const tollFreeSubmit = z.object({ ein: z.string().regex(/^\d{2}-?\d{7}$/, 'Use the format 12-3456789') });
 export const rateCardSchema = z.object({

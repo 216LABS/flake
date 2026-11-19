@@ -37,6 +37,34 @@ const SHIFT_REACH_MS = 12 * 3_600_000;
  * split on a two-hour quiet gap. Times are the phone's own clock, rounded to the minute. A whole shift counts in the
  * period it started in, the usual payroll rule, so two back-to-back reports add up to the hours worked.
  */
+/** Every shift from the phones' events between two moments, per crew member and storm (issues 140, 170). */
+export async function shiftsBetween(tx: Tx, from: string, until: string) {
+  const ev = rowsOf<{ crew_id: string; storm_id: string; t: string }>(await tx.execute(sql`
+    with ev as (
+      select r.crew_id, r.storm_id, a.device_at as t from driver_action a join storm_run r on r.id = a.storm_run_id
+      union all
+      select r.crew_id, r.storm_id, d.device_at from driver_position d join storm_run r on r.id = d.storm_run_id
+      union all
+      select v.crew_id, v.storm_id, v.arrived_device_at from visit v
+      union all
+      select v.crew_id, v.storm_id, v.departed_device_at from visit v where v.departed_device_at is not null
+    )
+    select crew_id, storm_id, date_trunc('minute', t) as t from ev
+    where crew_id is not null and t >= ${from} and t < ${until}
+    group by 1, 2, 3`));
+  const groups = new Map<string, number[]>();
+  for (const e of ev) {
+    const k = `${e.crew_id}|${e.storm_id}`;
+    groups.set(k, [...(groups.get(k) ?? []), ms(e.t)]);
+  }
+  const out: { crewId: string; stormId: string; start: number; end: number; events: number }[] = [];
+  for (const [k, times] of groups) {
+    const [crewId, stormId] = k.split('|') as [string, string];
+    for (const sh of shiftsFrom(times)) out.push({ crewId, stormId, ...sh });
+  }
+  return out;
+}
+
 export async function crewHours(tx: Tx, p: Period, tz: string): Promise<(HoursRow & { crewId: string })[]> {
   const from = new Date(Date.parse(p.startAt) - SHIFT_REACH_MS).toISOString();
   const until = new Date(Date.parse(p.endAt) + SHIFT_REACH_MS).toISOString();

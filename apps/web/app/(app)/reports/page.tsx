@@ -91,6 +91,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
         <p className="mb-3 max-w-2xl text-sm text-muted">
           From each driver&apos;s first tap on their route link to their last, using their phone&apos;s taps and GPS. A quiet gap of two hours or more starts a new shift. A shift that runs past midnight counts in full on the day it started. Check anything with a note before you pay.
         </p>
+        {ctx.role !== 'viewer' ? <p className="mb-3 text-sm"><a className="font-semibold text-link underline" href="/reports/payroll" data-testid="open-payroll">Payroll: regular, storm, holiday and overtime hours, with Gusto and ADP files</a></p> : null}
         {subsHidden ? <p className="mb-3 text-sm text-ink-2" data-testid="subs-hidden">Employees only: subcontractors are paid from Sub pay{showPay ? ' below' : ''}, not payroll. <a className="text-link underline" href={`/reports?from=${p.from}&to=${p.to}&subs=1`}>Show subs too</a></p> : null}
         {hours.length ? (
           <>

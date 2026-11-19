@@ -36,7 +36,7 @@ export const tenant = pgTable('tenant', {
   /** When renewal reminders start each year, MM-DD (issue 166). */
   renewal_start: text('renewal_start').notNull().default('08-01'),
   /** Pay period, workweek start (0 = Sunday) and holidays for the payroll export (issue 170). */
-  payroll: jsonb('payroll').$type<{ period?: 'weekly' | 'biweekly'; week_start?: number; anchor?: string; holidays?: string[] }>().notNull().default(sql`'{}'::jsonb`),
+  payroll: jsonb('payroll').$type<{ period?: 'weekly' | 'biweekly'; week_start?: number; anchor?: string; holidays?: string[]; adp_co_code?: string }>().notNull().default(sql`'{}'::jsonb`),
 });
 
 export const membership = pgTable('membership', {

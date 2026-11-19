@@ -82,7 +82,7 @@ export function RateCardForm({ card }: { card: RateCard }) {
 
 export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boolean }) {
   const router = useRouter();
-  const blank = { name: '', phone_e164: '', email: '', kind: 'employee', language: 'en', per_visit: '', hourly: '', per_storm: '', per_season: '' };
+  const blank = { name: '', phone_e164: '', email: '', kind: 'employee', language: 'en', per_visit: '', hourly: '', per_storm: '', per_season: '', pay: '', pay_ot: '', pay_storm: '', pay_holiday: '', payroll_id: '' };
   const [f, setF] = useState(blank);
   const [editing, setEditing] = useState<string | null>(null);
   const [invite, setInvite] = useState<string | null>(null);
@@ -92,11 +92,12 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
   const load = (c: any) => {
     setEditing(c.id);
     setInvite(null);
-    setF({ name: c.name, phone_e164: c.phone_e164 ?? '', email: c.email ?? '', kind: c.kind, language: c.language, per_visit: c.sub_rate_card?.per_visit_cents ? String(c.sub_rate_card.per_visit_cents / 100) : '', hourly: c.sub_rate_card?.hourly_cents ? String(c.sub_rate_card.hourly_cents / 100) : '', per_storm: c.sub_rate_card?.flat_per_storm_cents ? String(c.sub_rate_card.flat_per_storm_cents / 100) : '', per_season: c.sub_rate_card?.flat_per_season_cents ? String(c.sub_rate_card.flat_per_season_cents / 100) : '' });
+    setF({ name: c.name, phone_e164: c.phone_e164 ?? '', email: c.email ?? '', kind: c.kind, language: c.language, per_visit: c.sub_rate_card?.per_visit_cents ? String(c.sub_rate_card.per_visit_cents / 100) : '', hourly: c.sub_rate_card?.hourly_cents ? String(c.sub_rate_card.hourly_cents / 100) : '', per_storm: c.sub_rate_card?.flat_per_storm_cents ? String(c.sub_rate_card.flat_per_storm_cents / 100) : '', per_season: c.sub_rate_card?.flat_per_season_cents ? String(c.sub_rate_card.flat_per_season_cents / 100) : '', pay: c.pay_regular_cents != null ? String(c.pay_regular_cents / 100) : '', pay_ot: c.pay_ot_cents != null ? String(c.pay_ot_cents / 100) : '', pay_storm: c.pay_storm_cents != null ? String(c.pay_storm_cents / 100) : '', pay_holiday: c.pay_holiday_cents != null ? String(c.pay_holiday_cents / 100) : '', payroll_id: c.payroll_id ?? '' });
   };
   const body = () => {
-    const { per_visit, hourly, per_storm, per_season, ...rest } = f;
-    return { ...rest, kind: f.kind, sub_rate_card: f.kind === 'sub' ? { ...(per_visit ? { per_visit_cents: dollarsToCents(per_visit) } : {}), ...(hourly ? { hourly_cents: dollarsToCents(hourly) } : {}), ...(per_storm ? { flat_per_storm_cents: dollarsToCents(per_storm) } : {}), ...(per_season ? { flat_per_season_cents: dollarsToCents(per_season) } : {}) } : null };
+    const { per_visit, hourly, per_storm, per_season, pay, pay_ot, pay_storm, pay_holiday, payroll_id, ...rest } = f;
+    const rate = (v: string) => (f.kind === 'employee' && v.trim() ? dollarsToCents(v) : null);
+    return { ...rest, kind: f.kind, pay_regular_cents: rate(pay), pay_ot_cents: rate(pay_ot), pay_storm_cents: rate(pay_storm), pay_holiday_cents: rate(pay_holiday), payroll_id: f.kind === 'employee' ? payroll_id : '', sub_rate_card: f.kind === 'sub' ? { ...(per_visit ? { per_visit_cents: dollarsToCents(per_visit) } : {}), ...(hourly ? { hourly_cents: dollarsToCents(hourly) } : {}), ...(per_storm ? { flat_per_storm_cents: dollarsToCents(per_storm) } : {}), ...(per_season ? { flat_per_season_cents: dollarsToCents(per_season) } : {}) } : null };
   };
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -142,6 +143,16 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
             <div><Label htmlFor="crew-kind">Kind</Label><Select id="crew-kind" value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}><option value="employee">Employee</option><option value="sub">Subcontractor</option></Select></div>
             <div><Label htmlFor="crew-lang">Language</Label><Select id="crew-lang" data-testid="crew-lang" value={f.language} onChange={(e) => setF({ ...f, language: e.target.value })}><option value="en">English</option><option value="es">Spanish</option></Select></div>
           </div>
+          {f.kind === 'employee' ? (
+            <div className="grid grid-cols-2 gap-2" data-testid="crew-pay">
+              <div><Label htmlFor="pay-reg">Pay per hour ($)</Label><Input id="pay-reg" type="number" inputMode="decimal" value={f.pay} onChange={(e) => setF({ ...f, pay: e.target.value })} data-testid="pay-regular" /></div>
+              <div><Label htmlFor="pay-ot">Overtime ($, optional)</Label><Input id="pay-ot" type="number" inputMode="decimal" placeholder="1.5x" value={f.pay_ot} onChange={(e) => setF({ ...f, pay_ot: e.target.value })} /></div>
+              <div><Label htmlFor="pay-storm">Storm rate ($, optional)</Label><Input id="pay-storm" type="number" inputMode="decimal" value={f.pay_storm} onChange={(e) => setF({ ...f, pay_storm: e.target.value })} /></div>
+              <div><Label htmlFor="pay-hol">Holiday rate ($, optional)</Label><Input id="pay-hol" type="number" inputMode="decimal" value={f.pay_holiday} onChange={(e) => setF({ ...f, pay_holiday: e.target.value })} /></div>
+              <div className="col-span-2"><Label htmlFor="pay-id">Gusto or ADP employee id (optional)</Label><Input id="pay-id" maxLength={50} value={f.payroll_id} onChange={(e) => setF({ ...f, payroll_id: e.target.value })} /></div>
+              <p className="col-span-2 text-xs text-muted">For Reports, Payroll. Only owners and dispatchers see pay.</p>
+            </div>
+          ) : null}
           {f.kind === 'sub' ? (
             <div className="grid grid-cols-2 gap-2">
               <div><Label htmlFor="sub-visit">Pay per visit ($)</Label><Input id="sub-visit" type="number" value={f.per_visit} onChange={(e) => setF({ ...f, per_visit: e.target.value })} /></div>
