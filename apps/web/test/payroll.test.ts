@@ -47,4 +47,23 @@ describe('issue 170: payroll export', () => {
     expect(gusto + adp).not.toContain('Crew Two');
     spy.mockRestore();
   });
+
+  it('pays an overnight shift across the period end whole, in the week it started (issue 178)', async () => {
+    const { payrollFor } = await import('@/lib/payroll');
+    const w = await makeWorld();
+    const tz = 'America/New_York';
+    await serviceDb().update(crew_member).set({ pay_regular_cents: 2000 }).where(eq(crew_member.id, w.crewId));
+    const out = await createStorm(ctxOf(w), { name: 'Overnight', routeIds: [w.routeId], crewAssignments: {} });
+    // Sat Jan 9, 2027, 8 PM to Sun Jan 10, 2 AM in New York (01:00Z to 07:00Z), a tap every hour.
+    const start = Date.parse('2027-01-10T01:00:00Z');
+    for (let i = 0; i <= 6; i++) {
+      const t = start + i * 3_600_000;
+      await serviceDb().insert(visit).values({ tenant_id: w.tenantId, client_uuid: randomUUID(), storm_id: out.storm.id, site_id: w.siteIds[0]!, crew_id: w.crewId, services: ['plow'], arrived_device_at: new Date(t).toISOString() });
+    }
+    const first = await withUser(w.userId, (tx) => payrollFor(tx, tz, {}, '2027-01-03', '2027-01-09'));
+    expect(first).toHaveLength(1);
+    expect(first[0]!.regular).toBe(6);
+    expect(first[0]!.amount_cents).toBe(12000);
+    expect(await withUser(w.userId, (tx) => payrollFor(tx, tz, {}, '2027-01-10', '2027-01-16'))).toEqual([]);
+  });
 });

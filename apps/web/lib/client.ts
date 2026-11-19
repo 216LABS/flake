@@ -22,7 +22,7 @@ export const phone = (e164: string | null | undefined) => {
   return m ? `(${m[1]}) ${m[2]}-${m[3]}` : (e164 ?? '');
 };
 
-export const money = (cents: number | null | undefined) => (cents === null || cents === undefined ? '-' : `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+export const money = (cents: number | null | undefined) => (cents === null || cents === undefined ? '-' : `${cents < 0 ? '-' : ''}$${(Math.abs(cents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 export const dollarsToCents = (v: string | number) => Math.round(Number(v) * 100);
 
 /** "Flip's", but "Jones Sons'" (issue 152): a name ending in s takes just the apostrophe. */

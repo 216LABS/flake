@@ -113,6 +113,8 @@ export interface TollFreePayload {
   sample_messages: string[];
 }
 export interface SmsProvider {
+  /** Set when the platform has no Twilio keys: every call refuses (issues 173, 175). */
+  unconfigured?: boolean;
   send(msg: SmsSend): Promise<{ id: string; status: string }>;
   provisionTenant(friendlyName: string, webhookBase: string): Promise<{ subaccountSid: string; sender: string }>;
   submitTollFreeVerification(subaccountSid: string, sender: string, payload: TollFreePayload, webhookBase: string): Promise<{ id: string; status: 'pending' | 'approved' | 'rejected' }>;
@@ -151,6 +153,8 @@ export interface ChargeResult {
 }
 
 export interface PaymentsProvider {
+  /** Set when the platform has no Stripe keys: every call refuses (issue 175). */
+  unconfigured?: boolean;
   createConnectedAccount(input: { email: string | null; businessName: string; tenantId: string }): Promise<{ accountId: string }>;
   createAccountLink(accountId: string, returnUrl: string, refreshUrl: string): Promise<{ url: string }>;
   /** Whether a connected account can take charges yet, straight from Stripe. Optional: the mock learns it by event. */

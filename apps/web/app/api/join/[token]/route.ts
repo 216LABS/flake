@@ -11,16 +11,18 @@ export const POST = route<{ params: Promise<{ token: string }> }>(async (req, { 
   const db = serviceDb();
   const [c] = await db.select().from(crew_member).where(eq(crew_member.invite_token_hash, hashToken(token)));
   if (!c || !c.active) throw new HttpError(404, 'This invite is no longer active');
-  if (inviteExpired(token)) throw new HttpError(410, `This invite is more than ${INVITE_DAYS} days old. Ask the office for a new link.`, 'invite_expired');
+  const es = c.language === 'es';
+  const already = es ? 'Ya te uniste. Para cambiar tu número, pídele a la oficina un enlace nuevo.' : 'You already joined. To change your number, ask the office for a new link.';
+  if (inviteExpired(token)) throw new HttpError(410, es ? `Esta invitación tiene más de ${INVITE_DAYS} días. Pídele a la oficina un enlace nuevo.` : `This invite is more than ${INVITE_DAYS} days old. Ask the office for a new link.`, 'invite_expired');
   // A join link gets forwarded in group chats. Once the driver has joined, it can't change where their route links go
   // (issue 133): the office edits the number in Settings, or sends a new link.
-  if (c.joined_at) throw new HttpError(409, 'You already joined. To change your number, ask the office for a new link.', 'already_joined');
+  if (c.joined_at) throw new HttpError(409, already, 'already_joined');
   const now = new Date().toISOString();
   // The driver can add or fix their own mobile here. The join is claimed in the same update, so two posts at once can't
   // both set it.
   const took = await db.update(crew_member).set({ joined_at: now, ...(phone ? { phone_e164: phone } : {}) })
     .where(and(eq(crew_member.id, c.id), eq(crew_member.tenant_id, c.tenant_id), isNull(crew_member.joined_at))).returning({ id: crew_member.id });
-  if (!took.length) throw new HttpError(409, 'You already joined. To change your number, ask the office for a new link.', 'already_joined');
+  if (!took.length) throw new HttpError(409, already, 'already_joined');
   const mobile = phone || c.phone_e164;
   if (consent && mobile) {
     await db.insert(sms_consent).values({ tenant_id: c.tenant_id, phone_e164: mobile, party: 'crew', opted_in_at: now, opted_in_source: 'crew_invite' })

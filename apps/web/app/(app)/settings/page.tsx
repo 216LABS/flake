@@ -15,7 +15,7 @@ import { canTextFrom } from '@/lib/messaging';
 import { isPlatformAdmin, saltOrderingReady } from '@/lib/salt-orders';
 import { SAMPLE_MESSAGES } from '@/lib/sms-admin';
 import { breakerOpen, breakerState } from '@/lib/weather';
-import { getProviders, getSetting } from '@/lib/providers';
+import { available, getProviders, getSetting } from '@/lib/providers';
 import { listTeam } from '@/lib/team';
 import { CHANNEL_LABEL, jobLabel, messageLabel, messageStatus } from '@/lib/labels';
 import { PushPanel } from './push-panel';
@@ -65,7 +65,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       {tab === 'accounting' ? <AccountingPanel owner={owner} note={qboNote ?? null} /> : null}
       {tab === 'alerts' ? <PushPanel publicKey={(await getProviders()).push.publicKey} /> : null}
       {allowed && tab === 'team' ? <TeamPanel members={await listTeam(ctx.tenantId)} me={ctx.userId} /> : null}
-      {allowed && tab === 'payments' ? <PaymentsPanel connected={Boolean(t.stripe_account_id)} enabled={await chargesEnabled(t)} payInstructions={t.pay_instructions} /> : null}
+      {allowed && tab === 'payments' ? <PaymentsPanel connected={Boolean(t.stripe_account_id)} enabled={await chargesEnabled(t)} payInstructions={t.pay_instructions} available={(await available()).payments} /> : null}
       {allowed && tab === 'sms' ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card>
@@ -82,7 +82,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
           <BusinessForm tenant={JSON.parse(JSON.stringify(t))} />
         </div>
       ) : null}
-      {allowed && tab === 'plan' ? <PlanPanel plan={t.plan} freeUntil={t.free_season_until} inSeason={inFreeSeason(t.free_season_until, today)} /> : null}
+      {allowed && tab === 'plan' ? <PlanPanel plan={t.plan} freeUntil={t.free_season_until} inSeason={inFreeSeason(t.free_season_until, today)} available={(await available()).payments} /> : null}
       {allowed && tab === 'data' ? (
         <Card className="max-w-2xl">
           <h2 className="font-semibold">Export your data</h2>

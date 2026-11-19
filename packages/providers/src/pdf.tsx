@@ -74,7 +74,7 @@ function Table({ cols, rows, widths }: { cols: string[]; rows: string[][]; width
 export interface PdfPriorBilled { cents: number; count: number }
 
 function seasonalText(p: { total_cents: number; installments: number }, prior?: PdfPriorBilled | null): string {
-  const money = (c: number) => `$${(c / 100).toFixed(2)}`;
+  const money = (c: number) => `${c < 0 ? '-' : ''}$${(Math.abs(c) / 100).toFixed(2)}`;
   if (!prior || (prior.cents <= 0 && prior.count <= 0)) return `${money(p.total_cents)} for the season, in ${p.installments} monthly installments`;
   const left = Math.max(0, p.total_cents - prior.cents);
   const n = Math.max(1, p.installments - prior.count);
@@ -87,7 +87,7 @@ function servicesText(services: unknown, prior?: PdfPriorBilled | null): string[
   if (!Array.isArray(services)) return [];
   return services.map((x: any) => {
     const p = x.pricing;
-    const money = (c: number) => `$${(c / 100).toFixed(2)}`;
+    const money = (c: number) => `${c < 0 ? '-' : ''}$${(Math.abs(c) / 100).toFixed(2)}`;
     const price = !p ? 'priced by unit'
       : p.type === 'per_push' ? `${money(p.amount_cents)} per push`
       : p.type === 'per_event' ? `${money(p.amount_cents)} per event`
@@ -418,7 +418,7 @@ export interface InvoicePdfInput {
 
 /** A printable bill for a customer who pays by check (issue 146): number, lines, total, terms and how to pay. */
 function InvoiceDoc(i: InvoicePdfInput) {
-  const money = (c: number) => `$${(c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const money = (c: number) => `${c < 0 ? '-' : ''}$${(Math.abs(c) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   return (
     <Document title={`Invoice ${i.number} - ${i.company.name}`} author={i.company.name}>
       <Page size="LETTER" style={s.page}>

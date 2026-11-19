@@ -1,20 +1,9 @@
+import { buildCsp } from './csp.mjs';
+
 const prod = (process.env.APP_ENV ?? (process.env.VERCEL_ENV === 'production' ? 'production' : 'local')) === 'production';
 const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 
-// 'unsafe-inline' for scripts is needed by Next's inline bootstrap without per-request nonces.
-const csp = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://js.stripe.com" + (prod ? '' : " 'unsafe-eval'"),
-  "style-src 'self' 'unsafe-inline'",
-  `img-src 'self' data: blob: https: ${supabase}`,
-  `connect-src 'self' ${supabase} https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://server.arcgisonline.com https://api.mapbox.com https://api.stripe.com`,
-  'frame-src https://js.stripe.com https://hooks.stripe.com',
-  "worker-src 'self' blob:",
-  "font-src 'self' data:",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "frame-ancestors 'none'",
-].join('; ');
+const csp = buildCsp({ prod, supabase, sentryDsn: process.env.NEXT_PUBLIC_SENTRY_DSN });
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

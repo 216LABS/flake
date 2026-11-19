@@ -1,4 +1,4 @@
-import { customerCreate } from '@flake/contracts';
+import { crewCreate, customerCreate } from '@flake/contracts';
 import { readableIssue } from './issues';
 
 /** RFC 4180 CSV: quoted fields, doubled quotes inside them, commas and line breaks inside quotes, CRLF or LF. */
@@ -27,6 +27,12 @@ export function parseCsv(text: string, sep = ','): string[][] {
   if (field || row.length) { row.push(field); rows.push(row); }
   return rows.filter((r) => r.some((v) => v.trim()));
 }
+
+/** Excel saves with semicolons in many countries: the first line says which one this file uses. */
+const sepOf = (text: string) => {
+  const firstLine = text.replace(/^\uFEFF/, '').split(/\r?\n/, 1)[0] ?? '';
+  return (firstLine.match(/;/g)?.length ?? 0) > (firstLine.match(/,/g)?.length ?? 0) ? ';' : ',';
+};
 
 /** The words people use in a spreadsheet, to Flake's customer kinds. Blank means residential. */
 export function importKind(v: string | null | undefined): 'residential' | 'commercial' | 'hoa' | null {
@@ -77,10 +83,7 @@ export type CsvCustomer = { name: string; address: string; label: string | null;
  * Name and address are needed; the rest may be missing. Each row says what's wrong with it, if anything.
  */
 export function customersFromCsv(text: string): { rows: (CsvCustomer & { problem: string | null })[]; missing: string[]; empty?: boolean } {
-  // Excel saves with semicolons in many countries: the first line says which one this file uses.
-  const firstLine = text.replace(/^\uFEFF/, '').split(/\r?\n/, 1)[0] ?? '';
-  const sep = (firstLine.match(/;/g)?.length ?? 0) > (firstLine.match(/,/g)?.length ?? 0) ? ';' : ',';
-  const [head, ...body] = parseCsv(text, sep);
+  const [head, ...body] = parseCsv(text, sepOf(text));
   if (!head || !body.length) return { rows: [], missing: [], empty: true };
   const at = Object.fromEntries(Object.entries(HEADERS).map(([key, names]) => [key, head.findIndex((h) => names.includes(h.trim().toLowerCase()))])) as Record<keyof CsvCustomer, number>;
   const missing = (['name', 'address'] as const).filter((k) => at[k] < 0);
@@ -102,4 +105,72 @@ export function customersFromCsv(text: string): { rows: (CsvCustomer & { problem
     else r.problem = `Same lot as #${first + 1}.`;
   });
   return { rows, missing };
+}
+
+/** Crew kinds from a spreadsheet (issue 174). Blank means an employee. */
+export function importCrewKind(v: string | null | undefined): 'employee' | 'sub' | null {
+  const s = (v ?? '').trim().toLowerCase();
+  if (!s || /^(emp|employee|staff|w-?2|driver|crew|hourly)/.test(s)) return 'employee';
+  if (/^(sub|subcontractor|contractor|1099)/.test(s)) return 'sub';
+  return null;
+}
+
+/** Language from a spreadsheet. Blank means English. */
+export function importLanguage(v: string | null | undefined): 'en' | 'es' | null {
+  const s = (v ?? '').trim().toLowerCase();
+  if (!s || /^(en|eng|english|ingl)/.test(s)) return 'en';
+  if (/^(es|spa|spanish|espa)/.test(s)) return 'es';
+  return null;
+}
+
+type CrewIn = { name: string; phone?: string | null; kind?: string | null; language?: string | null };
+
+/** The server's checks on one crew row, shared with the preview. */
+export function checkCrewRow(r: CrewIn) {
+  const kind = importCrewKind(r.kind);
+  if (!kind) return { ok: false as const, problem: `Kind "${r.kind}" isn't employee or sub.` };
+  const language = importLanguage(r.language);
+  if (!language) return { ok: false as const, problem: `Language "${r.language}" isn't English or Spanish.` };
+  const parsed = crewCreate.safeParse({ name: r.name, kind, language, phone_e164: r.phone ?? '' });
+  if (!parsed.success) return { ok: false as const, problem: [...new Set(parsed.error.issues.map(readableIssue))].join(' ') };
+  return { ok: true as const, data: parsed.data };
+}
+
+/** Who a crew row is: their mobile when there is one, else their name. */
+export const crewKey = (name: string, phone: string | null | undefined) => (phone ? `p:${phone}` : `n:${name.trim().toLowerCase().replace(/\s+/g, ' ')}`);
+
+const CREW_HEADERS: Record<string, string[]> = {
+  name: ['name', 'driver', 'crew', 'employee', 'full name', 'driver name', 'crew name'],
+  phone: ['phone', 'mobile', 'cell', 'phone number', 'mobile number', 'cell phone'],
+  kind: ['kind', 'type', 'role', 'employee or sub'],
+  language: ['language', 'lang', 'idioma'],
+};
+
+export type CsvCrew = { name: string; phone: string | null; kind: string | null; language: string | null };
+
+/**
+ * A crew list from a spreadsheet (issue 174): name is needed; phone, kind and language are optional and other columns are
+ * ignored. The same person twice in the file is kept once. Nothing is sent and no one is opted in to texts.
+ */
+export function crewFromCsv(text: string): { rows: (CsvCrew & { problem: string | null })[]; missing: string[]; empty?: boolean } {
+  const [head, ...body] = parseCsv(text, sepOf(text));
+  if (!head || !body.length) return { rows: [], missing: [], empty: true };
+  const at = Object.fromEntries(Object.entries(CREW_HEADERS).map(([key, names]) => [key, head.findIndex((h) => names.includes(h.trim().toLowerCase()))])) as Record<keyof CsvCrew, number>;
+  const missing = at.name < 0 ? ['name'] : [];
+  const cell = (r: string[], k: keyof CsvCrew) => (at[k] >= 0 ? (r[at[k]] ?? '').trim() : '') || null;
+  const seen = new Map<string, number>();
+  return {
+    missing,
+    rows: missing.length ? [] : body.map((r, i) => {
+      const c: CsvCrew = { name: cell(r, 'name') ?? '', phone: cell(r, 'phone'), kind: cell(r, 'kind'), language: cell(r, 'language') };
+      if (!c.name) return { ...c, problem: 'No name.' };
+      const check = checkCrewRow(c);
+      if (!check.ok) return { ...c, problem: check.problem };
+      const key = crewKey(check.data.name, check.data.phone_e164);
+      const first = seen.get(key);
+      if (first !== undefined) return { ...c, problem: `Same person as #${first + 1}.` };
+      seen.set(key, i);
+      return { ...c, problem: null };
+    }),
+  };
 }

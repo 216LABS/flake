@@ -17,7 +17,7 @@ export function readableIssue(issue: z.core.$ZodIssue) {
   const key = [...issue.path].reverse().find((p) => typeof p === 'string') as string | undefined;
   const name = (key && FIELD_NAMES[key]) ?? (key ? key.replace(/_e164$/, '').replace(/_|(?=[A-Z])/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase()) : 'This');
   const money = Boolean(key?.endsWith('_cents')) && !key?.startsWith('per_sqft') && !key?.startsWith('walks_per');
-  const show = (n: number | bigint) => (money ? `$${(Number(n) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : Number(n).toLocaleString('en-US'));
+  const show = (n: number | bigint) => (money ? `${Number(n) < 0 ? '-' : ''}$${(Math.abs(Number(n)) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : Number(n).toLocaleString('en-US'));
   const i = issue as z.core.$ZodIssue & { origin?: string; minimum?: number | bigint; maximum?: number | bigint; inclusive?: boolean; expected?: string };
   // Accepting a quote without ticking the box (issue 135).
   if (key === 'agree') return 'Tick the box to agree to the terms.';

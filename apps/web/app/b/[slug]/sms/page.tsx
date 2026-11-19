@@ -23,6 +23,8 @@ export default async function SmsOptIn({ params }: { params: Promise<{ slug: str
       <Card className="mt-4">
         <h2 className="font-semibold">Crew, on the invite page</h2>
         <label className="mt-2 flex items-start gap-2 text-sm"><input type="checkbox" disabled className="mt-1" /> {CREW_CONSENT_TEXT(name)}</label>
+        <p className="mt-2 text-xs text-muted">Spanish-speaking crew see the same box in Spanish:</p>
+        <label lang="es" className="mt-1 flex items-start gap-2 text-sm"><input type="checkbox" disabled className="mt-1" /> {CREW_CONSENT_TEXT(name, 'es')}</label>
       </Card>
       <p className="mt-4 text-sm text-ink-2">Reply STOP to opt out at any time, or HELP for help. Message frequency varies with the weather. Msg &amp; data rates may apply. We never sell or share mobile information with third parties or affiliates for marketing.</p>
       <p className="mt-2 text-sm"><Link className="text-link underline" href="/legal/sms-terms">SMS terms</Link> and <Link className="text-link underline" href="/legal/privacy">privacy policy</Link></p>

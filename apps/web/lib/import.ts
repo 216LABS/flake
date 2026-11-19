@@ -1,8 +1,8 @@
-import type { customerImportRow } from '@flake/contracts';
-import { and, customer, isNull, site, sql, withUser } from '@flake/db';
+import type { crewImportRow, customerImportRow } from '@flake/contracts';
+import { and, crew_member, customer, eq, isNull, site, sql, withUser } from '@flake/db';
 import type { z } from 'zod';
 import { geocodeAddress } from './geocode';
-import { checkImportRow } from './csv';
+import { checkCrewRow, checkImportRow, crewKey } from './csv';
 import { HttpError } from './http';
 import { requireSiteRoom } from './sites';
 import type { Ctx } from './storms';
@@ -37,4 +37,29 @@ export async function importCustomers(ctx: Ctx, rows: Row[]): Promise<ImportResu
     }
   }
   return out;
+}
+
+export type CrewImportResult = { row: number; ok: true; name: string } | { row: number; ok: false; error: string };
+
+/**
+ * Adds a crew list (issue 174). A row matching an active crew member, by mobile or by name when there is no mobile, is
+ * left out rather than doubled. Nothing is sent and no one is opted in: the office still sends each join link.
+ */
+export async function importCrew(ctx: Ctx, rows: z.infer<typeof crewImportRow>[]): Promise<CrewImportResult[]> {
+  return withUser(ctx.userId, async (tx) => {
+    const have = new Set((await tx.select({ name: crew_member.name, phone: crew_member.phone_e164 }).from(crew_member).where(eq(crew_member.active, true)))
+      .flatMap((c) => [crewKey(c.name, null), ...(c.phone ? [crewKey(c.name, c.phone)] : [])]));
+    const out: CrewImportResult[] = [];
+    for (const [i, r] of rows.entries()) {
+      const parsed = checkCrewRow(r);
+      if (!parsed.ok) { out.push({ row: i, ok: false, error: parsed.problem }); continue; }
+      const key = crewKey(parsed.data.name, parsed.data.phone_e164);
+      if (have.has(key)) { out.push({ row: i, ok: false, error: parsed.data.phone_e164 ? 'Someone on your crew already has this mobile.' : 'Someone on your crew already has this name.' }); continue; }
+      await tx.insert(crew_member).values({ name: parsed.data.name, phone_e164: parsed.data.phone_e164 ?? null, kind: parsed.data.kind, language: parsed.data.language, tenant_id: ctx.tenantId });
+      have.add(key);
+      have.add(crewKey(parsed.data.name, null));
+      out.push({ row: i, ok: true, name: parsed.data.name });
+    }
+    return out;
+  });
 }

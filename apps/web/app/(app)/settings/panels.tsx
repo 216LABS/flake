@@ -3,6 +3,7 @@
 import { FREE_SITE_LIMIT } from '@flake/core/fees';
 import type { RateCard } from '@flake/core/quote';
 import { Badge, Button, Card, Input, Label, Select, Table, Td, Textarea, Th } from '@flake/ui';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api, dollarsToCents, money, phone } from '@/lib/client';
@@ -134,7 +135,7 @@ export function CrewPanel({ crew, canText = true, cover = {} }: { crew: any[]; c
       </div>
       <Card data-write>
         <h2 className="font-semibold">{editing ? 'Edit crew member' : 'Invite crew'}</h2>
-        <p className="mt-1 text-sm text-muted">{editing ? 'Texts stay opt-in. A changed number needs a new opt-in from the invite link.' : 'They choose on the join page whether to get texts.'}</p>
+        <p className="mt-1 text-sm text-muted">{editing ? 'Texts stay opt-in. A changed number needs a new opt-in from the invite link.' : 'They choose on the join page whether to get texts.'}{!editing ? <> Have a list? <Link className="text-link underline" href="/settings/crew-import" data-testid="crew-import-link">Import it from a spreadsheet</Link>.</> : null}</p>
         <div className="mt-2 space-y-2">
           <div><Label htmlFor="crew-name">Name</Label><Input id="crew-name" data-testid="crew-name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
           <div><Label htmlFor="crew-phone">Mobile</Label><Input id="crew-phone" value={f.phone_e164} onChange={(e) => setF({ ...f, phone_e164: e.target.value })} /></div>
@@ -240,7 +241,7 @@ export function TeamPanel({ members, me }: { members: { user_id: string; email: 
   );
 }
 
-export function PaymentsPanel({ connected, enabled, payInstructions }: { connected: boolean; enabled: boolean; payInstructions: string | null }) {
+export function PaymentsPanel({ connected, enabled, payInstructions, available = true }: { connected: boolean; enabled: boolean; payInstructions: string | null; available?: boolean }) {
   const { msg, busy, run } = useAction();
   return (
     <div className="max-w-xl space-y-4">
@@ -250,7 +251,8 @@ export function PaymentsPanel({ connected, enabled, payInstructions }: { connect
       <p className="mt-1 text-sm">Status: <Badge tone={enabled ? 'green' : connected ? 'amber' : 'gray'} data-testid="stripe-status">{enabled ? 'Charges enabled' : connected ? 'Finish onboarding' : 'Not connected'}</Badge></p>
       <p className="mt-2 text-sm text-muted">Payments go straight to your own Stripe account. You pay Stripe&apos;s fees, Stripe handles disputes and losses, and you log in to your own Stripe Dashboard. Flake takes a small application fee on each payment, shown on every billing review. You can skip this and use Flake without online payments.</p>
       {/* Once charges are on there's nothing left to onboard; a dead button there read as broken (QA walk). */}
-      {enabled ? <p className="mt-3 text-sm" data-testid="stripe-done">You&apos;re set up. Payouts, refunds and disputes are in your Stripe Dashboard.</p> : <Button className="mt-3" variant="accent" disabled={busy} data-testid="stripe-connect" onClick={() => run(async () => { window.location.href = (await api('/api/settings/stripe', { method: 'POST' })).url; }, 'Opening Stripe...')}>{connected ? 'Continue onboarding' : 'Connect Stripe'}</Button>}
+      {/* No Stripe keys on the platform: say so instead of a button that only errors (issue 175). */}
+      {!available && !enabled ? <p className="mt-3 rounded-md bg-tint p-3 text-sm" data-testid="stripe-unavailable">Card and bank payments aren&apos;t available in Flake yet. You can still send bills as PDFs, mark them paid when the check comes, and tell customers how to pay above.</p> : enabled ? <p className="mt-3 text-sm" data-testid="stripe-done">You&apos;re set up. Payouts, refunds and disputes are in your Stripe Dashboard.</p> : <Button className="mt-3" variant="accent" disabled={busy} data-testid="stripe-connect" onClick={() => run(async () => { window.location.href = (await api('/api/settings/stripe', { method: 'POST' })).url; }, 'Opening Stripe...')}>{connected ? 'Continue onboarding' : 'Connect Stripe'}</Button>}
       {msg ? <p className="mt-2 text-sm text-muted">{msg}</p> : null}
     </Card>
     </div>
@@ -412,7 +414,7 @@ export function BusinessForm({ tenant }: { tenant: any }) {
   );
 }
 
-export function PlanPanel({ plan, freeUntil, inSeason }: { plan: string; freeUntil: string | null; inSeason: boolean }) {
+export function PlanPanel({ plan, freeUntil, inSeason, available = true }: { plan: string; freeUntil: string | null; inSeason: boolean; available?: boolean }) {
   const { msg, busy, run } = useAction();
   return (
     <Card className="max-w-xl">
@@ -424,7 +426,8 @@ export function PlanPanel({ plan, freeUntil, inSeason }: { plan: string; freeUnt
         <li>Free{inSeason ? ', after the first season' : ''}: up to {FREE_SITE_LIMIT} sites, all core features, 1% fee on payments (min {money(50)}, max {money(2500)})</li>
         <li>Pro: {money(7900)}/mo or {money(79000)}/yr, unlimited sites, sub pay statements, QuickBooks export, 0.5% fee</li>
       </ul>
-      {plan !== 'pro' ? (
+      {plan !== 'pro' && !available ? <p className="mt-3 rounded-md bg-tint p-3 text-sm" data-testid="pro-unavailable">Pro sign-up opens once card payments are available in Flake. {inSeason ? 'Until then the free first season already includes every Pro feature.' : ''}</p> : null}
+      {plan !== 'pro' && available ? (
         <div className="mt-3 flex gap-2">
           <Button disabled={busy} onClick={() => run(async () => { window.location.href = (await api('/api/settings/plan', { body: { interval: 'monthly' } })).url; }, 'Opening checkout...')}>Go Pro monthly</Button>
           <Button variant="outline" disabled={busy} onClick={() => run(async () => { window.location.href = (await api('/api/settings/plan', { body: { interval: 'yearly' } })).url; }, 'Opening checkout...')}>Go Pro yearly</Button>

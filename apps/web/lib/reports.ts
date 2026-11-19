@@ -31,7 +31,7 @@ const ms = (v: unknown) => new Date(v as string).getTime();
 const rowsOf = <T>(r: unknown) => (Array.isArray(r) ? r : ((r as { rows?: T[] }).rows ?? [])) as T[];
 
 /** Taps this far either side of the period are read too, so an overnight shift isn't cut at midnight (issue 140). */
-const SHIFT_REACH_MS = 12 * 3_600_000;
+export const SHIFT_REACH_MS = 12 * 3_600_000;
 
 /**
  * Shifts from what each driver's phone sent: route taps, GPS fixes and visits, first to last,

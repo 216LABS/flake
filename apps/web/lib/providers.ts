@@ -17,6 +17,16 @@ export async function getProviders(): Promise<Providers> {
   return createProviders({ mode: isMock() ? 'mock' : 'live', appEnv: appEnv(), env: process.env, baseUrl: baseUrl(), weatherFixture });
 }
 
+/**
+ * Whether card payments and texting can work here: false when the platform has no Stripe or Twilio keys (issues 173,
+ * 175), so the app hides what would only fail. Outside production, `dev.unconfigured` pretends keys are missing for tests.
+ */
+export async function available(): Promise<{ payments: boolean; sms: boolean }> {
+  const p = await getProviders();
+  const pretend = isProd() ? null : await getSetting<{ payments?: boolean; sms?: boolean }>('dev.unconfigured');
+  return { payments: !p.payments.unconfigured && !pretend?.payments, sms: !p.sms.unconfigured && !pretend?.sms };
+}
+
 /** The fake clock only exists outside production, and only matters for weather evaluation. */
 export async function weatherNow(): Promise<Date> {
   if (isProd() || !isMock()) return new Date();

@@ -105,6 +105,14 @@ export const customerImportRow = z.object({
 });
 /** A batch small enough to look up every address inside one request. */
 export const customerImport = z.object({ rows: z.array(customerImportRow).min(1).max(25) });
+/** One row of a crew list (issue 174). Kind and language are the spreadsheet's words, read again on the server. */
+export const crewImportRow = z.object({
+  name: z.string().trim().min(1).max(120),
+  phone: csvText(30),
+  kind: csvText(40),
+  language: csvText(40),
+});
+export const crewImport = z.object({ rows: z.array(crewImportRow).min(1).max(50) });
 
 const geoJsonGeom = z.object({ type: z.enum(['Polygon', 'MultiPolygon']), coordinates: z.array(z.any()) });
 

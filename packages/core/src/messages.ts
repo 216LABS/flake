@@ -74,8 +74,9 @@ export function renderTemplate(key: TemplateKey, vars: Record<string, string | n
   });
 }
 
-export const CREW_CONSENT_TEXT = (company: string) =>
-  `Text me route links and storm call-outs from ${company}. Msg & data rates may apply. Reply STOP to opt out, HELP for help.`;
+export const CREW_CONSENT_TEXT = (company: string, lang: 'en' | 'es' = 'en') => lang === 'es'
+  ? `Envíenme por texto los enlaces de ruta y los avisos de tormenta de ${company}. Pueden aplicarse tarifas de mensajes y datos. Responde STOP para no recibir más, HELP para ayuda.`
+  : `Text me route links and storm call-outs from ${company}. Msg & data rates may apply. Reply STOP to opt out, HELP for help.`;
 export const CUSTOMER_CONSENT_TEXT = (company: string) =>
   `Text me service updates (on the way, completed with photo, invoices) from ${company}. Msg & data rates may apply. Reply STOP to opt out, HELP for help.`;
 

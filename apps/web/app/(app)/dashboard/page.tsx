@@ -12,6 +12,7 @@ import { renewalQueue, renewalsOpen } from '@/lib/bids';
 import { localDay } from '@flake/core/receivables';
 import { canSeeUsage, deploymentUsage } from '@/lib/usage';
 import { tenantWeatherHeader } from '@/lib/weather';
+import { available } from '@/lib/providers';
 
 export const metadata = { title: 'Dashboard' };
 
@@ -66,14 +67,16 @@ export default async function Dashboard() {
   const usage = canSeeUsage(ctx.email) ? await deploymentUsage() : null;
   const fmt = (v: number | null, unit = '"') => (v === null ? 'unavailable' : `${v}${unit}`);
   const canEdit = ctx.role !== 'viewer';
+  const can = await available();
   const setup = ctx.role !== 'owner' ? [] : [
     { done: data.customers[0]!.n > 0, text: data.customers[0]!.all ? 'Add a customer' : 'Add your first customer', href: '/customers/new' },
     { done: data.crew[0]!.n > 0, text: 'Invite your drivers', href: '/settings?tab=crew' },
     { done: data.routed[0]!.n > 0, text: 'Put your lots on a route, so a storm knows where to go', href: '/routes' },
-    { done: Boolean(ctx.tenant.stripe_charges_enabled), text: 'Connect Stripe to get paid', href: '/settings?tab=payments' },
+    // Only when card payments can work; without Stripe keys it would lead to an error (issue 175).
+    ...(can.payments ? [{ done: Boolean(ctx.tenant.stripe_charges_enabled), text: 'Connect Stripe to get paid', href: '/settings?tab=payments' }] : []),
     // Customer emails carry the company's postal address (issue 149).
     { done: Boolean((ctx.tenant.address as { line1?: string } | null)?.line1), text: 'Add your mailing address for customer emails', href: '/settings?tab=company' },
-    { done: ctx.tenant.sms_status === 'approved', text: 'Verify your text number. Links go by email and QR until then.', href: '/settings?tab=sms' },
+    ...(can.sms ? [{ done: ctx.tenant.sms_status === 'approved', text: 'Verify your text number. Crew links go by QR and copy-link until then.', href: '/settings?tab=sms' }] : []),
   ];
   return (
     <>

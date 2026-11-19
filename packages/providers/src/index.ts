@@ -40,10 +40,11 @@ export { LiveFootprints, LiveGeocoder, LiveOsm, LiveParcels, LiveTiles, countyPa
 const refuse = (name: string) => async () => {
   throw new Error(`${name} is not configured`);
 };
-const unconfiguredSms = (): SmsProvider => ({ send: refuse('Twilio'), provisionTenant: refuse('Twilio'), submitTollFreeVerification: refuse('Twilio'), verifyWebhook: () => false });
+const unconfiguredSms = (): SmsProvider => ({ unconfigured: true, send: refuse('Twilio'), provisionTenant: refuse('Twilio'), submitTollFreeVerification: refuse('Twilio'), verifyWebhook: () => false });
 /** Sign-in email is Supabase's, so running without this is a supported way to test. The log says not_sent. */
 const noEmail = (): EmailProvider => ({ send: async () => ({ id: 'none', status: 'not_sent' }) });
 const unconfiguredPayments = (): PaymentsProvider => ({
+  unconfigured: true,
   isMock: false,
   createConnectedAccount: refuse('Stripe'),
   createAccountLink: refuse('Stripe'),
