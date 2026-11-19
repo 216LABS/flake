@@ -7,6 +7,7 @@ import { useConfirm } from '@/components/confirm';
 import { api, dollarsToCents, money } from '@/lib/client';
 
 export interface TruckRow { id: string; name: string; kind: string; plate: string | null; active: boolean }
+export interface ReminderRow { id: string; truck_id: string; name: string; every_hours: number | null; every_days: number | null; last_done_at: string | null; status: { state: 'ok' | 'soon' | 'overdue'; detail: string; meter: number | null } }
 export interface LogRow { id: string; truck_id: string; storm_id: string | null; kind: string; gallons: number | null; cost_cents: number | null; hours: number | null; note: string | null; at: string }
 
 const KIND: Record<string, string> = { truck: 'Truck', loader: 'Loader', skid_steer: 'Skid steer', spreader: 'Spreader', other: 'Other' };
@@ -16,7 +17,7 @@ const LOG_KIND: Record<string, string> = { fuel: 'Fuel', hours: 'Meter hours', m
  * Trucks and the log against each one: fuel, meter hours and maintenance. Which truck ran a route in a storm is set on
  * the storm board, and by default from the route.
  */
-export function EquipmentPanel({ trucks, logs, storms, tz }: { trucks: TruckRow[]; logs: LogRow[]; storms: { id: string; name: string }[]; tz: string }) {
+export function EquipmentPanel({ trucks, logs, storms, tz, reminders = [] }: { trucks: TruckRow[]; logs: LogRow[]; storms: { id: string; name: string }[]; tz: string; reminders?: ReminderRow[] }) {
   const router = useRouter();
   const [ask, dialog] = useConfirm();
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +26,7 @@ export function EquipmentPanel({ trucks, logs, storms, tz }: { trucks: TruckRow[
   const live = trucks.filter((t) => t.active);
   const [picked, setPicked] = useState(live[0]?.id ?? '');
   const [entry, setEntry] = useState({ kind: 'fuel', gallons: '', cost: '', hours: '', note: '', storm_id: '' });
+  const [rem, setRem] = useState({ name: '', hours: '', days: '', lastHours: '' });
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
@@ -107,6 +109,43 @@ export function EquipmentPanel({ trucks, logs, storms, tz }: { trucks: TruckRow[
             } }));
             if (ok) setEntry({ ...entry, gallons: '', cost: '', hours: '', note: '' });
           }}>Add to log</Button>
+          <section className="mt-4 border-t border-line-faint pt-3" data-testid="reminders">
+            <h3 className="font-semibold">Service reminders</h3>
+            {reminders.filter((m) => m.truck_id === picked).length ? (
+              <ul className="mt-2 divide-y divide-line-faint text-sm">
+                {reminders.filter((m) => m.truck_id === picked).map((m) => (
+                  <li key={m.id} className="flex flex-wrap items-center gap-2 py-2" data-testid="reminder-row">
+                    <Badge tone={m.status.state === 'overdue' ? 'red' : m.status.state === 'soon' ? 'amber' : 'green'}>{m.status.state === 'overdue' ? 'Overdue' : m.status.state === 'soon' ? 'Due soon' : 'OK'}</Badge>
+                    <span className="font-medium wrap-anywhere">{m.name}</span>
+                    <span className="text-muted">{[m.every_hours ? `every ${m.every_hours} h` : null, m.every_days ? `every ${m.every_days} days` : null].filter(Boolean).join(' or ')}. {m.status.detail}{m.last_done_at ? `. Last done ${when(m.last_done_at)}` : ''}</span>
+                    <span className="ml-auto flex gap-1">
+                      <Button size="sm" variant="outline" data-write disabled={busy} data-testid="reminder-done" onClick={async () => {
+                        if (await ask({ title: `Mark ${m.name} done?`, body: `It starts again from today${m.status.meter != null ? ` and ${m.status.meter} h on the meter` : ''}, and goes in the log.`, confirm: 'Mark done' })) await run(() => api(`/api/maintenance/${m.id}`, { method: 'PATCH', body: { done: true } }));
+                      }}>Mark done</Button>
+                      <Button size="sm" variant="ghost" data-write disabled={busy} aria-label={`Remove the ${m.name} reminder`} onClick={async () => {
+                        if (await ask({ title: `Remove the ${m.name} reminder?`, body: 'Its past services stay in the log.', confirm: 'Remove', danger: true })) await run(() => api(`/api/maintenance/${m.id}`, { method: 'DELETE' }));
+                      }}>Remove</Button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="mt-1 text-sm text-muted">No reminders on this truck. Hours count from its meter readings, or from the storms it ran when there are none.</p>}
+            <div className="mt-2 grid gap-2 sm:grid-cols-4" data-write>
+              <div className="sm:col-span-2"><Label htmlFor="rem-name">Reminder</Label><Input id="rem-name" maxLength={120} placeholder="Oil change" value={rem.name} onChange={(e) => setRem({ ...rem, name: e.target.value })} data-testid="reminder-name" /></div>
+              <div><Label htmlFor="rem-hours">Every (hours)</Label><Input id="rem-hours" type="number" inputMode="decimal" min={1} value={rem.hours} onChange={(e) => setRem({ ...rem, hours: e.target.value })} data-testid="reminder-hours" /></div>
+              <div><Label htmlFor="rem-days">or every (days)</Label><Input id="rem-days" type="number" inputMode="numeric" min={1} value={rem.days} onChange={(e) => setRem({ ...rem, days: e.target.value })} data-testid="reminder-days" /></div>
+              {rem.hours ? <div className="sm:col-span-2"><Label htmlFor="rem-last">Meter when last done (optional)</Label><Input id="rem-last" type="number" inputMode="decimal" min={0} value={rem.lastHours} onChange={(e) => setRem({ ...rem, lastHours: e.target.value })} data-testid="reminder-last-hours" /></div> : null}
+            </div>
+            <Button className="mt-2" size="sm" data-write disabled={busy || !rem.name.trim() || !(Number(rem.hours) > 0 || Number(rem.days) > 0)} data-testid="reminder-add" onClick={async () => {
+              const ok = await run(() => api('/api/maintenance', { body: {
+                truck_id: picked, name: rem.name.trim(),
+                every_hours: Number(rem.hours) > 0 ? Number(rem.hours) : null,
+                every_days: Number(rem.days) > 0 ? Math.round(Number(rem.days)) : null,
+                last_done_hours: rem.hours && rem.lastHours.trim() !== '' ? Number(rem.lastHours) : null,
+              } }));
+              if (ok) setRem({ name: '', hours: '', days: '', lastHours: '' });
+            }}>Add reminder</Button>
+          </section>
           {mine.length ? (
             <Table stack className="mt-3">
               <thead><tr><Th>Date</Th><Th>What</Th><Th>Detail</Th><Th><span className="sr-only">Remove</span></Th></tr></thead>

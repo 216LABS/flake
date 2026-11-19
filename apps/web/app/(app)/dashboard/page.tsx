@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
 import { stormStatus } from '@/lib/labels';
 import { money } from '@/lib/client';
+import { listMaintenance } from '@/lib/maintenance';
 import { canSeeUsage, deploymentUsage } from '@/lib/usage';
 import { tenantWeatherHeader } from '@/lib/weather';
 
@@ -32,6 +33,8 @@ export default async function Dashboard() {
         union all
         select s.customer_id, i.amount_cents from installment_invoice i join contract k on k.id = i.contract_id join site s on s.id = k.site_id where i.status in ('manual', 'sent', 'failed')
       ) x join customer c on c.id = x.customer_id group by c.id, c.name order by cents desc`)) as unknown as { id: string; name: string; cents: number; n: number }[],
+    // Truck service due soon or overdue (issue 161).
+    service: (await listMaintenance(tx)).filter((m) => m.status.state !== 'ok'),
   }));
   const owedTotal = data.owed.reduce((n, r) => n + r.cents, 0);
   // Customers' "come back" requests from their records page, one per lot and hour, for a week (issue 5).
@@ -129,6 +132,22 @@ export default async function Dashboard() {
                   </>
                 ) : null}
               </div>
+            </section>
+          ) : null}
+          {data.service.length ? (
+            <section data-testid="service-due">
+              <Eyebrow className="mb-2">Truck service</Eyebrow>
+              <ul className="space-y-1 rounded-md border border-line-faint bg-surface p-3 text-sm">
+                {data.service.slice(0, 8).map((m) => (
+                  <li key={m.id} className="flex flex-wrap items-center gap-2" data-testid="service-row">
+                    <Badge tone={m.status.state === 'overdue' ? 'red' : 'amber'}>{m.status.state === 'overdue' ? 'Overdue' : 'Due soon'}</Badge>
+                    <span className="wrap-anywhere"><b>{m.truck_name}</b>: {m.name}</span>
+                    <span className="text-muted">{m.status.detail}</span>
+                  </li>
+                ))}
+                {data.service.length > 8 ? <li className="text-xs text-muted">And {data.service.length - 8} more.</li> : null}
+                <li><Link className="text-link underline" href="/settings?tab=equipment">Open Equipment</Link></li>
+              </ul>
             </section>
           ) : null}
           <section>

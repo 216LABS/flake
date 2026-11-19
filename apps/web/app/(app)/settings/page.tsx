@@ -1,5 +1,6 @@
 import { and, crew_member, desc, eq, equipment_log, job, message_log, serviceDb, sql, storm, tenant, truck } from '@flake/db';
 import { EquipmentPanel } from './equipment-panel';
+import { listMaintenance } from '@/lib/maintenance';
 import { SectionPicker } from './section-picker';
 import { fmtLocal, todayIn } from '@flake/core/time';
 import { inFreeSeason } from '@flake/core/fees';
@@ -55,8 +56,9 @@ export default async function Settings({ searchParams }: { searchParams: Promise
           trucks: await tx.select({ id: truck.id, name: truck.name, kind: truck.kind, plate: truck.plate, active: truck.active }).from(truck).orderBy(truck.name),
           logs: await tx.select().from(equipment_log).orderBy(desc(equipment_log.at)).limit(500),
           storms: await tx.select({ id: storm.id, name: storm.name }).from(storm).orderBy(desc(storm.started_at)).limit(20),
+          reminders: await listMaintenance(tx),
         }));
-        return <fieldset disabled={readOnly} className={readOnly ? 'view-only contents' : 'contents'}><EquipmentPanel tz={tz} trucks={data.trucks} storms={data.storms} logs={JSON.parse(JSON.stringify(data.logs))} /></fieldset>;
+        return <fieldset disabled={readOnly} className={readOnly ? 'view-only contents' : 'contents'}><EquipmentPanel tz={tz} trucks={data.trucks} storms={data.storms} logs={JSON.parse(JSON.stringify(data.logs))} reminders={JSON.parse(JSON.stringify(data.reminders))} /></fieldset>;
       })() : null}
       {tab === 'alerts' ? <PushPanel publicKey={(await getProviders()).push.publicKey} /> : null}
       {allowed && tab === 'team' ? <TeamPanel members={await listTeam(ctx.tenantId)} me={ctx.userId} /> : null}

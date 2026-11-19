@@ -69,6 +69,8 @@ export const customer = pgTable('customer', {
   billing_mode: text('billing_mode').$type<'card_on_file' | 'ach_on_file' | 'invoice_net30' | 'manual'>().notNull().default('card_on_file'),
   stripe_customer_id: text('stripe_customer_id'),
   stripe_payment_method_id: text('stripe_payment_method_id'),
+  /** The matching QuickBooks Online customer, once the owner confirms it (issue 162). */
+  qbo_customer_id: text('qbo_customer_id'),
   notify_sms: boolean('notify_sms').default(false),
   notify_email: boolean('notify_email').default(true),
   archived_at: ts('archived_at'),
@@ -311,6 +313,11 @@ export const invoice_draft = pgTable('invoice_draft', {
   pay_link: text('pay_link'),
   disputed: boolean('disputed').notNull().default(false),
   application_fee_cents: integer('application_fee_cents'),
+  /** QuickBooks sync state, written only by the server's sync job (issue 162). */
+  qbo_invoice_id: text('qbo_invoice_id'),
+  qbo_sync_token: text('qbo_sync_token'),
+  qbo_synced_at: ts('qbo_synced_at'),
+  qbo_error: text('qbo_error'),
   created_at: createdAt(),
 });
 
@@ -324,6 +331,10 @@ export const installment_invoice = pgTable('installment_invoice', {
   status: text('status').notNull().default('sent'),
   /** The month billed, like 2026-11. One installment per contract per month. */
   period: text('period'),
+  qbo_invoice_id: text('qbo_invoice_id'),
+  qbo_sync_token: text('qbo_sync_token'),
+  qbo_synced_at: ts('qbo_synced_at'),
+  qbo_error: text('qbo_error'),
   created_at: createdAt(),
 });
 
@@ -542,3 +553,40 @@ export const equipment_log = pgTable('equipment_log', {
   created_by: uuid('created_by'),
   created_at: createdAt(),
 });
+
+/** "Oil change every 250 hours", "Blade check every 30 days" on one truck (issue 161). */
+export const maintenance_item = pgTable('maintenance_item', {
+  id: id(),
+  tenant_id: tenantId(),
+  truck_id: uuid('truck_id').notNull(),
+  name: text('name').notNull(),
+  every_hours: numeric('every_hours', { mode: 'number' }),
+  every_days: integer('every_days'),
+  last_done_at: ts('last_done_at'),
+  last_done_hours: numeric('last_done_hours', { mode: 'number' }),
+  created_at: createdAt(),
+});
+
+/** One accounting connection per company (issue 162). Server only: tokens are encrypted and never sent to a browser. */
+export const integration = pgTable('integration', {
+  id: id(),
+  tenant_id: tenantId(),
+  provider: text('provider').$type<'qbo'>().notNull(),
+  realm_id: text('realm_id'),
+  token_enc: text('token_enc'),
+  refresh_enc: text('refresh_enc'),
+  expires_at: ts('expires_at'),
+  status: text('status').$type<'connected' | 'disconnected' | 'error'>().notNull().default('connected'),
+  status_detail: text('status_detail'),
+  connected_by: uuid('connected_by'),
+  created_at: createdAt(),
+  updated_at: ts('updated_at').notNull().defaultNow(),
+});
+
+/** Which QuickBooks item each kind of Flake line posts to. */
+export const qbo_item_map = pgTable('qbo_item_map', {
+  tenant_id: tenantId(),
+  flake_key: text('flake_key').$type<'plow' | 'salt' | 'walks' | 'haul' | 'seasonal' | 'other'>().notNull(),
+  qbo_item_id: text('qbo_item_id').notNull(),
+  qbo_item_name: text('qbo_item_name'),
+}, (t) => [primaryKey({ columns: [t.tenant_id, t.flake_key] })]);

@@ -239,6 +239,24 @@ const truckBase = z.object({
 export const truckCreate = truckBase.extend({ kind: truckKind.default('truck') });
 export const truckUpdate = truckBase.partial().extend({ active: z.boolean().optional() });
 
+/** A maintenance reminder on a truck (issue 161): every N meter hours, every N days, or both. */
+export const maintenanceCreate = z.object({
+  truck_id: uuid,
+  name: z.string().trim().min(1, 'Name it, like Oil change.').max(120),
+  every_hours: z.number().positive().max(10_000).nullable().optional(),
+  every_days: z.number().int().positive().max(3650).nullable().optional(),
+  /** The meter when it was last done, if known. */
+  last_done_hours: z.number().min(0).max(100_000).nullable().optional(),
+  last_done_at: z.iso.date().nullable().optional(),
+}).refine((b) => Boolean(b.every_hours) || Boolean(b.every_days), { message: 'Set every so many hours, days, or both.', path: ['every_hours'] });
+/** Mark done (resets it from now and the current meter), or change the interval. */
+export const maintenanceUpdate = z.object({
+  done: z.literal(true).optional(),
+  name: z.string().trim().min(1).max(120).optional(),
+  every_hours: z.number().positive().max(10_000).nullable().optional(),
+  every_days: z.number().int().positive().max(3650).nullable().optional(),
+});
+
 /** One line in a truck's log: fuel, engine or blade hours, maintenance, or a note. */
 export const equipmentLogCreate = z.object({
   truck_id: uuid,
