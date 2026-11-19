@@ -130,7 +130,12 @@ Missed windows don't change, because these instances have deadlines that no orde
    | 80 | 0 / 5 / 10 | 225.6 / 222.9 / 223.5 | 0.5 / 2.3 / 3.8 s | - / 5 of 8 / 4 of 8 |
 
    1 to 1.5% less driving, never worse, no change in late stops. On by default (5 restarts) up to 50 stops, where it adds under half a second; off above 50, where the wait isn't worth about 1%.
-6. **Plan all routes (multi-truck).** Sweep or insertion plus inter-route moves, with a preview screen. About 3 to 4 days.
+6. **Plan all routes (multi-truck).** Done (issue 68). `packages/core/src/fleet.ts`, screen at Routes, Plan all routes (`/routes/plan`).
+   - Sweep around the yard (or the middle of the lots) cut into equal-work slices, 12 starting bearings tried. Each slice goes to the route that already holds most of its lots, so few lots change route.
+   - Then relocate and exchange moves between trucks, tidying each truck's order with the Suggest order search between passes.
+   - Objective: the routes' own costs plus sqrt(k x sum of each truck's minutes squared). That term is the fleet's total when every day is equal and grows as they spread. "The longest day" alone stalled the search when three trucks tied.
+   - Lots on no route can be included. Nothing saves until "Save all routes", which writes every route in one transaction and refuses (409) if any route changed after the plan was made.
+   - Measured (seeded random lots, 5 s budget): 60 lots on 3 trucks 0.5 s, longest day 666 to 512 min; 120 on 4 in 2.6 s, 1101 to 787; 200 on 6 in 3.5 s, 1198 to 952.
 
 ## Decisions
 

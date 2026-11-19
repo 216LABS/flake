@@ -175,6 +175,25 @@ function score(order: RouteSite[], start: number) {
   return { plan: { stops, drive_min: Math.round(drive), total_min: Math.round(total), late, wait_min: Math.round(waitMin), break_min: Math.round(breakMin), work_min: Math.round(total - breakMin) }, cost: drive + waitMin + breakMin + LATE_WEIGHT * lateMin };
 }
 
+/**
+ * One truck's order exactly as given, out from the yard and back when set: its plan and the cost the search minimizes.
+ * For the multi-truck planner (issue 68), which moves lots between trucks and needs to price each try.
+ */
+export function routeCost(order: RouteSite[], opts: RouteOptions = {}): { plan: RoutePlan; cost: number } {
+  return withLegs(opts, () => {
+    const start = startOf(opts);
+    if (!opts.yard) return score(order, start);
+    const y = opts.yard;
+    const r = score([{ id: YARD_START, lat: y.lat, lon: y.lon, priority: -1e9, service_min: 0 }, ...order, { id: YARD_END, lat: y.lat, lon: y.lon, priority: 1e9, service_min: 0 }], start);
+    return { plan: { ...r.plan, stops: r.plan.stops.filter((x) => x.id !== YARD_START && x.id !== YARD_END) }, cost: r.cost };
+  });
+}
+
+/** Road time when the caller has it, else the straight-line estimate. Exported for the multi-truck planner. */
+export function legMinutesWith(opts: RouteOptions, a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  return opts.legMinutes?.(a, b) ?? driveMinutes(a, b);
+}
+
 export function evaluateRoute(order: RouteSite[], opts: RouteOptions = {}): RoutePlan {
   return withLegs(opts, () => evaluateRouteNow(order, opts));
 }

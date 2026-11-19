@@ -46,7 +46,7 @@ export default async function Routes({ searchParams }: { searchParams: Promise<{
   }
   return (
     <>
-      <PageHeader title="Routes" subtitle="Master routes. Each storm snapshots these, so changes here never disturb a running storm." />
+      <PageHeader title="Routes" subtitle="Master routes. Each storm snapshots these, so changes here never disturb a running storm." actions={data.routes.length >= 2 && ctx.role !== 'viewer' ? <Link className="inline-flex h-10 items-center rounded-md border px-3 text-sm font-semibold hover:bg-tint" href="/routes/plan" data-testid="plan-all-link">Plan all routes</Link> : null} />
       <fieldset disabled={ctx.role === 'viewer'} className={ctx.role === 'viewer' ? 'view-only contents' : 'contents'}><RoutesEditor yard={ctx.tenant.yard?.address ?? null} sites={data.sites.map((s) => ({ ...s, active: Boolean(s.active), contracted: data.contracted.some((c) => c.site_id === s.id) }))} crew={data.crew} trucks={data.trucks} routes={data.routes.map((r) => ({ id: r.id, name: r.name, default_crew_id: r.default_crew_id, default_truck_id: r.default_truck_id, yard_trip: r.yard_trip, site_ids: data.stops.filter((s) => s.route_id === r.id).map((s) => s.site_id) }))} /></fieldset>
       {data.archived.length ? <Link className="mt-4 inline-block text-sm text-link underline" href="/routes?archived=1" data-testid="show-archived-routes">Archived routes ({data.archived.length})</Link> : null}
     </>
