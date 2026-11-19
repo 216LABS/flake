@@ -6,10 +6,11 @@ import { useEffect, useState } from 'react';
 import { api } from '@/lib/client';
 
 
-export function ProofForm({ sites, packets, preselect, tz }: { sites: { id: string; label: string; customer: string }[]; packets: any[]; preselect?: string; tz: string }) {
+export function ProofForm({ sites, packets, preselect, tz, incident: startIncident }: { sites: { id: string; label: string; customer: string }[]; packets: any[]; preselect?: string; tz: string; incident?: string }) {
   const [siteId, setSiteId] = useState(preselect ?? sites[0]?.id ?? '');
-  const [mode, setMode] = useState<'range' | 'claim' | 'incident'>('range');
-  const [incident, setIncident] = useState('');
+  // Opened from a claim (issue 165): the incident mode, with the claim's time filled in.
+  const [mode, setMode] = useState<'range' | 'claim' | 'incident'>(startIncident ? 'incident' : 'range');
+  const [incident, setIncident] = useState(startIncident ?? '');
   // This season so far: snow seasons start in the fall, so before July it's the one that began last October.
   // Dates are the company's calendar: the UTC date is already tomorrow on a storm evening.
   const [from, setFrom] = useState(() => {

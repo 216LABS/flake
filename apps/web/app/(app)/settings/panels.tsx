@@ -80,7 +80,7 @@ export function RateCardForm({ card }: { card: RateCard }) {
   );
 }
 
-export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boolean }) {
+export function CrewPanel({ crew, canText = true, cover = {} }: { crew: any[]; canText?: boolean; cover?: Record<string, string> }) {
   const router = useRouter();
   const blank = { name: '', phone_e164: '', email: '', kind: 'employee', language: 'en', per_visit: '', hourly: '', per_storm: '', per_season: '', pay: '', pay_ot: '', pay_storm: '', pay_holiday: '', payroll_id: '' };
   const [f, setF] = useState(blank);
@@ -111,7 +111,7 @@ export function CrewPanel({ crew, canText = true }: { crew: any[]; canText?: boo
             {crew.map((c) => (
               <tr key={c.id} className={c.active ? '' : 'bg-tint text-muted'} data-testid="crew-row">
                 <Td className="font-medium">{c.name}{c.active ? null : <span className="ml-2 text-xs font-medium">(no longer on the crew)</span>}</Td>
-                <Td label="Kind"><Badge>{c.kind}</Badge></Td>
+                <Td label="Kind"><Badge>{c.kind}</Badge>{c.kind === 'sub' && c.active && cover[c.id] && cover[c.id] !== 'covered' ? <a href="/compliance" className="ml-1 text-xs font-medium text-danger underline" data-testid="crew-no-cover">{cover[c.id] === 'missing' ? 'No insurance on file' : cover[c.id] === 'expired' ? 'Insurance ended' : 'Insurance ends soon'}</a> : null}</Td>
                 <Td label="Contact"><div className="min-w-0"><div className="whitespace-nowrap">{phone(c.phone_e164)}</div><div>{c.email ?? ''}</div></div></Td>
                 <Td label="Language">{c.language === 'es' ? 'Español' : 'English'}</Td>
                 <Td label="Joined">{c.joined_at ? 'Yes' : 'Invited'}</Td>

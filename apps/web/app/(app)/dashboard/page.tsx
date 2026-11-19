@@ -7,6 +7,7 @@ import { stormStatus } from '@/lib/labels';
 import { money } from '@/lib/client';
 import { listMaintenance } from '@/lib/maintenance';
 import { yardStock } from '@/lib/yards';
+import { complianceAlerts } from '@/lib/compliance';
 import { canSeeUsage, deploymentUsage } from '@/lib/usage';
 import { tenantWeatherHeader } from '@/lib/weather';
 
@@ -39,6 +40,8 @@ export default async function Dashboard() {
   }));
   // Salt at or under a yard's reorder point (issue 169). Dashboard only; nothing is ordered by itself.
   const lowSalt = ctx.role === 'viewer' ? [] : (await yardStock(ctx.tenantId)).filter((y) => y.low);
+  // Certificates ending or ended, and subs without current cover (issue 165).
+  const insurance = await asUser(ctx, (tx) => complianceAlerts(tx, tz));
   const owedTotal = data.owed.reduce((n, r) => n + r.cents, 0);
   // Customers' "come back" requests from their records page, one per lot and hour, for a week (issue 5).
   const requests = (await serviceDb().execute(sql`
@@ -136,6 +139,15 @@ export default async function Dashboard() {
                   </>
                 ) : null}
               </div>
+            </section>
+          ) : null}
+          {insurance.length ? (
+            <section data-testid="insurance-alerts">
+              <Eyebrow className="mb-2">Insurance</Eyebrow>
+              <ul className="space-y-1 rounded-md border border-line-faint bg-surface p-3 text-sm">
+                {insurance.slice(0, 6).map((a, i) => <li key={i} className="flex flex-wrap gap-2"><Badge tone={a.tone}>{a.tone === 'red' ? 'Act now' : 'Soon'}</Badge><span className="wrap-anywhere">{a.text}</span></li>)}
+                <li><Link className="text-link underline" href="/compliance">Insurance and claims</Link></li>
+              </ul>
             </section>
           ) : null}
           {lowSalt.length ? (

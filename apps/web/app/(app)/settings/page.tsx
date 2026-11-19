@@ -2,6 +2,7 @@ import { and, crew_member, desc, eq, equipment_log, job, message_log, serviceDb,
 import { AccountingPanel } from './accounting-panel';
 import { EquipmentPanel } from './equipment-panel';
 import { listMaintenance } from '@/lib/maintenance';
+import { complianceOverview } from '@/lib/compliance';
 import { SectionPicker } from './section-picker';
 import { fmtLocal, todayIn } from '@flake/core/time';
 import { inFreeSeason } from '@flake/core/fees';
@@ -51,7 +52,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       {!allowed ? <Card className="max-w-2xl" data-testid="owner-only"><p className="text-sm">Only an owner can open this.</p></Card> : null}
       {allowed && tab === 'company' ? <CompanyForm tenant={JSON.parse(JSON.stringify(t))} /> : null}
       {allowed && tab === 'rate' ? <RateCardForm card={(Object.keys(t.rate_card as object).length ? t.rate_card : DEFAULT_RATE_CARD) as RateCard} /> : null}
-      {tab === 'crew' ? <fieldset disabled={readOnly} className={readOnly ? 'view-only contents' : 'contents'}><CrewPanel canText={canTextFrom(ctx.tenant)} crew={JSON.parse(JSON.stringify(await asUser(ctx, (tx) => tx.select().from(crew_member).orderBy(crew_member.name))))} /></fieldset> : null}
+      {tab === 'crew' ? <fieldset disabled={readOnly} className={readOnly ? 'view-only contents' : 'contents'}><CrewPanel canText={canTextFrom(ctx.tenant)} cover={Object.fromEntries((await asUser(ctx, (tx) => complianceOverview(tx, tz))).subs.map((s) => [s.id, s.coverage]))} crew={JSON.parse(JSON.stringify(await asUser(ctx, (tx) => tx.select().from(crew_member).orderBy(crew_member.name))))} /></fieldset> : null}
       {tab === 'equipment' ? await (async () => {
         const data = await asUser(ctx, async (tx) => ({
           trucks: await tx.select({ id: truck.id, name: truck.name, kind: truck.kind, plate: truck.plate, active: truck.active }).from(truck).orderBy(truck.name),

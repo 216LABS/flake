@@ -4,13 +4,18 @@ import { asUser, requireApi } from '@/lib/auth';
 import { signedUrl } from '@/lib/blob';
 import { HttpError, isUuid, route } from '@/lib/http';
 
-export const GET = route<{ params: Promise<{ id: string }> }>(async (_req, { params }) => {
+export const GET = route<{ params: Promise<{ id: string }> }>(async (req, { params }) => {
   const ctx = await requireApi('viewer');
   const { id } = await params;
   if (!isUuid(id)) throw new HttpError(404, 'Not found');
   const packet = async () => (await asUser(ctx, (tx) => tx.select().from(proof_packet).where(eq(proof_packet.id, id))))[0];
   const ready = async (p: NonNullable<Awaited<ReturnType<typeof packet>>>) => ({ status: 'ready', id: p.id, manifest_sha256: p.manifest_sha256, sha256: p.sha256, url: await signedUrl('proof', p.pdf_path, `proof-packet-${p.id.slice(0, 8)}.pdf`) });
   const p = await packet();
+  // ?download=1 opens the PDF itself, for a link on a claim (issue 165).
+  if (p && new URL(req.url).searchParams.get('download') === '1') {
+    const r = await ready(p);
+    if (r.url) return NextResponse.redirect(r.url);
+  }
   if (p) return ready(p);
   // Still being made only if this company queued it (issue 130). A mistyped, deleted or other company's id is a 404,
   // so nothing polls forever, and one that failed for good says so.
