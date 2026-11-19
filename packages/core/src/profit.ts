@@ -2,16 +2,15 @@
  * Profit per lot (issue 167): what a lot earned less what it cost, for a storm, a season or any period.
  *
  * Cost rules, also shown on the Profit page:
- * - Revenue: billed lines for the lot (approved or later; void and drafts in review left out), plus seasonal
- *   installments billed on its contract. Unpaid bills still count; "Collected only" counts paid ones alone.
- * - Labor: each employee visit's minutes on site times their regular pay rate (storm rate when set). Drive time
- *   between lots is shared across the lots of that run by their minutes on site.
- * - Subs: what Sub pay pays for that visit.
- * - Salt: tons spread times the average cost per ton of the salt on hand (from deliveries with a cost), or the
- *   company's default cost per ton.
- * - Equipment: fuel and maintenance logged against a storm, shared across the lots that storm's trucks served, by
- *   minutes on site.
- * A cost with no number behind it (no pay rate, no salt cost) is left at zero and named, never guessed.
+ * - Revenue: billed lines for the lot from storms in the period (approved or later; void and bills still in review left
+ *   out), plus seasonal installments billed on its contract in the period. Unpaid bills count; "Collected only" counts
+ *   paid ones alone.
+ * - Labor: each employee visit's time on site times their pay rate (the storm rate when set, else regular). Drive time
+ *   between lots isn't counted yet.
+ * - Subs: what Sub pay pays for that visit; a flat per-storm rate is shared across that sub's lots in the storm.
+ * - Salt: tons spread on the lot times the average cost per ton of salt delivered with a cost.
+ * - Equipment: fuel and maintenance logged against a storm, shared across the lots visited in it by time on site.
+ * A cost with no number behind it (no pay rate, no salt cost) is left at zero and named on the page, never guessed.
  */
 
 export interface LotCosts {
