@@ -11,6 +11,8 @@ import { MockSms } from './mock/sms';
 import { MockWeather, type WeatherFixtureName } from './mock/weather';
 import { MockRouteMatrix } from './mock/router';
 import { LiveRouteMatrix, noRouter } from './live/router';
+import { LiveAccounting, noAccounting } from './live/qbo';
+import { MockAccounting } from './mock/qbo';
 import type { EmailProvider, PaymentsProvider, Providers, SmsProvider } from './types';
 
 export * from './types';
@@ -19,6 +21,8 @@ export { MockEmail, MOCK_REJECTED_DOMAIN } from './mock/email';
 export { MOCK_REJECTED_PHONE } from './mock/sms';
 export { MockRouteMatrix } from './mock/router';
 export { LiveRouteMatrix, noRouter } from './live/router';
+export { MockAccounting, mockQbo, signMockQbo, MOCK_QBO_VERIFIER } from './mock/qbo';
+export { LiveAccounting, noAccounting } from './live/qbo';
 export { MockPayments, signMockWebhook, MOCK_WEBHOOK_SECRET } from './mock/payments';
 export { MockSms, signTwilio, MOCK_TWILIO_TOKEN } from './mock/sms';
 export { MockFootprints, MockGeocoder, MockOsm, MockParcels, MockTiles } from './mock/geo';
@@ -83,6 +87,7 @@ export function createProviders(opts: ProviderOptions): Providers {
       sms: new MockSms(),
       email: new MockEmail(),
       payments: new MockPayments(baseUrl),
+      accounting: new MockAccounting(baseUrl),
     };
   }
   const production = appEnv === 'production';
@@ -106,5 +111,7 @@ export function createProviders(opts: ProviderOptions): Providers {
     payments: stripeKey
       ? new LivePayments(stripeKey, env.STRIPE_PUBLISHABLE_KEY ?? null, [env.STRIPE_WEBHOOK_SECRET ?? '', env.STRIPE_CONNECT_WEBHOOK_SECRET ?? ''], { monthly: env.STRIPE_PRICE_PRO_MONTHLY, yearly: env.STRIPE_PRICE_PRO_YEARLY })
       : production ? unconfiguredPayments() : new MockPayments(baseUrl),
+    // QuickBooks Online (issue 162): Intuit's sandbox unless QBO_ENV=production. Without keys, Settings says it isn't set up.
+    accounting: env.QBO_CLIENT_ID && env.QBO_CLIENT_SECRET ? new LiveAccounting(env.QBO_CLIENT_ID, env.QBO_CLIENT_SECRET, env.QBO_WEBHOOK_VERIFIER, env.QBO_ENV) : noAccounting(),
   };
 }

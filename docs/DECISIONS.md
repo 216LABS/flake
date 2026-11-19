@@ -132,7 +132,7 @@ Sam picked these; the details are mine. **[J]**
 - **Trucks** are listed in Settings, Equipment, for owners and dispatchers. A truck is retired, never deleted, so its log and past storms stay. Truck names are unique among trucks in service.
 - **A route's default truck** goes onto each storm's run and the next pass; the board can change it. Proof packets name the truck at each visit. Truck is optional everywhere, so a one-truck company never sees it until it adds one.
 - **The equipment log** takes fuel (gallons, optional cost), meter hours, maintenance (what was done, optional cost) and notes, optionally against a storm. Reports shows per truck: storm routes, fuel, fuel cost, maintenance cost and the latest meter reading.
-- **Maintenance reminders** (every N hours or days) need one more table; they come next, as their own migration.
+- **Maintenance reminders** (every N hours or days) are built (Nov 19): hours from the meter, or storm-run hours when no reading exists; due soon at 90%, overdue past it; on the dashboard only, no messages.
 
 ## D15. Sub pay and incident packets (Nov 16, 2026; issues 160 and 163)
 STAR asked open questions on both; these are the answers. **[J]**
@@ -150,3 +150,12 @@ Sam: "i dont want to email drivers ever, i want all the communication to be text
 - **Crew invites** aren't emailed either: the office gets the join link with "Text it from my phone", which opens its own phone's messages. The join page asks for the driver's mobile and their yes to texts; there is no email field, and the crew form has none.
 - **Customers and office alerts** move to text next, then owner sign-in by a code sent by text, so Flake needs no email service.
 - **Texting's limits stay**: a person must opt in before a company texts them, and texting needs Twilio and a verified number per company.
+
+## D17. Plan all routes and QuickBooks (Nov 19, 2026; issues 68 and 162)
+Sam: "just make all the descions yourself." **[J]**
+- **Plan all routes** splits lots across the routes picked, one truck each, balancing each truck's minutes, not its stop count. Lots stay on the route that already had them where it costs little. Nothing saves until Save all routes, and a route edited since the plan was made blocks the save.
+- **QuickBooks Online only** for the pilot. Desktop, Xero and FreshBooks wait for someone to ask.
+- **A bill goes to QuickBooks when it is approved**, and a seasonal installment when it is billed. Card customers get an invoice plus a payment, not a sales receipt, so every customer looks the same in the books.
+- **Flake owns invoices, QuickBooks owns payments.** A payment recorded in QuickBooks marks the Flake bill paid (part paid says what's left). A card payment through Flake is posted to QuickBooks. A bill the office marks paid by hand is not posted: the bookkeeper records that money where it landed. Stripe fees are not posted yet.
+- **Never overwrite, never void silently.** An invoice edited or deleted in QuickBooks, a bill voided in Flake after it went over, and a bill paid in QuickBooks while its emailed invoice or card charge is still open here all show under Settings, Accounting, Needs a look.
+- **A private Intuit app** is enough for the pilot. Keys: `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_WEBHOOK_VERIFIER`, and `QBO_ENV=production` once the app is approved (sandbox until then). Redirect URI `https://flake.216labs.dev/api/integrations/qbo/callback`, webhook `https://flake.216labs.dev/api/webhooks/qbo`. Without keys, Settings says QuickBooks isn't set up and the CSV export still works.

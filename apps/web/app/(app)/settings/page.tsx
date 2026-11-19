@@ -1,4 +1,5 @@
 import { and, crew_member, desc, eq, equipment_log, job, message_log, serviceDb, sql, storm, tenant, truck } from '@flake/db';
+import { AccountingPanel } from './accounting-panel';
 import { EquipmentPanel } from './equipment-panel';
 import { listMaintenance } from '@/lib/maintenance';
 import { SectionPicker } from './section-picker';
@@ -22,14 +23,14 @@ import { BusinessForm, CompanyForm, CrewPanel, PaymentsPanel, PlanPanel, RateCar
 
 export const metadata = { title: 'Settings' };
 
-const TABS = [['company', 'Company'], ['rate', 'Rate card'], ['crew', 'Crew'], ['equipment', 'Equipment'], ['team', 'Team'], ['alerts', 'Alerts'], ['payments', 'Payments'], ['sms', 'Text messages'], ['plan', 'Plan'], ['data', 'Data export'], ['system', 'System']] as const;
+const TABS = [['company', 'Company'], ['rate', 'Rate card'], ['crew', 'Crew'], ['equipment', 'Equipment'], ['team', 'Team'], ['alerts', 'Alerts'], ['payments', 'Payments'], ['accounting', 'Accounting'], ['sms', 'Text messages'], ['plan', 'Plan'], ['data', 'Data export'], ['system', 'System']] as const;
 const EXPORTS = ['customer', 'site', 'contract', 'crew_member', 'route', 'storm', 'storm_run', 'run_stop', 'visit', 'visit_photo', 'visit_correction', 'problem_report', 'invoice_draft', 'message_log', 'proof_packet', 'truck', 'equipment_log', 'site_walk_item'];
 
 /** Everything in these saves through owner-only routes. */
 const OWNER_TABS = ['company', 'rate', 'team', 'payments', 'sms', 'plan', 'data'];
 
-export default async function Settings({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  const { tab: asked } = await searchParams;
+export default async function Settings({ searchParams }: { searchParams: Promise<{ tab?: string; qbo?: string }> }) {
+  const { tab: asked, qbo: qboNote } = await searchParams;
   const ctx = await requirePage();
   const owner = ctx.role === 'owner';
   // An unknown tab (an old bookmark, a typo) opens the first tab instead of a blank page.
@@ -60,6 +61,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         }));
         return <fieldset disabled={readOnly} className={readOnly ? 'view-only contents' : 'contents'}><EquipmentPanel tz={tz} trucks={data.trucks} storms={data.storms} logs={JSON.parse(JSON.stringify(data.logs))} reminders={JSON.parse(JSON.stringify(data.reminders))} /></fieldset>;
       })() : null}
+      {tab === 'accounting' ? <AccountingPanel owner={owner} note={qboNote ?? null} /> : null}
       {tab === 'alerts' ? <PushPanel publicKey={(await getProviders()).push.publicKey} /> : null}
       {allowed && tab === 'team' ? <TeamPanel members={await listTeam(ctx.tenantId)} me={ctx.userId} /> : null}
       {allowed && tab === 'payments' ? <PaymentsPanel connected={Boolean(t.stripe_account_id)} enabled={await chargesEnabled(t)} payInstructions={t.pay_instructions} /> : null}

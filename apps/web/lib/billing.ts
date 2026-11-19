@@ -1,4 +1,5 @@
 import { and, or, ne, asc, asService, contract, customer, membership, desc, eq, inArray, installment_invoice, invoice_draft, notInArray, isNotNull, isNull, run_stop, serviceDb, site, sql, storm, storm_run, stripe_event, tenant, visit, visit_correction, visit_photo, weather_snapshot, withUser, type DraftStatus, type Tx } from '@flake/db';
+import { queueQboPayment, queueQboPush } from './qbo';
 import { applyCorrections, draftInvoices, flagKey, isDraftClean, type BillingContract, type BillingFlag, type BillingVisit } from '@flake/core/billing';
 import { applicationFeeCents, feeRate, proFeaturesEnabled, type Plan } from '@flake/core/fees';
 import { seasonalRemaining, type ContractService, type Pricing, type SaltPricing, type StormDepthContext } from '@flake/core/pricing';
@@ -324,6 +325,8 @@ export async function approveDrafts(ctx: Ctx, draftIds: string[]) {
   for (const d of approved) {
     const attempt = d.again ? Date.now() : undefined;
     await enqueue('billing.charge', { tenantId: ctx.tenantId, draftId: d.id, ...(attempt ? { attempt } : {}) }, { dedupeKey: attempt ? `charge:${d.id}:${attempt}` : `charge:${d.id}` });
+    // To QuickBooks when it's connected (issue 162). A bill approved again after review keeps its first invoice there.
+    await queueQboPush(ctx.tenantId, 'draft', d.id);
   }
   const stormIds = [...new Set(approved.map((d) => d.storm_id))];
   if (stormIds.length) {
@@ -439,7 +442,9 @@ export async function reviseDraft(ctx: Ctx, draftId: string, to: 'draft' | 'void
       if (s?.status === 'active') throw new HttpError(409, 'This storm is running again. Close it first, then bring the bill back.', 'storm_active');
     }
     const detail = { void: 'Voided by the office', draft: unvoid ? 'Unvoided by the office' : 'Taken back for review', paid: 'Paid outside Stripe, marked by the office' }[to];
-    await asService(tx, ctx.tenantId, () => tx.update(invoice_draft).set({ status: to, status_detail: detail }).where(and(eq(invoice_draft.id, draftId), eq(invoice_draft.tenant_id, ctx.tenantId))));
+    // Already in QuickBooks (issue 162): voiding here asks the owner to void it there too. Nothing is voided there silently.
+    const [pushed] = to === 'void' ? await tx.select({ qbo: invoice_draft.qbo_invoice_id }).from(invoice_draft).where(eq(invoice_draft.id, draftId)) : [];
+    await asService(tx, ctx.tenantId, () => tx.update(invoice_draft).set({ status: to, status_detail: detail, ...(pushed?.qbo ? { qbo_error: `Voided in Flake: void invoice F-${draftId.slice(0, 8)} in QuickBooks too.` } : {}) }).where(and(eq(invoice_draft.id, draftId), eq(invoice_draft.tenant_id, ctx.tenantId))));
     // A storm counts as billed once nothing is left in review, so taking one back reopens its billing, and voiding the
     // last one in review finishes it.
     if (to === 'draft') await tx.update(storm).set({ status: 'closed' }).where(and(eq(storm.id, mine.storm_id), eq(storm.status, 'billed')));
@@ -551,6 +556,7 @@ export async function handleStripeEvent(evt: StripeEventLike): Promise<'processe
       if (draftId && tenantId) {
         await db.update(invoice_draft).set({ status: 'paid', status_detail: null, stripe_payment_intent_id: obj.id }).where(and(eq(invoice_draft.id, draftId), eq(invoice_draft.tenant_id, tenantId)));
         await sendReceipt(tenantId, draftId);
+        await queueQboPayment(tenantId, draftId);
       }
       break;
     case 'payment_intent.payment_failed':
@@ -561,7 +567,10 @@ export async function handleStripeEvent(evt: StripeEventLike): Promise<'processe
       if (draftId && tenantId) await db.update(invoice_draft).set({ status: 'sent' }).where(and(eq(invoice_draft.id, draftId), eq(invoice_draft.tenant_id, tenantId), inArray(invoice_draft.status, ['approved', 'sent'])));
       break;
     case 'invoice.paid':
-      if (draftId && tenantId) await db.update(invoice_draft).set({ status: 'paid', status_detail: null }).where(and(eq(invoice_draft.id, draftId), eq(invoice_draft.tenant_id, tenantId)));
+      if (draftId && tenantId) {
+        await db.update(invoice_draft).set({ status: 'paid', status_detail: null }).where(and(eq(invoice_draft.id, draftId), eq(invoice_draft.tenant_id, tenantId)));
+        await queueQboPayment(tenantId, draftId);
+      }
       // A seasonal installment's Stripe invoice: the customer page shows it paid.
       if (obj.metadata?.contract_id && tenantId && obj.id) await db.update(installment_invoice).set({ status: 'paid' }).where(and(eq(installment_invoice.stripe_invoice_id, obj.id), eq(installment_invoice.tenant_id, tenantId)));
       break;
@@ -688,6 +697,7 @@ async function billInstallment(r: InstallmentRow, pricing: Extract<Pricing, { ty
     await tx.update(installment_invoice).set({ status: manual ? 'manual' : 'sent', stripe_invoice_id: invoiceId }).where(eq(installment_invoice.id, id));
     await tx.update(contract).set({ installments_billed: sql`greatest(${contract.installments_billed}, ${seq})` }).where(eq(contract.id, r.contract.id));
   });
+  await queueQboPush(r.tenant.id, 'installment', id);
   return true;
 }
 

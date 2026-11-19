@@ -46,6 +46,7 @@ export const messageStatus = (status: string | null) => (status ? MESSAGE_STATUS
 /** A background job, named by what it does. */
 export const JOB_LABEL: Record<string, string> = {
   'billing.charge': 'Charge a customer', 'billing.installments': 'Bill seasonal installments', 'billing.redraft': 'Redo a storm\'s bills',
+  'qbo.push': 'Send a bill to QuickBooks', 'qbo.payment': 'Post a payment to QuickBooks', 'qbo.poll': 'Check QuickBooks for payments',
   'notify.customer': 'Customer message', 'notify.invoice_sms': 'Invoice text', 'notify.party': 'Message', 'notify.push': 'Phone alert',
   'notify.route_changed': 'Route change text', 'notify.visit_done': 'Lot done message', 'photo.process': 'Process a photo',
   'proof.render': 'Build a proof packet', 'report.completion': 'Service record email', 'salt.supplier_email': 'Salt order email',

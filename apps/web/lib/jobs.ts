@@ -9,7 +9,7 @@ const LEASE = sql`interval '2 minutes'`;
  * must not sit behind them. Anything not listed is lane 1.
  */
 const LANE_NOW = ['storm.publish_links', 'notify.route_changed', 'notify.party', 'notify.push', 'trigger.evaluate'];
-const LANE_LATER = ['report.completion', 'billing.installments', 'weather.nohrsc'];
+const LANE_LATER = ['report.completion', 'billing.installments', 'weather.nohrsc', 'qbo.poll'];
 const LANE_HEAVY = ['photo.process', 'proof.render'];
 /** Waiting jobs move up a lane this often, so a busy night can't leave the lower lanes waiting forever. */
 const AGE_UP_SECONDS = 600;

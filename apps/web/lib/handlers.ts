@@ -114,6 +114,8 @@ export async function queueMissedReports() {
   // found that month already billed, and used up the key, so each installment went out a month late. Running again in
   // the same month bills nothing more (one installment per lot and local month).
   await enqueue('billing.installments', {}, { dedupeKey: `installments:${new Date().toISOString().slice(0, 10)}` });
+  // Payments recorded in QuickBooks, once a day as a safety net under Intuit's webhook (issue 162).
+  await enqueue('qbo.poll', {}, { dedupeKey: `qbo:poll:${new Date().toISOString().slice(0, 10)}` });
   return { checked: rows.length };
 }
 
@@ -154,6 +156,10 @@ export const JOB_HANDLERS: Record<string, JobHandler> = {
   'notify.route_changed': (p) => notifyRouteChanged(p.tenantId, p.runId, `${p.stopId}:${p.at}`),
   'billing.charge': (p) => chargeDraft(p.tenantId, p.draftId, p.attempt),
   'billing.installments': async () => void (await billInstallments()),
+  // QuickBooks Online (issue 162).
+  'qbo.push': async (p) => { const { pushToQbo } = await import('./qbo'); await pushToQbo(p as Parameters<typeof pushToQbo>[0]); },
+  'qbo.payment': async (p) => { const { postPaymentToQbo } = await import('./qbo'); await postPaymentToQbo(p as Parameters<typeof postPaymentToQbo>[0]); },
+  'qbo.poll': async (p) => { const { pollQboPayments } = await import('./qbo'); await pollQboPayments(p.tenantId); },
   'proof.render': async (p) => void (await renderProof(p as Parameters<typeof renderProof>[0])),
   'report.completion': async (p) => {
     await holdForPhotos(p as Parameters<typeof holdForPhotos>[0]);

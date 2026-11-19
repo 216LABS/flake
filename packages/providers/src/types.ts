@@ -206,4 +206,39 @@ export interface Providers {
   sms: SmsProvider;
   email: EmailProvider;
   payments: PaymentsProvider;
+  accounting: AccountingProvider;
+}
+
+/** QuickBooks Online (issue 162). Access tokens last an hour; the app refreshes them and keeps them encrypted. */
+export interface QboTokens { access: string; refresh: string; expiresAt: string; realmId: string }
+export interface QboAuth { access: string; realmId: string }
+export interface QboCustomer { id: string; name: string; email: string | null }
+export interface QboItem { id: string; name: string }
+export interface QboInvoiceInput {
+  customerId: string;
+  docNumber: string;
+  txnDate: string;
+  dueDate: string;
+  memo: string;
+  lines: { itemId: string; description: string; qty: number; rateCents: number; amountCents: number }[];
+}
+export interface QboInvoiceRef { id: string; syncToken: string; totalCents: number; balanceCents: number }
+export interface AccountingProvider {
+  /** False when this server has no Intuit app keys: Settings says so instead of offering Connect. */
+  configured: boolean;
+  isMock: boolean;
+  authorizeUrl(state: string, redirectUri: string): string;
+  exchange(code: string, realmId: string, redirectUri: string): Promise<QboTokens>;
+  refresh(refreshToken: string, realmId: string): Promise<QboTokens>;
+  revoke(refreshToken: string): Promise<void>;
+  listCustomers(auth: QboAuth): Promise<QboCustomer[]>;
+  createCustomer(auth: QboAuth, c: { name: string; email: string | null }): Promise<QboCustomer>;
+  listItems(auth: QboAuth): Promise<QboItem[]>;
+  /** requestId makes a retry return the same invoice instead of a second one. */
+  createInvoice(auth: QboAuth, inv: QboInvoiceInput, requestId: string): Promise<QboInvoiceRef>;
+  /** Null when it was deleted in QuickBooks. */
+  getInvoice(auth: QboAuth, id: string): Promise<QboInvoiceRef | null>;
+  createPayment(auth: QboAuth, p: { customerId: string; invoiceId: string; amountCents: number; txnDate: string; ref: string }, requestId: string): Promise<{ id: string }>;
+  /** Intuit's webhook signature: base64 HMAC-SHA256 of the body with the app's verifier token. */
+  verifyWebhook(body: string, signature: string | null): boolean;
 }
