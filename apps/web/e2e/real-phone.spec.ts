@@ -94,9 +94,16 @@ test.describe('real phone conditions', () => {
       await phone.goto(run.link);
       await expect(phone.getByTestId('next-stop')).toBeVisible();
       // A deploy happens: the server now reports a different version than the page was built with.
+      // A poll still in flight when the page reloads (the point of this test) or the context closes has its response
+      // thrown away under it: that request is simply dropped, not a failure.
       await phone.route('**/api/d/*/run', async (r) => {
-        const res = await r.fetch();
-        await r.fulfill({ response: res, json: { ...(await res.json()), build: 'newer' } });
+        try {
+          const res = await r.fetch();
+          const json = await res.json();
+          await r.fulfill({ response: res, json: { ...json, build: 'newer' } });
+        } catch {
+          await r.abort().catch(() => {});
+        }
       });
       const back = () => phone.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
       // On site, back from the camera: no reload, the visit stays put.
@@ -119,6 +126,7 @@ test.describe('real phone conditions', () => {
       expect(await phone.evaluate(() => (window as unknown as { marker?: number }).marker)).toBeUndefined();
       await expect(phone.getByTestId('next-stop')).toBeVisible({ timeout: 15000 });
     } finally {
+      await phone.unrouteAll({ behavior: 'ignoreErrors' });
       await ctx.close();
     }
   });

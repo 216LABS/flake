@@ -1,4 +1,5 @@
-import type { FetchResult, FetchedDoc, GridRef, NohrscResult, StationHistory, StationHour, WeatherProvider } from '../types';
+import type { FetchResult, FetchedDoc, GridRef, ModelPoint, NbmResult, NohrscResult, NowcastResult, RadarResult, StationHistory, StationHour, WeatherProvider } from '../types';
+import { fetchNbm, fetchNowcast, fetchRadar } from './models';
 
 const BASE = 'https://api.weather.gov';
 
@@ -95,6 +96,18 @@ export class LiveWeather implements WeatherProvider {
 
   fetchObservation(station: string): Promise<FetchedDoc> {
     return this.doc(`${BASE}/stations/${station}/observations/latest`);
+  }
+
+  fetchNbm(at: Date, points: ModelPoint[], after?: string | null): Promise<NbmResult | null> {
+    return fetchNbm(this.fetchImpl, this.userAgent, at, points, after);
+  }
+
+  fetchNowcast(at: Date, points: ModelPoint[], after?: string | null): Promise<NowcastResult | null> {
+    return fetchNowcast(this.fetchImpl, this.userAgent, at, points, after);
+  }
+
+  fetchRadar(_at: Date, points: ModelPoint[]): Promise<RadarResult | null> {
+    return fetchRadar(this.fetchImpl, this.userAgent, points);
   }
 
   /** The analysis is issued at 00Z and 12Z and can lag, so this walks back to the newest file that exists. */

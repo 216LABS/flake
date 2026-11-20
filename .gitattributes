@@ -1,1 +1,2 @@
 packages/core/test/fixtures/*.csv -text
+*.grib2 binary

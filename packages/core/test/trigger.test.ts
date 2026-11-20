@@ -120,12 +120,12 @@ describe('evaluateSite', () => {
   });
   it('refreeze: ice in the next 6 h for salt services', () => {
     const d = evaluateSite({ ...site, trigger_in: null, has_salt: true }, wx([0], { iceIn: series([0.1]) }), T0, []);
-    expect(d[0]!.label).toBe('refreeze risk');
-    expect(d[0]!.value_in).toBeNull();
+    expect(d[0]).toMatchObject({ kind: 'salt_run', reasons: ['ice'], value_in: null });
     expect(evaluateSite({ ...site, trigger_in: null, has_salt: false }, wx([0], { iceIn: series([0.1]) }), T0, [])).toEqual([]);
   });
   it('refreeze: temperature crossing 32 down after snow', () => {
-    const s = { ...site, trigger_in: null, has_salt: true };
+    // Salt on snow turned off, so only the refreeze can fire.
+    const s = { ...site, trigger_in: null, has_salt: true, salt: { snow_in: null, ice: true, refreeze: true } };
     expect(evaluateSite(s, wx([0.5], { tempF: series([35, 34, 31]) }), T0, [])).toHaveLength(1);
     expect(evaluateSite(s, wx([0.5], { tempF: series([31, 30]) }), T0, [])).toEqual([]);
     expect(evaluateSite(s, wx([0.5], { tempF: series([35, null, 36]), iceIn: series([0]) }), T0, [])).toEqual([]);
@@ -157,9 +157,9 @@ describe('alerts', () => {
   });
   it('alertHeadline writes forecast with a time, without a time, depth, refreeze and singular', () => {
     const base = { kind: 'forecast' as const, site_ids: ['a', 'b'] };
-    expect(alertHeadline({ ...base, sites: [{ kind: 'forecast', site_id: 'a', event_key: 'e', value_in: 2.4, at_iso: '2025-12-12T10:00:00Z' }, { kind: 'forecast', site_id: 'b', event_key: 'e', value_in: 1 }] }, 'Lakewood', 'America/New_York')).toBe('Lakewood: 2.4" forecast by 5 AM, 2 sites at trigger.');
-    expect(alertHeadline({ ...base, site_ids: ['a'], sites: [{ kind: 'forecast', site_id: 'a', event_key: 'e', value_in: 2 }] }, 'X', 'UTC')).toBe('X: 2" forecast in the next 12 h, 1 site at trigger.');
-    expect(alertHeadline({ kind: 'depth_report', site_ids: ['a'], sites: [{ kind: 'depth_report', site_id: 'a', event_key: 'e', value_in: 3 }] }, 'X', 'UTC')).toBe('X: 3" reported or elapsed, 1 site at trigger now.');
+    expect(alertHeadline({ ...base, sites: [{ kind: 'forecast', site_id: 'a', event_key: 'e', value_in: 2.4, at_iso: '2025-12-12T10:00:00Z' }, { kind: 'forecast', site_id: 'b', event_key: 'e', value_in: 1 }] }, 'Lakewood', 'America/New_York')).toBe('Lakewood: 2.4" forecast by 5 AM, 2 sites at trigger, plow.');
+    expect(alertHeadline({ ...base, site_ids: ['a'], sites: [{ kind: 'forecast', site_id: 'a', event_key: 'e', value_in: 2 }] }, 'X', 'UTC')).toBe('X: 2" forecast in the next 12 h, 1 site at trigger, plow.');
+    expect(alertHeadline({ kind: 'depth_report', site_ids: ['a'], sites: [{ kind: 'depth_report', site_id: 'a', event_key: 'e', value_in: 3 }] }, 'X', 'UTC')).toBe('X: 3" reported or elapsed, 1 site at trigger now, plow.');
     expect(alertHeadline({ ...base, site_ids: ['a'], sites: [{ kind: 'forecast', site_id: 'a', event_key: 'e', value_in: null, label: 'refreeze risk' }] }, 'X', 'UTC')).toBe('X: refreeze risk at 1 site.');
   });
 });

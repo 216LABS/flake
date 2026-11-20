@@ -121,15 +121,24 @@ export default async function Dashboard() {
           {areas.length > 1 ? (
             <div className="p-4" data-testid="area-weather">
               <table className="w-full text-sm">
-                <thead><tr className="text-left text-xs uppercase tracking-wider text-slate-300"><th className="pb-2 font-semibold">Area</th><th className="pb-2 font-semibold">Next 12 h</th><th className="pb-2 font-semibold max-sm:hidden">Elapsed</th><th className="pb-2 font-semibold max-sm:hidden">Temp</th><th className="pb-2 font-semibold">Lots at trigger</th></tr></thead>
+                <thead><tr className="text-left text-xs uppercase tracking-wider text-slate-300"><th className="pb-2 font-semibold">Area</th><th className="pb-2 font-semibold">Next 12 h</th><th className="pb-2 font-semibold max-sm:hidden">Elapsed</th><th className="pb-2 font-semibold max-sm:hidden">Temp</th><th className="pb-2 font-semibold">Trigger</th></tr></thead>
                 <tbody>
                   {areas.map((a) => (
                     <tr key={a.area} className="border-t border-slate-800" data-testid="area-row">
                       <td className="py-2 font-semibold">{a.area}<span className="block text-xs font-normal text-slate-400">{a.lots} {a.lots === 1 ? 'lot' : 'lots'}</span></td>
-                      <td className="tabular py-2 font-display text-xl">{fmt(a.forecast_in)}</td>
+                      <td className="tabular py-2 font-display text-xl">
+                        {fmt(a.forecast_in)}
+                        {/* Issue 203: the Blend of models' spread, and radar when it's coming down now. */}
+                        {a.range_in ? <span className="block font-sans text-xs text-slate-400" data-testid="area-range">Models: {a.range_in[0]} to {a.range_in[1]}&quot;</span> : null}
+                        {a.radar_1h_in ? <span className="block font-sans text-xs text-sky-300" data-testid="area-radar">Radar: {a.radar_1h_in}&quot; last hour</span> : null}
+                      </td>
                       <td className="tabular py-2 max-sm:hidden">{fmt(a.elapsed_in)}</td>
                       <td className="tabular py-2 max-sm:hidden">{fmt(a.temp_f, ' F')}</td>
-                      <td className="py-2">{a.at_trigger ? <span className="font-bold text-beacon">{a.at_trigger} at trigger</span> : a.near_trigger ? <span className="text-amber-300">{a.near_trigger} close</span> : <span className="text-slate-400">None</span>}</td>
+                      {/* Plow vs salt vs nothing, and why (issue 204): "0.5" + freezing rain, salt only". */}
+                      <td className="py-2" data-testid="area-trigger">
+                        {a.trigger.plow ? <span className="font-bold text-beacon">{a.trigger.text}</span> : a.trigger.salt ? <span className="font-semibold text-amber-300">{a.trigger.text}</span> : <span className="text-slate-400">{a.trigger.text}</span>}
+                        {a.at_trigger ? <span className="block text-xs text-slate-300">{a.at_trigger} {a.at_trigger === 1 ? 'lot' : 'lots'} at plow trigger</span> : a.near_trigger ? <span className="block text-xs text-amber-300">{a.near_trigger} close to plow trigger</span> : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -141,6 +150,9 @@ export default async function Dashboard() {
             <Stat label="Next 12 h" value={fmt(w.forecast_in)} />
             <Stat label="Elapsed this event" value={fmt(w.elapsed_in)} />
             <Stat label="Temperature" value={fmt(w.temp_f, ' F')} />
+            {areas[0]?.range_in ? <Stat label="Models agree on" value={`${areas[0].range_in[0]} to ${areas[0].range_in[1]}"`} /> : null}
+            {areas[0] && areas[0].trigger.text !== 'No trigger' ? <p className="text-sm font-semibold text-beacon" data-testid="area-trigger">{areas[0].trigger.text}</p> : null}
+            {areas[0]?.radar_1h_in ? <p className="text-sm text-sky-300" data-testid="area-radar">Radar: {areas[0].radar_1h_in}&quot; of precipitation in the last hour</p> : null}
             <p className="ml-auto max-w-md text-xs text-slate-300">{w.source === 'unavailable' ? (w.reason ?? 'No forecast yet for your lots.') : `Live forecast. Source: ${w.source}${w.fetched_at ? `, ${fmtLocal(w.fetched_at, tz)}` : ''}`}</p>
           </div>
           )}

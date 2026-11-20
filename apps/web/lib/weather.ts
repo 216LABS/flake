@@ -1,15 +1,16 @@
 import { gzipSync } from 'node:zlib';
 import { and, app_setting, asc, contract, desc, driver_action, eq, gte, inArray, lte, or, serviceDb, site, sql, storm, tenant, trigger_alert, weather_snapshot } from '@flake/db';
-import { expandSeries, evaluateSite, groupDecisions, alertHeadline, serviceArea, newWinterAlerts, summarize, sumOverlap, toFahrenheit, toInches, type DepthReport, type HourBucket, type NwsAlert, type SiteDecision, type TriggerSite, type WeatherSeries } from '@flake/core/trigger';
+import { blendNowcast, percentilesOver, expandSeries, evaluateSite, groupDecisions, alertHeadline, serviceArea, newWinterAlerts, summarize, sumOverlap, triggerLine, toFahrenheit, toInches, type DepthReport, type HourBucket, type NwsAlert, type SiteDecision, type TriggerSite, type WeatherSeries } from '@flake/core/trigger';
 import type { ContractService } from '@flake/core/pricing';
 import { fmtLocal, liveContracts } from '@flake/core/time';
-import type { FetchedDoc } from '@flake/providers';
+import type { FetchedDoc, NbmResult, NowcastResult, RadarResult } from '@flake/providers';
 import { putBlob } from './blob';
 import { baseUrl } from './env';
 import { enqueue } from './jobs';
 import { log } from './log';
 import { notifyOffice } from './messaging';
 import { getProviders, getSetting, setSetting, weatherNow } from './providers';
+import { saltRuleFor, saltSettings } from './salt-triggers';
 import { sha256Hex } from './tokens';
 
 const HOUR = 3600 * 1000;
@@ -135,11 +136,13 @@ export async function scheduleWeather() {
   const now = await weatherNow();
   const cells = await serviceDb().selectDistinct({ office: site.nws_office, x: site.nws_grid_x, y: site.nws_grid_y }).from(site).where(and(eq(site.active, true), sql`${site.nws_office} is not null`));
   let queued = 0;
+  let stormy = false;
   const latest = await latestGrids(cells);
   for (const c of cells) {
     const last = latest.get(cellKey(c.office, c.x, c.y));
     const age = last ? Date.now() - Date.parse(last.fetched_at) : Infinity;
     const busy = last ? Boolean(last.summary.alerts?.length) || (summarize(seriesFromSummary(last.summary), now.getTime() + 12 * HOUR).snow_next12h_in ?? 0) > 0 || (summarize(seriesFromSummary(last.summary), now.getTime()).snow_next12h_in ?? 0) > 0 : true;
+    stormy ||= busy;
     if (age > 60 * 60000 || (busy && age > 15 * 60000)) {
       await enqueue('weather.fetch_cell', { office: c.office, x: c.x, y: c.y }, { dedupeKey: `cell:${c.office}:${c.x}:${c.y}:${Math.floor(Date.now() / (15 * 60000))}` });
       queued++;
@@ -147,6 +150,17 @@ export async function scheduleWeather() {
   }
   const tenants = await serviceDb().selectDistinct({ id: site.tenant_id }).from(site).where(eq(site.active, true));
   for (const t of tenants) await enqueue('weather.fetch_alerts', { tenantId: t.id }, { dedupeKey: `alerts:${t.id}:${Math.floor(Date.now() / (15 * 60000))}` });
+  // Issue 203. The Blend is checked hourly and only downloaded when a new run with percentiles is out (4 a day). HRRR
+  // and radar only while snow is near or a storm is running. Each covers every lot in one pass.
+  const hour = Math.floor(Date.now() / HOUR);
+  if (cells.length) {
+    await enqueue('weather.nbm', {}, { dedupeKey: `nbm:${hour}` });
+    const [running] = await serviceDb().select({ id: storm.id }).from(storm).where(eq(storm.status, 'active')).limit(1);
+    if (stormy || running) {
+      await enqueue('weather.nowcast', {}, { dedupeKey: `nowcast:${hour}` });
+      await enqueue('weather.radar', {}, { dedupeKey: `radar:${hour}` });
+    }
+  }
   return { cells: queued, tenants: tenants.length };
 }
 
@@ -197,6 +211,97 @@ async function notifyOwners(t: typeof tenant.$inferSelect, alertId: string, head
   return notifyOffice(t, { headline, link, key: revision ? `alert:${alertId}:${revision}` : `alert:${alertId}`, related });
 }
 
+/** Issue 203's sources, by the snapshot source they're stored as. */
+export const MODEL_SOURCE = { nbm: 'nbm', nowcast: 'nowcast', radar: 'mrms' } as const;
+type ModelKind = keyof typeof MODEL_SOURCE;
+/** How old a run can be and still count: a Blend run covers 24 h ahead, HRRR 6 h, radar is the last hour. */
+const MODEL_MAX_AGE_MS: Record<ModelKind, number> = { nbm: 12 * HOUR, nowcast: 3 * HOUR, radar: 2 * HOUR };
+
+/**
+ * weather.nbm / weather.nowcast / weather.radar: one fetch for every active lot, archived and stored as a snapshot,
+ * then every company's triggers are checked again. A source that's down is logged and skipped. It never trips the NWS
+ * breaker, so the NWS grid keeps alerting on its own (issue 203).
+ */
+export async function fetchModel(kind: ModelKind) {
+  const db = serviceDb();
+  const points = await db.select({ id: site.id, lat: site.lat, lon: site.lon }).from(site).where(eq(site.active, true));
+  if (!points.length) return null;
+  const { weather } = await getProviders();
+  const now = await weatherNow();
+  const source = MODEL_SOURCE[kind];
+  // The newest run stored up to now: the demo's clock can be moved back, and a run stored "later" doesn't count then.
+  const [last] = await db.select({ summary: weather_snapshot.summary }).from(weather_snapshot).where(and(eq(weather_snapshot.source, source), lte(weather_snapshot.fetched_at, now.toISOString()))).orderBy(desc(weather_snapshot.fetched_at)).limit(1);
+  let result: NbmResult | NowcastResult | RadarResult | null;
+  try {
+    result = kind === 'nbm' ? await weather.fetchNbm(now, points, last?.summary.cycle) : kind === 'nowcast' ? await weather.fetchNowcast(now, points, last?.summary.cycle) : await weather.fetchRadar(now, points);
+  } catch (err) {
+    log.error(`${kind} unavailable, NWS grid only`, err);
+    return null;
+  }
+  if (!result) return null;
+  const key = 'cycle' in result ? result.cycle : result.validAt;
+  const { path, sha256 } = await archive(source, key.replace(/[:.]/g, '-'), now, result.raw);
+  const summary = 'windows' in result ? { cycle: result.cycle, windows: result.windows, sites: result.samples }
+    : 'hours' in result ? { cycle: result.cycle, hours: result.hours, sites: result.samples }
+    : { valid_at: result.validAt, sites: result.samples };
+  const snap = await insertSnapshot({ source, fetchedAt: now, lastModified: null, url: result.url, path, sha256, summary: { ...summary, ...(result.synthetic ? { synthetic: true } : {}) } });
+  if (kind !== 'radar') {
+    const tenants = await db.selectDistinct({ id: site.tenant_id }).from(site).where(eq(site.active, true));
+    for (const t of tenants) await enqueue('trigger.evaluate', { tenantId: t.id }, { dedupeKey: `evaluate:${t.id}:${kind}:${key}` });
+  }
+  return snap;
+}
+
+export type Models = Partial<Record<ModelKind, typeof weather_snapshot.$inferSelect>>;
+
+/** The newest run of each source, one query each for every lot (no per-lot lookups). Stale runs are left out. */
+export async function latestModels(nowMs: number): Promise<Models> {
+  const out: Models = {};
+  for (const kind of Object.keys(MODEL_SOURCE) as ModelKind[]) {
+    const [row] = await serviceDb().select().from(weather_snapshot)
+      .where(and(eq(weather_snapshot.source, MODEL_SOURCE[kind]), gte(weather_snapshot.fetched_at, new Date(nowMs - MODEL_MAX_AGE_MS[kind]).toISOString()), lte(weather_snapshot.fetched_at, new Date(nowMs + HOUR).toISOString())))
+      .orderBy(desc(weather_snapshot.fetched_at)).limit(1);
+    if (row) out[kind] = row;
+  }
+  return out;
+}
+
+/**
+ * One lot's weather from every source: the NWS grid with HRRR's hours in place of its own during storms, the Blend's
+ * percentiles for the next 12 hours, and radar's last hour. Whatever's missing is left out and the rest still works.
+ */
+export function lotWeather(gridSummary: Summary, models: Models, siteId: string, nowMs: number) {
+  const cast = models.nowcast?.summary.sites?.[siteId];
+  const series = blendNowcast(seriesFromSummary(gridSummary), cast ? { hours: models.nowcast!.summary.hours, snow: cast.snow, ice: cast.ice } : null);
+  const nbmSite = models.nbm?.summary.sites?.[siteId];
+  const nbm = nbmSite ? percentilesOver(models.nbm!.summary.windows, nbmSite, nowMs, nowMs + 12 * HOUR) : null;
+  const radar = (models.radar?.summary.sites?.[siteId]?.last1h ?? null) as number | null;
+  return { series, nbm, radar };
+}
+
+/**
+ * What the trigger engine needs for each lot: the plow trigger and salt from the contract in force today, the salt run
+ * rule (issue 204), and whether snow is still down. Null for a lot that can't trigger (no signed contract). Shared by
+ * alerts, the dashboard's area rows and the triggers table, so all three agree.
+ */
+export async function triggerInputs(t: { id: string; timezone: string }, sites: { id: string; lat: number; lon: number }[], nowMs: number): Promise<Map<string, TriggerSite | null>> {
+  const db = serviceDb();
+  // Triggers come from the contract in force today, not a renewal signed for next winter. Today on the wall clock:
+  // the demo's weather clock replays an old storm, and contracts are signed in real time.
+  const contracts = liveContracts(await db.select().from(contract).where(and(eq(contract.tenant_id, t.id), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)), new Date(), t.timezone);
+  // Snow still on the ground for a refreeze: a storm this company ran in the last 3 days.
+  const [recentStorm] = await db.select({ id: storm.id }).from(storm).where(and(eq(storm.tenant_id, t.id), gte(storm.started_at, new Date(nowMs - 72 * HOUR).toISOString()))).limit(1);
+  const salt = await saltSettings(t.id);
+  const out = new Map<string, TriggerSite | null>();
+  for (const s of sites) {
+    const services = (contracts.find((x) => x.site_id === s.id)?.services ?? []) as ContractService[];
+    const triggers = services.map((x) => x.trigger_in).filter((v): v is number => typeof v === 'number');
+    const input: TriggerSite = { site_id: s.id, lat: s.lat, lon: s.lon, trigger_in: triggers.length ? Math.min(...triggers) : null, has_salt: services.some((x) => x.service === 'salt'), salt: saltRuleFor(salt, s.id), snow_on_ground: Boolean(recentStorm) };
+    out.set(s.id, input.trigger_in === null && !input.has_salt ? null : input);
+  }
+  return out;
+}
+
 /** trigger.evaluate: ADDENDUM_WEATHER section 3 for one tenant. Creates alerts only, never a dispatch. */
 export async function evaluateTenant(tenantId: string): Promise<string[]> {
   const db = serviceDb();
@@ -206,27 +311,23 @@ export async function evaluateTenant(tenantId: string): Promise<string[]> {
   const nowMs = now.getTime();
   const sites = await db.select().from(site).where(and(eq(site.tenant_id, tenantId), eq(site.active, true), sql`${site.nws_office} is not null`));
   if (!sites.length) return [];
-  // Triggers come from the contract in force today, not a renewal signed for next winter. Today on the wall clock:
-  // the demo's weather clock replays an old storm, and contracts are signed in real time.
-  const contracts = liveContracts(await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)), new Date(), t.timezone);
   const siteCell = (s: { nws_office: string | null; nws_grid_x: number | null; nws_grid_y: number | null }) => cellKey(s.nws_office, s.nws_grid_x, s.nws_grid_y);
   const latest = await latestGrids(sites.map((s) => ({ office: s.nws_office, x: s.nws_grid_x, y: s.nws_grid_y })));
+  const inputs = await triggerInputs(t, sites, nowMs);
+  const models = await latestModels(nowMs);
   const depthRows = await db.select().from(driver_action).where(and(eq(driver_action.tenant_id, tenantId), eq(driver_action.kind, 'depth'), gte(driver_action.device_at, new Date(nowMs - 48 * HOUR).toISOString())));
   const reports: DepthReport[] = depthRows
     .filter((r) => typeof r.payload.lat === 'number')
     .map((r) => ({ lat: r.payload.lat, lon: r.payload.lon, depth_in: r.payload.depth_in, at: Date.parse(r.device_at) }));
 
-  // Snow still on the ground for a refreeze: a storm this company ran in the last 3 days.
-  const [recentStorm] = await db.select({ id: storm.id }).from(storm).where(and(eq(storm.tenant_id, tenantId), gte(storm.started_at, new Date(nowMs - 72 * HOUR).toISOString()))).limit(1);
   const decisions: SiteDecision[] = [];
   for (const s of sites) {
-    const c = contracts.find((x) => x.site_id === s.id);
-    const services = (c?.services ?? []) as ContractService[];
-    const triggers = services.map((x) => x.trigger_in).filter((v): v is number => typeof v === 'number');
-    const input: TriggerSite = { site_id: s.id, lat: s.lat, lon: s.lon, trigger_in: triggers.length ? Math.min(...triggers) : null, has_salt: services.some((x) => x.service === 'salt'), snow_on_ground: Boolean(recentStorm) };
-    if (input.trigger_in === null && !input.has_salt) continue;
+    const input = inputs.get(s.id);
+    if (!input) continue;
     const snap = latest.get(siteCell(s));
-    if (snap) decisions.push(...evaluateSite(input, seriesFromSummary(snap.summary), nowMs, reports));
+    if (!snap) continue;
+    const w = lotWeather(snap.summary, models, s.id, nowMs);
+    decisions.push(...evaluateSite(input, w.series, nowMs, reports, { nbm: w.nbm }));
   }
   const prior = await db.select().from(trigger_alert).where(eq(trigger_alert.tenant_id, tenantId));
   const priorSends = prior.flatMap((a) => ((a.detail.sites ?? []) as SiteDecision[]).map((d) => ({ kind: a.kind!, site_id: d.site_id, event_key: d.event_key })));
@@ -378,15 +479,23 @@ export async function areaWeather(tenantId: string) {
   if (!t || !sites.length) return [];
   const areaOf = await areasFor(tenantId, sites);
   const latest = await latestGrids(sites.map((s) => ({ office: s.nws_office, x: s.nws_grid_x, y: s.nws_grid_y })));
-  const contracts = liveContracts(await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)), new Date(), t.timezone);
   const now = (await weatherNow()).getTime();
+  const inputs = await triggerInputs(t, sites, now);
+  const models = await latestModels(now);
   const rows = [...new Set(areaOf.values())].map((name) => {
     const mine = sites.filter((s) => areaOf.get(s.id) === name);
+    const decided: SiteDecision[] = [];
+    const ranges: [number, number][] = [];
+    const radar: number[] = [];
     const sums = mine.map((s) => {
       const snap = latest.get(cellKey(s.nws_office, s.nws_grid_x, s.nws_grid_y));
-      const v = snap ? summarize(seriesFromSummary(snap.summary), now) : null;
-      const triggers = ((contracts.find((c) => c.site_id === s.id)?.services ?? []) as ContractService[]).map((x) => x.trigger_in).filter((x): x is number => typeof x === 'number');
-      return { v, trigger: triggers.length ? Math.min(...triggers) : null };
+      const w = snap ? lotWeather(snap.summary, models, s.id, now) : null;
+      const v = w ? summarize(w.series, now) : null;
+      const input = inputs.get(s.id);
+      if (w && input) decided.push(...evaluateSite(input, w.series, now, [], { nbm: w.nbm }));
+      if (w?.nbm) ranges.push([w.nbm.p10, w.nbm.p90]);
+      if (w?.radar != null) radar.push(w.radar);
+      return { v, trigger: input?.trigger_in ?? null };
     });
     const vals = (pick: (v: NonNullable<(typeof sums)[number]['v']>) => number | null) => sums.map((x) => (x.v ? pick(x.v) : null)).filter((x): x is number => x !== null);
     const next = vals((v) => v.snow_next12h_in);
@@ -394,7 +503,11 @@ export async function areaWeather(tenantId: string) {
     const temps = vals((v) => v.temp_f);
     const at = sums.filter((x) => x.trigger !== null && x.v?.snow_next12h_in != null && x.v.snow_next12h_in >= x.trigger).length;
     const near = sums.filter((x) => x.trigger !== null && x.v?.snow_next12h_in != null && x.v.snow_next12h_in < x.trigger && x.v.snow_next12h_in >= x.trigger * 0.75).length;
-    return { area: name, lots: mine.length, forecast_in: next.length ? Math.max(...next) : null, elapsed_in: elapsed.length ? Math.max(...elapsed) : null, temp_f: temps.length ? Math.round(temps.reduce((a, b) => a + b, 0) / temps.length) : null, at_trigger: at, near_trigger: near };
+    // Plow vs salt vs no trigger, in words (issue 204): "0.5" + freezing rain, salt only".
+    const line = triggerLine(decided);
+    // The Blend's spread for the area (issue 203): its lowest 10th and highest 90th percentile, "1 to 4"".
+    const range: [number, number] | null = ranges.length ? [Math.min(...ranges.map((r) => r[0])), Math.max(...ranges.map((r) => r[1]))] : null;
+    return { area: name, lots: mine.length, forecast_in: next.length ? Math.max(...next) : null, elapsed_in: elapsed.length ? Math.max(...elapsed) : null, temp_f: temps.length ? Math.round(temps.reduce((a, b) => a + b, 0) / temps.length) : null, at_trigger: at, near_trigger: near, trigger: line, range_in: range, radar_1h_in: radar.length ? Math.max(...radar) : null };
   });
   return rows.sort((a, b) => (b.forecast_in ?? -1) - (a.forecast_in ?? -1) || a.area.localeCompare(b.area));
 }

@@ -5,7 +5,7 @@ import { requireApi } from '@/lib/auth';
 import { isProd } from '@/lib/env';
 import { HttpError, parseJson, route } from '@/lib/http';
 import { setSetting, weatherNow } from '@/lib/providers';
-import { evaluateTenant, fetchAlerts, fetchCell, fetchNohrsc, mapSites, tenantWeatherHeader } from '@/lib/weather';
+import { evaluateTenant, fetchAlerts, fetchCell, fetchModel, fetchNohrsc, mapSites, tenantWeatherHeader } from '@/lib/weather';
 
 const body = z.object({
   fixture: z.enum(Object.keys(WEATHER_FIXTURES) as [keyof typeof WEATHER_FIXTURES, ...(keyof typeof WEATHER_FIXTURES)[]]).optional(),
@@ -32,9 +32,9 @@ export const POST = route(async (req) => {
     for (const c of cells) await fetchCell(c.office!, c.x!, c.y!);
     await fetchAlerts(ctx.tenantId);
     await fetchNohrsc(24);
+    // Issue 203's sources, synthetic here: the Blend's percentiles, HRRR and radar.
+    for (const kind of ['nbm', 'nowcast', 'radar'] as const) await fetchModel(kind);
     created = await evaluateTenant(ctx.tenantId);
-    
-
   }
   return { clock: (await weatherNow()).toISOString(), created, header: await tenantWeatherHeader(ctx.tenantId) };
 });

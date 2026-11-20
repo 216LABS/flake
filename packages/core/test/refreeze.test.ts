@@ -33,7 +33,8 @@ describe('refreeze alerts for salt lots', () => {
   it('only salt lots get one, once a day, and the headline says when and how cold', () => {
     expect(evaluateSite({ ...site, has_salt: false, snow_on_ground: true }, series({ tempF: melt }), NOW, [])).toEqual([]);
     const [d] = evaluateSite({ ...site, snow_on_ground: true }, series({ tempF: melt }), NOW, []);
-    expect(d).toMatchObject({ kind: 'refreeze', event_key: 'refreeze:2026-11-16', reason: 'melt' });
+    // A salt run since issue 204, still keyed on the day of the freeze.
+    expect(d).toMatchObject({ kind: 'salt_run', event_key: 'refreeze:2026-11-16', reason: 'melt', reasons: ['melt'] });
     expect(alertHeadline({ kind: 'refreeze', site_ids: ['s1', 's2'], sites: [d!, { ...d!, site_id: 's2', low_f: null }] }, 'Lakewood', 'America/New_York'))
       .toBe('Lakewood: refreeze risk at 2 salt lots. Melting now, below freezing by Mon 5 PM, down to 25°F.');
     expect(alertHeadline({ kind: 'refreeze', site_ids: ['s1'], sites: [{ ...d!, reason: 'ice' }] }, 'Denver', 'America/Denver')).toBe('Denver: freezing rain expected by Mon 3 PM at 1 salt lot.');

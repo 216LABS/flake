@@ -11,6 +11,7 @@ import { Badge, Card, PageHeader, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
 import { TriggersPanel } from './triggers-panel';
 import { defaultTrigger, triggerTable } from '@/lib/triggers';
+import { saltSettings } from '@/lib/salt-triggers';
 import { ButtonA, ButtonLink, proseLink } from '@/components/links';
 import { asUser, requirePage } from '@/lib/auth';
 import { baseUrl } from '@/lib/env';
@@ -74,7 +75,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         return <fieldset disabled={readOnly} className={readOnly ? 'view-only contents' : 'contents'}><EquipmentPanel tz={tz} trucks={data.trucks} storms={data.storms} logs={JSON.parse(JSON.stringify(data.logs))} reminders={JSON.parse(JSON.stringify(data.reminders))} /></fieldset>;
       })() : null}
       {tab === 'accounting' ? <AccountingPanel owner={owner} note={qboNote ?? null} /> : null}
-      {tab === 'triggers' ? <TriggersPanel rows={await triggerTable(ctx.tenantId)} defaultIn={await defaultTrigger(ctx.tenantId)} owner={owner} canEdit={ctx.role !== 'viewer'} /> : null}
+      {tab === 'triggers' ? <TriggersPanel rows={await triggerTable(ctx.tenantId)} defaultIn={await defaultTrigger(ctx.tenantId)} saltDefault={(await saltSettings(ctx.tenantId)).default} owner={owner} canEdit={ctx.role !== 'viewer'} /> : null}
       {tab === 'alerts' ? <PushPanel publicKey={(await getProviders()).push.publicKey} /> : null}
       {allowed && tab === 'team' ? <TeamPanel members={await listTeam(ctx.tenantId)} me={ctx.userId} /> : null}
       {allowed && tab === 'payments' ? <PaymentsPanel connected={Boolean(t.stripe_account_id)} enabled={await chargesEnabled(t)} payInstructions={t.pay_instructions} available={(await available()).payments} /> : null}

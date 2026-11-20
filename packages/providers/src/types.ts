@@ -29,6 +29,37 @@ export interface NohrscResult {
   synthetic?: boolean;
 }
 
+/** A place to sample a national model field at: a lot. */
+export interface ModelPoint { id: string; lat: number; lon: number }
+
+/**
+ * What a model fetch kept (issue 203). `raw` is a JSON record of the files and byte ranges read, each message's
+ * SHA-256 and the values sampled, not the national GRIB fields themselves (megabytes each, many times a day).
+ */
+interface ModelFetch { url: string; raw: Uint8Array; synthetic?: boolean }
+
+/** National Blend of Models snowfall percentiles, per 6-hour window. Inches; null where the model has no value. */
+export interface NbmResult extends ModelFetch {
+  /** The model run, e.g. 2026-11-20T12:00:00Z. */
+  cycle: string;
+  windows: { start: string; end: string }[];
+  samples: Record<string, { p10: (number | null)[]; p50: (number | null)[]; p90: (number | null)[] }>;
+}
+
+/** HRRR, hour by hour for the next few hours: snowfall and freezing rain in inches. */
+export interface NowcastResult extends ModelFetch {
+  cycle: string;
+  /** Start of each hour. */
+  hours: string[];
+  samples: Record<string, { snow: (number | null)[]; ice: (number | null)[] }>;
+}
+
+/** MRMS radar-estimated precipitation that fell, liquid inches, over the hour and 3 hours ending `validAt`. */
+export interface RadarResult extends ModelFetch {
+  validAt: string;
+  samples: Record<string, { last1h: number | null; last3h: number | null }>;
+}
+
 /** One observation from an airport weather station (ASOS/AWOS). null is "not reported", never zero. */
 export interface StationHour { t: string; temp_f: number | null; precip_in: number | null; wx: string | null; snow_depth_in: number | null }
 
@@ -49,6 +80,14 @@ export interface WeatherProvider {
   fetchNohrsc(hours: 6 | 24, at: Date, points: { id: string; lat: number; lon: number }[]): Promise<NohrscResult | null>;
   /** Observed weather at a station for any past window, not only the last few days the NWS keeps (issue 163). */
   fetchStationHistory(station: string, from: Date, to: Date): Promise<StationHistory | null>;
+  /**
+   * Issue 203: more sources, each sampled at many points in one pass (the cost doesn't grow with the number of lots).
+   * Each returns null when its data isn't out yet; a throw means the source is down. Either way the NWS grid still runs.
+   * `after` skips the fetch when the newest run is the one already stored.
+   */
+  fetchNbm(at: Date, points: ModelPoint[], after?: string | null): Promise<NbmResult | null>;
+  fetchNowcast(at: Date, points: ModelPoint[], after?: string | null): Promise<NowcastResult | null>;
+  fetchRadar(at: Date, points: ModelPoint[]): Promise<RadarResult | null>;
 }
 
 export interface Parcel {

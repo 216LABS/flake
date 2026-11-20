@@ -52,7 +52,7 @@ export const JOB_LABEL: Record<string, string> = {
   'notify.route_changed': 'Route change text', 'notify.visit_done': 'Lot done message', 'photo.process': 'Process a photo',
   'proof.render': 'Build a proof packet', 'report.completion': 'Service record email', 'salt.supplier_email': 'Salt order email',
   'sms.mock_approve': 'Texting approval (test)', 'sms.tollfree_submit': 'Texting number request', 'storm.publish_links': 'Send driver links',
-  'trigger.evaluate': 'Check snow triggers', 'weather.fetch_alerts': 'Weather alerts', 'weather.fetch_cell': 'Forecast update', 'weather.nohrsc': 'Snowfall report',
+  'trigger.evaluate': 'Check snow triggers', 'weather.fetch_alerts': 'Weather alerts', 'weather.fetch_cell': 'Forecast update', 'weather.nohrsc': 'Snowfall report', 'weather.nbm': 'Blend of models forecast', 'weather.nowcast': 'Hourly storm forecast (HRRR)', 'weather.radar': 'Radar precipitation',
 };
 export const jobLabel = (kind: string) => JOB_LABEL[kind] ?? kind.replace(/[._]/g, ' ');
 

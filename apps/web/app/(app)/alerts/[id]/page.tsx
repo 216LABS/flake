@@ -27,7 +27,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
   const siteDetail = (a.detail.sites ?? []) as { site_id: string; value_in: number | null; label?: string }[];
   return (
     <>
-      <PageHeader title={a.detail.headline} subtitle={`${a.kind === 'nws_alert' ? 'National Weather Service alert' : a.kind === 'refreeze' ? 'Refreeze alert for salt lots' : 'Trigger alert'}, ${fmtLocal(a.created_at!, ctx.tenant.timezone)}`} actions={<Badge tone={a.status === 'open' ? 'amber' : 'gray'}>{a.status}</Badge>} />
+      <PageHeader title={a.detail.headline} subtitle={`${a.kind === 'nws_alert' ? 'National Weather Service alert' : a.kind === 'salt_run' || a.kind === 'refreeze' ? 'Salt run for salt lots' : 'Plow trigger alert'}, ${fmtLocal(a.created_at!, ctx.tenant.timezone)}`} actions={<Badge tone={a.status === 'open' ? 'amber' : 'gray'}>{a.status}</Badge>} />
       {/* Issue 198: say how it works, in one line. */}
       <p className="mb-4 text-sm text-muted">Flake checks each lot&apos;s own forecast every 15 to 60 minutes and alerts by service area. Nothing goes to drivers until you press Start storm.</p>
       <AlertActions alertId={a.id} status={a.status!} routeIds={grouped.map((g) => g.route.id)} siteIds={a.site_ids} name={`${a.detail.area ? `${a.detail.area} storm` : 'Storm'} ${fmtLocal(new Date(), ctx.tenant.timezone, { month: 'short', day: 'numeric' })}`} />

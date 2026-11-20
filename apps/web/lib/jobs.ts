@@ -10,7 +10,8 @@ const LEASE = sql`interval '2 minutes'`;
  */
 const LANE_NOW = ['storm.publish_links', 'notify.route_changed', 'notify.party', 'notify.push', 'trigger.evaluate'];
 const LANE_LATER = ['report.completion', 'billing.installments', 'weather.nohrsc', 'qbo.poll'];
-const LANE_HEAVY = ['photo.process', 'proof.render'];
+// A Blend run decodes a dozen national fields: alone, so it never shares a function's memory with a proof render.
+const LANE_HEAVY = ['photo.process', 'proof.render', 'weather.nbm'];
 /** Waiting jobs move up a lane this often, so a busy night can't leave the lower lanes waiting forever. */
 const AGE_UP_SECONDS = 600;
 /** These hold a whole image in memory, so they run one at a time. */
