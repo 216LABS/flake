@@ -45,6 +45,11 @@ const MAX_PHOTO_BYTES = 30 * 1024 * 1024;
 const POSITION_EVERY_MS = 60 * 1000;
 const GEOFENCE_M = 75;
 const NEAR_M = 800;
+// Issue 184: a position older than this, or vaguer than FIX_MAX_ACC_M, is never stamped on a visit. Coming back from
+// the maps app, the phone's last fix can be where the driver got the link; a fresh one is asked for instead.
+const FIX_FRESH_MS = 20 * 1000;
+const FIX_MAX_ACC_M = 250;
+const FIX_WAIT_MS = 6000;
 type Sync = 'saved' | 'sending' | 'synced';
 
 const uuid = () => crypto.randomUUID();
@@ -82,7 +87,9 @@ export function DriverApp({ token }: { token: string }) {
   const [locationOff, setLocationOff] = useState(false);
   const [tick, setTick] = useState(0);
   const localRef = useRef(local);
-  const position = useRef<{ lat: number; lon: number; acc: number } | null>(null);
+  const position = useRef<{ lat: number; lon: number; acc: number; got: number } | null>(null);
+  // The phone hasn't been asked for location yet: say what to tap before it asks (issue 184).
+  const [geoAsk, setGeoAsk] = useState(false);
   const generation = useRef(0);
   const runRef = useRef<RunData | null>(null);
   const langRef = useRef<Lang>('en');
@@ -304,7 +311,14 @@ export function DriverApp({ token }: { token: string }) {
   // starts right away, so the stop distance and arrive check work from the first screen.
   const [geoOn, setGeoOn] = useState(false);
   useEffect(() => {
-    void navigator.permissions?.query({ name: 'geolocation' as PermissionName }).then((p) => p.state === 'granted' && setGeoOn(true)).catch(() => {});
+    void navigator.permissions?.query({ name: 'geolocation' as PermissionName }).then((p) => {
+      if (p.state === 'granted') setGeoOn(true);
+      setGeoAsk(p.state === 'prompt');
+      p.onchange = () => {
+        setGeoAsk(p.state === 'prompt');
+        if (p.state === 'granted') setLocationOff(false);
+      };
+    }).catch(() => {});
   }, []);
   useEffect(() => {
     if (!geoOn || !('geolocation' in navigator)) return;
@@ -317,7 +331,8 @@ export function DriverApp({ token }: { token: string }) {
       watch = navigator.geolocation.watchPosition(
         (pos) => {
           const { latitude: lat, longitude: lon, accuracy: acc } = pos.coords;
-          position.current = { lat, lon, acc };
+          position.current = { lat, lon, acc, got: Date.now() };
+          setLocationOff(false);
           const stop = nextRef.current;
           const distance = stop ? metersBetween(lat, lon, stop.site.lat, stop.site.lon) : Infinity;
           setHere(distance <= GEOFENCE_M);
@@ -336,7 +351,13 @@ export function DriverApp({ token }: { token: string }) {
       );
     };
     start(false);
+    // Back from the maps app or a locked screen: the browser paused location, so ask again rather than trust the old fix.
+    const back = () => {
+      if (document.visibilityState === 'visible') start(true);
+    };
+    document.addEventListener('visibilitychange', back);
     return () => {
+      document.removeEventListener('visibilitychange', back);
       if (watch !== null) navigator.geolocation.clearWatch(watch);
     };
   }, [token, geoOn]);
@@ -361,7 +382,31 @@ export function DriverApp({ token }: { token: string }) {
   };
 
   const action = (fields: Record<string, unknown>) => ({ client_uuid: uuid(), at: nowIso(), ...fields });
-  const gps = () => (position.current ? { lat: position.current.lat, lon: position.current.lon, acc: position.current.acc } : null);
+  const usable = (p: { lat: number; lon: number; acc: number; got: number } | null) => (p && Date.now() - p.got <= FIX_FRESH_MS && p.acc <= FIX_MAX_ACC_M ? { lat: p.lat, lon: p.lon, acc: p.acc } : null);
+  /**
+   * Where the driver is right now, for a visit's record (issue 184). A recent, close-enough fix is used as is; otherwise
+   * the phone is asked for a new one, for a few seconds at most. Never an old position: no GPS is better than wrong GPS.
+   */
+  const freshFix = async (): Promise<{ lat: number; lon: number; acc: number } | null> => {
+    const now = usable(position.current);
+    if (now || !('geolocation' in navigator)) return now;
+    flashToast(t('location_finding'));
+    return new Promise((resolve) => {
+      const give = (v: { lat: number; lon: number; acc: number } | null) => { clearTimeout(timer); resolve(v); };
+      const timer = setTimeout(() => give(usable(position.current)), FIX_WAIT_MS + 500);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          position.current = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy, got: Date.now() };
+          give(usable(position.current));
+        },
+        (err) => {
+          if (err.code === err.PERMISSION_DENIED) setLocationOff(true);
+          give(usable(position.current));
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: FIX_WAIT_MS },
+      );
+    });
+  };
 
   const navigate = (stop: Stop) => {
     setGeoOn(true);
@@ -375,13 +420,14 @@ export function DriverApp({ token }: { token: string }) {
     setGeoOn(true);
     const visit = uuid();
     const at = nowIso();
-    const fix = gps();
-    const queued = action({ at, kind: 'arrive', run_stop_id: stop.id, visit_client_uuid: visit, gps: fix });
     inOrder(async () => {
       const open = localRef.current.visits[stop.id];
+      // A double tap records one arrival, so it doesn't wait for a second fix.
+      if (open && localRef.current.statuses[stop.id] === 'onsite') return;
+      const fix = await freshFix();
+      const queued = action({ at, kind: 'arrive', run_stop_id: stop.id, visit_client_uuid: visit, gps: fix });
       if (open) {
-        // A double tap records one arrival. Coming back after reporting a Problem resumes the same visit.
-        if (localRef.current.statuses[stop.id] === 'onsite') return;
+        // Coming back after reporting a Problem resumes the same visit.
         await apply({ ...localRef.current, statuses: { ...localRef.current.statuses, [stop.id]: 'onsite' }, nextStopId: null }, [action({ at, kind: 'arrive', run_stop_id: stop.id, visit_client_uuid: open.visit, gps: fix })]);
         return;
       }
@@ -424,20 +470,20 @@ export function DriverApp({ token }: { token: string }) {
 
   const chooseDepth = (stop: Stop, depth: number) => {
     const at = nowIso();
-    const fix = gps();
     inOrder(async () => {
       const v = localRef.current.visits[stop.id];
       if (!v) return;
+      const fix = usable(position.current);
       await apply({ ...localRef.current, depthGiven: true, visits: { ...localRef.current.visits, [stop.id]: { ...v, depth } } }, [action({ at, kind: 'depth', run_stop_id: stop.id, visit_client_uuid: v.visit, depth_in: depth, gps: fix })]);
     });
   };
 
   const done = (stop: Stop) => {
     const at = nowIso();
-    const fix = gps();
     inOrder(async () => {
       const v = localRef.current.visits[stop.id];
       if (!v) return; // A double tap on Done records one departure.
+      const fix = await freshFix();
       const salt = v.salt > 0 && stop.salt_unit && v.services.includes('salt') ? [{ unit: stop.salt_unit, qty: v.salt }] : null;
       const { [stop.id]: _finished, ...visits } = localRef.current.visits;
       await apply(
@@ -512,7 +558,8 @@ export function DriverApp({ token }: { token: string }) {
         </div>
       </header>
 
-      {locationOff ? <div role="alert" className="mx-4 mb-2 rounded-lg bg-amber-300 p-3 text-base font-semibold text-black" data-testid="location-off">{t('location_off')}</div> : null}
+      {geoAsk && !locationOff ? <div className="mx-4 mb-2 rounded-lg bg-slate-800 p-3 text-base text-white" data-testid="location-ask">{t('location_ask')}</div> : null}
+      {locationOff ? <div role="alert" className="mx-4 mb-2 rounded-lg bg-amber-300 p-3 text-base font-semibold text-black" data-testid="location-off">{t('location_off')}<details className="mt-1 text-sm font-normal" data-testid="location-how"><summary className="cursor-pointer font-semibold underline">{t('location_how')}</summary><p className="mt-1">{t('location_steps')}</p></details></div> : null}
       {/* Always mounted, so a screen reader hears every toast, not only ones it happened to catch appearing (issue 158). */}
       <div role="status" aria-live="polite" data-testid="toast-region">{toast ? <div className="mx-4 mb-2 rounded-lg bg-sky-300 p-3 text-center text-lg font-bold text-black">{toast}</div> : null}</div>
 

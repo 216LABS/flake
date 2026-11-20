@@ -79,7 +79,7 @@ export const PRICES: Record<Product, string> = {
   Flake: 'Free for the 2026-27 season',
   Jobber: 'Core $29/mo billed annually ($49 month to month) for 1 user; extra users $29/mo. Connect from $99/mo, Grow from $149/mo, Plus from $399/mo, billed annually.',
   Yeti: 'High Performance $66.50/mo billed annually ($798/year) for 1 to 25 sites, unlimited users. Weather reporting is an add-on.',
-  'Service Autopilot': 'Startup $49/mo, Pro Plus $499/mo, annual subscription, each plus a sign-up fee. Snow Dispatch starts at Pro.',
+  'Service Autopilot': 'Startup $49/mo, Pro $199/mo, Pro Plus $499/mo, annual subscription, each plus a sign-up fee. Elite is contact for pricing. Snow Dispatch starts at Pro.',
   Plowdesk: 'Operator free (up to 3 storm routes). Contractor $95/mo.',
 };
 

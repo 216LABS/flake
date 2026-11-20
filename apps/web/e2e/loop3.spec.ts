@@ -182,7 +182,10 @@ test('a driver who blocks location is told plainly what it costs (issue 77)', as
     await d.goto(runs[0]!.link);
     await expect(d.getByTestId('location-off')).toHaveCount(0);
     await d.getByTestId('arrive').click();
-    await expect(d.getByTestId('location-off')).toContainText("won't have GPS proof");
+    await expect(d.getByTestId('location-off')).toContainText("won't show you were at the lot");
+    // Issue 184: the steps to turn it back on are one tap away, not in the way of the buttons.
+    await d.getByTestId('location-how').locator('summary').click();
+    await expect(d.getByTestId('location-how')).toContainText('Safari Websites');
   } finally {
     await ctx.close();
     await sql`update storm set status = 'closed', closed_at = now() where id = ${id}`;

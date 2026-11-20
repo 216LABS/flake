@@ -117,7 +117,7 @@ export function StopSheet({ stopId, tz, onClose }: { stopId: string; tz: string;
                         <dt className="text-muted">Depth</dt><dd>{v.depth_in !== null ? `${v.depth_in} in` : 'Not logged'}</dd>
                         {v.salt?.length ? <><dt className="text-muted">Salt</dt><dd>{v.salt.map((x) => `${x.qty} ${SALT_UNIT[x.unit] ?? x.unit}`).join(', ')}</dd></> : null}
                         <dt className="text-muted">GPS</dt>
-                        <dd>{v.gps ? <>{v.gps.lat.toFixed(5)}, {v.gps.lon.toFixed(5)}{v.gps.accuracy_m !== null ? `, within ${feet(v.gps.accuracy_m)}` : ''}{v.gps.matched === false ? <span className="block text-xs font-medium text-warn-ink">Not at the lot&apos;s mapped spot</span> : null}</> : 'Not shared'}</dd>
+                        <dd>{v.gps ? <>{v.gps.lat.toFixed(5)}, {v.gps.lon.toFixed(5)}{v.gps.accuracy_m !== null ? `, within ${feet(v.gps.accuracy_m)}` : ''}{v.gps.matched === false ? <span className="block text-xs font-medium text-warn-ink">Not at the lot&apos;s mapped spot</span> : null}</> : 'Not recorded: the phone had no current location (location off, or no fix in time)'}</dd>
                         {v.notes ? <><dt className="text-muted">Note</dt><dd>{v.notes}</dd></> : null}
                       </dl>
                     </li>
