@@ -49,7 +49,9 @@ describe('issue 42: Or-opt in Suggest order', () => {
     const sites = route(200, 7);
     const t = Date.now();
     const out = suggestRoute(sites, { budgetMs: 300 });
-    expect(Date.now() - t).toBeLessThan(3000);
+    // The budget is checked per stop now (issue 202), so this lands near 300 ms. The bound is loose for slow CI runners;
+    // the default 4 s budget would fail it.
+    expect(Date.now() - t).toBeLessThan(2500);
     expect(out).toHaveLength(200);
     expect(cost(out)).toBeLessThan(cost(sites));
   });

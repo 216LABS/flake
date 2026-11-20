@@ -267,12 +267,15 @@ function suggestRouteNow(sites: RouteSite[], opts: RouteOptions): RouteSite[] {
   // Start from the current order when it already keeps the tiers, so asking twice gives the same answer.
   // A nearest-first build from any top-tier opener replaces it only when strictly cheaper.
   const tiered = rest.every((s, i) => i === 0 || rest[i - 1]!.priority <= s.priority);
+  // Set before any search, so building the first orders counts against the budget too (issue 202).
+  const until = Date.now() + (opts.budgetMs ?? 4000);
   let order = tiered ? [...sites] : nearestFirst(fixed, tiers);
   let best = score(order, start).cost;
   const built = nearestFirst(fixed, tiers);
   if (score(built, start).cost < best) { order = built; best = score(built, start).cost; }
   if (!fixed) {
     for (const opener of tiers[0]!) {
+      if (Date.now() >= until) break;
       const tried = nearestFirst(opener, tiers);
       const c = score(tried, start).cost;
       if (c < best) { best = c; order = tried; }
@@ -285,7 +288,6 @@ function suggestRouteNow(sites: RouteSite[], opts: RouteOptions): RouteSite[] {
   for (const t of tiers) { bounds.push([at, at + t.length]); at += t.length; }
 
   const full = (opts.search ?? 'full') === 'full';
-  const until = Date.now() + (opts.budgetMs ?? 4000);
   order = improve(order, bounds, start, full, until);
   // Restarts (issue 67): kick the best order with a double bridge inside one tier and search again, keeping a better
   // result. Seeded, so asking twice gives the same answer.
@@ -311,6 +313,8 @@ function improve(order: RouteSite[], bounds: [number, number][], start: number, 
     better = false;
     for (const [lo, hi] of bounds) {
       for (let i = lo; i < hi - 1; i++) {
+        // One pass over a long route takes seconds, so the budget is checked per stop, not per pass (issue 202).
+        if (Date.now() >= until) return order;
         for (let j = i + 1; j < hi; j++) {
           // Reverse the run i..j.
           const flipped = [...order.slice(0, i), ...order.slice(i, j + 1).reverse(), ...order.slice(j + 1)];
@@ -335,6 +339,7 @@ function improve(order: RouteSite[], bounds: [number, number][], start: number, 
       for (const [lo, hi] of bounds) {
         for (let k = 2; k <= 3; k++) {
           for (let i = lo; i + k <= hi; i++) {
+            if (Date.now() >= until) return order;
             for (let p = lo; p <= hi - k; p++) {
               if (p === i) continue;
               for (const rev of [false, true]) {
