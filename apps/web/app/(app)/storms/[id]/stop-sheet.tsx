@@ -12,7 +12,7 @@ interface Photo { id: string; phase: string | null; taken_at: string | null; rec
 interface Visit {
   id: string; crew: string | null; arrived_at: string; departed_at: string | null; services: string[]; depth_in: number | null;
   salt: { unit: string; qty: number }[] | null; notes: string | null; replow: boolean; voided: boolean;
-  gps: { lat: number; lon: number; accuracy_m: number | null; matched: boolean | null } | null; photos: Photo[];
+  gps: { lat: number; lon: number; accuracy_m: number | null; matched: boolean | null } | null; done_gps?: { lat: number; lon: number; matched: boolean } | null; photos: Photo[];
 }
 interface Detail {
   id: string; status: string; seq: number;
@@ -117,7 +117,7 @@ export function StopSheet({ stopId, tz, onClose }: { stopId: string; tz: string;
                         <dt className="text-muted">Depth</dt><dd>{v.depth_in !== null ? `${v.depth_in} in` : 'Not logged'}</dd>
                         {v.salt?.length ? <><dt className="text-muted">Salt</dt><dd>{v.salt.map((x) => `${x.qty} ${SALT_UNIT[x.unit] ?? x.unit}`).join(', ')}</dd></> : null}
                         <dt className="text-muted">GPS</dt>
-                        <dd>{v.gps ? <>{v.gps.lat.toFixed(5)}, {v.gps.lon.toFixed(5)}{v.gps.accuracy_m !== null ? `, within ${feet(v.gps.accuracy_m)}` : ''}{v.gps.matched === false ? <span className="block text-xs font-medium text-warn-ink">Not at the lot&apos;s mapped spot</span> : null}</> : 'Not recorded: the phone had no current location (location off, or no fix in time)'}</dd>
+                        <dd>{v.gps ? <>{v.gps.lat.toFixed(5)}, {v.gps.lon.toFixed(5)}{v.gps.accuracy_m !== null ? `, within ${feet(v.gps.accuracy_m)}` : ''}{v.gps.matched === false ? <span className="block text-xs font-medium text-warn-ink">Not at the lot&apos;s mapped spot</span> : null}</> : v.done_gps ? <span data-testid="done-gps">{v.done_gps.lat.toFixed(5)}, {v.done_gps.lon.toFixed(5)}, at Done (none at arrival){v.done_gps.matched ? null : <span className="block text-xs font-medium text-warn-ink">Not at the lot&apos;s mapped spot</span>}</span> : 'Not recorded: the phone had no current location (location off, or no fix in time)'}</dd>
                         {v.notes ? <><dt className="text-muted">Note</dt><dd>{v.notes}</dd></> : null}
                       </dl>
                     </li>

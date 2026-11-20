@@ -1,6 +1,8 @@
 import { and, asc, crew_member, customer, desc, eq, inArray, or, problem_report, route, run_stop, site, sql, storm, storm_run, visit, visit_correction, visit_photo, withUser } from '@flake/db';
 import { HttpError } from './http';
 import { signedUrl } from './blob';
+import { gpsMatches } from '@flake/core/geo';
+import type { MultiPolygon, Polygon } from 'geojson';
 
 /**
  * Everything the office can see about one stop on a storm: who did it, when, what they logged, where the phone was,
@@ -50,6 +52,8 @@ export async function stopDetail(userId: string, stopId: string) {
         replow: Boolean(v.is_replow),
         voided: voidedRows.get(v.id) === true,
         gps: v.arrive_lat !== null && v.arrive_lon !== null ? { lat: v.arrive_lat, lon: v.arrive_lon, accuracy_m: v.arrive_acc_m, matched: v.gps_match } : null,
+        // Where the phone was at Done. Shown when the arrival had no fix, so a slow GPS at Arrive still leaves proof.
+        done_gps: v.depart_lat !== null && v.depart_lon !== null ? { lat: v.depart_lat, lon: v.depart_lon, matched: gpsMatches(v.depart_lat, v.depart_lon, { lat: row.site.lat, lon: row.site.lon, polygons: row.site.polygons as Polygon | MultiPolygon | null }) } : null,
         photos: photos.filter((p) => p.visit_id === v.id).map((p) => ({ id: p.id, phase: p.phase, taken_at: p.taken_at, received_at: p.received_at })),
       })),
       problems: problems.map((p) => ({ id: p.id, kind: p.kind, note: p.note, at: p.created_at, resolved_at: p.resolved_at })),

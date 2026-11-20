@@ -35,6 +35,9 @@ describe('draftInvoices flags', () => {
   it('no_gps_match when far away or unavailable, using the polygon if drawn', () => {
     expect(flagsOf(input({ visits: [v('s1', { arrive_lat: 41.5 })] }))).toEqual(['no_gps_match']);
     expect(flagsOf(input({ visits: [v('s1', { arrive_lat: null })] }))).toEqual(['no_gps_match']);
+    // No fix at Arrive, but the phone was on the lot at Done: proof, no flag. Off the lot at Done still flags.
+    expect(flagsOf(input({ visits: [v('s1', { arrive_lat: null, depart_lat: LAT, depart_lon: LON })] }))).toEqual([]);
+    expect(flagsOf(input({ visits: [v('s1', { arrive_lat: null, depart_lat: LAT + 0.05, depart_lon: LON })] }))).toEqual(['no_gps_match']);
     const polygons = { type: 'Polygon' as const, coordinates: [[[LON, LAT], [LON + 0.001, LAT], [LON + 0.001, LAT + 0.001], [LON, LAT]]] };
     expect(flagsOf(input({ sites: [{ ...site('s1', 'c1'), polygons }], visits: [v('s1', { arrive_lat: LAT + 0.0005, arrive_lon: LON + 0.0007 })] }))).toEqual([]);
   });

@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { notFound } from 'next/navigation';
-import { linkEverIssued } from '@/lib/driver';
+import { APP_BUILD, linkEverIssued } from '@/lib/driver';
 import { DriverApp } from './driver-app';
 
 export const dynamic = 'force-dynamic';
@@ -17,5 +17,5 @@ export default async function Page({ params }: { params: Promise<{ token: string
   // A link that was never made gets the 404 every other bad public link gets. One that was made and later turned off
   // still loads the app: the phone may hold finished work to send, and the app says the link is no longer active.
   if (!(await linkEverIssued(token))) notFound();
-  return <DriverApp token={token} />;
+  return <DriverApp token={token} build={APP_BUILD} />;
 }

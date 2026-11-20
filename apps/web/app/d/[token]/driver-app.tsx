@@ -24,6 +24,7 @@ interface RunData {
   storm: { id: string; name: string; status: string };
   run: { id: string; pass: number };
   crew: { name: string; language: string } | null;
+  build?: string;
   has_reported_depth: boolean;
   stops: Stop[];
 }
@@ -50,6 +51,7 @@ const NEAR_M = 800;
 const FIX_FRESH_MS = 20 * 1000;
 const FIX_MAX_ACC_M = 250;
 const FIX_WAIT_MS = 6000;
+const FIX_PROMPT_MS = 30 * 1000;
 type Sync = 'saved' | 'sending' | 'synced';
 
 const uuid = () => crypto.randomUUID();
@@ -70,7 +72,7 @@ function navUrl(lat: number, lon: number) {
   return ios ? `https://maps.apple.com/?daddr=${lat},${lon}` : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
 }
 
-export function DriverApp({ token }: { token: string }) {
+export function DriverApp({ token, build }: { token: string; build?: string }) {
   const [run, setRun] = useState<RunData | null>(null);
   const [local, setLocal] = useState<LocalState>(EMPTY);
   const [lang, setLang] = useState<Lang>('en');
@@ -90,6 +92,9 @@ export function DriverApp({ token }: { token: string }) {
   const position = useRef<{ lat: number; lon: number; acc: number; got: number } | null>(null);
   // The phone hasn't been asked for location yet: say what to tap before it asks (issue 184).
   const [geoAsk, setGeoAsk] = useState(false);
+  const geoState = useRef<string>('unknown');
+  // Taps still being saved: a reload for a new version waits for these.
+  const busy = useRef(0);
   const generation = useRef(0);
   const runRef = useRef<RunData | null>(null);
   const langRef = useRef<Lang>('en');
@@ -235,7 +240,12 @@ export function DriverApp({ token }: { token: string }) {
   useEffect(() => {
     const onOnline = () => void syncNow();
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void syncNow();
+      if (document.visibilityState !== 'visible') return;
+      // A page left open since before a fix runs the old code until it reloads (found after issue 184). Coming back
+      // from the maps app with no visit open is a safe moment: everything is on the phone, and no photo is mid-pick.
+      const served = runRef.current?.build;
+      if (build && served && served !== build && busy.current === 0 && Object.keys(localRef.current.visits).length === 0) return location.reload();
+      void syncNow();
     };
     window.addEventListener('online', onOnline);
     document.addEventListener('visibilitychange', onVisible);
@@ -251,7 +261,7 @@ export function DriverApp({ token }: { token: string }) {
       clearInterval(poller);
       clearInterval(clock);
     };
-  }, [syncNow, refresh]);
+  }, [syncNow, refresh, build]);
 
   const stops = useMemo(() => {
     const list = (run?.stops ?? []).map((s) => ({ ...s, status: local.statuses[s.id] ?? s.status }));
@@ -313,8 +323,10 @@ export function DriverApp({ token }: { token: string }) {
   useEffect(() => {
     void navigator.permissions?.query({ name: 'geolocation' as PermissionName }).then((p) => {
       if (p.state === 'granted') setGeoOn(true);
+      geoState.current = p.state;
       setGeoAsk(p.state === 'prompt');
       p.onchange = () => {
+        geoState.current = p.state;
         setGeoAsk(p.state === 'prompt');
         if (p.state === 'granted') setLocationOff(false);
       };
@@ -365,7 +377,8 @@ export function DriverApp({ token }: { token: string }) {
   // Taps run strictly in order. Each one commits to the phone before the screen changes.
   const chain = useRef<Promise<unknown>>(Promise.resolve());
   const inOrder = (fn: () => Promise<void>) => {
-    chain.current = chain.current.then(fn).catch(() => flashToast(translate(langRef.current, 'save_failed')));
+    busy.current++;
+    chain.current = chain.current.then(fn).catch(() => flashToast(translate(langRef.current, 'save_failed'))).finally(() => busy.current--);
   };
 
   const apply = async (next: LocalState, actions: Record<string, unknown>[] = [], photo?: { blob: Blob; meta: Record<string, string> }) => {
@@ -393,7 +406,8 @@ export function DriverApp({ token }: { token: string }) {
     flashToast(t('location_finding'));
     return new Promise((resolve) => {
       const give = (v: { lat: number; lon: number; acc: number } | null) => { clearTimeout(timer); resolve(v); };
-      const timer = setTimeout(() => give(usable(position.current)), FIX_WAIT_MS + 500);
+      // The phone's "allow location?" question may still be on screen: give the driver time to answer it.
+      const timer = setTimeout(() => give(usable(position.current)), FIX_WAIT_MS + 500 + (geoState.current === 'granted' ? 0 : FIX_PROMPT_MS));
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           position.current = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy, got: Date.now() };

@@ -13,6 +13,8 @@ import { baseUrl } from './env';
 import { getSetting } from './providers';
 import { hashToken, sha256Hex } from './tokens';
 
+/** The deployed commit on Vercel; 'dev' locally. */
+export const APP_BUILD = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.FLAKE_BUILD ?? 'dev';
 export const UNDO_WINDOW_MS = 2 * 60 * 1000;
 /** A driver's problem kind, in the words an office alert uses. */
 const PROBLEM_WORD: Record<string, string> = { blocked: 'Blocked', breakdown: 'Breakdown', damage: 'Damage', skip: 'Skipped', other: 'Problem' };
@@ -140,6 +142,8 @@ export async function loadRun(rs: RunScope) {
     storm: { id: rs.storm.id, name: rs.storm.name, status: rs.storm.status },
     run: { id: rs.run.id, pass: rs.run.pass },
     crew: rs.crew ? { name: rs.crew.name, language: rs.crew.language } : null,
+    // The deployed version, so a page left open since before a fix knows to reload itself.
+    build: APP_BUILD,
     has_reported_depth: stormVisits.length > 0,
     stops: rows.map(({ stop, site: st }) => {
       const c = contracts.find((x) => x.site_id === st.id);

@@ -302,8 +302,11 @@ export async function planRun(ctx: Ctx & { timezone: string }, runId: string) {
   const open = data.stops.filter((x) => ['open', 'enroute', 'problem'].includes(x.stop.status));
   // With nobody on a lot and no GPS from the phone, start from the lot this truck finished last (issue 77), and say so.
   const lastDone = data.stops.filter((x) => x.stop.status === 'done').sort((a, b) => Date.parse(b.stop.updated_at ?? '') - Date.parse(a.stop.updated_at ?? ''))[0];
+  // A phone only reports while the route page is on screen, so after a lot finished since, its last report can be the
+  // yard where the driver opened the link. The newer of the two wins (found walking the app after issue 184).
+  const posFresh = data.pos && !(lastDone && Date.parse(lastDone.stop.updated_at ?? '') > Date.parse(data.pos.device_at));
   const from = onsite ? { lat: onsite.site.lat, lon: onsite.site.lon, kind: 'lot' as const }
-    : data.pos ? { lat: data.pos.lat, lon: data.pos.lon, kind: 'truck' as const }
+    : posFresh ?{ lat: data.pos.lat, lon: data.pos.lon, kind: 'truck' as const }
     : lastDone ? { lat: lastDone.site.lat, lon: lastDone.site.lon, kind: 'last_done' as const } : null;
   if (!from || open.length < 2) return { from: from?.kind ?? null, changed: false, order: data.stops.map((x) => x.stop.id), suggested: null, current: null };
   const endAt = data.trip?.yard && data.trip.yard_trip !== false ? { lat: data.trip.yard.lat, lon: data.trip.yard.lon } : null;

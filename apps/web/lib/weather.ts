@@ -1,5 +1,5 @@
 import { gzipSync } from 'node:zlib';
-import { and, app_setting, contract, desc, driver_action, eq, gte, inArray, lte, serviceDb, site, sql, storm, tenant, trigger_alert, weather_snapshot } from '@flake/db';
+import { and, app_setting, asc, contract, desc, driver_action, eq, gte, inArray, lte, or, serviceDb, site, sql, storm, tenant, trigger_alert, weather_snapshot } from '@flake/db';
 import { expandSeries, evaluateSite, groupDecisions, alertHeadline, newWinterAlerts, summarize, sumOverlap, toFahrenheit, toInches, type DepthReport, type HourBucket, type NwsAlert, type SiteDecision, type TriggerSite, type WeatherSeries } from '@flake/core/trigger';
 import type { ContractService } from '@flake/core/pricing';
 import { fmtLocal, liveContracts } from '@flake/core/time';
@@ -68,6 +68,24 @@ async function recordSuccess() {
   await serviceDb().update(app_setting).set({ value: { failures: 0, open_until: null } }).where(eq(app_setting.key, 'weather_breaker'));
 }
 
+type Cell = { office: string | null; x: number | null; y: number | null };
+const cellKey = (office: string | null, x: number | null, y: number | null) => `${office}/${x}/${y}`;
+
+/**
+ * The newest forecast snapshot for each grid cell, in one query rather than one per cell (issue 185). Keyed by
+ * office/x/y; a cell with no snapshot yet is simply absent.
+ */
+export async function latestGrids(cells: Cell[]) {
+  const wanted = [...new Map(cells.filter((c) => c.office && c.x !== null && c.y !== null).map((c) => [cellKey(c.office, c.x, c.y), c])).values()];
+  const out = new Map<string, typeof weather_snapshot.$inferSelect>();
+  if (!wanted.length) return out;
+  const rows = await serviceDb().selectDistinctOn([weather_snapshot.office, weather_snapshot.grid_x, weather_snapshot.grid_y]).from(weather_snapshot)
+    .where(and(eq(weather_snapshot.source, 'nws_grid'), or(...wanted.map((c) => and(eq(weather_snapshot.office, c.office!), eq(weather_snapshot.grid_x, c.x!), eq(weather_snapshot.grid_y, c.y!))))))
+    .orderBy(asc(weather_snapshot.office), asc(weather_snapshot.grid_x), asc(weather_snapshot.grid_y), desc(weather_snapshot.fetched_at));
+  for (const r of rows) out.set(cellKey(r.office, r.grid_x, r.grid_y), r);
+  return out;
+}
+
 /** Maps sites to an NWS grid cell on first sight and every 7 days after. */
 export async function mapSites(tenantId?: string, force = false) {
   const { weather } = await getProviders();
@@ -106,8 +124,9 @@ export async function scheduleWeather() {
   const now = await weatherNow();
   const cells = await serviceDb().selectDistinct({ office: site.nws_office, x: site.nws_grid_x, y: site.nws_grid_y }).from(site).where(and(eq(site.active, true), sql`${site.nws_office} is not null`));
   let queued = 0;
+  const latest = await latestGrids(cells);
   for (const c of cells) {
-    const [last] = await serviceDb().select().from(weather_snapshot).where(and(eq(weather_snapshot.source, 'nws_grid'), eq(weather_snapshot.office, c.office!), eq(weather_snapshot.grid_x, c.x!), eq(weather_snapshot.grid_y, c.y!))).orderBy(desc(weather_snapshot.fetched_at)).limit(1);
+    const last = latest.get(cellKey(c.office, c.x, c.y));
     const age = last ? Date.now() - Date.parse(last.fetched_at) : Infinity;
     const busy = last ? Boolean(last.summary.alerts?.length) || (summarize(seriesFromSummary(last.summary), now.getTime() + 12 * HOUR).snow_next12h_in ?? 0) > 0 || (summarize(seriesFromSummary(last.summary), now.getTime()).snow_next12h_in ?? 0) > 0 : true;
     if (age > 60 * 60000 || (busy && age > 15 * 60000)) {
@@ -179,14 +198,8 @@ export async function evaluateTenant(tenantId: string): Promise<string[]> {
   // Triggers come from the contract in force today, not a renewal signed for next winter. Today on the wall clock:
   // the demo's weather clock replays an old storm, and contracts are signed in real time.
   const contracts = liveContracts(await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)), new Date(), t.timezone);
-  const cellKey = (s: { nws_office: string | null; nws_grid_x: number | null; nws_grid_y: number | null }) => `${s.nws_office}/${s.nws_grid_x}/${s.nws_grid_y}`;
-  const latest = new Map<string, typeof weather_snapshot.$inferSelect>();
-  for (const s of sites) {
-    const key = cellKey(s);
-    if (latest.has(key)) continue;
-    const [snap] = await db.select().from(weather_snapshot).where(and(eq(weather_snapshot.source, 'nws_grid'), eq(weather_snapshot.office, s.nws_office!), eq(weather_snapshot.grid_x, s.nws_grid_x!), eq(weather_snapshot.grid_y, s.nws_grid_y!))).orderBy(desc(weather_snapshot.fetched_at)).limit(1);
-    if (snap) latest.set(key, snap);
-  }
+  const siteCell = (s: { nws_office: string | null; nws_grid_x: number | null; nws_grid_y: number | null }) => cellKey(s.nws_office, s.nws_grid_x, s.nws_grid_y);
+  const latest = await latestGrids(sites.map((s) => ({ office: s.nws_office, x: s.nws_grid_x, y: s.nws_grid_y })));
   const depthRows = await db.select().from(driver_action).where(and(eq(driver_action.tenant_id, tenantId), eq(driver_action.kind, 'depth'), gte(driver_action.device_at, new Date(nowMs - 48 * HOUR).toISOString())));
   const reports: DepthReport[] = depthRows
     .filter((r) => typeof r.payload.lat === 'number')
@@ -201,7 +214,7 @@ export async function evaluateTenant(tenantId: string): Promise<string[]> {
     const triggers = services.map((x) => x.trigger_in).filter((v): v is number => typeof v === 'number');
     const input: TriggerSite = { site_id: s.id, lat: s.lat, lon: s.lon, trigger_in: triggers.length ? Math.min(...triggers) : null, has_salt: services.some((x) => x.service === 'salt'), snow_on_ground: Boolean(recentStorm) };
     if (input.trigger_in === null && !input.has_salt) continue;
-    const snap = latest.get(cellKey(s));
+    const snap = latest.get(siteCell(s));
     if (snap) decisions.push(...evaluateSite(input, seriesFromSummary(snap.summary), nowMs, reports));
   }
   const prior = await db.select().from(trigger_alert).where(eq(trigger_alert.tenant_id, tenantId));
@@ -212,7 +225,7 @@ export async function evaluateTenant(tenantId: string): Promise<string[]> {
   const area = areaName(sites.map((s) => s.address));
   const created: string[] = [];
   for (const p of proposals) {
-    const snapshotIds = sites.filter((s) => p.site_ids.includes(s.id)).map((s) => latest.get(cellKey(s))?.id).filter((v): v is string => Boolean(v));
+    const snapshotIds = sites.filter((s) => p.site_ids.includes(s.id)).map((s) => latest.get(siteCell(s))?.id).filter((v): v is string => Boolean(v));
     // More sites reaching a trigger while one is still waiting on someone: that alert grows, and people hear about it.
     const open = prior.find((a) => a.status === 'open' && a.kind === p.kind);
     if (open) {
@@ -296,11 +309,7 @@ export async function fetchNohrsc(hours: 6 | 24 = 24) {
 export async function latestSnapshotIds(tenantId: string): Promise<string[]> {
   const db = serviceDb();
   const cells = await db.selectDistinct({ office: site.nws_office, x: site.nws_grid_x, y: site.nws_grid_y }).from(site).where(and(eq(site.tenant_id, tenantId), eq(site.active, true), sql`${site.nws_office} is not null`));
-  const ids: string[] = [];
-  for (const c of cells) {
-    const [s] = await db.select({ id: weather_snapshot.id }).from(weather_snapshot).where(and(eq(weather_snapshot.source, 'nws_grid'), eq(weather_snapshot.office, c.office!), eq(weather_snapshot.grid_x, c.x!), eq(weather_snapshot.grid_y, c.y!))).orderBy(desc(weather_snapshot.fetched_at)).limit(1);
-    if (s) ids.push(s.id);
-  }
+  const ids = [...(await latestGrids(cells)).values()].map((s) => s.id);
   // Both accumulation windows: billing tiers read the 24 h total even when a 6 h file is newer.
   for (const hours of [6, 24]) {
     const [n] = await db.select({ id: weather_snapshot.id }).from(weather_snapshot).where(and(eq(weather_snapshot.source, 'nohrsc'), sql`(${weather_snapshot.summary}->>'hours')::int = ${hours}`)).orderBy(desc(weather_snapshot.fetched_at)).limit(1);
@@ -365,10 +374,7 @@ export async function stormWeather(tenantId: string, s: { status: string; starte
   const cells = [...new Map(sites.filter((x) => x.nws_office).map((x) => [`${x.nws_office}/${x.nws_grid_x}/${x.nws_grid_y}`, x])).values()];
   let grids: (typeof weather_snapshot.$inferSelect)[] = [];
   if (active) {
-    for (const c of cells) {
-      const [g] = await db.select().from(weather_snapshot).where(and(eq(weather_snapshot.source, 'nws_grid'), eq(weather_snapshot.office, c.nws_office!), eq(weather_snapshot.grid_x, c.nws_grid_x!), eq(weather_snapshot.grid_y, c.nws_grid_y!))).orderBy(desc(weather_snapshot.fetched_at)).limit(1);
-      if (g) grids.push(g);
-    }
+    grids = [...(await latestGrids(cells.map((c) => ({ office: c.nws_office, x: c.nws_grid_x, y: c.nws_grid_y })))).values()];
   } else if (s.forecast_snapshot_ids?.length) {
     const attached = await db.select().from(weather_snapshot).where(and(inArray(weather_snapshot.id, s.forecast_snapshot_ids), eq(weather_snapshot.source, 'nws_grid'))).orderBy(desc(weather_snapshot.fetched_at));
     // The newest snapshot per forecast area: the one taken at close knows the most about the storm's hours.

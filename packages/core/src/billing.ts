@@ -91,6 +91,9 @@ export interface BillingContract {
 export interface BillingVisit extends PricedVisit {
   arrive_lat: number | null;
   arrive_lon: number | null;
+  /** Where the phone was at Done. Proof when the arrival had no fix. */
+  depart_lat?: number | null;
+  depart_lon?: number | null;
   after_photos: number;
   /** The office recorded this visit in billing review because no visit came from the phone (issue 122). */
   office_recorded?: boolean;
@@ -174,6 +177,8 @@ function flagsForSite(site: BillingSite, contract: BillingContract | undefined, 
     // note in the office's words instead of two flags that blame the phone (issue 122).
     if (v.office_recorded) {
       add('office_recorded', `${site.label}: visit recorded by the office. No location or photos came from the phone.`, v.id, 'info');
+    } else if ((v.arrive_lat == null || v.arrive_lon == null) && v.depart_lat != null && v.depart_lon != null && gpsMatches(v.depart_lat, v.depart_lon, site)) {
+      // No fix in time at Arrive, but the phone was on the lot at Done: that is proof, not a flag.
     } else if (v.arrive_lat == null || v.arrive_lon == null) {
       add('no_gps_match', `${site.label}: the phone didn't share its location on arrival, so there's no GPS record of this visit.`, v.id);
     } else if (!gpsMatches(v.arrive_lat, v.arrive_lon, site)) {
