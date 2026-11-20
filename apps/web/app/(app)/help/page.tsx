@@ -51,7 +51,7 @@ export default async function Help() {
         </Card>
         <Card>
           <Eyebrow className="mb-2">If something goes wrong</Eyebrow>
-          <p className="text-sm">Keep plowing your usual way, and tell us with &ldquo;Something confusing or broken? Tell us&rdquo; at the bottom of any page. It reaches the Flake team with the page you were on. During the pilot we watch every storm and fix problems the same night.</p>
+          <p className="text-sm">Keep plowing your usual way, and tell us with the round bug button in the bottom-right corner of any page. It reaches the Flake team with the page you were on. During the pilot we watch every storm and fix problems the same night.</p>
         </Card>
       </div>
     </>

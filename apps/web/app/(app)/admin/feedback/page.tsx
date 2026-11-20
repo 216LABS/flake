@@ -7,7 +7,7 @@ import { isPlatformAdmin } from '@/lib/salt-orders';
 export const metadata = { title: 'Feedback' };
 export const dynamic = 'force-dynamic';
 
-/** 216LABS only: everything sent with "Tell us", newest first, even when the email copy didn't go out. */
+/** 216LABS only: everything sent with the corner "Report a problem" button, newest first, even when the email copy didn't go out. */
 export default async function FeedbackAdmin() {
   const ctx = await requirePage();
   if (!isPlatformAdmin(ctx.email)) notFound();
