@@ -4,7 +4,7 @@ import { gpsMatches } from '@flake/core/geo';
 import { liveContracts } from '@flake/core/time';
 import type { ContractService } from '@flake/core/pricing';
 import type { MultiPolygon, Polygon } from 'geojson';
-import { getBlob, putBlob, removeBlob, signedUploadUrl } from './blob';
+import { getBlob, putBlob, removeBlob, signedUploadUrl, signedUrl } from './blob';
 import { log } from './log';
 import { notifyOffice, plainText } from './messaging';
 import { HttpError } from './http';
@@ -30,6 +30,13 @@ export function looksLikeImage(b: Uint8Array) {
   const at = (i: number, s: string) => [...s].every((c, k) => b[i + k] === c.charCodeAt(0));
   return (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) || (b[0] === 0x89 && at(1, 'PNG')) || at(0, 'GIF8') || (at(0, 'RIFF') && at(8, 'WEBP')) || at(4, 'ftyp');
 }
+/** HEIC/HEIF (not AVIF, which the server reads): an iPhone photo, or an Android set to "high efficiency". */
+export function isHeifBytes(b: Uint8Array) {
+  const brand = String.fromCharCode(...b.slice(8, 12));
+  return String.fromCharCode(...b.slice(4, 8)) === 'ftyp' && ['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'mif1', 'msf1'].includes(brand);
+}
+/** What an office upload says when a phone's browser sent HEIC it couldn't convert. */
+export const HEIF_HELP = 'This phone saved the photo as HEIC, which this browser could not convert. In the camera settings, turn off High efficiency pictures (or choose Most Compatible), then add it again.';
 /** Actions that begin work at a stop. A closed storm refuses these when they were tapped after the close. */
 const STARTS_WORK = new Set(['enroute', 'arrive', 'problem']);
 /**
@@ -418,6 +425,36 @@ export async function finishPhotoUpload(rs: RunScope, input: PhotoUpload) {
     throw new HttpError(413, 'File too large', 'too_large');
   }
   return recordPhoto(rs, visitId, path, { ...input, bytes });
+}
+
+/** The most a phone's JPEG copy of a HEIC photo can weigh: 1600 px at 0.82 is far under this. */
+export const MAX_VIEW_BYTES = 4 * 1024 * 1024;
+
+/**
+ * The phone's JPEG copy of a HEIC visit photo (the server can't decode HEIC). It becomes the photo's thumbnail, which
+ * the office, the customer page, texted links and the proof PDF fall back to. Only for a photo on this link's own
+ * stops, only when the server couldn't read the original itself, and re-encoded so what's stored is really a JPEG.
+ */
+export async function saveViewCopy(rs: RunScope, clientUuid: string, bytes: Uint8Array): Promise<{ status: 'ok' | 'not_needed' }> {
+  const [p] = await serviceDb().select({ path: visit_photo.storage_path, width: visit_photo.width, visit_client_uuid: visit.client_uuid }).from(visit_photo)
+    .innerJoin(visit, eq(visit.id, visit_photo.visit_id)).where(and(eq(visit_photo.tenant_id, rs.scope.tenantId), eq(visit_photo.client_uuid, clientUuid)));
+  if (!p || !(await rs.scope.visit(p.visit_client_uuid))) throw new HttpError(404, 'Photo not found');
+  if (p.width !== null) return { status: 'not_needed' };
+  if (bytes.byteLength > MAX_VIEW_BYTES) throw new HttpError(413, 'File too large', 'too_large');
+  if (!(bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff)) throw new HttpError(415, 'Send a JPEG copy', 'not_jpeg');
+  const sharp = (await import('sharp')).default;
+  const jpeg = await sharp(bytes).resize(1600, 1600, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer().catch(() => null);
+  if (!jpeg) throw new HttpError(415, 'Send a JPEG copy', 'not_jpeg');
+  await putBlob('photos', `${p.path}.thumb.jpg`, jpeg, 'image/jpeg', { upsert: true });
+  return { status: 'ok' };
+}
+
+/**
+ * A short-lived URL for a visit photo. The thumbnail when asked, and also for the full view when the original is a
+ * format a browser may not show (HEIC: the server couldn't read its size), so nobody gets a broken image or a download.
+ */
+export async function visitPhotoUrl(p: { storage_path: string; width: number | null }, thumb: boolean) {
+  return ((thumb || p.width === null) && (await signedUrl('photos', `${p.storage_path}.thumb.jpg`))) || signedUrl('photos', p.storage_path);
 }
 
 export async function readImageMeta(bytes: Uint8Array): Promise<{ width: number | null; height: number | null; exif: Record<string, unknown> | null }> {

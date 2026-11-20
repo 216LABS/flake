@@ -6,7 +6,13 @@ import { openDB, type IDBPDatabase } from 'idb';
  */
 interface StoredAction { seq?: number; token: string; run_stop_id?: string; action: Record<string, unknown> }
 /** Plain bytes, because some browsers refuse to store a File or Blob. Rows saved by older versions still hold a blob. */
-interface StoredPhoto { client_uuid: string; token: string; bytes?: ArrayBuffer; type?: string; blob?: Blob; meta: Record<string, string> }
+interface StoredPhoto {
+  client_uuid: string; token: string; bytes?: ArrayBuffer; type?: string; blob?: Blob; meta: Record<string, string>;
+  /** A JPEG copy of a HEIC photo, for screens and PDFs that can't show HEIC. */
+  view?: ArrayBuffer;
+  /** The original is on the server; only the copy is still to go. */
+  sent?: boolean;
+}
 
 const photoBlob = (p: StoredPhoto) => p.blob ?? new Blob([p.bytes!], { type: p.type ?? '' });
 
@@ -33,12 +39,13 @@ export const kvSet = async (key: string, value: unknown) => void (await (await d
  * One atomic write: the queued actions, any photo, and the phone's view of the route commit together or not at
  * all. The screen only moves on after this resolves, so a crash or reload can't split a tap in two.
  */
-export async function commit(opts: { token: string; localKey: string; local: unknown; actions?: Record<string, unknown>[]; photo?: { blob: Blob; meta: Record<string, string> } }) {
+export async function commit(opts: { token: string; localKey: string; local: unknown; actions?: Record<string, unknown>[]; photo?: { blob: Blob; meta: Record<string, string>; view?: Blob | null } }) {
   // Read before the transaction opens: it would close itself while waiting on anything else.
   const bytes = opts.photo ? await opts.photo.blob.arrayBuffer() : null;
+  const view = opts.photo?.view ? await opts.photo.view.arrayBuffer() : undefined;
   const tx = (await db()).transaction(['actions', 'photos', 'kv'], 'readwrite');
   for (const action of opts.actions ?? []) quietly(tx.objectStore('actions').add({ token: opts.token, run_stop_id: action.run_stop_id as string | undefined, action } satisfies StoredAction));
-  if (opts.photo) quietly(tx.objectStore('photos').put({ client_uuid: opts.photo.meta.client_uuid!, token: opts.token, bytes: bytes!, type: opts.photo.blob.type, meta: opts.photo.meta } satisfies StoredPhoto));
+  if (opts.photo) quietly(tx.objectStore('photos').put({ client_uuid: opts.photo.meta.client_uuid!, token: opts.token, bytes: bytes!, type: opts.photo.blob.type, meta: opts.photo.meta, ...(view ? { view } : {}) } satisfies StoredPhoto));
   quietly(tx.objectStore('kv').put(opts.local, opts.localKey));
   await tx.done;
 }
@@ -82,6 +89,15 @@ async function sendPhoto(token: string, p: StoredPhoto): Promise<Response> {
   return fetch(`/api/d/${token}/photos/finish`, { method: 'POST', headers: json, body, signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS) });
 }
 
+/** The HEIC copy, after its original. Nothing on the server depends on it, so a refusal just drops it. */
+async function sendView(token: string, p: StoredPhoto): Promise<'ok' | 'retry'> {
+  const form = new FormData();
+  form.set('client_uuid', p.client_uuid);
+  form.set('file', new Blob([p.view!], { type: 'image/jpeg' }), `${p.client_uuid}.view.jpg`);
+  const res = await fetch(`/api/d/${token}/photos/view`, { method: 'POST', body: form, signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS) });
+  return res.ok || (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) ? 'ok' : 'retry';
+}
+
 export type FlushResult = 'idle' | 'synced' | 'offline' | 'dead' | 'partial';
 
 export async function flush(token: string, onStart?: () => void, onRejected?: (action: StoredAction['action'], reason: string | undefined) => void): Promise<FlushResult> {
@@ -114,9 +130,14 @@ export async function flush(token: string, onStart?: () => void, onRejected?: (a
 
     let waiting = false;
     for (const p of photos) {
-      const res = await sendPhoto(token, p);
+      const res = p.sent ? new Response(null, { status: 200 }) : await sendPhoto(token, p);
       if (res.status === 410) return 'dead';
       if (res.ok) {
+        if (p.view && (await sendView(token, p).catch(() => 'retry' as const)) === 'retry') {
+          await d.put('photos', { ...p, sent: true });
+          waiting = true;
+          continue;
+        }
         await d.delete('photos', p.client_uuid);
       } else if ([413, 415, 422].includes(res.status)) {
         // The server will never take this file. Keep it on the phone, but stop it holding up the badge.

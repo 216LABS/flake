@@ -18,6 +18,31 @@ export async function shrinkImage(file: File, longEdge = 1600, quality = 0.82): 
   }
 }
 
+/** HEIC/HEIF brands an iPhone (or an Android set to "high efficiency") writes. The server can't decode these. */
+const HEIF_BRANDS = new Set(['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'mif1', 'msf1']);
+
+/** True for a HEIC/HEIF file, by its bytes: phones don't always label the type, and a renamed file says nothing. */
+export async function isHeif(file: Blob): Promise<boolean> {
+  if (/^image\/hei[cf]/i.test(file.type)) return true;
+  const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+  const text = String.fromCharCode(...head);
+  return text.slice(4, 8) === 'ftyp' && HEIF_BRANDS.has(text.slice(8, 12));
+}
+
+/**
+ * A JPEG copy of a HEIC visit photo, for the office, the customer and the proof PDF, which can't show HEIC. The original
+ * is still what's stored as evidence. Null for any other format, or when this browser can't decode HEIC either.
+ */
+export async function heifViewCopy(file: Blob): Promise<Blob | null> {
+  try {
+    if (!(await isHeif(file))) return null;
+    const out = await shrinkImage(file as File, 1600, 0.82);
+    return out !== file && out.type === 'image/jpeg' ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function uploadPinPhoto(pinId: string, file: File) {
   const form = new FormData();
   form.set('file', await shrinkImage(file), 'pin.jpg');

@@ -7,6 +7,7 @@ import { X } from 'lucide-react';
 import { useModal } from '@/components/use-modal';
 import { useEffect, useId, useRef, useState } from 'react';
 import { api } from '@/lib/client';
+import { PhotoImg } from '@/components/photo-img';
 
 interface Photo { id: string; phase: string | null; taken_at: string | null; received_at: string | null }
 interface Visit {
@@ -132,7 +133,7 @@ export function StopSheet({ stopId, tz, onClose }: { stopId: string; tz: string;
                     {photos.map((p) => (
                       <li key={p.id}>
                         <button type="button" className="block w-full overflow-hidden rounded-md border border-line-faint text-left" onClick={() => setBig(p)} data-testid="stop-sheet-photo">
-                          <img src={`/api/photos/${p.id}?thumb`} alt={`${PHASE[p.phase ?? ''] ?? 'Photo'} photo`} className="aspect-[4/3] w-full bg-tint-2 object-cover" loading="lazy" />
+                          <PhotoImg src={`/api/photos/${p.id}?thumb`} alt={`${PHASE[p.phase ?? ''] ?? 'Photo'} photo`} className="aspect-[4/3] w-full bg-tint-2 object-cover" loading="lazy" />
                           <span className="block px-2 py-1 text-xs"><b>{PHASE[p.phase ?? ''] ?? 'Photo'}</b> {when(p.taken_at ?? p.received_at, tz)}</span>
                         </button>
                       </li>
@@ -156,7 +157,7 @@ function PhotoViewer({ photo, onClose }: { photo: Photo; onClose: () => void }) 
   return (
     <div ref={box} className="fixed inset-0 z-[80] flex flex-col bg-slate-950/95" role="dialog" aria-modal="true" aria-label="Photo" data-testid="photo-viewer" onClick={onClose}>
       <div className="flex justify-end p-3"><Button ref={close} variant="ghost" className="text-white hover:bg-slate-800 focus-visible:outline-white" onClick={onClose}>Close</Button></div>
-      <img src={`/api/photos/${photo.id}`} alt={`${PHASE[photo.phase ?? ''] ?? 'Photo'} photo, full size`} className="min-h-0 flex-1 object-contain" />
+      <PhotoImg src={`/api/photos/${photo.id}`} alt={`${PHASE[photo.phase ?? ''] ?? 'Photo'} photo, full size`} className="min-h-0 flex-1 object-contain" />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { asUser, requireApi } from '@/lib/auth';
 import { putBlob, signedUrl } from '@/lib/blob';
 import { HttpError, route } from '@/lib/http';
+import { HEIF_HELP, isHeifBytes } from '@/lib/driver';
 
 const MAX_BYTES = 4 * 1024 * 1024;
 type Ctx = { params: Promise<{ id: string }> };
@@ -27,10 +28,11 @@ export const POST = route<Ctx>(async (req, { params }) => {
   if (file.size > MAX_BYTES) throw new HttpError(413, 'That photo is too large.');
   const sharp = (await import('sharp')).default;
   let jpeg: Buffer;
+  const original = new Uint8Array(await file.arrayBuffer());
   try {
-    jpeg = await sharp(new Uint8Array(await file.arrayBuffer())).rotate().resize(1280, 1280, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 78 }).toBuffer();
+    jpeg = await sharp(original).rotate().resize(1280, 1280, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 78 }).toBuffer();
   } catch {
-    throw new HttpError(422, 'That file is not a photo we can read.', 'not_image');
+    throw new HttpError(422, isHeifBytes(original) ? HEIF_HELP : 'That file is not a photo we can read.', 'not_image');
   }
   const path = `${ctx.tenantId}/pins/${id}.jpg`;
   await putBlob('photos', path, jpeg, 'image/jpeg', { upsert: true });

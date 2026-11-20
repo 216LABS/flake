@@ -1,6 +1,6 @@
 import { eq, serviceDb, short_link, visit_photo, and } from '@flake/db';
 import { NextResponse } from 'next/server';
-import { signedUrl } from '@/lib/blob';
+import { visitPhotoUrl } from '@/lib/driver';
 import { baseUrl } from '@/lib/env';
 import { clientIp, HttpError, rateLimit } from '@/lib/http';
 
@@ -22,7 +22,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
   if (!link) return new NextResponse('This link is not valid.', { status: 404 });
   if (link.target.startsWith('photo:')) {
     const [p] = await db.select().from(visit_photo).where(and(eq(visit_photo.id, link.target.slice(6)), eq(visit_photo.tenant_id, link.tenant_id)));
-    const url = p && (await signedUrl('photos', p.storage_path));
+    const url = p && (await visitPhotoUrl(p, false));
     if (!url) return new NextResponse('This photo is unavailable.', { status: 404 });
     return NextResponse.redirect(url);
   }

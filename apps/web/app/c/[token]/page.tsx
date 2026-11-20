@@ -5,6 +5,7 @@ import { money, phone, possessive } from '@/lib/client';
 import { portalData, resolvePortal } from '@/lib/portal';
 import { RequestVisit } from './request-visit';
 import { ButtonA } from '@/components/links';
+import { PhotoImg } from '@/components/photo-img';
 
 export const metadata = { title: 'Your service records', robots: 'noindex, nofollow' };
 export const dynamic = 'force-dynamic';
@@ -103,7 +104,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
                           <div className="mt-2 flex flex-wrap gap-2">
                             {v.photos.map((p) => (
                               <a key={p.id} href={photo(p.id)} target="_blank" rel="noopener" className="block text-xs text-muted">
-                                <img src={photo(p.id, true)} alt={`${p.phase === 'before' ? 'Before' : 'After'} photo, ${day(v.arrived)}`} loading="lazy" className="h-24 w-32 rounded-sm border border-line-faint bg-tint-2 object-cover" />
+                                <PhotoImg src={photo(p.id, true)} alt={`${p.phase === 'before' ? 'Before' : 'After'} photo, ${day(v.arrived)}`} loading="lazy" className="h-24 w-32 rounded-sm border border-line-faint bg-tint-2 object-cover" />
                                 <span className="mt-0.5 block">{p.phase === 'before' ? 'Before' : 'After'}</span>
                               </a>
                             ))}

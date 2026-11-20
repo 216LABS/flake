@@ -3,7 +3,7 @@ import { eq, site, site_walk_item } from '@flake/db';
 import { NextResponse } from 'next/server';
 import { asUser, requireApi } from '@/lib/auth';
 import { putBlob } from '@/lib/blob';
-import { readImageMeta } from '@/lib/driver';
+import { HEIF_HELP, isHeifBytes, readImageMeta } from '@/lib/driver';
 import { HttpError, isUuid, route } from '@/lib/http';
 import { sha256Hex } from '@/lib/tokens';
 
@@ -36,7 +36,7 @@ export const POST = route<Ctx>(async (req, { params }) => {
     try {
       jpeg = await sharp(original).rotate().resize(1600, 1600, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer();
     } catch {
-      throw new HttpError(422, 'That file is not a photo we can read.', 'not_image');
+      throw new HttpError(422, isHeifBytes(original) ? HEIF_HELP : 'That file is not a photo we can read.', 'not_image');
     }
     const meta = await readImageMeta(original);
     const exifAt = (meta.exif?.DateTimeOriginal ?? meta.exif?.CreateDate) as string | undefined;

@@ -1,6 +1,6 @@
 import { and, asc, crew_member, customer, desc, eq, inArray, or, problem_report, route, run_stop, site, sql, storm, storm_run, visit, visit_correction, visit_photo, withUser } from '@flake/db';
 import { HttpError } from './http';
-import { signedUrl } from './blob';
+import { visitPhotoUrl } from './driver';
 import { gpsMatches } from '@flake/core/geo';
 import type { MultiPolygon, Polygon } from 'geojson';
 
@@ -63,7 +63,6 @@ export async function stopDetail(userId: string, stopId: string) {
 
 /** A short-lived URL for one visit photo, if RLS lets this user see it. */
 export async function officePhotoUrl(userId: string, photoId: string, thumb: boolean) {
-  const [p] = await withUser(userId, (tx) => tx.select({ path: visit_photo.storage_path }).from(visit_photo).where(eq(visit_photo.id, photoId)));
-  if (!p) return null;
-  return (thumb && (await signedUrl('photos', `${p.path}.thumb.jpg`))) || signedUrl('photos', p.path);
+  const [p] = await withUser(userId, (tx) => tx.select({ storage_path: visit_photo.storage_path, width: visit_photo.width }).from(visit_photo).where(eq(visit_photo.id, photoId)));
+  return p ? visitPhotoUrl(p, thumb) : null;
 }

@@ -6,6 +6,7 @@ import { usDistance } from '@flake/core/units';
 import { BigButton, bigButtonClass, cn } from '@flake/ui';
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { commit, flush, kvGet, kvSet, pending } from './outbox';
+import { heifViewCopy } from '@/lib/shrink-image';
 
 interface Stop {
   id: string;
@@ -383,7 +384,7 @@ export function DriverApp({ token, build }: { token: string; build?: string }) {
     chain.current = chain.current.then(fn).catch(() => flashToast(translate(langRef.current, 'save_failed'))).finally(() => busy.current--);
   };
 
-  const apply = async (next: LocalState, actions: Record<string, unknown>[] = [], photo?: { blob: Blob; meta: Record<string, string> }) => {
+  const apply = async (next: LocalState, actions: Record<string, unknown>[] = [], photo?: { blob: Blob; meta: Record<string, string>; view?: Blob | null }) => {
     generation.current++;
     await commit({ token, localKey, local: next, actions, photo });
     generation.current++;
@@ -474,14 +475,17 @@ export function DriverApp({ token, build }: { token: string; build?: string }) {
     if (file.type && !file.type.startsWith('image/')) return flashToast(t('photo_not_image'));
     if (file.size > MAX_PHOTO_BYTES) return flashToast(t('photo_too_big'));
     const takenAt = nowIso();
+    // HEIC (iPhones, and Androids set to high efficiency) is kept as is, plus a JPEG copy the office and the PDF can show.
+    const viewing = heifViewCopy(file);
     inOrder(async () => {
+      const view = await viewing;
       const v = localRef.current.visits[stop.id];
       if (!v) return;
       // Stored as the original bytes: no compression, so full resolution and EXIF reach the server.
       const meta = { client_uuid: uuid(), visit_client_uuid: v.visit, phase, taken_at: takenAt };
       // A retake is kept too, as more evidence, and the button says how many there are.
       const n = (phase === 'before' ? v.beforeN ?? (v.before ? 1 : 0) : v.afterN ?? (v.after ? 1 : 0)) + 1;
-      await apply({ ...localRef.current, visits: { ...localRef.current.visits, [stop.id]: { ...v, ...(phase === 'before' ? { before: true, beforeN: n } : { after: true, afterN: n }) } } }, [], { blob: file, meta });
+      await apply({ ...localRef.current, visits: { ...localRef.current.visits, [stop.id]: { ...v, ...(phase === 'before' ? { before: true, beforeN: n } : { after: true, afterN: n }) } } }, [], { blob: file, meta, view });
       flashToast(n > 1 ? t('photo_again', { n }) : t('photo_saved'));
     });
   };

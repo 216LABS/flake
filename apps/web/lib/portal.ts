@@ -120,12 +120,12 @@ export async function portalData(customerId: string, tenantId: string) {
 }
 
 /** A photo or packet is only reachable through the portal of the customer whose site it belongs to. */
-export async function portalPhotoPath(customerId: string, tenantId: string, photoId: string): Promise<string | null> {
+export async function portalPhotoPath(customerId: string, tenantId: string, photoId: string): Promise<{ storage_path: string; width: number | null } | null> {
   if (!isUuid(photoId)) return null;
-  const [p] = await serviceDb().select({ path: visit_photo.storage_path, phase: visit_photo.phase }).from(visit_photo)
+  const [p] = await serviceDb().select({ storage_path: visit_photo.storage_path, width: visit_photo.width, phase: visit_photo.phase }).from(visit_photo)
     .innerJoin(visit, eq(visit.id, visit_photo.visit_id)).innerJoin(site, eq(site.id, visit.site_id))
     .where(and(eq(visit_photo.id, photoId), eq(visit_photo.tenant_id, tenantId), eq(site.customer_id, customerId), visitNotVoided));
-  return p && p.phase !== 'issue' ? p.path : null;
+  return p && p.phase !== 'issue' ? { storage_path: p.storage_path, width: p.width } : null;
 }
 
 export async function portalPacketPath(customerId: string, tenantId: string, packetId: string): Promise<string | null> {
