@@ -122,8 +122,13 @@ for (const size of SIZES) {
       await expect.poll(async () => (await page.request.get(`/api/proof/${id}`).then((r) => r.json(), () => ({ status: 'retry' }))).status, { timeout: 90000, intervals: [1000] }).toBe('ready');
       await page.reload();
       const open = page.getByTestId('packet-open').first();
-      await open.scrollIntoViewIfNeeded();
-      await expect(open).toBeInViewport({ ratio: 1 });
+      // The reloaded list can still reflow after one scroll (WebKit), so scroll again until it holds.
+      await expect(async () => {
+        await open.scrollIntoViewIfNeeded();
+        await expect(open).toBeInViewport({ ratio: 1, timeout: 1000 });
+      }).toPass({ timeout: 20000 });
+      // A trial tap fails if the tab bar or header covers the button.
+      await open.click({ trial: true });
     });
   });
 }
