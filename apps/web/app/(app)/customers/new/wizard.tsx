@@ -15,11 +15,8 @@ import { uploadPinPhoto } from '@/lib/shrink-image';
 import { MapView, type MapMode, type TileLayers } from '@/components/map-view';
 import { customerProblem, toE164 } from '../[id]/customer-editor';
 import { quoteProblem } from '../../sites/[id]/site-actions';
+import { sameStreet, streetFits, tidyAddress } from '@flake/core/address';
 
-const SUFFIX: Record<string, string> = { ave: 'avenue', av: 'avenue', rd: 'road', st: 'street', dr: 'drive', blvd: 'boulevard', ln: 'lane', ct: 'court', pl: 'place', pkwy: 'parkway', hwy: 'highway', cir: 'circle', ter: 'terrace', trl: 'trail', n: 'north', s: 'south', e: 'east', w: 'west' };
-const streetOf = (s: string) => (s.replace(/\(.*?\)/g, ' ').split(',')[0] ?? s).toLowerCase().replace(/[.#]/g, ' ').split(/\s+/).filter(Boolean).map((w) => SUFFIX[w] ?? w).join(' ');
-/** "14701 Detroit Ave" and "14701 DETROIT AVENUE" are the same street. "14701 DETROIT RD" is not (issue 3). */
-export const sameStreet = (typed: string, found: string) => streetOf(typed) === streetOf(found);
 
 const STEPS = ['Customer', 'Property', 'Pricing', 'Pins', 'Route', 'Quote'];
 const PIN_KINDS = ['stake', 'pile', 'ada', 'entrance', 'hazard', 'other'];
@@ -49,10 +46,12 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
   };
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [c, setC] = useState({ name: existing?.name ?? '', kind: existing?.kind ?? 'commercial', contact_name: '', phone_e164: '', email: existing?.email ?? '', billing_mode: 'card_on_file' });
+  const [c, setC] = useState({ name: existing?.name ?? '', kind: existing?.kind ?? 'commercial', contact_name: '', phone_e164: '', email: existing?.email ?? '', billing_mode: paymentsReady ? 'card_on_file' : 'invoice_net30' });
   const twin = existing || !c.name.trim() ? null : others.find((o) => o.name.trim().toLowerCase() === c.name.trim().toLowerCase()) ?? null;
   const [address, setAddress] = useState('');
   const [hit, setHit] = useState<{ label: string; lat: number; lon: number } | null>(null);
+  // What the office typed for the place they picked: the saved address keeps their street when the match differs (issue 210).
+  const [hitText, setHitText] = useState('');
   const lotTwin = hit ? knownLots.find((l) => sameLot(l.address, hit.label.replace(' (mock geocode)', ''))) ?? null : null;
   const [estimate, setEstimate] = useState<{ sqft: number | null; method: string; attribution: string[]; parcel_id?: string; county?: string } | null>(null);
   const [polygon, setPolygon] = useState<Polygon | MultiPolygon | null>(null);
@@ -118,7 +117,8 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
     let stale = false;
     const timer = setTimeout(async () => {
       const out = await api<{ hits: { label: string; lat: number; lon: number }[] }>('/api/sites/suggest', { body: { q } }).catch(() => ({ hits: [] }));
-      if (!stale) setSuggestions(out.hits);
+      // Suggestions on the street that was typed come first (issue 210).
+      if (!stale) setSuggestions([...out.hits.filter((h) => streetFits(q, h.label)), ...out.hits.filter((h) => !streetFits(q, h.label))]);
     }, 300);
     return () => {
       stale = true;
@@ -127,10 +127,17 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
   }, [address]);
 
   const choose = (s: { label: string; lat: number; lon: number }) => {
+    setSuggestions([]);
+    // A different street from the one typed gets the same check as Find (issue 210).
+    if (!streetFits(address, s.label)) {
+      picked.current = address.trim();
+      setChoices([s]);
+      return;
+    }
+    const typed = address;
     picked.current = s.label;
     setAddress(s.label);
-    setSuggestions([]);
-    void measure(s, s.label);
+    void measure(s, typed);
   };
 
   const find = async () => {
@@ -139,10 +146,11 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
     picked.current = address.trim();
     setBusy(true);
     try {
-      const { hits } = await api<{ hits: { label: string; lat: number; lon: number }[] }>('/api/sites/geocode', { body: { q: address } });
-      if (!hits[0]) throw new Error('We could not find that address. Check the street and city.');
+      const found = (await api<{ hits: { label: string; lat: number; lon: number }[] }>('/api/sites/geocode', { body: { q: address } })).hits;
+      if (!found[0]) throw new Error('We could not find that address. Check the street and city.');
+      const hits = [...found.filter((h) => streetFits(address, h.label)), ...found.filter((h) => !streetFits(address, h.label))];
       // The lookup can land on a nearby street with the same name. Drivers go to what's saved, so the office picks.
-      if (hits.length === 1 && sameStreet(address, hits[0].label)) await measure(hits[0], address);
+      if (hits.length === 1 && sameStreet(address, hits[0]!.label)) await measure(hits[0]!, address);
       else setChoices(hits.slice(0, 5));
     } catch (e) {
       setError((e as Error).message);
@@ -157,7 +165,8 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
     setBusy(true);
     try {
       setHit(place);
-      if (!label) setLabel(text.split(',')[0] ?? text);
+      setHitText(text);
+      if (!label) setLabel(tidyAddress(text, place.label.replace(' (mock geocode)', '')).split(',')[0]!);
       const landUse = c.kind === 'residential' ? 'residential' : 'commercial';
       const m = await api('/api/sites/measure', { body: { lat: place.lat, lon: place.lon, land_use: landUse } });
       setEstimate({ sqft: m.estimateSqft, method: m.method, attribution: m.attribution, parcel_id: m.parcel?.id, county: m.parcel?.county });
@@ -189,7 +198,7 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
       saved.current.customerId ??= (await api('/api/customers', { body: { ...c, name: c.name.trim(), phone_e164: toE164(c.phone_e164) } })).id;
       saved.current.siteId ??= (await api('/api/sites', {
         body: {
-          customer_id: saved.current.customerId, label: label || address, address: hit!.label.replace(' (mock geocode)', ''), lat: hit!.lat, lon: hit!.lon,
+          customer_id: saved.current.customerId, label: label || address, address: tidyAddress(hitText, hit!.label.replace(' (mock geocode)', '')), lat: hit!.lat, lon: hit!.lon,
           parcel_id: estimate?.parcel_id ?? null, parcel_county: estimate?.county ?? null, area_estimate_sqft: estimate?.sqft ?? null, area_confirmed_sqft: sqft, polygons: polygon,
           walk_lf: walkLf || null, notes, service_window: openBy ? { open_by: openBy } : null,
         },
@@ -285,7 +294,7 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
             {hit ? (
               <div className="mt-3">
                 {lotTwin && lotTwin.customer_id !== existing?.id ? <p className="mb-2 rounded-md bg-warn-tint p-2 text-sm text-warn-ink" data-testid="lot-twin">You already have {lotTwin.customer}&apos;s {lotTwin.label} at {lotTwin.address}. <Link className={proseLink} href={`/customers/${lotTwin.customer_id}`}>Open it instead</Link>, or keep going if this is a different lot.</p> : null}
-                <p className="mb-2 text-sm" data-testid="address-saved">Address on file: <b>{hit.label.replace(' (mock geocode)', '')}</b>{sameStreet(address, hit.label) ? null : <span className="ml-1 text-warn-ink">(not the street you typed)</span>}</p>
+                <p className="mb-2 text-sm" data-testid="address-saved">Address on file: <b>{tidyAddress(hitText, hit.label.replace(' (mock geocode)', ''))}</b>{streetFits(hitText, hit.label) ? null : <span className="ml-1 text-warn-ink" data-testid="address-differs">(the map found {hit.label.split(',')[0]}, so check the point on the map)</span>}</p>
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <Badge tone="amber" data-testid="estimate-label">Estimate, drag to adjust</Badge>
                   <span data-testid="sqft">{sqft === null ? 'Area unavailable. Draw it or type it.' : `${sqft.toLocaleString()} sq ft`}</span>

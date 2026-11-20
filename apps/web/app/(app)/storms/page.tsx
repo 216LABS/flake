@@ -44,37 +44,60 @@ export default async function Storms({ searchParams }: { searchParams: Promise<{
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
           {(() => {
-            // Live, then Ready to bill, then Billed (issue 187). Live storms also sit in the banner above.
-            const groups = [
-              { key: 'live', title: 'Live', rows: listed.filter((s) => s.status === 'active') },
-              { key: 'to-bill', title: 'Ready to bill', rows: listed.filter((s) => s.status !== 'active' && s.status !== 'billed') },
-              { key: 'billed', title: 'Billed', rows: listed.filter((s) => s.status === 'billed') },
-            ].filter((g) => g.rows.length || (g.key === 'billed' && data.billedCount));
-            return groups.map((g) => (
-              <section key={g.key} className="mb-6" data-testid={`storms-${g.key}`}>
-                <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
-                  <Eyebrow>{g.title}</Eyebrow>
-                  {g.key === 'billed' && data.billedCount > RECENT_BILLED ? (
-                    <FilterTabs label="Billed storms" className="mb-0 border-b-0" items={[
-                      { href: '/storms', label: 'Recent', active: !showOlder },
-                      { href: '/storms?older=1', label: `All ${data.billedCount}`, active: showOlder, testId: 'older-storms' },
-                    ]} />
-                  ) : null}
-                </div>
-                <ul className="space-y-2">
-                  {g.rows.map((s) => (
-                    <li key={s.id}>
-                      <Link href={`/storms/${s.id}`}>
-                        <Card className={cn('flex items-center justify-between transition-colors hover:border-ink', s.status === 'active' && 'border-beacon')}>
-                          <div><div className="font-display text-lg font-semibold leading-tight">{s.name}</div><div className="text-sm text-muted">{stormWhen(s.started_at, ctx.tenant.timezone)}</div></div>
-                          <Badge tone={stormStatus(s.status, !data.withBills.includes(s.id)).tone}>{stormStatus(s.status, !data.withBills.includes(s.id)).word}</Badge>
-                        </Card>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ));
+            // The live storm on its own, then every past storm in one Past storms section, folded while a storm is
+            // live so the one being worked is all that shows (issue 187, Flip's clarification).
+            const card = (s: (typeof listed)[number]) => (
+              <li key={s.id}>
+                <Link href={`/storms/${s.id}`}>
+                  <Card className={cn('flex items-center justify-between transition-colors hover:border-ink', s.status === 'active' && 'border-beacon')}>
+                    <div><div className="font-display text-lg font-semibold leading-tight">{s.name}</div><div className="text-sm text-muted">{stormWhen(s.started_at, ctx.tenant.timezone)}</div></div>
+                    <Badge tone={stormStatus(s.status, !data.withBills.includes(s.id)).tone}>{stormStatus(s.status, !data.withBills.includes(s.id)).word}</Badge>
+                  </Card>
+                </Link>
+              </li>
+            );
+            const live = listed.filter((s) => s.status === 'active');
+            const toBill = listed.filter((s) => s.status !== 'active' && s.status !== 'billed');
+            const billedRows = listed.filter((s) => s.status === 'billed');
+            const pastCount = toBill.length + data.billedCount;
+            return (
+              <>
+                {live.length ? (
+                  <section className="mb-6" data-testid="storms-live">
+                    <Eyebrow className="mb-2">Live</Eyebrow>
+                    <ul className="space-y-2">{live.map(card)}</ul>
+                  </section>
+                ) : null}
+                {pastCount ? (
+                  <details className="group mb-6" open={!live.length || showOlder} data-testid="storms-past">
+                    <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-md border border-line-faint bg-surface px-3 py-2 font-semibold [&::-webkit-details-marker]:hidden" data-testid="storms-past-toggle">
+                      <span>Past storms <span className="font-normal text-muted">({pastCount}{toBill.length ? `, ${toBill.length} ready to bill` : ''})</span></span>
+                      <span aria-hidden="true" className="text-muted transition-transform group-open:rotate-180">▾</span>
+                    </summary>
+                    {toBill.length ? (
+                      <section className="mt-4" data-testid="storms-to-bill">
+                        <Eyebrow className="mb-2">Ready to bill</Eyebrow>
+                        <ul className="space-y-2">{toBill.map(card)}</ul>
+                      </section>
+                    ) : null}
+                    {data.billedCount ? (
+                      <section className="mt-4" data-testid="storms-billed">
+                        <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                          <Eyebrow>Billed</Eyebrow>
+                          {data.billedCount > RECENT_BILLED ? (
+                            <FilterTabs label="Billed storms" className="mb-0 border-b-0" items={[
+                              { href: '/storms', label: 'Recent', active: !showOlder },
+                              { href: '/storms?older=1', label: `All ${data.billedCount}`, active: showOlder, testId: 'older-storms' },
+                            ]} />
+                          ) : null}
+                        </div>
+                        <ul className="space-y-2">{billedRows.map(card)}</ul>
+                      </section>
+                    ) : null}
+                  </details>
+                ) : null}
+              </>
+            );
           })()}
           {data.storms.length ? null : <EmptyState title="No storms yet" body="Add routes first, then start your first storm here." />}
         </div>

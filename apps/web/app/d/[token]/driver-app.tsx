@@ -725,6 +725,15 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; on
           ))}
         </div>
       </div>
+      {/* Salt sits right after depth, one compact row; its scroll margin keeps it above the After photo panel when scrolled to (issue 211). */}
+      {stop.salt_unit ? (
+        <div className="flex scroll-mb-80 items-center gap-3" data-testid="salt-row">
+          <h2 className="min-w-0 flex-1 text-lg font-bold leading-tight">{t('salt')} <span className="block text-base font-medium text-slate-300">{UNIT_KEY[stop.salt_unit] ? t(UNIT_KEY[stop.salt_unit]!) : stop.salt_unit}</span></h2>
+          <BigButton className="w-16 text-3xl" aria-label={`${t('salt')} -1`} onClick={() => p.onSalt(Math.max(0, visit.salt - 1))} data-testid="salt-minus">-</BigButton>
+          <span className="w-12 text-center text-3xl font-bold" data-testid="salt-qty">{visit.salt}</span>
+          <BigButton className="w-16 text-3xl" aria-label={`${t('salt')} +1`} onClick={() => p.onSalt(visit.salt + 1)} data-testid="salt-plus">+</BigButton>
+        </div>
+      ) : null}
       <div>
         <h2 className="mb-2 text-lg font-bold">{t('services')}</h2>
         <div className="flex flex-wrap gap-2">
@@ -735,16 +744,6 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; on
           })}
         </div>
       </div>
-      {stop.salt_unit ? (
-        <div>
-          <h2 className="mb-2 text-lg font-bold">{t('salt')} ({stop.salt_unit})</h2>
-          <div className="flex items-center gap-3">
-            <BigButton className="flex-1 text-3xl" onClick={() => p.onSalt(Math.max(0, visit.salt - 1))} data-testid="salt-minus">-</BigButton>
-            <span className="w-16 text-center text-4xl font-bold" data-testid="salt-qty">{visit.salt}</span>
-            <BigButton className="flex-1 text-3xl" onClick={() => p.onSalt(visit.salt + 1)} data-testid="salt-plus">+</BigButton>
-          </div>
-        </div>
-      ) : null}
       <div className="sticky bottom-0 -mx-4 space-y-3 bg-slate-800 px-4 pb-4 pt-3 shadow-[0_-10px_16px_rgba(0,0,0,0.4)]">
         <PhotoButton label={t('after_photo')} done={visit.after} count={visit.afterN} testId="after-photo" onChange={(e) => p.onPhoto('after', e)} />
         {!visit.after ? <p className="text-center text-base font-medium text-amber-300" data-testid="no-photo-hint">{t('no_after_photo')}</p> : null}
@@ -755,6 +754,8 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; on
     </section>
   );
 }
+
+const UNIT_KEY: Record<string, 'unit_bag50lb' | 'unit_lb' | 'unit_ton' | 'unit_application'> = { bag50lb: 'unit_bag50lb', lb: 'unit_lb', ton: 'unit_ton', application: 'unit_application' };
 
 function ProblemPanel({ t, onCancel, onSend }: { t: T; onCancel: () => void; onSend: (kind: string, voice: Blob | null, note: string) => void }) {
   const [voice, setVoice] = useState<Blob | null>(null);

@@ -152,6 +152,16 @@ test('a storm stop opens to its visit and photos, and every truck is on a phone 
   await expect.poll(async () => (await sql`select count(*)::int as n from visit where storm_id = ${id} and departed_device_at is not null`)[0]!.n, { timeout: 60000 }).toBe(1);
   await expect.poll(async () => (await sql`select count(*)::int as n from visit_photo p join visit v on v.id = p.visit_id where v.storm_id = ${id}`)[0]!.n, { timeout: 60000 }).toBe(2);
   await driver.close();
+  // Proof's preview counts that visit as having photos (issue 208).
+  const [{ site_id }] = await sql`select site_id from visit where storm_id = ${id}`;
+  const q = new URLSearchParams({ siteId: site_id, from: new Date(Date.now() - 3600000).toISOString(), to: new Date(Date.now() + 60000).toISOString() });
+  const pv = await (await page.request.get(`/api/proof/preview?${q}`)).json();
+  // Other tests use the same demo lot, so compare with the database's own counts for the same window.
+  const [want] = await sql`select count(*)::int as visits, count(*) filter (where exists (select 1 from visit_photo p where p.visit_id = v.id))::int as visits_with_photos,
+    (select count(*)::int from visit_photo p join visit w on w.id = p.visit_id where w.site_id = ${site_id} and w.arrived_device_at between ${q.get('from')} and ${q.get('to')}) as photos
+    from visit v where v.site_id = ${site_id} and v.arrived_device_at between ${q.get('from')} and ${q.get('to')}`;
+  expect(pv).toMatchObject({ visits: want!.visits, visits_with_photos: want!.visits_with_photos, photos: want!.photos });
+  expect(pv.visits_with_photos).toBeGreaterThanOrEqual(1);
 
   await page.goto(`/storms/${id}`);
   // Trucks stack full width, with a switcher, not a sideways scroller that hides the second truck.

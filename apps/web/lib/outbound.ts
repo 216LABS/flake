@@ -17,7 +17,8 @@ export async function listOutbound() {
   return serviceDb().select({
     id: tenant.id, name: tenant.name, slug: tenant.slug, created_at: tenant.created_at, outbound_enabled: tenant.outbound_enabled,
     outbound_changed_at: tenant.outbound_changed_at, outbound_changed_by: tenant.outbound_changed_by, sms_status: tenant.sms_status,
-    owner: sql<string | null>`(select u.email from membership m join auth.users u on u.id = m.user_id where m.tenant_id = ${tenant.id} and m.role = 'owner' order by u.created_at limit 1)`,
+    // tenant.id spelled out: Drizzle writes a bare "id" in a one-table select list, which here meant u.id.
+    owner: sql<string | null>`(select u.email from membership m join auth.users u on u.id = m.user_id where m.tenant_id = tenant.id and m.role = 'owner' order by u.created_at limit 1)`,
   }).from(tenant).orderBy(desc(tenant.created_at));
 }
 

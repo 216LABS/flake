@@ -31,6 +31,23 @@ test('payroll and profit pages open', async ({ page }) => {
   await login(page);
   await page.goto('/reports/payroll');
   await expect(page.getByTestId('payroll-period')).toBeVisible();
+  // With no ADP company code, ADP file says what's missing instead of opening a raw error page (issue 209).
+  const [{ payroll }] = await sql`select payroll from tenant where id = ${demo}`;
+  try {
+    await sql`update tenant set payroll = coalesce(payroll, '{}'::jsonb) - 'adp_co_code' where id = ${demo}`;
+    await page.reload();
+    if (await page.getByTestId('payroll-table').isVisible()) {
+      await expect(page.getByTestId('payroll-adp')).toHaveCount(0);
+      await expect(page.getByTestId('payroll-adp-off')).toHaveAttribute('aria-disabled', 'true');
+      await expect(page.getByTestId('payroll-adp-help')).toContainText('ADP company code');
+      await sql`update tenant set payroll = coalesce(payroll, '{}'::jsonb) || '{"adp_co_code":"E2E"}'::jsonb where id = ${demo}`;
+      await page.reload();
+      await expect(page.getByTestId('payroll-adp')).toBeVisible();
+      await expect(page.getByTestId('payroll-adp-help')).toHaveCount(0);
+    }
+  } finally {
+    await sql`update tenant set payroll = ${payroll === null ? null : sql.json(payroll)} where id = ${demo}`;
+  }
   await page.goto('/reports/profit');
   await expect(page.getByTestId('profit-filters')).toBeVisible();
   await expect(page.locator('main')).toContainText(/Profit per lot/);
@@ -42,7 +59,7 @@ test('salt yards: a delivery with its cost raises on hand and sets the cost per 
   try {
     await page.goto('/salt');
     const card = page.getByTestId('yard-card').first();
-    const before = Number(((await card.getByTestId('yard-tons').textContent()) ?? '0').replace(/[^\d.-]/g, ''));
+    const before = Number(await card.getByTestId('yard-tons').getAttribute('data-tons'));
     await card.getByTestId('yard-tons-input').fill('10');
     await card.getByTestId('yard-cost').fill('800');
     await card.getByTestId('yard-note').fill(note);

@@ -100,7 +100,8 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       {allowed && tab === 'data' ? (
         <Card className="max-w-2xl">
           <h2 className="font-semibold">Export your data</h2>
-          <p className="mt-1 text-sm text-muted">One CSV per table. Records are kept 7 years by default because claims can arrive months or years later. Photos and PDFs stay available through their links.</p>
+          <ButtonA className="mt-3" href="/api/settings/export?table=all" download data-testid="export-all">Download all (.zip)</ButtonA>
+          <p className="mt-3 text-sm text-muted">Or one CSV per table. Records are kept 7 years by default because claims can arrive months or years later. Photos and PDFs stay available through their links.</p>
           <ul className="mt-3 flex flex-wrap gap-2" data-testid="exports">{EXPORTS.map((n) => <li key={n}><ButtonA size="sm" href={`/api/settings/export?table=${n}`} download data-testid={`export-${n}`}>{EXPORT_LABEL[n] ?? n}</ButtonA></li>)}</ul>
         </Card>
       ) : null}

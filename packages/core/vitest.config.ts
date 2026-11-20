@@ -15,6 +15,7 @@ export default defineConfig({
         'src/area.ts': full,
         'src/proof.ts': full,
         'src/fees.ts': full,
+        'src/address.ts': full,
       },
     },
   },

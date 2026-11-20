@@ -150,10 +150,19 @@ test('Done is blocked until depth on the first stop, and Undo reopens the stop',
   const label = await page.getByTestId('stop-label').textContent();
   await page.getByTestId('arrive').click();
   await expect(page.getByTestId('done')).toBeDisabled();
+  // Once Arrive has synced and the phone has refetched the run, depth is still required (issue 205).
+  const token = runs[0]!.link.split('/d/')[1]!.split(/[?#]/)[0]!;
+  await expect.poll(async () => (await sql`select count(*)::int as n from visit v join storm_run r on r.storm_id = v.storm_id where r.id = ${runs[0]!.id}`)[0]!.n, { timeout: 20000 }).toBe(1);
+  expect((await (await page.request.get(`/api/d/${token}/run`)).json()).has_reported_depth).toBe(false);
+  await page.reload();
+  await expect(page.getByTestId('onsite')).toBeVisible();
+  await expect(page.getByText('Snow depth (needed on your first stop)')).toBeVisible();
+  await expect(page.getByTestId('done')).toBeDisabled();
   await page.getByTestId('depth-2').click();
   await expect(page.getByTestId('done')).toBeEnabled();
   await page.getByTestId('done').click();
   await expect(page.getByTestId('undo')).toBeVisible();
+  await expect.poll(async () => (await (await page.request.get(`/api/d/${token}/run`)).json()).has_reported_depth, { timeout: 20000 }).toBe(true);
   await page.getByTestId('undo').click();
   await expect(page.getByTestId('stop-label')).toHaveText(label!);
 });

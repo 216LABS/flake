@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { SEASON, login, sql } from './helpers';
+import { SEASON, login, openPastStorms, sql } from './helpers';
 
 /** Archived things stay archived: no new lots for an archived customer, no archived route on a new storm. */
 test('an archived customer gets no new lots, and an archived route is not offered or accepted for a storm', async ({ page }) => {
@@ -45,9 +45,11 @@ test('the storms list keeps live and unbilled storms up top and older billed one
   for (let i = 0; i < 7; i++) await sql`insert into storm (tenant_id, name, started_at, closed_at, status) values (${t}, ${`Billed ${tag} ${i}`}, now() - make_interval(days => ${400 + i}), now() - make_interval(days => ${399 + i}), 'billed')`;
   const [old] = await sql`insert into storm (tenant_id, name, started_at, closed_at, status) values (${t}, ${`Unbilled ${tag}`}, now() - interval '500 days', now() - interval '499 days', 'closed') returning id`;
   await page.goto('/storms');
+  await openPastStorms(page);
   await expect(page.getByText(`Unbilled ${tag}`)).toBeVisible();
   await expect(page.getByText(`Billed ${tag} 6`)).toHaveCount(0);
   await page.getByTestId('older-storms').click();
+  // All billed storms is a choice to see the past, so the section stays open.
   await expect(page.getByText(`Billed ${tag} 6`)).toBeVisible();
   await page.goto('/billing');
   await expect(page.locator('[data-testid="storm-row"][data-status="closed"]', { hasText: `Unbilled ${tag}` })).toHaveCount(1);

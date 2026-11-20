@@ -246,7 +246,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
           }}>Send routes to crew</Button> : null}
           {editable ? <Button className={DARK_RING} variant="outline" data-testid="notify-open" onClick={() => setNotify(true)}>Notify customers</Button> : null}
           {editable ? <Button className={DARK_RING} variant="outline" data-testid="another-pass" onClick={async () => {
-            if (!(await ask({ title: 'Start another pass?', body: 'Every driver gets a new route link for it.', confirm: 'Start pass' }))) return;
+            if (!(await ask({ title: 'Start another pass?', body: 'Every driver gets a new route link for it, and the routes go out to the crew now, the same as starting a storm.', confirm: 'Start pass' }))) return;
             await act(() => api(`/api/storms/${stormId}/pass`, { method: 'POST' }));
           }}>Another pass</Button> : null}
           <Button className={DARK_RING} variant="outline" onClick={() => setShowMap(!showMap)}>{showMap ? 'Hide map' : 'Map'}</Button>
@@ -436,7 +436,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
         {edges.right ? <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 z-10 hidden w-10 bg-gradient-to-l from-page to-transparent md:block" /> : null}
         {edges.left ? <Button size="sm" variant="outline" className="absolute left-1 top-2 z-20 hidden size-10 rounded-full p-0 md:flex" aria-label="Scroll to earlier trucks" data-testid="lanes-left" onClick={() => lanesBox.current?.scrollBy({ left: -340, behavior: 'smooth' })}><ChevronLeft size={20} aria-hidden="true" /></Button> : null}
         {edges.right ? <Button size="sm" variant="outline" className="absolute right-1 top-2 z-20 hidden size-10 rounded-full p-0 md:flex" aria-label="Scroll to more trucks" data-testid="lanes-right" onClick={() => lanesBox.current?.scrollBy({ left: 340, behavior: 'smooth' })}><ChevronRight size={20} aria-hidden="true" /></Button> : null}
-        <div ref={lanesBox} onScroll={measure} className="flex min-w-0 flex-col gap-3 pb-2 md:snap-x md:flex-row md:items-start md:overflow-x-auto" data-testid="lanes">
+        <div ref={lanesBox} onScroll={measure} className="relative flex min-w-0 flex-col gap-3 pb-2 md:snap-x md:flex-row md:items-start md:overflow-x-auto" data-testid="lanes">
           {routeNames.map((name) => {
             const laneRuns = visibleRuns.filter((r) => r.name === name).sort((a, b) => a.pass - b.pass);
             if (!laneRuns.length) return null;

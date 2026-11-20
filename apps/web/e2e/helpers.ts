@@ -80,3 +80,9 @@ export async function currentSettings(page: Page): Promise<string> {
   if (await picker.isVisible()) return picker.inputValue();
   return (await page.getByTestId('settings-tabs').locator('[aria-current="page"]').getAttribute('data-testid'))!.slice(4);
 }
+
+/** Past storms fold away while a storm is live (issue 187); tests that read the past list open it first. */
+export async function openPastStorms(page: import('@playwright/test').Page) {
+  const past = page.getByTestId('storms-past');
+  if (!(await past.evaluate((d) => (d as HTMLDetailsElement).open))) await page.getByTestId('storms-past-toggle').click();
+}

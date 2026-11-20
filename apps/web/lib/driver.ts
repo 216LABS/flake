@@ -1,4 +1,4 @@
-import { and, asc, contract, crew_member, desc, driver_action, driver_position, driverScope, eq, inArray, problem_report, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, visit, visit_correction, visit_photo, visitNotVoided, visitOnRun, type DriverScope, type Tx } from '@flake/db';
+import { and, asc, contract, crew_member, desc, driver_action, driver_position, driverScope, eq, inArray, isNotNull, problem_report, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, visit, visit_correction, visit_photo, visitNotVoided, visitOnRun, type DriverScope, type Tx } from '@flake/db';
 import { driverAction, saltUnit, serviceKind, type DriverAction } from '@flake/contracts';
 import { gpsMatches } from '@flake/core/geo';
 import { liveContracts } from '@flake/core/time';
@@ -142,7 +142,9 @@ export async function loadRun(rs: RunScope) {
   // else's. A visit the run's previous driver started stays theirs (issue 154).
   const open = rows.length ? await db.select({ stop: visit.run_stop_id, client_uuid: visit.client_uuid, arrived_at: visit.arrived_device_at }).from(visit)
     .where(and(eq(visit.tenant_id, tenantId), inArray(visit.run_stop_id, rows.map((r) => r.stop.id)), eq(visit.crew_id, rs.run.crew_id ?? '00000000-0000-0000-0000-000000000000'), sql`${visit.departed_device_at} is null`, visitNotVoided, visitOnRun(runId))) : [];
-  const stormVisits = await db.select({ id: visit.id }).from(visit).where(and(eq(visit.tenant_id, tenantId), eq(visit.storm_id, stormId), eq(visit.crew_id, rs.run.crew_id ?? '00000000-0000-0000-0000-000000000000')));
+  // Depth is asked for until this crew has actually given one this storm (issue 205): Arrive makes a visit with no depth,
+  // so counting visits let the first stop through without one once the phone synced.
+  const depthGiven = await db.select({ id: visit.id }).from(visit).where(and(eq(visit.tenant_id, tenantId), eq(visit.storm_id, stormId), eq(visit.crew_id, rs.run.crew_id ?? '00000000-0000-0000-0000-000000000000'), isNotNull(visit.depth_in), visitNotVoided)).limit(1);
   return {
     company: rs.tenant.name,
     office_phone: rs.tenant.contact_phone ?? null,
@@ -151,7 +153,7 @@ export async function loadRun(rs: RunScope) {
     crew: rs.crew ? { name: rs.crew.name, language: rs.crew.language } : null,
     // The deployed version, so a page left open since before a fix knows to reload itself.
     build: APP_BUILD,
-    has_reported_depth: stormVisits.length > 0,
+    has_reported_depth: depthGiven.length > 0,
     stops: rows.map(({ stop, site: st }) => {
       const c = contracts.find((x) => x.site_id === st.id);
       const services = ((c?.services ?? [{ service: 'plow' }]) as ContractService[]).map((x) => x.service);

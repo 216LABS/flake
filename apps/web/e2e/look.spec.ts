@@ -88,8 +88,8 @@ test('a master route lists each stop on one line with icon controls named for th
   const row = page.getByTestId('route-up').nth(1).locator('xpath=..');
   const tops = await row.locator('button').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
   expect(new Set(tops).size).toBe(1);
-  // Under 60px: a short name used to wrap onto three lines beside wordy buttons.
-  expect((await row.boundingBox())!.height).toBeLessThan(60);
+  // One line: a short name used to wrap onto three lines (90px+) beside wordy buttons. 44px tap targets plus padding is about 62px.
+  expect((await row.boundingBox())!.height).toBeLessThan(70);
   await expect(row.getByTestId('route-remove')).toHaveAttribute('aria-label', /^Remove .+/);
 });
 

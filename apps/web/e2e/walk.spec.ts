@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { inflateRawSync } from 'node:zlib';
 import { expect, test } from '@playwright/test';
 import { closeRunningStorms, currentSettings, finishStops, login, sql, startStorm } from './helpers';
 
@@ -105,6 +107,22 @@ test('walk every office screen and use its main control', async ({ page }) => {
   const exported = await page.request.get('/api/settings/export?table=customer');
   expect(await exported.text()).toContain('billing_mode');
   expect(await (await page.request.get('/api/settings/export?table=storm_run')).text()).not.toContain('link_token');
+  // Download all: one .zip with a CSV per table, and still no link tokens (issue 200).
+  await page.goto('/settings?tab=data');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-all').click()]);
+  expect(download.suggestedFilename()).toMatch(/^flake-export-\d{4}-\d{2}-\d{2}\.zip$/);
+  const zipped = readFileSync((await download.path())!);
+  const entries = new Map<string, string>();
+  for (let at = 0; zipped.readUInt32LE(at) === 0x04034b50;) {
+    const size = zipped.readUInt32LE(at + 18);
+    const nameLen = zipped.readUInt16LE(at + 26);
+    const start = at + 30 + nameLen + zipped.readUInt16LE(at + 28);
+    entries.set(zipped.subarray(at + 30, at + 30 + nameLen).toString(), inflateRawSync(zipped.subarray(start, start + size)).toString());
+    at = start + size;
+  }
+  expect(entries.size).toBeGreaterThan(10);
+  expect(entries.get('flake-customer.csv')).toContain('billing_mode');
+  expect(entries.get('flake-storm_run.csv')).not.toContain('link_token');
   await page.goto('/settings?tab=system');
   await expect(page.getByTestId('usage')).toContainText('of 1024 MB');
   await expect(page.getByTestId('message-row').first()).toBeVisible();

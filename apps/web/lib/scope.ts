@@ -70,17 +70,22 @@ export function scopeLine(s: { service: string; trigger_in?: number | null; pric
  * How the customer pays, said on the quote and in the signed agreement, so nobody signs without knowing (the terms
  * otherwise said only "as stated on each invoice").
  */
-export function paymentText(mode: string, company: string, online = true, billed: { perStorm: boolean; seasonal: boolean } = { perStorm: true, seasonal: false }): string {
+export function paymentText(mode: string, company: string, online = true, billed: { perStorm: boolean; seasonal: boolean } = { perStorm: true, seasonal: false }, payInstructions?: string | null): string {
+  // Until the company can take cards online, card and bank modes are billed, and say how to pay (issue 207): no
+  // promise of a card link nobody can send.
+  const how = payInstructions?.replace(/\s+/g, ' ').trim();
+  const howToPay = !online && how ? ` How to pay: ${how}` : '';
+  const m = !online && (mode === 'card_on_file' || mode === 'ach_on_file') ? 'manual' : mode;
   // A quote of only seasonal lots is billed by installment, never after each storm (issue 120).
   if (billed.seasonal && !billed.perStorm) {
-    switch (mode) {
-      case 'card_on_file': return online ? 'Each installment is charged to a card on file. You add the card after accepting.' : `Each installment is charged to a card on file. ${company} will send you a secure link to add your card.`;
-      case 'ach_on_file': return online ? 'Each installment is paid from a bank account on file. You add the account after accepting.' : `Each installment is paid from a bank account on file. ${company} will send you a secure link to add the account.`;
-      case 'invoice_net30': return 'Each installment is invoiced, due within 30 days.';
-      default: return `Invoiced by ${company} for each installment.`;
+    switch (m) {
+      case 'card_on_file': return 'Each installment is charged to a card on file. You add the card after accepting.';
+      case 'ach_on_file': return 'Each installment is paid from a bank account on file. You add the account after accepting.';
+      case 'invoice_net30': return `Each installment is invoiced, due within 30 days.${howToPay}`;
+      default: return `Invoiced by ${company} for each installment.${howToPay}`;
     }
   }
-  const storm = stormPayment(mode, company, online);
+  const storm = stormPayment(m, company) + howToPay;
   return billed.seasonal ? `${storm} Seasonal prices are billed by monthly installment instead.` : storm;
 }
 
@@ -90,11 +95,10 @@ export function billedBy(contracts: { services: unknown }[]): { perStorm: boolea
   return { perStorm: all.some((s) => s.pricing?.type !== 'seasonal'), seasonal: all.some((s) => s.pricing?.type === 'seasonal') };
 }
 
-function stormPayment(mode: string, company: string, online: boolean): string {
-  // Before the company turns on online payments there's no card form after accepting, so it doesn't promise one.
+function stormPayment(mode: string, company: string): string {
   switch (mode) {
-    case 'card_on_file': return online ? 'Charged to a card on file after each storm. You add the card after accepting.' : `Charged to a card on file after each storm. ${company} will send you a secure link to add your card.`;
-    case 'ach_on_file': return online ? 'Paid from a bank account on file after each storm. You add the account after accepting.' : `Paid from a bank account on file after each storm. ${company} will send you a secure link to add the account.`;
+    case 'card_on_file': return 'Charged to a card on file after each storm. You add the card after accepting.';
+    case 'ach_on_file': return 'Paid from a bank account on file after each storm. You add the account after accepting.';
     case 'invoice_net30': return 'Invoiced after each storm, due within 30 days.';
     default: return `Invoiced by ${company} after each storm.`;
   }

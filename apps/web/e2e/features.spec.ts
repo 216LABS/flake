@@ -111,6 +111,25 @@ test('pin photos: a link for one run cannot fetch another company or run pin, an
   await stranger.close();
 });
 
+test('wizard: the typed street comes first, and a different street is checked before it is used (issue 210)', async ({ page }) => {
+  await login(page);
+  await page.goto('/customers/new');
+  await page.getByTestId('c-name').fill(`Street ${Date.now()}`);
+  await page.getByTestId('next').click();
+  await page.getByTestId('address').pressSequentially('1470 Detroit Rd', { delay: 20 });
+  const sugg = page.getByTestId('address-suggestion');
+  await expect(sugg).toHaveCount(2);
+  await expect(sugg.first()).toHaveText('1470 Detroit Rd, Rocky River, OH');
+  await expect(sugg.last()).toHaveText('1470 Detroit Ave, Lakewood, OH');
+  // Picking the other street asks first, then keeps the street the office typed, with the match's city.
+  await sugg.last().click();
+  await expect(page.getByTestId('address-choices')).toContainText('different street');
+  await page.getByTestId('address-choice').click();
+  await expect(page.getByTestId('address-saved')).toContainText('Address on file: 1470 Detroit Rd, Lakewood, OH');
+  await expect(page.getByTestId('address-differs')).toBeVisible();
+  await expect(page.locator('#label')).toHaveValue('1470 Detroit Rd');
+});
+
 test('wizard: choosing an address suggestion measures it, and a pin can carry a photo', async ({ page }) => {
   await login(page);
   const name = `Suggest ${Date.now()}`;

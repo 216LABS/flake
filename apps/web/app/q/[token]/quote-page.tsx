@@ -46,7 +46,7 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
             {many && l.contract.status === 'accepted' ? <p className="mt-1 text-sm text-ok-ink">Signed.</p> : null}
           </section>
         ))}
-        <p className="mt-4 text-sm" data-testid="payment-line"><b>Payment</b>: {paymentText(quote.customer.billing_mode, quote.company, quote.payments_ready, billedBy(lots.map((l) => l.contract)))}</p>
+        <p className="mt-4 text-sm" data-testid="payment-line"><b>Payment</b>: {paymentText(quote.customer.billing_mode, quote.company, quote.payments_ready, billedBy(lots.map((l) => l.contract)), quote.pay_instructions)}</p>
         {terms.map((t, i) => <div key={i}><h3 className="mt-3 text-sm font-semibold">Terms{terms.length > 1 ? ` (${lots.filter((l) => l.contract.terms_md === t).map((l) => l.site.label).join(', ')})` : ''}</h3><p className="mt-1 whitespace-pre-wrap text-sm text-ink-2">{t}</p></div>)}
       </Card>
       {declined && !accepted ? (
@@ -109,6 +109,9 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
       )}
       {accepted && quote.payments_ready && quote.customer.billing_mode !== 'manual' ? (
         paid ? <Card className="mt-4" data-testid="payment-saved"><p className="text-sm">Payment method saved. {billed.seasonal && !billed.perStorm ? "You're charged once for each installment." : "You're only charged after a storm, for the service you got."}</p></Card> : <PaymentSetup billed={billed} token={token} onSaved={() => setPaid(true)} />
+      ) : null}
+      {accepted && !quote.payments_ready ? (
+        <Card className="mt-4" data-testid="accepted-next"><p className="text-sm">What happens next: {quote.company} bills you {billed.seasonal && !billed.perStorm ? 'for each installment' : 'after each storm, for the service you got'}.{quote.pay_instructions ? ` How to pay: ${quote.pay_instructions.replace(/\s+/g, ' ').trim()}` : ''}</p></Card>
       ) : null}
       <p className="mt-8 text-center text-xs text-muted">Quotes and service records by Flake</p>
     </main>

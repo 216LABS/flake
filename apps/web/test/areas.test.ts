@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, closeDb, eq, serviceDb, sql, trigger_alert } from '@flake/db';
 import { setSetting } from '@/lib/providers';
-import { areasKey, areaWeather, evaluateTenant, fetchAlerts, fetchCell, mapSites } from '@/lib/weather';
+import { areasKey, areaWeather, sameAreas, evaluateTenant, fetchAlerts, fetchCell, mapSites } from '@/lib/weather';
 import { triggerTable } from '@/lib/triggers';
 import { makeWorld, type World } from './helpers';
 
@@ -22,6 +22,11 @@ describe('snow triggers by service area', () => {
     await setSetting(areasKey(w.tenantId), { [w.siteIds[0]!]: 'Akron' });
     const cells = await serviceDb().execute(sql`select distinct nws_office as office, nws_grid_x as x, nws_grid_y as y from site where tenant_id = ${w.tenantId} and nws_office is not null`) as unknown as { office: string; x: number; y: number }[];
     for (const c of cells) await fetchCell(c.office, c.x, c.y);
+  });
+
+  it("one area per city however its case was saved, in the owner's spelling if they named it (issue 206)", () => {
+    const got = sameAreas([['a', 'LAKEWOOD'], ['b', 'Lakewood'], ['c', 'Fairview Park'], ['d', 'lakewood'], ['e', 'west side']], ['West Side']);
+    expect(Object.fromEntries(got)).toEqual({ a: 'LAKEWOOD', b: 'LAKEWOOD', c: 'Fairview Park', d: 'LAKEWOOD', e: 'West Side' });
   });
 
   it('one forecast alert per area, each headed with its own area', async () => {

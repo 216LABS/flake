@@ -31,9 +31,14 @@ export default async function Payroll({ searchParams }: { searchParams: Promise<
         <button type="submit" className="h-10 rounded-md border px-3 text-sm font-semibold">Show</button>
         {rows.length ? <>
           <a className="h-10 content-center rounded-md border px-3 text-sm font-semibold" href={`/api/reports/payroll?${qs}&format=gusto`} data-testid="payroll-gusto">Gusto file</a>
-          <a className="h-10 content-center rounded-md border px-3 text-sm font-semibold" href={`/api/reports/payroll?${qs}&format=adp`} data-testid="payroll-adp">ADP file</a>
+          {settings.adp_co_code
+            ? <a className="h-10 content-center rounded-md border px-3 text-sm font-semibold" href={`/api/reports/payroll?${qs}&format=adp`} data-testid="payroll-adp">ADP file</a>
+            : <span className="h-10 cursor-not-allowed content-center rounded-md border px-3 text-sm font-semibold text-muted" aria-disabled="true" aria-describedby="adp-help" data-testid="payroll-adp-off">ADP file</span>}
         </> : null}
       </form>
+      {rows.length && !settings.adp_co_code
+        ? <p id="adp-help" className="-mt-2 mb-4 text-sm text-muted" data-testid="payroll-adp-help">{ctx.role === 'owner' ? 'For the ADP file, add your ADP company code under Payroll settings below first.' : "The ADP file needs the company's ADP code, which the owner adds under Payroll settings here."}</p>
+        : null}
       {noRate.length ? <p className="mb-3 rounded-md bg-warn-tint p-3 text-sm text-warn-ink" data-testid="payroll-no-rate">No pay rate for {noRate.join(', ')}, so no amount is shown. Hours still export. Add rates in Settings, Crew.</p> : null}
       {rows.length ? (
         <Table stack data-testid="payroll-table">

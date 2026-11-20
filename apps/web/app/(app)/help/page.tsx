@@ -8,7 +8,7 @@ export const metadata = { title: 'Storm-night guide' };
 const BEFORE: [string, string, string][] = [
   ['Customers and lots', 'Each lot has an address and a signed quote, or it plows but doesn\'t bill.', '/customers'],
   ['Routes', 'Every lot is on a route, in the order you drive it. Suggest order sorts by drive time.', '/routes'],
-  ['Crew', 'Each driver has a phone or email so they get their route link.', '/settings?tab=crew'],
+  ['Crew', 'Each driver needs a phone. On storm night they open their route from the QR code or the copied link on the storm board.', '/settings?tab=crew'],
   ['How you get paid', 'Write how customers pay you (checks to, mail to). Manual billing needs no card setup.', '/settings?tab=payments'],
   ['Alerts', 'Turn on alerts on your phone so a snow trigger or a driver problem reaches you at night.', '/settings?tab=alerts'],
 ];

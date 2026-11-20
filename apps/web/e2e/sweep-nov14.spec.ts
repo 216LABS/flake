@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { login, SEASON, sql } from './helpers';
+import { login, openPastStorms, SEASON, sql } from './helpers';
 
 /** Issue 129: a brand-new company's first screens say what to do first, instead of "unavailable" and empty pickers. */
 test('a new company sees a first-run card, an empty Proof page that explains itself, and an empty crew note', async ({ page }) => {
@@ -58,6 +58,7 @@ test('a double-sent customer is created once, and a storm with every bill voided
   const [s] = await sql`insert into storm (tenant_id, name, started_at, closed_at, status) values (${c!.tenant_id}, ${`Voided ${tag}`}, now() - interval '3 hours', now() - interval '2 hours', 'billed') returning id`;
   await sql`insert into invoice_draft (tenant_id, storm_id, customer_id, lines, subtotal_cents, flags, status) values (${c!.tenant_id}, ${s!.id}, ${c!.id}, '[]'::jsonb, 4000, '[]'::jsonb, 'void')`;
   await page.goto('/storms');
+  await openPastStorms(page);
   await expect(page.getByRole('link', { name: new RegExp(`Voided ${tag}`) })).toContainText('Closed, no bills');
 });
 

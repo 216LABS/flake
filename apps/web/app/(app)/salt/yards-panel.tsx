@@ -50,8 +50,8 @@ export function YardsPanel({ yards, tz, readOnly }: { yards: Yard[]; tz: string;
                 {y.low ? <Badge tone="red" data-testid="yard-low">Reorder</Badge> : null}
               </div>
               {y.yard.address ? <p className="text-sm text-muted wrap-anywhere">{y.yard.address}</p> : null}
-              <p className="mt-2 text-2xl font-semibold tabular" data-testid="yard-tons">{y.tons} tons</p>
-              <p className="text-xs text-muted">{y.since ? `Counted ${when(y.since)}, then deliveries and use since.` : 'No count yet: deliveries less use.'}{y.costPerTon != null ? ` Average cost ${money(y.costPerTon)} a ton.` : ''}</p>
+              <p className="mt-2 text-2xl font-semibold tabular" data-testid="yard-tons" data-tons={y.tons}>{!y.since && y.tons <= 0 ? 'Not counted' : `${y.tons} tons`}</p>
+              <p className="text-xs text-muted">{y.since ? `Counted ${when(y.since)}, then deliveries and use since.` : (y.tons <= 0 ? 'Count the pile, or add a delivery, to start tracking it.' : 'No count yet: deliveries less use.')}{y.costPerTon != null ? ` Average cost ${money(y.costPerTon)} a ton.` : ''}</p>
               {!readOnly ? (
                 <>
                   <div className="mt-3 flex flex-wrap items-end gap-2">

@@ -51,5 +51,11 @@ describe('issue 167: profit per lot', () => {
     await serviceDb().update(crew_member).set({ pay_regular_cents: null }).where(eq(crew_member.id, w.crewId));
     const noRate = await withUser(w.userId, (tx) => profitReport(tx, w.tenantId, { startAt: '2026-07-01T04:00:00Z', endAt: '2027-07-01T04:00:00Z' }));
     expect(noRate.missing).toEqual(['pay rate for Crew One']);
+
+    // Issue 211: with lot A's bill still a draft, it says the bill isn't approved, not that the lot loses money.
+    await serviceDb().update(invoice_draft).set({ status: 'draft' }).where(eq(invoice_draft.customer_id, w.customerIds[0]!));
+    const drafted = await withUser(w.userId, (tx) => profitReport(tx, w.tenantId, { startAt: '2026-07-01T04:00:00Z', endAt: '2027-07-01T04:00:00Z' }));
+    expect(drafted.rows.find((x) => x.siteId === a)).toMatchObject({ revenue_cents: 0, unapproved_cents: 10000, losing: false });
+    expect(drafted.rows.find((x) => x.siteId === b)).toMatchObject({ unapproved_cents: 0 });
   });
 });

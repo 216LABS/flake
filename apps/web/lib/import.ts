@@ -1,6 +1,7 @@
 import type { crewImportRow, customerImportRow } from '@flake/contracts';
-import { and, crew_member, customer, eq, isNull, site, sql, withUser } from '@flake/db';
+import { and, crew_member, customer, eq, isNull, site, sql, tenant, withUser } from '@flake/db';
 import type { z } from 'zod';
+import { tidyAddress } from '@flake/core/address';
 import { geocodeAddress } from './geocode';
 import { checkCrewRow, checkImportRow, crewKey } from './csv';
 import { HttpError } from './http';
@@ -18,17 +19,24 @@ export type ImportResult = { row: number; ok: true; customer: string; site: stri
  */
 export async function importCustomers(ctx: Ctx, rows: Row[]): Promise<ImportResult[]> {
   const out: ImportResult[] = [];
+  // A row with no billing column gets card on file only when the company can take cards; else Net-30 (issue 207).
+  const [t] = await withUser(ctx.userId, (tx) => tx.select({ account: tenant.stripe_account_id, charges: tenant.stripe_charges_enabled }).from(tenant).where(eq(tenant.id, ctx.tenantId)));
+  const cardsReady = Boolean(t?.account && t.charges);
   for (const [i, r] of rows.entries()) {
     try {
       const parsed = checkImportRow(r);
       if (!parsed.ok) throw new HttpError(422, parsed.problem);
+      if (!cardsReady && !r.billing?.trim()) parsed.data.billing_mode = 'invoice_net30';
       const place = await geocodeAddress(r.address);
-      const label = r.label?.trim() || r.address.split(',')[0]!.trim();
+      // The geocoder's city, state and ZIP with the street, however the row was typed, so every lot in one city shares
+      // one service area and the quote names the street, not the whole address (issue 206).
+      const address = tidyAddress(r.address, place.label);
+      const label = r.label?.trim() || address.split(',')[0]!.trim();
       const saved = await withUser(ctx.userId, async (tx) => {
         const [existing] = await tx.select({ id: customer.id, name: customer.name }).from(customer).where(and(sql`lower(${customer.name}) = lower(${parsed.data.name})`, isNull(customer.archived_at))).limit(1);
         await requireSiteRoom(tx, ctx.tenantId);
         const customerId = existing?.id ?? (await tx.insert(customer).values({ ...parsed.data, tenant_id: ctx.tenantId }).returning({ id: customer.id }))[0]!.id;
-        await tx.insert(site).values({ tenant_id: ctx.tenantId, customer_id: customerId, label, address: r.address, lat: place.lat, lon: place.lon });
+        await tx.insert(site).values({ tenant_id: ctx.tenantId, customer_id: customerId, label, address, lat: place.lat, lon: place.lon });
         return { customerId, name: existing?.name ?? parsed.data.name, existing: Boolean(existing) };
       });
       out.push({ row: i, ok: true, customer: saved.name, site: label, added_to_existing: saved.existing });

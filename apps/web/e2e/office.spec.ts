@@ -184,6 +184,8 @@ test('settings: rate card, Stripe onboarding in mock, crew invite with opt-in, S
   await page.getByLabel('Mobile').fill('+12165550155');
   await page.getByTestId('crew-invite').click();
   const invite = await page.getByTestId('invite-url').inputValue();
+  // A QR code of the same link, for a driver standing in the office (issue 211).
+  await expect.poll(() => page.getByTestId('invite-qr').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
 
   const fresh = await browser.newContext();
   const join = await fresh.newPage();

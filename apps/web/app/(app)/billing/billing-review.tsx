@@ -31,7 +31,7 @@ const TONE: Record<string, 'gray' | 'blue' | 'green' | 'amber' | 'red'> = { draf
 
 const SALT_UNIT: Record<string, string> = { bag50lb: 'bags', lb: 'lb', ton: 'tons', application: 'applications' };
 
-export function BillingReview({ stormId, initial, canExport, showFees, stormActive = false, stripeReady = true, nothingToBill = false, readOnly = false, sending = true }: { readOnly?: boolean; stormId: string; initial: DraftRow[]; canExport: boolean; showFees: boolean; stormActive?: boolean; stripeReady?: boolean; nothingToBill?: boolean; sending?: boolean }) {
+export function BillingReview({ stormId, initial, canExport, showFees, stormActive = false, stripeReady = true, nothingToBill = false, readOnly = false, sending = true, paymentsAvailable = true }: { paymentsAvailable?: boolean; readOnly?: boolean; stormId: string; initial: DraftRow[]; canExport: boolean; showFees: boolean; stormActive?: boolean; stripeReady?: boolean; nothingToBill?: boolean; sending?: boolean }) {
   const router = useRouter();
   const [ask, dialog] = useConfirm();
   const [rows, setRows] = useState(initial);
@@ -110,7 +110,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
       {readOnly ? <p className="mb-4 rounded-md bg-tint p-3 text-sm text-ink-2" data-testid="view-only-note">You have view-only access. Ask the owner to approve, void or send bills.</p> : null}
       {!stripeReady && rows.length ? (
         <p className="mb-4 rounded-md bg-info-tint p-3 text-sm text-link" data-testid="stripe-not-connected">
-          Stripe isn&apos;t connected, so approving doesn&apos;t charge anyone yet. Approved invoices wait here. Connect Stripe in <a className={proseLink} href="/settings?tab=payments">Settings, Payments</a>, then press Charge now on each. Or press Send bill to email each customer their bill, and Mark paid when the money comes in.
+          Stripe isn&apos;t connected, so approving doesn&apos;t charge anyone yet. Approved invoices wait here. {paymentsAvailable ? <>Connect Stripe in <a className={proseLink} href="/settings?tab=payments">Settings, Payments</a>, then press Charge now on each. Or press</> : 'Card payments aren’t available in Flake yet, so press'} Send bill to send each customer their bill, and Mark paid when the money comes in.
         </p>
       ) : null}
       <div className="mb-4 flex flex-wrap items-center gap-2">

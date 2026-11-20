@@ -220,6 +220,17 @@ test('driver: navigate, choose another stop, salt, services, undo, every problem
   await page.getByTestId('arrive').click();
   await expect(page.getByTestId('onsite')).toBeVisible();
   await expect(page.getByTestId('no-photo-hint')).toBeVisible();
+  // Issue 211: at 390x844, scrolling to salt leaves + clear of the After photo panel, and the unit reads as words.
+  const size = page.viewportSize()!;
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.getByTestId('salt-row').evaluate((el) => el.scrollIntoView({ block: 'nearest' }));
+  const plus = page.getByTestId('salt-plus');
+  await expect(plus).toBeInViewport({ ratio: 1 });
+  const pb = (await plus.boundingBox())!;
+  expect(await page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('[data-testid="salt-plus"]') !== null, [pb.x + pb.width / 2, pb.y + pb.height / 2])).toBe(true);
+  await expect(page.getByTestId('salt-row')).not.toContainText('bag50lb');
+  await page.setViewportSize(size);
 
   await page.getByTestId('salt-plus').click();
   await page.getByTestId('salt-plus').click();

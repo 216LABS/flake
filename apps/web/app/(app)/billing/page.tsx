@@ -4,6 +4,7 @@ import { localDay } from '@flake/core/receivables';
 import { stormWhen } from '@flake/core/time';
 import { buttonVariants, EmptyState, PageHeader } from '@flake/ui';
 import Link from 'next/link';
+import { available } from '@/lib/providers';
 import { asUser, requirePage } from '@/lib/auth';
 import { tenantFeeRate, tenantHasPro, visitsMissedByDrafts, visitsUndoneOnBills } from '@/lib/billing';
 import { isUuid } from '@/lib/http';
@@ -20,6 +21,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
   const { storm: stormParam } = await searchParams;
   if (stormParam && !isUuid(stormParam)) notFound();
   const ctx = await requirePage();
+  const payAvailable = (await available()).payments;
   const tz = ctx.tenant.timezone;
   const data = await asUser(ctx, async (tx) => {
     const storms = await tx.select({ id: storm.id, name: storm.name, status: storm.status, started_at: storm.started_at }).from(storm).orderBy(desc(storm.started_at));
@@ -67,7 +69,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
           Work changed after {undone.length === 1 ? 'this bill was' : 'these bills were'} approved: the visit at {[...new Set(undone.map((u) => u.site))].join(', ')} was undone or voided, but the approved bill still charges for it. Credit or refund the customer for it.
         </p>
       ) : null}
-      <BillingReview readOnly={ctx.role === 'viewer'} stormId={data.selected.id} initial={rows} canExport={tenantHasPro(ctx.tenant)} showFees={owner} stormActive={data.selected.status === 'active' && !rows.length} nothingToBill={data.selected.status === 'billed' && !rows.length} stripeReady={Boolean(ctx.tenant.stripe_account_id && ctx.tenant.stripe_charges_enabled)} sending={Boolean(ctx.tenant.outbound_enabled)} />
+      <BillingReview readOnly={ctx.role === 'viewer'} stormId={data.selected.id} initial={rows} canExport={tenantHasPro(ctx.tenant)} showFees={owner} stormActive={data.selected.status === 'active' && !rows.length} nothingToBill={data.selected.status === 'billed' && !rows.length} stripeReady={Boolean(ctx.tenant.stripe_account_id && ctx.tenant.stripe_charges_enabled)} sending={Boolean(ctx.tenant.outbound_enabled)} paymentsAvailable={payAvailable} />
       </div>
       </div>
     </>

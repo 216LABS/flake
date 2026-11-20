@@ -2,6 +2,7 @@ import { gzipSync } from 'node:zlib';
 import { and, app_setting, asc, contract, desc, driver_action, eq, gte, inArray, lte, or, serviceDb, site, sql, storm, tenant, trigger_alert, weather_snapshot } from '@flake/db';
 import { blendNowcast, percentilesOver, expandSeries, evaluateSite, groupDecisions, alertHeadline, serviceArea, newWinterAlerts, summarize, sumOverlap, triggerLine, toFahrenheit, toInches, type DepthReport, type HourBucket, type NwsAlert, type SiteDecision, type TriggerSite, type WeatherSeries } from '@flake/core/trigger';
 import type { ContractService } from '@flake/core/pricing';
+import { cityOf } from '@flake/core/address';
 import { fmtLocal, liveContracts } from '@flake/core/time';
 import type { FetchedDoc, NbmResult, NowcastResult, RadarResult } from '@flake/providers';
 import { putBlob } from './blob';
@@ -92,10 +93,16 @@ export const areasKey = (tenantId: string) => `areas:${tenantId}`;
 export async function areaOverrides(tenantId: string): Promise<Record<string, string>> {
   return (await getSetting<Record<string, string>>(areasKey(tenantId))) ?? {};
 }
-/** Each lot's area: the owner's name for it, else its city. */
+/** Each lot's area: the owner's name for it, else its city. "LAKEWOOD", "Lakewood" and "lakewood" are one area (issue 206). */
 export async function areasFor(tenantId: string, sites: { id: string; address: string }[]) {
   const named = await areaOverrides(tenantId);
-  return new Map(sites.map((s) => [s.id, serviceArea(s.address, named[s.id])]));
+  return sameAreas(sites.map((s) => [s.id, serviceArea(s.address, named[s.id])] as const), Object.values(named));
+}
+/** One spelling per area, ignoring case: the owner's own spelling if they named one, else the first seen. */
+export function sameAreas(pairs: (readonly [string, string])[], preferred: string[] = []) {
+  const spelling = new Map<string, string>();
+  for (const name of [...preferred.map((n) => n.trim()).filter(Boolean), ...pairs.map(([, a]) => a)]) if (!spelling.has(name.toLowerCase())) spelling.set(name.toLowerCase(), name);
+  return new Map(pairs.map(([id, a]) => [id, spelling.get(a.toLowerCase())!]));
 }
 
 /** Maps sites to an NWS grid cell on first sight and every 7 days after. */
@@ -199,7 +206,7 @@ export async function fetchCell(office: string, x: number, y: number) {
 const areaName = (addresses: string[]) => {
   const counts = new Map<string, number>();
   for (const a of addresses) {
-    const city = a.split(',')[1]?.trim();
+    const city = cityOf(a);
     if (city) counts.set(city, (counts.get(city) ?? 0) + 1);
   }
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'Your area';

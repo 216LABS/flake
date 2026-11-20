@@ -54,7 +54,7 @@ export default async function Profit({ searchParams }: { searchParams: Promise<{
             <tbody>
               {r.rows.map((x) => (
                 <tr key={x.siteId} data-testid="profit-row">
-                  <Td className="wrap-anywhere"><Link className={entityLink} href={`/sites/${x.siteId}`}>{x.label}</Link><span className="block text-xs text-muted">{x.customer}, {x.visits} {x.visits === 1 ? 'visit' : 'visits'}, {x.minutes} min on site</span>{x.losing ? <Badge tone="red" data-testid="profit-losing">{x.profit_cents < 0 ? 'Losing money' : 'Under margin'}</Badge> : null}</Td>
+                  <Td className="wrap-anywhere"><Link className={entityLink} href={`/sites/${x.siteId}`}>{x.label}</Link><span className="block text-xs text-muted">{x.customer}, {x.visits} {x.visits === 1 ? 'visit' : 'visits'}, {x.minutes} min on site</span>{x.losing ? <Badge tone="red" data-testid="profit-losing">{x.profit_cents < 0 ? 'Losing money' : 'Under margin'}</Badge> : null}{x.unapproved_cents && !x.revenue_cents ? <Badge tone="amber" data-testid="profit-unapproved">Bills not approved yet</Badge> : null}</Td>
                   <Td label="Revenue" className="text-right tabular">{money(x.revenue_cents)}</Td>
                   <Td label="Labor" className="text-right tabular">{money(x.labor_cents)}</Td>
                   <Td label="Subs" className="text-right tabular">{money(x.sub_cents)}</Td>

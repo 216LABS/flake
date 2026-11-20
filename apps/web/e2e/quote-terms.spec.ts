@@ -53,26 +53,29 @@ test('a replaced quote link tells the customer a newer quote was sent, and canno
 });
 
 /** Before a company turns on online payments, a card customer isn't promised a card form that never shows up. */
-test('with payments not set up yet, a card quote says a secure link comes later, and shows no card form after accepting', async ({ page, browser, baseURL }) => {
+test('with payments not set up yet, a card quote says how to pay instead of promising a card link, and no card form after accepting (issue 207)', async ({ page, browser, baseURL }) => {
   await login(page);
   const tag = randomUUID().slice(0, 6);
   const c = await (await page.request.post('/api/customers', { data: { name: `NoStripe ${tag}`, kind: 'residential', billing_mode: 'card_on_file', email: `${tag}@example.com` } })).json();
   const s = await (await page.request.post('/api/sites', { data: { customer_id: c.id, label: `Drive ${tag}`, address: '3 Card St, Lakewood, OH', lat: 41.48, lon: -81.8 } })).json();
   const q = await (await page.request.post('/api/quotes', { data: { site_id: s.id, season: SEASON, services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 4500 } }], send: false } })).json();
-  await sql`update tenant set stripe_charges_enabled = false where slug = 'lakeshore-demo'`;
+  const [{ pay_instructions: pay }] = await sql`select pay_instructions from tenant where slug = 'lakeshore-demo'`;
+  await sql`update tenant set stripe_charges_enabled = false, pay_instructions = 'Check to Lakeshore, 1 Main St' where slug = 'lakeshore-demo'`;
   try {
     const guest = await browser.newContext({ baseURL, viewport: { width: 375, height: 667 } });
     const g = await guest.newPage();
     await g.goto(q.url);
-    await expect(g.getByTestId('payment-line')).toHaveText('Payment: Charged to a card on file after each storm. Lakeshore Plow Co. (Demo) will send you a secure link to add your card.');
+    await expect(g.getByTestId('payment-line')).toHaveText('Payment: Invoiced by Lakeshore Plow Co. (Demo) after each storm. How to pay: Check to Lakeshore, 1 Main St');
+    await expect(g.locator('main')).not.toContainText('secure link');
     await g.getByTestId('sign-name').fill('Pat Example');
     await g.getByTestId('agree').check();
     await g.getByTestId('accept').click();
     await expect(g.getByTestId('accepted')).toBeVisible();
     await expect(g.getByText('Card or bank account on file')).toHaveCount(0);
+    await expect(g.getByTestId('accepted-next')).toHaveText('What happens next: Lakeshore Plow Co. (Demo) bills you after each storm, for the service you got. How to pay: Check to Lakeshore, 1 Main St');
     await guest.close();
   } finally {
-    await sql`update tenant set stripe_charges_enabled = true where slug = 'lakeshore-demo'`;
+    await sql`update tenant set stripe_charges_enabled = true, pay_instructions = ${pay} where slug = 'lakeshore-demo'`;
   }
 });
 

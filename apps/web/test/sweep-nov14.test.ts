@@ -48,7 +48,12 @@ describe('seasonal prices in words (issue 120)', () => {
     const seasonal = { services: [{ service: 'plow', pricing: { type: 'seasonal' } }] };
     const push = { services: [{ service: 'plow', pricing: { type: 'per_push' } }] };
     expect(billedBy([seasonal])).toEqual({ perStorm: false, seasonal: true });
-    expect(paymentText('card_on_file', 'Co', false, billedBy([seasonal]))).toBe('Each installment is charged to a card on file. Co will send you a secure link to add your card.');
+    // Issue 207: no card link is promised while the company can't take cards; it's billed, with how to pay.
+    expect(paymentText('card_on_file', 'Co', false, billedBy([seasonal]))).toBe('Invoiced by Co for each installment.');
+    expect(paymentText('ach_on_file', 'Co', false, billedBy([push]), 'Check to\n 1 Main St')).toBe('Invoiced by Co after each storm. How to pay: Check to 1 Main St');
+    expect(paymentText('invoice_net30', 'Co', false, billedBy([seasonal]), 'Zelle')).toBe('Each installment is invoiced, due within 30 days. How to pay: Zelle');
+    expect(paymentText('card_on_file', 'Co', true, billedBy([push]), 'Zelle')).toBe('Charged to a card on file after each storm. You add the card after accepting.');
+    expect(paymentText('card_on_file', 'Co', true, billedBy([seasonal]))).toBe('Each installment is charged to a card on file. You add the card after accepting.');
     expect(paymentText('ach_on_file', 'Co', true, billedBy([seasonal]))).toBe('Each installment is paid from a bank account on file. You add the account after accepting.');
     expect(paymentText('manual', 'Co', true, billedBy([seasonal]))).toBe('Invoiced by Co for each installment.');
     expect(paymentText('manual', 'Co', true, billedBy([seasonal, push]))).toBe('Invoiced by Co after each storm. Seasonal prices are billed by monthly installment instead.');

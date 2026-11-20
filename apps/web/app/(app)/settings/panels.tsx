@@ -6,6 +6,7 @@ import type { RateCard } from '@flake/core/quote';
 import { Badge, Button, Card, Input, Label, Select, Table, Td, Textarea, Th } from '@flake/ui';
 import { ButtonA, ButtonLink } from '@/components/links';
 import { useRouter } from 'next/navigation';
+import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
 import { api, dollarsToCents, money, phone } from '@/lib/client';
 import { useConfirm } from '@/components/confirm';
@@ -89,6 +90,14 @@ export function CrewPanel({ crew, canText = true, cover = {} }: { crew: any[]; c
   const [editing, setEditing] = useState<string | null>(null);
   const [invite, setInvite] = useState<string | null>(null);
   const [invitePhone, setInvitePhone] = useState<string | null>(null);
+  // A driver standing in the office scans the join link instead of being sent it (issue 211).
+  const [inviteQr, setInviteQr] = useState<string | null>(null);
+  useEffect(() => {
+    let stale = false;
+    if (!invite) setInviteQr(null);
+    else void QRCode.toDataURL(invite, { margin: 1, width: 240 }).then((q) => { if (!stale) setInviteQr(q); }, () => {});
+    return () => { stale = true; };
+  }, [invite]);
   const { msg, busy, run } = useAction();
   const [ask, dialog] = useConfirm();
   const load = (c: any) => {
@@ -185,7 +194,8 @@ export function CrewPanel({ crew, canText = true, cover = {} }: { crew: any[]; c
           <div className="mt-2">
             <Label>Join link</Label>
             <Input readOnly value={invite} data-testid="invite-url" onFocus={(e) => e.target.select()} />
-            <p className="mt-1 text-xs text-muted">Send it from your own phone. The driver opens it, confirms their mobile and says yes to texts.</p>
+            {inviteQr ? <img src={inviteQr} alt="QR code for the join link" width={160} height={160} className="mt-2 rounded-sm bg-white p-1" data-testid="invite-qr" /> : null}
+            <p className="mt-1 text-xs text-muted">The driver scans this with their phone camera, or you send it from your own phone. They open it, confirm their mobile and say yes to texts.</p>
             <ButtonA size="lg" className="mt-2 w-full sm:w-auto" href={`sms:${invitePhone ?? ''}${typeof navigator !== 'undefined' && /iPhone|iPad/.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent(`Join our snow crew on Flake: ${invite}`)}`} data-testid="invite-sms">Text from my phone</ButtonA>
           </div>
         ) : null}

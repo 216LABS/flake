@@ -1,3 +1,4 @@
+import { cityOf } from '@flake/core/address';
 import { and, asc, contract, customer, eq, isNull, route, route_stop, site, type Tx } from '@flake/db';
 
 /** One lot as the lot picker shows it (issue 193). */
@@ -14,8 +15,6 @@ export interface LotOption {
   contracted: boolean;
 }
 
-/** The city from "123 Main St, Lakewood, OH 44107". */
-export const cityOf = (address: string) => address.split(',')[1]?.trim() ?? '';
 
 /** Every active lot with what a picker filters by: its customer, city, routes and whether a contract is signed. */
 export async function lotOptions(tx: Tx, opts: { retired?: boolean } = {}): Promise<LotOption[]> {

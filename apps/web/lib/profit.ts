@@ -4,7 +4,7 @@ import { subPayStatement, type SubRateCard } from '@flake/core/subpay';
 import { and, contract, crew_member, customer, eq, equipment_log, gte, inArray, installment_invoice, invoice_draft, isNotNull, lt, site, sql, storm, type Tx } from '@flake/db';
 import { saltCostPerTon } from './yards';
 
-export interface ProfitRow extends LotProfit { label: string; customer: string; customer_id: string; visits: number; minutes: number }
+export interface ProfitRow extends LotProfit { label: string; customer: string; customer_id: string; visits: number; minutes: number; /** Bills drafted for this lot but not approved yet, so its revenue isn't counted (issue 211). */ unapproved_cents: number }
 export interface ProfitResult { rows: ProfitRow[]; totals: LotProfit; missing: string[]; storms: number }
 
 type Line = { site_id?: string; amount_cents: number };
@@ -20,11 +20,14 @@ export async function profitReport(tx: Tx, tenantId: string, opts: { startAt: st
   const costs = new Map<string, LotCosts>();
   const lot = (id: string) => costs.get(id) ?? (costs.set(id, { siteId: id, revenue_cents: 0, labor_cents: 0, sub_cents: 0, salt_cents: 0, equipment_cents: 0 }), costs.get(id)!);
   const missing = new Set<string>();
+  const unapproved = new Map<string, number>();
 
   // Revenue: storm bill lines, and seasonal installments billed in the period.
   if (stormIds.length) {
     const drafts = await tx.select({ lines: invoice_draft.lines }).from(invoice_draft).where(and(inArray(invoice_draft.storm_id, stormIds), inArray(invoice_draft.status, opts.collectedOnly ? ['paid'] : ['approved', 'charged', 'sent', 'paid', 'failed'])));
     for (const d of drafts) for (const l of d.lines as Line[]) if (l.site_id) lot(l.site_id).revenue_cents += l.amount_cents;
+    const waiting = await tx.select({ lines: invoice_draft.lines }).from(invoice_draft).where(and(inArray(invoice_draft.storm_id, stormIds), eq(invoice_draft.status, 'draft')));
+    for (const d of waiting) for (const l of d.lines as Line[]) if (l.site_id) unapproved.set(l.site_id, (unapproved.get(l.site_id) ?? 0) + l.amount_cents);
   }
   if (!opts.stormId) {
     const inst = await tx.select({ site_id: contract.site_id, cents: installment_invoice.amount_cents }).from(installment_invoice).innerJoin(contract, eq(contract.id, installment_invoice.contract_id))
@@ -90,7 +93,10 @@ export async function profitReport(tx: Tx, tenantId: string, opts: { startAt: st
   const names = ids.length ? await tx.select({ id: site.id, label: site.label, customer: customer.name, customer_id: customer.id }).from(site).innerJoin(customer, eq(customer.id, site.customer_id)).where(inArray(site.id, ids)) : [];
   const rows: ProfitRow[] = ids.map((id) => {
     const n = names.find((x) => x.id === id);
-    return { ...profitOf(costs.get(id)!, { minMarginPct: opts.minMarginPct }), label: n?.label ?? 'Removed lot', customer: n?.customer ?? '', customer_id: n?.customer_id ?? '', visits: visitCount.get(id) ?? 0, minutes: Math.round(minutes.get(id) ?? 0) };
+    const p = profitOf(costs.get(id)!, { minMarginPct: opts.minMarginPct });
+    const waiting = unapproved.get(id) ?? 0;
+    // A lot whose only bill is waiting for approval isn't losing money yet; it just isn't billed.
+    return { ...p, losing: p.losing && !(waiting && !p.revenue_cents), unapproved_cents: waiting, label: n?.label ?? 'Removed lot', customer: n?.customer ?? '', customer_id: n?.customer_id ?? '', visits: visitCount.get(id) ?? 0, minutes: Math.round(minutes.get(id) ?? 0) };
   }).sort((a, b) => a.profit_cents - b.profit_cents);
   const sum = (k: keyof LotCosts) => rows.reduce((a, r) => a + (r[k] as number), 0);
   const totals = profitOf({ siteId: 'all', revenue_cents: sum('revenue_cents'), labor_cents: sum('labor_cents'), sub_cents: sum('sub_cents'), salt_cents: sum('salt_cents'), equipment_cents: sum('equipment_cents') });

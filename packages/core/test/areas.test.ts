@@ -11,6 +11,7 @@ describe('snow alerts by service area', () => {
     expect(serviceArea('1 Main St, Lakewood, OH 44107', 'West side')).toBe('West side');
     expect(serviceArea('1 Main St, Lakewood, OH', '  ')).toBe('Lakewood');
     expect(serviceArea('no commas here')).toBe('Your area');
+    expect(serviceArea('12700 Lake Ave Lakewood OH')).toBe('Lakewood');
   });
 
   it('one alert per area, each naming its own area', () => {

@@ -30,6 +30,8 @@ for (const width of [768, 1280]) test(`at ${width} px, trucks are lanes in one r
   expect(new Set(tops).size).toBe(1);
   // The lanes scroll inside their row; the page itself never scrolls sideways.
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+  // Nothing inside a lane (screen-reader text included) can push the page sideways (STAR on 189).
+  expect(await page.evaluate(() => { window.scrollTo(5000, 0); return window.scrollX; })).toBe(0);
   // All: both passes, under their own dividers, still three lanes.
   await page.getByTestId('pass-all').click();
   await expect(page.getByTestId('truck-lane')).toHaveCount(3);

@@ -21,7 +21,8 @@ export class MockGeocoder implements Geocoder {
     return [{ label: `${q.trim()} (mock geocode)`, lat: 41.47 + ((h % 400) / 400) * 0.03, lon: -81.84 + (((h >> 9) % 400) / 400) * 0.06 }];
   }
   async suggest(q: string, _opts?: SuggestOptions): Promise<GeocodeHit[]> {
-    const text = q.trim();
+    // A typed suffix is swapped, not repeated: "1470 Detroit Rd" suggests "1470 Detroit Ave" and "1470 Detroit Rd".
+    const text = q.trim().split(',')[0]!.trim().replace(/\s+(ave|avenue|rd|road|st|street)\.?$/i, '');
     return (await Promise.all([`${text} Ave, Lakewood, OH`, `${text} Rd, Rocky River, OH`].map((s) => this.search(s)))).map((hits) => ({ ...hits[0]!, label: hits[0]!.label.replace(' (mock geocode)', '') }));
   }
 }

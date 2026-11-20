@@ -1,4 +1,5 @@
 import { distanceMeters } from './geo';
+import { cityOf } from './address';
 
 /** One hour of a gridded series. v === null means unavailable, never zero. */
 export interface HourBucket {
@@ -387,7 +388,7 @@ export interface ProposedAlert {
 export function serviceArea(address: string, override?: string | null): string {
   const named = override?.trim();
   if (named) return named;
-  return address.split(',')[1]?.trim() || 'Your area';
+  return cityOf(address) || 'Your area';
 }
 
 /**

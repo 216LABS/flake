@@ -21,6 +21,14 @@ test('a live storm is pinned to the top of Storms and the Dashboard, and Storms 
     await expect(banner.getByTestId('storm-progress')).toContainText(/0 of \d+ stops done/);
     await expect(banner.getByTestId('live-facts')).toContainText('1 truck out');
     await expect(page.getByTestId('storms-live')).toContainText(name);
+    // Past storms are one section, folded while a storm is live, and open with one tap (issue 187).
+    const past = page.getByTestId('storms-past');
+    if (await past.count()) {
+      expect(await past.evaluate((d) => (d as HTMLDetailsElement).open)).toBe(false);
+      await expect(page.getByTestId('storms-to-bill').or(page.getByTestId('storms-billed')).first()).toBeHidden();
+      await page.getByTestId('storms-past-toggle').click();
+      await expect(page.getByTestId('storms-to-bill').or(page.getByTestId('storms-billed')).first()).toBeVisible();
+    }
     await expect(navLive(page)).toHaveCount(1);
 
     await page.goto('/dashboard');
@@ -96,6 +104,42 @@ test('a lot on a route can be dragged to the top, and a removed lot can be put b
       await grip.focus();
       await page.keyboard.press('Space');
       await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('Space');
+      await expect.poll(labels).toEqual(start);
+      await page.waitForTimeout(500);
+    }
+  }
+});
+
+test('on a phone, a lot on a route moves by a finger drag on its 44 px grip (issue 190)', async ({ page, browserName }, info) => {
+  test.skip(browserName !== 'chromium' || !info.project.use.hasTouch, 'Real touch events need a touch Chromium phone');
+  await login(page);
+  await page.goto('/routes');
+  const card = page.getByTestId('route-card').filter({ has: page.getByTestId('route-stop').nth(2) }).first();
+  const labels = async () => (await card.getByTestId('route-stop').allInnerTexts()).map((t) => t.replace(/^\d+\.?\s*/, '').split('\n')[0]!.replace(/Move to$/, '').trim());
+  const start = await labels();
+  const grip = card.getByTestId('route-grip').nth(1);
+  await card.getByTestId('route-stop').first().scrollIntoViewIfNeeded();
+  await grip.scrollIntoViewIfNeeded();
+  const g = (await grip.boundingBox())!;
+  expect(g.height).toBeGreaterThanOrEqual(44);
+  const first = (await card.getByTestId('route-stop').first().boundingBox())!;
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x: number, y: number) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+  const x = g.x + g.width / 2;
+  const saved = page.waitForResponse((r) => r.url().includes('/api/routes/') && r.request().method() === 'PATCH');
+  try {
+    await touch('touchStart', x, g.y + g.height / 2);
+    for (let i = 1; i <= 10; i++) await touch('touchMove', x, g.y + g.height / 2 + ((first.y + 4) - (g.y + g.height / 2)) * (i / 10));
+    await touch('touchEnd', x, first.y + 4);
+    await saved;
+    await expect.poll(labels).toEqual([start[1], start[0], ...start.slice(2)]);
+  } finally {
+    await page.reload();
+    if ((await labels())[0] === start[1]) {
+      await card.getByTestId('route-grip').first().focus();
+      await page.keyboard.press('Space');
       await page.keyboard.press('ArrowDown');
       await page.keyboard.press('Space');
       await expect.poll(labels).toEqual(start);

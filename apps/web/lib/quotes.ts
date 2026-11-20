@@ -108,6 +108,7 @@ export async function getQuote(token: string) {
     contract: { id: r.contract.id, season: r.contract.season, services: r.contract.services, salt_pricing: r.contract.salt_pricing, terms_md: r.contract.terms_md, status: r.contract.status, accepted_at: r.contract.accepted_at, accepted_name: r.contract.accepted_name, declined_at: r.contract.declined_at },
     consent_text: CUSTOMER_CONSENT_TEXT(r.tenant.name),
     payments_ready: Boolean(r.tenant.stripe_account_id && r.tenant.stripe_charges_enabled),
+    pay_instructions: r.tenant.pay_instructions,
     has_payment_method: Boolean(r.customer.stripe_payment_method_id),
   };
 }
@@ -141,7 +142,7 @@ type Lot = Awaited<ReturnType<typeof byToken>>['lots'][number];
 async function acceptLot(r: Lot, input: z.infer<typeof quoteAccept>, ip: string | null, at: string): Promise<'took' | 'void' | 'already'> {
   const db = serviceDb();
   const { renderContractPdf } = await import('@flake/providers/pdf');
-  const pdf = await renderContractPdf({ company: r.tenant.name, customer: r.customer.name, site: `${r.site.label}, ${r.site.address}`, season: r.contract.season, services: r.contract.services, prior: await priorBilled(r.contract), payment: paymentText(r.customer.billing_mode, r.tenant.name, Boolean(r.tenant.stripe_account_id && r.tenant.stripe_charges_enabled), billedBy([r.contract])), terms: r.contract.terms_md, acceptance: { name: input.name, at, ip }, timezone: r.tenant.timezone });
+  const pdf = await renderContractPdf({ company: r.tenant.name, customer: r.customer.name, site: `${r.site.label}, ${r.site.address}`, season: r.contract.season, services: r.contract.services, prior: await priorBilled(r.contract), payment: paymentText(r.customer.billing_mode, r.tenant.name, Boolean(r.tenant.stripe_account_id && r.tenant.stripe_charges_enabled), billedBy([r.contract]), r.tenant.pay_instructions), terms: r.contract.terms_md, acceptance: { name: input.name, at, ip }, timezone: r.tenant.timezone });
   // Its own file per acceptance, so a second tap that loses the race below can't overwrite the signed copy.
   const pdfPath = `${r.tenant.id}/${r.contract.id}-${Date.parse(at)}.pdf`;
   await putBlob('contracts', pdfPath, pdf, 'application/pdf', { upsert: true });
