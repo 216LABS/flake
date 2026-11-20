@@ -38,6 +38,11 @@ export interface RouteOptions {
   endAt?: { lat: number; lon: number } | null;
   /** Extra searches from kicked copies of the best order (issue 67). Default: 5 up to 50 stops, none above. */
   restarts?: number;
+  /**
+   * Issue 194. True (the default): every priority 1 lot first, then 2, then 3. False: priorities don't fix the order;
+   * open-by times still count heavily, so a priority 1 lot with a deadline is done in time, otherwise shortest wins.
+   */
+  strictPriority?: boolean;
 }
 
 export interface PlannedStop {
@@ -377,7 +382,9 @@ function doubleBridge(order: RouteSite[], bounds: [number, number][], rand: () =
  * worse, the suggestion is the current order, so the button never proposes a change for its own sake.
  */
 export function compareRoute(sites: RouteSite[], opts: RouteOptions = {}): { current: RoutePlan; suggested: RoutePlan; changed: boolean } {
-  return withLegs(opts, () => compareRouteNow(sites, opts));
+  // Soft tiers: one tier for every lot, so only drive time and open-by times decide.
+  const plan = opts.strictPriority === false ? sites.map((s) => ({ ...s, priority: 1 })) : sites;
+  return withLegs(opts, () => compareRouteNow(plan, opts));
 }
 
 function compareRouteNow(sites: RouteSite[], opts: RouteOptions): { current: RoutePlan; suggested: RoutePlan; changed: boolean } {

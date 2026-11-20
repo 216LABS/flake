@@ -1,7 +1,7 @@
 'use client';
 
 import { Button, Card, Label, Table, Td, Th } from '@flake/ui';
-import Link from 'next/link';
+import { ButtonLink } from '@/components/links';
 import { useState } from 'react';
 import { api } from '@/lib/client';
 import { customersFromCsv, type CsvCustomer } from '@/lib/csv';
@@ -51,8 +51,8 @@ export function ImportForm() {
         </ul>
         <p className="mt-3 text-sm text-ink-2">Next: put the lots on a route, and send each customer a quote from their site page. A customer&apos;s lots go on one quote link.</p>
         <div className="mt-3 flex gap-2">
-          <Link href="/customers" className="font-semibold text-link underline">Customers</Link>
-          <Link href="/routes" className="font-semibold text-link underline">Routes</Link>
+          <ButtonLink variant="accent" href="/routes" data-testid="import-go-routes">Go to routes</ButtonLink>
+          <ButtonLink href="/customers" data-testid="import-view-customers">View customers</ButtonLink>
         </div>
       </Card>
     );

@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Textarea } from '@flake/ui';
+import { Button, buttonVariants, cn, Textarea } from '@flake/ui';
 import { Bug, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -43,10 +43,6 @@ export function FeedbackButton() {
 
   return (
     <>
-      {/* The guide stays in the page footer; reporting moved to the corner button. */}
-      <p className="mt-10 text-sm text-muted print:hidden">
-        <Link className="underline underline-offset-2 hover:text-ink" href="/help" data-testid="help-link">Storm-night guide</Link>
-      </p>
       <div className="print:hidden">
         <button
           ref={trigger}
@@ -102,7 +98,7 @@ export function FeedbackButton() {
                     }
                   }}>{state === 'sending' ? 'Sending' : 'Send'}</Button>
                   <Button size="sm" variant="ghost" data-read onClick={close}>Cancel</Button>
-                  <Link className="ml-auto text-sm underline underline-offset-2" href="/help" onClick={() => setOpen(false)}>Storm-night guide</Link>
+                  <Link className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'ml-auto')} href="/help" data-testid="help-link" onClick={() => setOpen(false)}>Storm-night guide</Link>
                 </div>
               </>
             )}

@@ -6,7 +6,7 @@ import { fmtLocal, isLate } from '@flake/core/time';
 import { billInstallments, chargeDraft, redraftAfterLatePhoto } from './billing';
 import { getBlob, putBlob } from './blob';
 import { baseUrl } from './env';
-import { drainJobs, enqueue, type JobHandler } from './jobs';
+import { drainJobs, enqueue, runByKey, type JobHandler } from './jobs';
 import { notifyOffice, notifyParty, sendEmail, sendOfficePush, sendSms, shortLink } from './messaging';
 import { renderProof } from './proof';
 import { setTollFreeStatus, submitTollFree } from './sms-admin';
@@ -175,5 +175,6 @@ export const runJobs = (limit?: number) => drainJobs(JOB_HANDLERS, { limit });
 
 /** Right after a request queues something urgent. Only the urgent lane, so the request isn't kept busy with reports. */
 export const runUrgentJobs = () => drainJobs(JOB_HANDLERS, { maxLane: 0, deadlineMs: 20_000 });
+export const runJobByKey = (key: string) => runByKey(JOB_HANDLERS, key);
 
 export { proof_packet, weather_snapshot };

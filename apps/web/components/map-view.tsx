@@ -7,7 +7,16 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState } from 'react';
 
 export interface TileLayers { streets: { tiles: string[]; attribution: string; maxzoom?: number }; satellite: { tiles: string[]; attribution: string; maxzoom?: number } }
-export interface MapPin { id: string; lat: number; lon: number; color?: string; label?: string }
+export interface MapPin {
+  id: string; lat: number; lon: number; color?: string; label?: string;
+  /** A number on the pin: the stop's place in its truck's order (issue 191). */
+  n?: number;
+  /** An outline in the truck's color. */
+  ring?: string;
+}
+/** A line through points in order: a planned route. */
+export interface MapLine { id: string; color: string; coords: { lat: number; lon: number }[]; dashed?: boolean }
+export interface LegendItem { color: string; label: string; ring?: boolean }
 export type MapMode = 'view' | 'edit' | 'walk' | 'pin';
 
 interface Props {
@@ -22,6 +31,14 @@ interface Props {
   onWalk?: (feet: number) => void;
   onPin?: (lat: number, lon: number) => void;
   className?: string;
+  /** The pin to enlarge and fly to. */
+  selected?: string | null;
+  onPinClick?: (id: string) => void;
+  lines?: MapLine[];
+  /** Zoom to show every pin and line once they're drawn. */
+  fit?: boolean;
+  /** What the colors mean, on the map itself (issue 191). */
+  legend?: LegendItem[];
 }
 
 const firstRing = (g: Polygon | MultiPolygon | null | undefined): Position[] => {
@@ -37,7 +54,7 @@ const feetBetween = (a: Position, b: Position) => {
 };
 
 /** MapLibre with hand-rolled vertex editing. If WebGL is missing it says so; every map task has a typed fallback. */
-export function MapView({ layers, base = 'streets', center, zoom = 17, pins = [], polygon, mode = 'view', onPolygon, onWalk, onPin, className }: Props) {
+export function MapView({ layers, base = 'streets', center, zoom = 17, pins = [], polygon, mode = 'view', onPolygon, onWalk, onPin, className, selected = null, onPinClick, lines = [], fit = false, legend }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
   const lib = useRef<typeof import('maplibre-gl') | null>(null);
@@ -49,8 +66,9 @@ export function MapView({ layers, base = 'streets', center, zoom = 17, pins = []
   const pinMarkers = useRef<Marker[]>([]);
   const modeRef = useRef(mode);
   modeRef.current = mode;
-  const cb = useRef({ onPolygon, onWalk, onPin });
-  cb.current = { onPolygon, onWalk, onPin };
+  const cb = useRef({ onPolygon, onWalk, onPin, onPinClick });
+  cb.current = { onPolygon, onWalk, onPin, onPinClick };
+  const fitted = useRef(false);
 
   const paint = () => {
     const m = map.current;
@@ -113,6 +131,8 @@ export function MapView({ layers, base = 'streets', center, zoom = 17, pins = []
           m.addLayer({ id: 'poly-line', type: 'line', source: 'poly', paint: { 'line-color': '#0369a1', 'line-width': 2 } });
           m.addSource('walk', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } } });
           m.addLayer({ id: 'walk-line', type: 'line', source: 'walk', paint: { 'line-color': '#b45309', 'line-width': 3, 'line-dasharray': [2, 1] } });
+          m.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+          m.addLayer({ id: 'routes-line', type: 'line', source: 'routes', paint: { 'line-color': ['get', 'color'], 'line-width': 3, 'line-opacity': 0.85 } });
           setReady(true);
           paint();
           syncHandles();
@@ -169,12 +189,65 @@ export function MapView({ layers, base = 'streets', center, zoom = 17, pins = []
     if (!m || !L) return;
     pinMarkers.current.forEach((x) => x.remove());
     pinMarkers.current = pins.map((p) => {
-      const marker = new L.Marker({ color: p.color ?? '#475569' }).setLngLat([p.lon, p.lat]).addTo(m);
+      const big = p.id === selected;
+      let marker: Marker;
+      if (p.n !== undefined || p.ring) {
+        // A round pin with its number, ringed in its truck's color.
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.dataset.pin = p.id;
+        el.setAttribute('aria-label', p.label ?? `Stop ${p.n ?? ''}`);
+        const size = big ? 34 : 24;
+        el.style.cssText = `width:${size}px;height:${size}px;border-radius:9999px;background:${p.color ?? '#475569'};color:#fff;font:700 ${big ? 14 : 11}px/1 system-ui,sans-serif;display:flex;align-items:center;justify-content:center;border:3px solid ${p.ring ?? '#fff'};box-shadow:0 1px 4px rgba(0,0,0,.45);cursor:pointer;${big ? 'z-index:5;' : ''}`;
+        el.textContent = p.n !== undefined ? String(p.n) : '';
+        marker = new L.Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(m);
+      } else {
+        marker = new L.Marker({ color: p.color ?? '#475569', scale: big ? 1.3 : 1 }).setLngLat([p.lon, p.lat]).addTo(m);
+        marker.getElement().dataset.pin = p.id;
+      }
       if (p.label) marker.setPopup(new L.Popup({ offset: 24 }).setText(p.label));
+      marker.getElement().addEventListener('click', () => cb.current.onPinClick?.(p.id));
       return marker;
     });
-  }, [pins, ready]);
+    if (fit && !fitted.current && (pins.length || lines.length)) {
+      const pts = [...pins.map((p) => [p.lon, p.lat] as [number, number]), ...lines.flatMap((l) => l.coords.map((c) => [c.lon, c.lat] as [number, number]))];
+      if (pts.length > 1) {
+        const b = pts.reduce((acc, [x, y]) => [Math.min(acc[0], x), Math.min(acc[1], y), Math.max(acc[2], x), Math.max(acc[3], y)], [Infinity, Infinity, -Infinity, -Infinity]);
+        m.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 40, maxZoom: 15, duration: 0 });
+        fitted.current = true;
+      }
+    }
+  }, [pins, ready, selected]);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m?.isStyleLoaded()) return;
+    (m.getSource('routes') as any)?.setData({ type: 'FeatureCollection', features: lines.map((l) => ({ type: 'Feature', properties: { color: l.color }, geometry: { type: 'LineString', coordinates: l.coords.map((c) => [c.lon, c.lat]) } })) });
+  }, [lines, ready]);
+
+  useEffect(() => {
+    const p = pins.find((x) => x.id === selected);
+    if (p) map.current?.flyTo({ center: [p.lon, p.lat], zoom: Math.max(map.current.getZoom(), 14) });
+  }, [selected]);
 
   if (failed) return <div className={`flex items-center justify-center rounded-md border bg-tint-2 p-6 text-sm text-muted ${className ?? 'h-72'}`}>The map could not load on this device. You can still type the area.</div>;
-  return <div ref={box} data-testid="map" className={`rounded-md border ${className ?? 'h-72'}`} />;
+  return (
+    <div className={`relative ${className ?? 'h-72'}`}>
+      <div ref={box} data-testid="map" className="h-full rounded-md border" />
+      {legend?.length ? (
+        // Open on a desk, one tap away on a phone (issue 191).
+        <details className="group absolute left-2 top-2 z-10 max-w-[70%] rounded-md bg-white/95 p-2 text-xs text-slate-900 shadow-popup" open={typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches} data-testid="map-legend">
+          <summary className="cursor-pointer font-semibold">Key</summary>
+          <ul className="mt-1 space-y-1">
+            {legend.map((l) => (
+              <li key={l.label} className="flex items-center gap-2">
+                <span aria-hidden="true" className="inline-block size-3 shrink-0 rounded-full" style={l.ring ? { border: `3px solid ${l.color}`, background: '#fff' } : { background: l.color }} />
+                {l.label}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </div>
+  );
 }

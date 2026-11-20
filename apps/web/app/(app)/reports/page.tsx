@@ -1,5 +1,7 @@
 import { fmtLocal, stormWhen } from '@flake/core/time';
 import { buttonVariants, Card, Eyebrow, Input, Label, PageHeader, Stat, Table, Td, Th } from '@flake/ui';
+import { ButtonA, ButtonLink, entityLink, FilterTabs } from '@/components/links';
+import { ReportsNav } from './reports-nav';
 import { sql } from '@flake/db';
 import { asUser, requirePage } from '@/lib/auth';
 import { money } from '@/lib/client';
@@ -29,8 +31,8 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
           <button type="submit" className={buttonVariants({ variant: 'outline', className: 'h-11 sm:h-10' })} data-testid="period-show">Show</button>
         </form>
         <p className="rounded-md bg-danger-tint p-3 text-sm text-danger" role="alert" data-testid="period-backward">
-          The From date ({fmtLocal(`${p.backward.from}T12:00:00Z`, 'UTC', { month: 'short', day: 'numeric', year: 'numeric' })}) is after the To date ({fmtLocal(`${p.backward.to}T12:00:00Z`, 'UTC', { month: 'short', day: 'numeric', year: 'numeric' })}). Fix one of them, or{' '}
-          <a className="font-semibold underline" href={`/reports?from=${p.backward.to}&to=${p.backward.from}`} data-testid="period-swap">show {p.backward.to} to {p.backward.from}</a>.
+          The From date ({fmtLocal(`${p.backward.from}T12:00:00Z`, 'UTC', { month: 'short', day: 'numeric', year: 'numeric' })}) is after the To date ({fmtLocal(`${p.backward.to}T12:00:00Z`, 'UTC', { month: 'short', day: 'numeric', year: 'numeric' })}). Fix one of them, or swap them.
+          <ButtonA size="sm" className="ml-2" href={`/reports?from=${p.backward.to}&to=${p.backward.from}`} data-testid="period-swap">Swap dates</ButtonA>
         </p>
       </>
     );
@@ -91,8 +93,14 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
         <p className="mb-3 max-w-2xl text-sm text-muted">
           From each driver&apos;s first tap on their route link to their last, using their phone&apos;s taps and GPS. A quiet gap of two hours or more starts a new shift. A shift that runs past midnight counts in full on the day it started. Check anything with a note before you pay.
         </p>
-        {ctx.role !== 'viewer' ? <p className="mb-3 text-sm"><a className="font-semibold text-link underline" href="/reports/payroll" data-testid="open-payroll">Payroll: regular, storm, holiday and overtime hours, with Gusto and ADP files</a> · <a className="font-semibold text-link underline" href="/reports/profit" data-testid="open-profit">Profit per lot</a></p> : null}
-        {subsHidden ? <p className="mb-3 text-sm text-ink-2" data-testid="subs-hidden">Employees only: subcontractors are paid from Sub pay{showPay ? ' below' : ''}, not payroll. <a className="text-link underline" href={`/reports?from=${p.from}&to=${p.to}&subs=1`}>Show subs too</a></p> : null}
+        <ReportsNav here="overview" canSeePay={ctx.role !== 'viewer'} />
+      {ctx.role !== 'viewer' ? <p className="mb-3 text-sm text-muted">Payroll has regular, storm, holiday and overtime hours with Gusto and ADP files. Profit per lot shows what each lot earned after labor, salt and equipment.</p> : null}
+        {subsHidden || withSubs ? (
+          <div className="mb-3" data-testid="subs-hidden">
+            <FilterTabs label="Whose hours" className="mb-1" items={[{ href: `/reports?from=${p.from}&to=${p.to}`, label: 'Employees only', active: !withSubs }, { href: `/reports?from=${p.from}&to=${p.to}&subs=1`, label: 'Include subcontractors', active: withSubs, testId: 'include-subs' }]} />
+            {!withSubs ? <p className="mt-1 text-sm text-muted">Subcontractors are paid from Sub pay{showPay ? ' below' : ''}, not payroll.</p> : null}
+          </div>
+        ) : null}
         {hours.length ? (
           <>
             <Table stack data-testid="hours-summary">
@@ -133,7 +141,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
               <tbody>
                 {bills.map((b) => (
                   <tr key={b.id} data-testid="money-row">
-                    <Td><a className="text-link underline" href={`/billing?storm=${b.id}`}>{b.name}</a><span className="block text-xs text-muted">{stormWhen(b.started_at, tz, false)}</span></Td>
+                    <Td><a className={entityLink} href={`/billing?storm=${b.id}`}>{b.name}</a><span className="block text-xs text-muted">{stormWhen(b.started_at, tz, false)}</span></Td>
                     <Td label="Billed" className="tabular">{money(b.billed)}</Td>
                     <Td label="Paid" className="tabular">{money(b.paid)}</Td>
                     <Td label="Owed" className="tabular">{money(b.owed)}</Td>
@@ -168,7 +176,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
               {subPay.map((r) => (
                 <tr key={r.crew_id} data-testid="subpay-row">
                   <Td className="font-medium wrap-anywhere">{r.name}{r.checks ? <span className="block text-xs font-medium text-warn-ink">{r.checks} visit{r.checks === 1 ? '' : 's'} to check before paying</span> : null}</Td>
-                  <Td label="Storms">{r.storms.length ? r.storms.map((s, i) => <span key={s.id}>{i ? ', ' : ''}<a className="text-link underline" href={`/storms/${s.id}/pay`}>{s.name}</a></span>) : '-'}{r.season_cents ? <span className="block text-xs text-muted">Season flat rate {money(r.season_cents)}</span> : null}</Td>
+                  <Td label="Storms">{r.storms.length ? r.storms.map((s, i) => <span key={s.id}>{i ? ', ' : ''}<a className={entityLink} href={`/storms/${s.id}/pay`}>{s.name}</a></span>) : '-'}{r.season_cents ? <span className="block text-xs text-muted">Season flat rate {money(r.season_cents)}</span> : null}</Td>
                   <Td label="Visits" className="tabular">{r.visits}</Td>
                   <Td label="Hours" className="tabular">{r.hours.toFixed(2)}</Td>
                   <Td label="Bags" className="tabular">{r.bags}</Td>
@@ -207,7 +215,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
         <Eyebrow id="salt-title" className="mb-2">Salt</Eyebrow>
         <div className="mb-4 grid gap-3 sm:grid-cols-3">
           <Card data-testid="salt-on-hand">
-            <a className="float-right text-sm text-link underline" href="/salt" data-testid="open-salt-yards">Salt yards</a>
+            <ButtonLink size="sm" className="float-right" href="/salt" data-testid="open-salt-yards">Salt yards</ButtonLink>
             <Stat label="On hand" value={salt.entries.length ? tons(salt.stock.tons) : 'Not counted'} note={salt.stock.since ? `Counted ${fmtLocal(salt.stock.since, tz, { month: 'short', day: 'numeric' })}, less what drivers logged since` : 'Deliveries less what drivers logged. Add a count to set it exactly.'} />
           </Card>
           <Card><Stat label="Storms left" value={salt.stormsLeft ?? '-'} note="At your average use per storm" /></Card>

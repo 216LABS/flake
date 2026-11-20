@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@flake/ui';
-import { ClipboardList, CloudSnow, FileCheck2, LayoutDashboard, Menu, Receipt, Route, Settings, Users, Wrench, X } from 'lucide-react';
+import { ClipboardList, CloudSnow, FileCheck2, LayoutDashboard, LifeBuoy, Menu, Mountain, Receipt, Route, Settings, Users, Wrench, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -14,8 +14,12 @@ const NAV = [
   ['/routes', 'Routes', Route],
   ['/billing', 'Billing', Receipt],
   ['/proof', 'Proof', FileCheck2],
+  // Salt as its own place (issue 197).
+  ['/salt', 'Salt', Mountain],
   ['/reports', 'Reports', ClipboardList],
   ['/settings', 'Settings', Settings],
+  // The storm-night guide (issue 201): a place in the nav, not a lone footer link.
+  ['/help', 'Help', LifeBuoy],
 ] as const;
 
 /** On a phone, the four places a storm night lives get a tab. The rest are one tap away under More. */
@@ -23,8 +27,17 @@ const TABS = ['/dashboard', '/storms', '/customers', '/billing'];
 
 const isHere = (path: string, href: string) => path === href || path.startsWith(`${href}/`);
 
+/** "Live" on Storms while a storm runs, so it's one tap from any page (issue 187). */
+function LiveDot({ tab = false }: { tab?: boolean }) {
+  return (
+    <span className={tab ? 'absolute right-[18%] top-1 flex size-2.5' : 'ml-auto inline-flex items-center gap-1 rounded-full bg-beacon px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-950'} data-testid="nav-live">
+      {tab ? <><span className="absolute inline-flex size-full animate-ping rounded-full bg-beacon opacity-75 motion-reduce:animate-none" aria-hidden="true" /><span className="relative inline-flex size-2.5 rounded-full bg-beacon" aria-hidden="true" /><span className="sr-only">Live storm</span></> : 'Live'}
+    </span>
+  );
+}
+
 /** The sidebar on a desk. Phones get the bottom tab bar below instead (issue 40). */
-export function AppNav({ showDev }: { showDev: boolean }) {
+export function AppNav({ showDev, live = false }: { showDev: boolean; live?: boolean }) {
   const path = usePathname();
   const item = 'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors';
   return (
@@ -35,6 +48,7 @@ export function AppNav({ showDev }: { showDev: boolean }) {
           <Link key={href} href={href} aria-current={here ? 'page' : undefined} className={cn(item, here ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-900 hover:text-white')}>
             <Icon size={17} aria-hidden="true" className={here ? 'text-beacon' : undefined} />
             {label}
+            {live && href === '/storms' ? <LiveDot /> : null}
           </Link>
         );
       })}
@@ -47,7 +61,7 @@ export function AppNav({ showDev }: { showDev: boolean }) {
  * A thumb-reach tab bar fixed to the bottom of a phone, clear of the home indicator. It stays put on a long storm
  * board or customer list, where a nav at the top would have scrolled away.
  */
-export function MobileTabs({ showDev }: { showDev: boolean }) {
+export function MobileTabs({ showDev, live = false }: { showDev: boolean; live?: boolean }) {
   const path = usePathname();
   const [more, setMore] = useState(false);
   const menu = useRef<HTMLElement>(null);
@@ -85,8 +99,9 @@ export function MobileTabs({ showDev }: { showDev: boolean }) {
         {NAV.filter(([href]) => TABS.includes(href)).map(([href, label, Icon]) => {
           const here = isHere(path, href) && !more;
           return (
-            <Link key={href} href={href} aria-current={here ? 'page' : undefined} className={cn(tab, here ? 'text-white' : 'hover:text-white')}>
+            <Link key={href} href={href} aria-current={here ? 'page' : undefined} className={cn(tab, 'relative', here ? 'text-white' : 'hover:text-white')}>
               <Icon size={22} aria-hidden="true" className={here ? 'text-beacon' : undefined} />{label}
+              {live && href === '/storms' ? <LiveDot tab /> : null}
             </Link>
           );
         })}

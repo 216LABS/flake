@@ -5,6 +5,7 @@ import { Badge, Button, Card, Input, Label, Select } from '@flake/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useConfirm } from '@/components/confirm';
+import { ButtonA } from '@/components/links';
 import { api } from '@/lib/client';
 
 interface Cert { id: string; crew_id: string | null; kind: string; insurer: string | null; policy_number: string | null; expires_on: string | null; is_default: boolean; file_name: string | null; state: string }
@@ -50,7 +51,7 @@ export function CompliancePanel({ data, sites, tz, readOnly }: { data: Data; sit
       <span className="font-medium">{CERT_KIND_LABEL[c.kind] ?? c.kind}</span>
       <span className="text-muted wrap-anywhere">{[c.insurer, c.policy_number, c.expires_on ? `ends ${c.expires_on}` : null].filter(Boolean).join(', ')}</span>
       {c.is_default ? <Badge tone="gray">Sent to customers</Badge> : null}
-      <a className="text-link underline" href={`/api/certificates/${c.id}`} data-testid="cert-download">Download</a>
+      <ButtonA size="sm" href={`/api/certificates/${c.id}`} data-testid="cert-download">Download</ButtonA>
       {!readOnly && !c.crew_id && !c.is_default && c.kind !== 'w9' ? <Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => api(`/api/certificates/${c.id}`, { method: 'PATCH' }))}>Make default</Button> : null}
       {!readOnly ? <Button size="sm" variant="ghost" disabled={busy} aria-label="Remove this certificate" onClick={async () => { if (await ask({ title: 'Remove this certificate?', body: 'The file is deleted too.', confirm: 'Remove', danger: true })) await run(() => api(`/api/certificates/${c.id}`, { method: 'DELETE' })); }}>Remove</Button> : null}
     </li>
@@ -126,8 +127,8 @@ export function CompliancePanel({ data, sites, tz, readOnly }: { data: Data; sit
                 {c.reference || c.adjuster ? <p className="text-muted wrap-anywhere">{[c.reference ? `Ref ${c.reference}` : null, c.adjuster].filter(Boolean).join(', ')}</p> : null}
                 {c.notes ? <p className="wrap-anywhere">{c.notes}</p> : null}
                 <p className="mt-1">
-                  {c.proof_packet_ids.length ? <>Packets: {c.proof_packet_ids.map((p, i) => <a key={p} className="mr-2 text-link underline" href={`/api/proof/${p}?download=1`} data-testid="claim-packet">{i + 1}</a>)}</> : null}
-                  <a className="text-link underline" href={`/proof?site=${c.site_id}&incident=${localInput(c.incident_at)}`} data-testid="claim-make-packet">Make an incident packet</a>
+                  {c.proof_packet_ids.length ? <span className="flex flex-wrap gap-2">{c.proof_packet_ids.map((p, i) => <ButtonA key={p} size="sm" href={`/api/proof/${p}?download=1`} data-testid="claim-packet">Packet {i + 1} (PDF)</ButtonA>)}</span> : null}
+                  <ButtonA size="sm" href={`/proof?site=${c.site_id}&incident=${localInput(c.incident_at)}`} data-testid="claim-make-packet">Make an incident packet</ButtonA>
                   {!readOnly && c.candidates.filter((p) => !c.proof_packet_ids.includes(p.id)).length ? <Button size="sm" variant="ghost" disabled={busy} data-testid="claim-attach" onClick={() => run(() => api(`/api/claims/${c.id}`, { method: 'PATCH', body: { proof_packet_ids: [...new Set([...c.proof_packet_ids, ...c.candidates.map((p) => p.id)])] } }))}>Attach packets made for this time</Button> : null}
                 </p>
               </li>

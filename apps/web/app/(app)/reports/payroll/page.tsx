@@ -1,6 +1,6 @@
 import { localDay } from '@flake/core/receivables';
 import { Card, EmptyState, PageHeader, Select, Table, Td, Th } from '@flake/ui';
-import Link from 'next/link';
+import { ReportsNav } from '../reports-nav';
 import { asUser, requirePage } from '@/lib/auth';
 import { money } from '@/lib/client';
 import { payPeriods, payrollFor, type PayrollSettings } from '@/lib/payroll';
@@ -24,6 +24,7 @@ export default async function Payroll({ searchParams }: { searchParams: Promise<
   const qs = `from=${picked.from}&to=${picked.to}`;
   return (
     <>
+      <ReportsNav here="payroll" canSeePay />
       <PageHeader title="Payroll" subtitle="Hours for a pay period, split into regular, storm, holiday and overtime, ready to import. Subs are paid from Sub pay, not here." />
       <form method="get" className="mb-4 flex flex-wrap items-end gap-2" data-testid="payroll-period">
         <label className="text-sm">Pay period <Select name="p" defaultValue={picked.from} className="w-auto">{periods.map((x) => <option key={x.from} value={x.from}>{day(x.from)} to {day(x.to)}</option>)}</Select></label>
@@ -57,7 +58,6 @@ export default async function Payroll({ searchParams }: { searchParams: Promise<
       ) : <EmptyState title="No employee hours in this period" />}
       <p className="mt-3 max-w-3xl text-xs text-muted">Overtime is every hour past 40 in a workweek, which starts {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][settings.week_start ?? 0]} at midnight. A shift counts in the week it started. A shift that starts on a holiday you listed is holiday hours; with a storm rate set, the rest are storm hours. Overtime is 1.5 times regular unless you set an overtime rate. Hours come from the drivers&apos; phones, the same as Crew hours.</p>
       {ctx.role === 'owner' ? <PayrollSettingsForm initial={settings} /> : null}
-      <Link className="mt-4 inline-block text-sm text-link underline" href="/reports">Back to reports</Link>
     </>
   );
 }

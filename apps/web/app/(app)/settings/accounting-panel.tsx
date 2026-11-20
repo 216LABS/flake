@@ -1,6 +1,7 @@
 'use client';
 
 import { Badge, Button, Card, Select } from '@flake/ui';
+import { proseLink } from '@/components/links';
 import { useCallback, useEffect, useState } from 'react';
 import { useConfirm } from '@/components/confirm';
 import { api } from '@/lib/client';
@@ -167,7 +168,7 @@ export function AccountingPanel({ owner, note }: { owner: boolean; note: string 
               <ul className="mt-2 space-y-2 text-sm">
                 {data.problems.map((p) => (
                   <li key={p.id} data-testid="qbo-problem">
-                    <span className="font-medium wrap-anywhere">{p.customer}</span>, {p.kind === 'draft' ? <a className="text-link underline" href={`/billing?storm=${p.storm_id}`}>storm bill</a> : 'seasonal installment'}: {p.error}
+                    <span className="font-medium wrap-anywhere">{p.customer}</span>, {p.kind === 'draft' ? <a className={proseLink} href={`/billing?storm=${p.storm_id}`}>storm bill</a> : 'seasonal installment'}: {p.error}
                   </li>
                 ))}
               </ul>

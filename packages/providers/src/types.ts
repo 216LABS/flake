@@ -195,6 +195,8 @@ export interface RouteMatrix {
   /** The most points one call takes. Bigger routes use estimates. */
   readonly maxPoints: number;
   minutes(points: { lat: number; lon: number }[]): Promise<(number | null)[][] | null>;
+  /** One block of a bigger matrix: minutes from each of `from` to each of `to` (issue 194), up to maxPoints each. */
+  block?(from: { lat: number; lon: number }[], to: { lat: number; lon: number }[]): Promise<(number | null)[][] | null>;
 }
 
 export interface Providers {

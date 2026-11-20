@@ -21,13 +21,30 @@ export async function roadTimes(points: Point[]): Promise<{ legMinutes: LegMinut
   if (keys.length < 2) return estimate;
   try {
     const { router } = await getProviders();
-    if (!router.maxPoints || keys.length > router.maxPoints) return estimate;
+    // Over one call's limit, a block at a time (issue 194), up to 3 blocks a side: 9 calls, cached for a month.
+    const blocks = Math.ceil(keys.length / Math.max(1, router.maxPoints));
+    if (!router.maxPoints || (keys.length > router.maxPoints && (!router.block || blocks > 3))) return { ...estimate, label: `Drive times are estimates from distance: ${keys.length} lots is more than road times cover at once.` };
     const cacheKey = `road:${createHash('sha256').update(keys.join('|')).digest('hex').slice(0, 40)}`;
     const db = serviceDb();
     const [hit] = await db.select().from(cached_lookup).where(eq(cached_lookup.key, cacheKey));
     let matrix = hit && Date.now() - Date.parse(hit.fetched_at) < KEEP_MS ? (hit.value as { minutes: (number | null)[][] }).minutes : null;
     if (!matrix) {
-      matrix = await router.minutes(keys.map((k) => ({ lat: Number(k.split(',')[0]), lon: Number(k.split(',')[1]) })));
+      const pts = keys.map((k) => ({ lat: Number(k.split(',')[0]), lon: Number(k.split(',')[1]) }));
+      if (keys.length <= router.maxPoints) {
+        matrix = await router.minutes(pts);
+      } else {
+        const size = router.maxPoints;
+        const parts = Array.from({ length: blocks }, (_, b) => pts.slice(b * size, (b + 1) * size));
+        const full: (number | null)[][] = pts.map(() => pts.map(() => null));
+        for (let a = 0; a < blocks; a++) {
+          for (let b = 0; b < blocks; b++) {
+            const m = await router.block!(parts[a]!, parts[b]!);
+            if (!m) return estimate;
+            m.forEach((row, i) => row.forEach((v, j) => { full[a * size + i]![b * size + j] = v; }));
+          }
+        }
+        matrix = full;
+      }
       if (!matrix) return estimate;
       await db.insert(cached_lookup).values({ key: cacheKey, value: { minutes: matrix } }).onConflictDoUpdate({ target: cached_lookup.key, set: { value: { minutes: matrix }, fetched_at: new Date().toISOString() } });
     }

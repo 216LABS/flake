@@ -2,6 +2,7 @@ import { contract, customer, desc, inArray, site } from '@flake/db';
 import { Badge, buttonVariants, EmptyState, Input, PageHeader, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
+import { ButtonLink, FilterTabs } from '@/components/links';
 import { billingLabel, kindLabel } from '@/lib/labels';
 
 export const metadata = { title: 'Customers' };
@@ -38,6 +39,7 @@ export default async function Customers({ searchParams }: { searchParams: Promis
   return (
     <>
       <PageHeader title={showArchived ? 'Archived customers' : 'Customers'} actions={ctx.role !== 'viewer' && !showArchived ? <><Link href="/bids" className={buttonVariants({ variant: 'outline' })} data-testid="open-bids">Bids and renewals</Link><Link href="/customers/import" className={buttonVariants({ variant: 'outline' })} data-testid="import-customers">Import</Link><Link href="/customers/new" className={buttonVariants({ variant: 'accent' })} data-testid="new-customer">New customer</Link></> : null} />
+      {archived.length || showArchived ? <FilterTabs label="Which customers" items={[{ href: '/customers', label: 'Active', active: !showArchived }, { href: '/customers?archived=1', label: `Archived (${archived.length})`, active: showArchived, testId: 'show-archived' }]} /> : null}
       {listed.length > 8 || q ? (
         <form className="mb-3 flex gap-2" role="search" action="/customers">
           {showArchived ? <input type="hidden" name="archived" value="1" /> : null}
@@ -48,8 +50,8 @@ export default async function Customers({ searchParams }: { searchParams: Promis
           <button type="submit" className={buttonVariants({ variant: 'outline' })}>Show</button>
         </form>
       ) : null}
-      {onlyWaiting ? <p className="mb-2 text-sm text-muted" data-testid="waiting-filter">Customers with a quote waiting for a signature. <Link className="text-link underline" href="/customers">Show all</Link></p> : null}
-      {q ? <p className="mb-2 text-sm text-muted" data-testid="customer-search-count">{found.length === 1 ? '1 customer matches' : `${found.length} customers match`} &ldquo;{params.q}&rdquo;. <Link className="text-link underline" href={showArchived ? '/customers?archived=1' : '/customers'}>Show all</Link></p> : null}
+      {onlyWaiting ? <p className="mb-2 text-sm text-muted" data-testid="waiting-filter">Customers with a quote waiting for a signature. <ButtonLink variant="ghost" size="sm" href="/customers">Show all</ButtonLink></p> : null}
+      {q ? <p className="mb-2 text-sm text-muted" data-testid="customer-search-count">{found.length === 1 ? '1 customer matches' : `${found.length} customers match`} &ldquo;{params.q}&rdquo;. <ButtonLink variant="ghost" size="sm" href={showArchived ? '/customers?archived=1' : '/customers'}>Clear search</ButtonLink></p> : null}
       {customers.length ? (
         <Table stack data-testid="customers-table">
           <thead><tr><Th>Name</Th><Th>Kind</Th><Th>Sites</Th><Th>Billing</Th><Th>Payment on file</Th></tr></thead>
@@ -72,9 +74,7 @@ export default async function Customers({ searchParams }: { searchParams: Promis
           </tbody>
         </Table>
       ) : onlyWaiting ? <EmptyState title="No quotes are waiting" body="Every quote has been signed or answered." /> : q ? <EmptyState title="No customers match" body="Try part of a name, a street, an email or a phone number." /> : showArchived ? <EmptyState title="No archived customers" /> : <EmptyState title="No customers yet" body="Most operators add one in a few minutes." action={<Link href="/customers/new" className={buttonVariants({ variant: 'accent' })}>Add your first customer</Link>} />}
-      {customers.length < found.length ? <p className="mt-3 text-sm text-muted" data-testid="customers-more">Showing {customers.length} of {found.length}. <Link className="text-link underline" href={keep({ all: '1' })}>Show all {found.length}</Link></p> : null}
-      {showArchived ? <Link className="mt-4 block text-sm text-link underline" href="/customers">Back to customers</Link>
-        : archived.length ? <Link className="mt-4 inline-block text-sm text-link underline" href="/customers?archived=1" data-testid="show-archived">Archived customers ({archived.length})</Link> : null}
+      {customers.length < found.length ? <p className="mt-3 text-sm text-muted" data-testid="customers-more">Showing {customers.length} of {found.length}. <ButtonLink variant="outline" size="sm" href={keep({ all: '1' })}>Show all {found.length}</ButtonLink></p> : null}
     </>
   );
 }

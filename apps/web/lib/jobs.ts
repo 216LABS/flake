@@ -98,6 +98,59 @@ export const backoffSeconds = (attempts: number) => Math.min(1800, 2 ** attempts
 /** Runs at once while things go well, and never more than the database pool can serve. */
 const mostAtOnce = () => Math.max(1, Math.min(4, Number(process.env.DB_POOL_MAX ?? 10) - 1));
 
+/** Runs one claimed job and records how it went: done, retry later, or dead. True when it didn't fail. */
+async function runJob(handlers: Record<string, JobHandler>, row: JobRow): Promise<boolean> {
+  try {
+    const handler = handlers[row.kind];
+    if (!handler) throw new Error(`No handler for job kind ${row.kind}`);
+    await handler(row.payload);
+    await serviceDb().execute(sql`update job set done_at = now(), locked_until = null, last_error = null where id = ${row.id}`);
+    return true;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const { retryAfterSeconds: wait, notAFailure } = err as { retryAfterSeconds?: number; notAFailure?: boolean };
+    if (!notAFailure) log.error('job failed', err, { job_id: row.id, kind: row.kind, tenant_id: row.payload.tenantId });
+    if (wait) {
+      // The provider said "not yet". That says nothing about the job, so it doesn't use up an attempt.
+      await serviceDb().execute(sql`update job set attempts = attempts - 1, run_at = now() + make_interval(secs => ${wait}), locked_until = null, last_error = ${message} where id = ${row.id}`);
+    } else if (row.attempts >= row.max_attempts) {
+      await serviceDb().execute(sql`update job set dead_at = now(), locked_until = null, last_error = ${message} where id = ${row.id}`);
+    } else {
+      const delay = backoffSeconds(row.attempts);
+      await serviceDb().execute(sql`update job set run_at = now() + make_interval(secs => ${delay}), locked_until = null, last_error = ${message} where id = ${row.id}`);
+    }
+    return Boolean(notAFailure);
+  }
+}
+
+/**
+ * One job the person is waiting on, right after this response, instead of at the next scheduled run (issue 196: a proof
+ * packet took one to two minutes behind "Generating..." because heavy jobs only ran every 2 minutes).
+ */
+export function runSoon(dedupeKey: string) {
+  try {
+    after(async () => {
+      try {
+        const { runJobByKey } = await import('./handlers');
+        await runJobByKey(dedupeKey);
+      } catch (err) {
+        log.error('job run failed', err, { dedupe_key: dedupeKey });
+      }
+    });
+  } catch {
+    // Not in a request: the schedule picks it up.
+  }
+}
+
+/** Claims and runs the job with this key, if it's still waiting and nobody else has it. */
+export async function runByKey(handlers: Record<string, JobHandler>, dedupeKey: string) {
+  const [row] = (await serviceDb().execute(sql`
+    update job set attempts = attempts + 1, locked_until = now() + ${LEASE}
+    where id = (select id from job where dedupe_key = ${dedupeKey} and done_at is null and dead_at is null and run_at <= now() and (locked_until is null or locked_until < now()) for update skip locked)
+    returning id, kind, payload, attempts, max_attempts, 3 as lane, 1 as turn`)) as unknown as JobRow[];
+  return row ? runJob(handlers, row) : null;
+}
+
 export async function drainJobs(handlers: Record<string, JobHandler>, opts: { limit?: number; deadlineMs?: number; maxLane?: number } = {}): Promise<{ ran: number; failed: number }> {
   // The deadline is what really stops a run. A small limit only made big storms wait, for the same total work.
   const limit = opts.limit ?? 1000;
@@ -107,29 +160,7 @@ export async function drainJobs(handlers: Record<string, JobHandler>, opts: { li
   let failed = 0;
   let width = 1;
 
-  const runOne = async (row: JobRow) => {
-    try {
-      const handler = handlers[row.kind];
-      if (!handler) throw new Error(`No handler for job kind ${row.kind}`);
-      await handler(row.payload);
-      await serviceDb().execute(sql`update job set done_at = now(), locked_until = null, last_error = null where id = ${row.id}`);
-      return true;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      const { retryAfterSeconds: wait, notAFailure } = err as { retryAfterSeconds?: number; notAFailure?: boolean };
-      if (!notAFailure) log.error('job failed', err, { job_id: row.id, kind: row.kind, tenant_id: row.payload.tenantId });
-      if (wait) {
-        // The provider said "not yet". That says nothing about the job, so it doesn't use up an attempt.
-        await serviceDb().execute(sql`update job set attempts = attempts - 1, run_at = now() + make_interval(secs => ${wait}), locked_until = null, last_error = ${message} where id = ${row.id}`);
-      } else if (row.attempts >= row.max_attempts) {
-        await serviceDb().execute(sql`update job set dead_at = now(), locked_until = null, last_error = ${message} where id = ${row.id}`);
-      } else {
-        const delay = backoffSeconds(row.attempts);
-        await serviceDb().execute(sql`update job set run_at = now() + make_interval(secs => ${delay}), locked_until = null, last_error = ${message} where id = ${row.id}`);
-      }
-      return Boolean(notAFailure);
-    }
-  };
+  const runOne = (row: JobRow) => runJob(handlers, row);
 
   while (ran < limit && Date.now() < deadline) {
     const rows = await claim(Math.min(width, limit - ran), maxLane);

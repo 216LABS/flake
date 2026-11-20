@@ -1,13 +1,13 @@
 import { PageHeader, buttonVariants } from '@flake/ui';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { asc, eq, site } from '@flake/db';
 import { asUser, requirePage } from '@/lib/auth';
 import { HttpError, isUuid } from '@/lib/http';
 import { canTextFrom } from '@/lib/messaging';
 import { getProviders } from '@/lib/providers';
 import { stormLive } from '@/lib/storms';
 import { StormBoard } from './storm-board';
+import { lotOptions } from '@/lib/lots';
 
 export const metadata = { title: 'Storm' };
 
@@ -21,7 +21,7 @@ export default async function StormPage({ params }: { params: Promise<{ id: stri
   });
   if (!live) notFound();
   const { tiles } = await getProviders();
-  const sites = await asUser(ctx, (tx) => tx.select({ id: site.id, label: site.label }).from(site).where(eq(site.active, true)).orderBy(asc(site.label)));
+  const sites = await asUser(ctx, (tx) => lotOptions(tx));
   return (
     <>
       <PageHeader title={live.storm.name} actions={<>

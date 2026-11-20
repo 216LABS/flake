@@ -11,6 +11,8 @@ const body = z.object({
   site_ids: z.array(z.string().uuid()).max(200),
   start: z.string().regex(/^\d{2}:\d{2}$/).default('04:00'),
   keep_first: z.boolean().default(false),
+  // Issue 194: priority 1 strictly first (default), or by its open-by time.
+  strict_priority: z.boolean().default(true),
 });
 
 /** Plans the stops as they are on screen. Nothing is saved: the dispatcher accepts with the normal save. */
@@ -18,7 +20,7 @@ export const POST = route<Ctx>(async (req, { params }) => {
   const id = (await params).id;
   if (!isUuid(id)) throw new HttpError(404, 'Not found');
   const ctx = await requireApi('dispatcher');
-  const { site_ids, start, keep_first } = await parseJson(req, body);
+  const { site_ids, start, keep_first, strict_priority } = await parseJson(req, body);
   let yardTrip = true;
   const rows = await asUser(ctx, async (tx) => {
     const [r] = await tx.select({ id: routeTable.id, yard_trip: routeTable.yard_trip }).from(routeTable).where(eq(routeTable.id, id));
@@ -36,5 +38,5 @@ export const POST = route<Ctx>(async (req, { params }) => {
   const yard = yardTrip && ctx.tenant.yard ? { lat: ctx.tenant.yard.lat, lon: ctx.tenant.yard.lon } : null;
   // Road times when the router has them (issue 65); the same plan on estimates when it doesn't.
   const road = await roadTimes([...sites, ...(yard ? [yard] : [])]);
-  return { ...compareRoute(sites, { start, keepFirst: keep_first, yard, legMinutes: road.legMinutes }), skipped: site_ids.length - sites.length, yard: Boolean(yard), times: road.source, times_label: road.label };
+  return { ...compareRoute(sites, { start, keepFirst: keep_first, yard, legMinutes: road.legMinutes, strictPriority: strict_priority }), skipped: site_ids.length - sites.length, yard: Boolean(yard), times: road.source, times_label: road.label };
 });

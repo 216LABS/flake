@@ -2,6 +2,7 @@
 
 import { Badge, Button, Card, Input, Label, Select, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
+import { entityLink } from '@/components/links';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useConfirm } from '@/components/confirm';
@@ -56,7 +57,7 @@ export function BidsPanel({ data, season, readOnly }: { data: Data; season: stri
           <ul className="mt-2 divide-y divide-line-faint text-sm">
             {data.renewals.rows.map((r) => (
               <li key={r.contract_id} className="flex flex-wrap items-center gap-2 py-1.5" data-testid="renewal-row">
-                <Link className="font-medium text-link underline wrap-anywhere" href={`/sites/${r.site_id}`}>{r.label}</Link><span className="text-muted wrap-anywhere">{r.customer}</span>
+                <Link className={`${entityLink} wrap-anywhere`} href={`/sites/${r.site_id}`}>{r.label}</Link><span className="text-muted wrap-anywhere">{r.customer}</span>
                 {!readOnly ? <Button size="sm" variant="outline" className="ml-auto" disabled={busy} data-testid="renew" onClick={async () => {
                   if (await run(() => api(`/api/contracts/${r.contract_id}/renew`, { method: 'POST' }))) setNote(`Draft for ${data.renewals.next} made for ${r.label}. Open the lot to check it and send the quote.`);
                 }}>Renew</Button> : null}
@@ -78,7 +79,7 @@ export function BidsPanel({ data, season, readOnly }: { data: Data; season: stri
             <tbody>
               {shown.map((b) => (
                 <tr key={b.id} data-testid="bid-row">
-                  <Td className="wrap-anywhere">{b.customer_id ? <Link className="font-medium text-link underline" href={`/customers/${b.customer_id}`}>{b.who}</Link> : <span className="font-medium">{b.who}</span>}<span className="block text-xs text-muted">{b.season}{b.prospect_contact ? `, ${b.prospect_contact}` : ''}</span>{b.notes ? <span className="block text-xs wrap-anywhere">{b.notes}</span> : null}</Td>
+                  <Td className="wrap-anywhere">{b.customer_id ? <Link className={entityLink} href={`/customers/${b.customer_id}`}>{b.who}</Link> : <span className="font-medium">{b.who}</span>}<span className="block text-xs text-muted">{b.season}{b.prospect_contact ? `, ${b.prospect_contact}` : ''}</span>{b.notes ? <span className="block text-xs wrap-anywhere">{b.notes}</span> : null}</Td>
                   <Td label="Lots" className="wrap-anywhere">{b.sites.join(', ') || '-'}</Td>
                   <Td label="Estimate" className="text-right tabular">{b.estimated_cents == null ? '-' : money(b.estimated_cents)}</Td>
                   <Td label="Stage">

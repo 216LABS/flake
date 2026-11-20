@@ -12,4 +12,10 @@ export class MockRouteMatrix implements RouteMatrix {
     const miles = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) => Math.abs(a.lat - b.lat) * 69 + Math.abs(a.lon - b.lon) * 52;
     return points.map((a) => points.map((b) => (miles(a, b) / 20) * 60));
   }
+
+  async block(from: { lat: number; lon: number }[], to: { lat: number; lon: number }[]) {
+    if (from.length > this.maxPoints || to.length > this.maxPoints) return null;
+    const miles = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) => Math.abs(a.lat - b.lat) * 69 + Math.abs(a.lon - b.lon) * 52;
+    return from.map((a) => to.map((b) => (miles(a, b) / 20) * 60));
+  }
 }

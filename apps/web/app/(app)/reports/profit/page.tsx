@@ -2,6 +2,8 @@ import { quotingSeason, zonedDayStart } from '@flake/core/time';
 import { desc, storm } from '@flake/db';
 import { Badge, Card, EmptyState, Input, Label, PageHeader, Select, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
+import { ReportsNav } from '../reports-nav';
+import { entityLink } from '@/components/links';
 import { asUser, requirePage } from '@/lib/auth';
 import { money } from '@/lib/client';
 import { profitReport } from '@/lib/profit';
@@ -32,6 +34,7 @@ export default async function Profit({ searchParams }: { searchParams: Promise<{
   const y = Number(season.slice(0, 4));
   return (
     <>
+      <ReportsNav here="profit" canSeePay />
       <PageHeader title="Profit per lot" subtitle="What each lot earned, less labor, subs, salt and equipment. Money-losing lots first." />
       <form method="get" className="mb-4 flex flex-wrap items-end gap-3" data-testid="profit-filters">
         <div><Label htmlFor="season">Season</Label><Select id="season" name="season" defaultValue={season} className="w-auto">{[y + 1, y, y - 1, y - 2].map((s) => { const v = `${s}-${String((s + 1) % 100).padStart(2, '0')}`; return <option key={v} value={v}>{s}-{String((s + 1) % 100).padStart(2, '0')}</option>; })}</Select></div>
@@ -51,7 +54,7 @@ export default async function Profit({ searchParams }: { searchParams: Promise<{
             <tbody>
               {r.rows.map((x) => (
                 <tr key={x.siteId} data-testid="profit-row">
-                  <Td className="wrap-anywhere"><Link className="font-medium text-link underline" href={`/sites/${x.siteId}`}>{x.label}</Link><span className="block text-xs text-muted">{x.customer}, {x.visits} {x.visits === 1 ? 'visit' : 'visits'}, {x.minutes} min on site</span>{x.losing ? <Badge tone="red" data-testid="profit-losing">{x.profit_cents < 0 ? 'Losing money' : 'Under margin'}</Badge> : null}</Td>
+                  <Td className="wrap-anywhere"><Link className={entityLink} href={`/sites/${x.siteId}`}>{x.label}</Link><span className="block text-xs text-muted">{x.customer}, {x.visits} {x.visits === 1 ? 'visit' : 'visits'}, {x.minutes} min on site</span>{x.losing ? <Badge tone="red" data-testid="profit-losing">{x.profit_cents < 0 ? 'Losing money' : 'Under margin'}</Badge> : null}</Td>
                   <Td label="Revenue" className="text-right tabular">{money(x.revenue_cents)}</Td>
                   <Td label="Labor" className="text-right tabular">{money(x.labor_cents)}</Td>
                   <Td label="Subs" className="text-right tabular">{money(x.sub_cents)}</Td>
@@ -75,7 +78,6 @@ export default async function Profit({ searchParams }: { searchParams: Promise<{
           <li>A season runs July 1 to June 30.</li>
         </ul>
       </details>
-      <Link className="mt-4 inline-block text-sm text-link underline" href="/reports">Back to reports</Link>
     </>
   );
 }

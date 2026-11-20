@@ -4,7 +4,7 @@ import { FREE_SITE_LIMIT, seasonLabel } from '@flake/core/fees';
 import { longDate } from '@/lib/legal';
 import type { RateCard } from '@flake/core/quote';
 import { Badge, Button, Card, Input, Label, Select, Table, Td, Textarea, Th } from '@flake/ui';
-import Link from 'next/link';
+import { ButtonA, ButtonLink } from '@/components/links';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api, dollarsToCents, money, phone } from '@/lib/client';
@@ -113,7 +113,7 @@ export function CrewPanel({ crew, canText = true, cover = {} }: { crew: any[]; c
             {crew.map((c) => (
               <tr key={c.id} className={c.active ? '' : 'bg-tint text-muted'} data-testid="crew-row">
                 <Td className="font-medium">{c.name}{c.active ? null : <span className="ml-2 text-xs font-medium">(no longer on the crew)</span>}</Td>
-                <Td label="Kind"><Badge>{c.kind}</Badge>{c.kind === 'sub' && c.active && cover[c.id] && cover[c.id] !== 'covered' ? <a href="/compliance" className="ml-1 text-xs font-medium text-danger underline" data-testid="crew-no-cover">{cover[c.id] === 'missing' ? 'No insurance on file' : cover[c.id] === 'expired' ? 'Insurance ended' : 'Insurance ends soon'}</a> : null}</Td>
+                <Td label="Kind"><Badge>{c.kind}</Badge>{c.kind === 'sub' && c.active && cover[c.id] && cover[c.id] !== 'covered' ? <span className="mt-1 flex flex-wrap items-center gap-1" data-testid="crew-no-cover"><Badge tone="red">{cover[c.id] === 'missing' ? 'No insurance on file' : cover[c.id] === 'expired' ? 'Insurance ended' : 'Insurance ends soon'}</Badge><ButtonLink size="sm" href="/compliance">Fix insurance</ButtonLink></span> : null}</Td>
                 <Td label="Contact"><div className="min-w-0"><div className="whitespace-nowrap">{phone(c.phone_e164)}</div><div>{c.email ?? ''}</div></div></Td>
                 <Td label="Language">{c.language === 'es' ? 'Español' : 'English'}</Td>
                 <Td label="Joined">{c.joined_at ? 'Yes' : 'Invited'}</Td>
@@ -136,7 +136,7 @@ export function CrewPanel({ crew, canText = true, cover = {} }: { crew: any[]; c
       </div>
       <Card data-write>
         <h2 className="font-semibold">{editing ? 'Edit crew member' : 'Invite crew'}</h2>
-        <p className="mt-1 text-sm text-muted">{editing ? 'Texts stay opt-in. A changed number needs a new opt-in from the invite link.' : 'They choose on the join page whether to get texts.'}{!editing ? <> Have a list? <Link className="text-link underline" href="/settings/crew-import" data-testid="crew-import-link">Import it from a spreadsheet</Link>.</> : null}</p>
+        <p className="mt-1 text-sm text-muted">{editing ? 'Texts stay opt-in. A changed number needs a new opt-in from the invite link.' : 'They choose on the join page whether to get texts.'}</p>
         <div className="mt-2 space-y-2">
           <div><Label htmlFor="crew-name">Name</Label><Input id="crew-name" data-testid="crew-name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
           <div><Label htmlFor="crew-phone">Mobile</Label><Input id="crew-phone" value={f.phone_e164} onChange={(e) => setF({ ...f, phone_e164: e.target.value })} /></div>
@@ -179,13 +179,14 @@ export function CrewPanel({ crew, canText = true, cover = {} }: { crew: any[]; c
             router.refresh();
           }, 'Invited')}>Invite</Button>
         )}
+        {!editing ? <ButtonLink href="/settings/crew-import" className="ml-2 mt-3" data-testid="crew-import-link">Import crew</ButtonLink> : null}
         {msg ? <p className="mt-2 text-sm text-muted" data-testid="crew-msg">{msg}</p> : null}
         {invite ? (
           <div className="mt-2">
             <Label>Join link</Label>
             <Input readOnly value={invite} data-testid="invite-url" onFocus={(e) => e.target.select()} />
             <p className="mt-1 text-xs text-muted">Send it from your own phone. The driver opens it, confirms their mobile and says yes to texts.</p>
-            <a className="mt-1 inline-block text-sm font-semibold text-link underline" href={`sms:${invitePhone ?? ''}${typeof navigator !== 'undefined' && /iPhone|iPad/.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent(`Join our snow crew on Flake: ${invite}`)}`} data-testid="invite-sms">Text it from my phone</a>
+            <ButtonA size="lg" className="mt-2 w-full sm:w-auto" href={`sms:${invitePhone ?? ''}${typeof navigator !== 'undefined' && /iPhone|iPad/.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent(`Join our snow crew on Flake: ${invite}`)}`} data-testid="invite-sms">Text from my phone</ButtonA>
           </div>
         ) : null}
       </Card>
@@ -383,6 +384,7 @@ export function CompanyForm({ tenant }: { tenant: any }) {
 export function LogoForm({ url }: { url: string | null }) {
   const router = useRouter();
   const { msg, busy, run } = useAction();
+  const [ask, dialog] = useConfirm();
   return (
     <Card className="max-w-xl" data-testid="logo-form">
       <h2 className="font-semibold">Logo (optional)</h2>
@@ -400,7 +402,11 @@ export function LogoForm({ url }: { url: string | null }) {
           router.refresh();
         }, 'Saved');
       }} />
-      {url ? <Button size="sm" variant="ghost" className="mt-2" disabled={busy} data-testid="logo-remove" onClick={() => run(async () => { await api('/api/settings/logo', { method: 'DELETE' }); router.refresh(); }, 'Removed')}>Remove logo</Button> : null}
+      {url ? <Button size="sm" variant="ghost" className="mt-2" disabled={busy} data-testid="logo-remove" onClick={async () => {
+        if (!(await ask({ title: 'Remove your logo?', body: 'Quotes, the records page and PDF bills go back to showing your company name only.', confirm: 'Remove logo', danger: true }))) return;
+        await run(async () => { await api('/api/settings/logo', { method: 'DELETE' }); router.refresh(); }, 'Removed');
+      }}>Remove logo</Button> : null}
+      {dialog}
       {msg ? <p className="mt-2 text-sm text-muted" role="status" data-testid="logo-msg">{msg}</p> : null}
     </Card>
   );

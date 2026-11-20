@@ -29,11 +29,23 @@ export interface FleetOptions {
   legMinutes?: RouteOptions['legMinutes'];
   /** Stop searching after this long; the best plan so far is used. */
   budgetMs?: number;
+  /**
+   * Issue 194. 'keep' (the default): keep each route's lots, and move one only when that saves at least `churnMinutes`,
+   * with at most `maxMoveShare` of the routed lots moving. 'add_only': put lots on no route onto the best route, and move
+   * no routed lot. 'fresh': split everything again from scratch.
+   */
+  mode?: FleetMode;
+  churnMinutes?: number;
+  maxMoveShare?: number;
 }
+
+export type FleetMode = 'keep' | 'add_only' | 'fresh';
+/** A lot that changes route, and about how much nearer it is to its new route's other lots than its old one's. */
+export interface FleetMove { site_id: string; from: string | null; to: string; closer_min: number }
 
 export interface FleetRoute { id: string; site_ids: string[]; plan: RoutePlan; before: RoutePlan; moved_in: number }
 export interface FleetTotals { drive_min: number; late: number; /** Minutes until the last truck is done. */ longest_min: number; stops: number }
-export interface FleetPlan { routes: FleetRoute[]; before: FleetTotals; after: FleetTotals; moved: number; changed: boolean }
+export interface FleetPlan { routes: FleetRoute[]; before: FleetTotals; after: FleetTotals; moved: number; changed: boolean; mode: FleetMode; moves: FleetMove[] }
 
 /**
  * How much uneven days count against driving. The balance term is sqrt(k * sum of each truck's minutes squared): equal to
@@ -58,7 +70,18 @@ export function planFleet(sites: RouteSite[], trucks: FleetTruck[], opts: FleetO
   const loose = sites.filter((s) => !seen.has(s.id)).map((s) => s.id);
 
   const evalRoute = (t: number, ids: string[]) => (ids.length ? routeCost(ids.map((id) => byId.get(id)!), ro(t)) : { plan: emptyPlan(), cost: 0 });
-  const objective = (costs: { plan: RoutePlan; cost: number }[]) => costs.reduce((a, c) => a + c.cost, 0) + BALANCE * Math.sqrt(k * costs.reduce((a, c) => a + c.plan.total_min ** 2, 0));
+  // A new, empty route means splitting things up again, unless the caller says otherwise.
+  const mode: FleetMode = opts.mode ?? (current.some((ids) => !ids.length) ? 'fresh' : 'keep');
+  // A routed lot that leaves its route costs this many minutes in the search, so a move has to be worth it (issue 194).
+  const churn = mode === 'keep' ? (opts.churnMinutes ?? 5) : 0;
+  const homeOf = new Map(current.flatMap((ids, t) => ids.map((id) => [id, t] as const)));
+  const routedCount = homeOf.size;
+  const maxMoves = mode === 'keep' ? Math.max(1, Math.floor(routedCount * (opts.maxMoveShare ?? 0.2))) : Infinity;
+  const offRoute = (assign: Assign) => assign.reduce((n, ids, t) => n + ids.filter((id) => homeOf.has(id) && homeOf.get(id) !== t).length, 0);
+  // Filling a route that started empty (a new truck) isn't churn for the cap.
+  const capped = (assign: Assign) => assign.reduce((n, ids, t) => n + (current[t]!.length ? ids.filter((id) => homeOf.has(id) && homeOf.get(id) !== t).length : 0), 0);
+  const objective = (costs: { plan: RoutePlan; cost: number }[], assign?: Assign) => costs.reduce((a, c) => a + c.cost, 0) + BALANCE * Math.sqrt(k * costs.reduce((a, c) => a + c.plan.total_min ** 2, 0)) + (assign ? churn * offRoute(assign) : 0);
+  const allowed = (assign: Assign) => mode !== 'add_only' && capped(assign) <= maxMoves;
 
   // The routes as they are, with any lot on no route yet added where it's cheapest, so "before" is a real plan of the
   // same lots and the new plan has to beat it.
@@ -78,7 +101,9 @@ export function planFleet(sites: RouteSite[], trucks: FleetTruck[], opts: FleetO
   const total = circle.reduce((a, s) => a + work.get(s.id)!, 0);
   let best: Assign = asIs;
   let bestScore = Infinity;
-  const tries = Math.min(circle.length, 12);
+  // Keep and add-only start from the routes as they are: a fresh split by bearing from a yard off to one side doesn't
+  // line up with neighborhoods, and route names would stop meaning anything (issue 194).
+  const tries = mode === 'fresh' ? Math.min(circle.length, 12) : 0;
   for (let r = 0; r < tries; r++) {
     const offset = Math.floor((r * circle.length) / tries);
     const turned = [...circle.slice(offset), ...circle.slice(0, offset)];
@@ -96,11 +121,11 @@ export function planFleet(sites: RouteSite[], trucks: FleetTruck[], opts: FleetO
     if (sc < bestScore) { bestScore = sc; best = ordered; }
   }
 
-  // 3. Moves between trucks.
+  // 3. Moves between trucks. None in add-only mode.
   let plan = best.map((ids) => [...ids]);
   let costs = plan.map((ids, t) => evalRoute(t, ids));
-  let score = objective(costs);
-  for (let pass = 0, better = true; better && pass < 30 && Date.now() < until; pass++) {
+  let score = objective(costs, plan);
+  for (let pass = 0, better = mode !== 'add_only'; better && pass < 30 && Date.now() < until; pass++) {
     better = false;
     for (let a = 0; a < k && Date.now() < until; a++) {
       for (let i = 0; i < plan[a]!.length && Date.now() < until; i++) {
@@ -110,10 +135,12 @@ export function planFleet(sites: RouteSite[], trucks: FleetTruck[], opts: FleetO
           if (b === a) continue;
           const fromA = plan[a]!.filter((x) => x !== id);
           const toB = withInserted(plan[b]!, id);
+          const tryPlan = plan.map((ids, t) => (t === a ? fromA : t === b ? toB : ids));
+          if (!allowed(tryPlan)) continue;
           const ca = evalRoute(a, fromA);
           const cb = evalRoute(b, toB);
           const next = costs.map((c, t) => (t === a ? ca : t === b ? cb : c));
-          const sc = objective(next);
+          const sc = objective(next, tryPlan);
           if (sc < score - 1e-6) {
             plan[a] = fromA; plan[b] = toB; costs = next; score = sc; better = true;
             i--;
@@ -133,10 +160,12 @@ export function planFleet(sites: RouteSite[], trucks: FleetTruck[], opts: FleetO
           for (const other of near) {
             const fromA = withInserted(plan[a]!.filter((x) => x !== id), other);
             const fromB = withInserted(plan[b]!.filter((x) => x !== other), id);
+            const tryPlan = plan.map((ids, t) => (t === a ? fromA : t === b ? fromB : ids));
+            if (!allowed(tryPlan)) continue;
             const ca = evalRoute(a, fromA);
             const cb = evalRoute(b, fromB);
             const next = costs.map((c, t) => (t === a ? ca : t === b ? cb : c));
-            const sc = objective(next);
+            const sc = objective(next, tryPlan);
             if (sc < score - 1e-6) {
               plan[a] = fromA; plan[b] = fromB; costs = next; score = sc; better = true; swapped = true;
               break;
@@ -149,16 +178,16 @@ export function planFleet(sites: RouteSite[], trucks: FleetTruck[], opts: FleetO
     // Tidy each truck's order between passes, so the next moves are priced against good orders.
     const tidied = plan.map((ids, t) => tidy(t, ids, until, 250));
     const tc = tidied.map((ids, t) => evalRoute(t, ids));
-    const ts = objective(tc);
+    const ts = objective(tc, tidied);
     if (ts < score - 1e-6) { plan = tidied; costs = tc; score = ts; better = true; }
   }
 
   // 4. A last, full search on each truck's order, with whatever time is left.
   plan = plan.map((ids, t) => tidy(t, ids, Math.max(until, Date.now() + 300), 1500));
   costs = plan.map((ids, t) => evalRoute(t, ids));
-  score = objective(costs);
+  score = objective(costs, plan);
 
-  const beforeScore = objective(beforeCosts);
+  const beforeScore = objective(beforeCosts, asIs);
   const changed = score < beforeScore - 1e-6 && plan.some((ids, t) => ids.join() !== trucks[t]!.current.join());
   const final = changed ? plan : asIs;
   const finalCosts = changed ? costs : beforeCosts;
@@ -175,6 +204,15 @@ export function planFleet(sites: RouteSite[], trucks: FleetTruck[], opts: FleetO
     after: totals(finalCosts.map((c) => c.plan)),
     moved: routes.reduce((a, r) => a + r.moved_in, 0),
     changed: routes.some((r, i) => r.site_ids.join() !== trucks[i]!.current.join()),
+    mode,
+    moves: final.flatMap((ids, t) => ids.filter((id) => homeOf.get(id) !== t).map((id) => {
+      const from = homeOf.has(id) ? homeOf.get(id)! : null;
+      // How much nearer its new neighbors are than its old ones: the reason a person can check on a map.
+      const nearest = (list: string[]) => Math.min(Infinity, ...list.filter((x) => x !== id).map((x) => legOf(byId.get(id)!, byId.get(x)!)));
+      const was = from === null ? Infinity : nearest(current[from]!);
+      const now = nearest(ids);
+      return { site_id: id, from: from === null ? null : trucks[from]!.id, to: trucks[t]!.id, closer_min: Number.isFinite(was) && Number.isFinite(now) ? Math.round(was - now) : 0 };
+    })),
   };
 
   /** Puts a lot where it adds the least driving, inside its priority tier. */

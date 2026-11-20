@@ -25,6 +25,21 @@ export class LiveRouteMatrix implements RouteMatrix {
     if (!Array.isArray(body.durations) || body.durations.length !== points.length) throw new Error('OpenRouteService returned no matrix');
     return body.durations.map((row) => row.map((s) => (typeof s === 'number' ? s / 60 : null)));
   }
+
+  /** From one set of points to another, so more than 50 lots still get road times, a block at a time. */
+  async block(from: { lat: number; lon: number }[], to: { lat: number; lon: number }[]) {
+    if (!from.length || !to.length || from.length > this.maxPoints || to.length > this.maxPoints) return null;
+    const res = await this.fetchImpl('https://api.openrouteservice.org/v2/matrix/driving-car', {
+      method: 'POST',
+      headers: { Authorization: this.key, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ locations: [...from, ...to].map((p) => [p.lon, p.lat]), sources: from.map((_, i) => i), destinations: to.map((_, i) => from.length + i), metrics: ['duration'] }),
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    if (!res.ok) throw new Error(`OpenRouteService ${res.status}`);
+    const body = (await res.json()) as { durations?: (number | null)[][] };
+    if (!Array.isArray(body.durations) || body.durations.length !== from.length) throw new Error('OpenRouteService returned no matrix');
+    return body.durations.map((row) => row.map((s) => (typeof s === 'number' ? s / 60 : null)));
+  }
 }
 
 /** No key: no road times, and everything plans on estimates as before. */

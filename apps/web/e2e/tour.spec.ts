@@ -162,7 +162,7 @@ test('a real day', async ({ browser }) => {
   await shot(page, 'storm-board-start', true);
   const links: Record<string, string> = {};
   for (const route of ['Lakewood', 'Rocky River']) {
-    const col = page.getByTestId('run-column').filter({ hasText: new RegExp(`^${route}[0-9]`) });
+    const col = page.getByTestId('truck-lane').filter({ has: page.getByRole('heading', { name: route, exact: true }) }).getByTestId('run-column');
     await col.getByTestId('show-link').click();
     const panel = page.getByTestId('link-panel');
     await expect(panel.getByRole('img', { name: /QR code/ })).toBeVisible();
@@ -272,8 +272,10 @@ test('a real day', async ({ browser }) => {
   await page.goto('/reports');
   await shot(page, 'reports', true);
   await page.goto('/proof');
-  const clinicSite = await page.getByTestId('proof-site').locator('option', { hasText: 'Madison Family Clinic' }).getAttribute('value');
-  await page.getByTestId('proof-site').selectOption(clinicSite!);
+  // The lot picker (issue 193): type the name, pick it.
+  await page.getByTestId('proof-lot-input').fill('Madison Family Clinic');
+  await page.getByTestId('proof-lot-option').filter({ hasText: 'Madison Family Clinic' }).first().click();
+  await expect(page.getByTestId('proof-site')).toBeVisible();
   await page.getByTestId('proof-generate').click();
   await expect(page.getByTestId('proof-ready')).toBeVisible({ timeout: 90000 });
   await shot(page, 'proof');

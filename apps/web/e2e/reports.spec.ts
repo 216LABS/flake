@@ -63,6 +63,8 @@ test('reports: crew hours split on a quiet gap, export for payroll, and salt use
   await page.getByTestId('salt-save').click();
   await expect(page.getByTestId('salt-on-hand')).toContainText('62.5 t');
   await page.getByTestId('salt-entries').getByRole('button', { name: /Remove delivery/ }).first().click();
+  // It asks first now (issue 199).
+  await page.getByTestId('confirm-yes').click();
   await expect(page.getByTestId('salt-on-hand')).toContainText('50 t');
 
   // A dispatcher's guard: a delivery of nothing is refused.

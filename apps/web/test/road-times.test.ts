@@ -29,6 +29,20 @@ describe('issue 65: road times for planning', () => {
     expect(down).toMatchObject({ legMinutes: null, source: 'estimate' });
     expect(down.label).toContain('estimates from distance');
     spy.mockRestore();
-    expect((await roadTimes(pts(60))).source).toBe('estimate');
+    // More than three blocks' worth is still an estimate, and the label says why.
+    const huge = await roadTimes(pts(160));
+    expect(huge.source).toBe('estimate');
+    expect(huge.label).toContain('160 lots');
+  });
+  it('over 50 lots, road times come a block at a time (issue 194)', async () => {
+    const spy = vi.spyOn(MockRouteMatrix.prototype, 'block');
+    const p = pts(80);
+    const out = await roadTimes(p);
+    expect(out.source).toBe('road');
+    // Two blocks a side: four calls, and any two lots have a time, across blocks too.
+    expect(spy).toHaveBeenCalledTimes(4);
+    expect(out.legMinutes!(p[2]!, p[75]!)).toBeGreaterThan(0);
+    expect(out.legMinutes!(p[75]!, p[2]!)).toBeGreaterThan(0);
+    spy.mockRestore();
   });
 });

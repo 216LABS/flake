@@ -12,6 +12,8 @@ const body = z.object({
   route_ids: z.array(z.uuid()).min(1).max(20),
   include_unrouted: z.boolean().default(false),
   start: z.string().regex(/^\d{2}:\d{2}$/).default('04:00'),
+  // Issue 194: keep my routes (default), add lots on no route only, or start fresh.
+  mode: z.enum(['keep', 'add_only', 'fresh']).default('keep'),
 });
 
 /**
@@ -20,7 +22,7 @@ const body = z.object({
  */
 export const POST = route(async (req) => {
   const ctx = await requireApi('dispatcher');
-  const { route_ids, include_unrouted, start } = await parseJson(req, body);
+  const { route_ids, include_unrouted, start, mode } = await parseJson(req, body);
   const ids = [...new Set(route_ids)];
   const data = await asUser(ctx, async (tx) => {
     const routes = await tx.select({ id: routeTable.id, name: routeTable.name, yard_trip: routeTable.yard_trip }).from(routeTable).where(and(inArray(routeTable.id, ids), isNull(routeTable.archived_at)));
@@ -44,12 +46,15 @@ export const POST = route(async (req) => {
   const yard = ctx.tenant.yard ? { lat: ctx.tenant.yard.lat, lon: ctx.tenant.yard.lon } : null;
   const road = await roadTimes([...lots, ...(yard ? [yard] : [])]);
   const plan = lots.length
-    ? planFleet(lots, ordered.map((r) => ({ id: r.id, yard_trip: r.yard_trip, current: data.stops.filter((s) => s.route_id === r.id).map((s) => s.site_id) })), { start, yard, legMinutes: road.legMinutes, budgetMs: 6000 })
+    ? planFleet(lots, ordered.map((r) => ({ id: r.id, yard_trip: r.yard_trip, current: data.stops.filter((s) => s.route_id === r.id).map((s) => s.site_id) })), { start, yard, legMinutes: road.legMinutes, budgetMs: 6000, mode })
     : null;
   return {
     plan,
     routes: ordered.map((r) => ({ id: r.id, name: r.name, yard_trip: r.yard_trip, before: data.stops.filter((s) => s.route_id === r.id).map((s) => s.site_id) })),
     labels: Object.fromEntries(data.sites.map((s) => [s.id, s.label])),
+    // For the map of the plan (issue 191).
+    points: Object.fromEntries(data.sites.map((s) => [s.id, { lat: s.lat, lon: s.lon }])),
+    times_estimated: road.source === 'estimate',
     unrouted: data.loose,
     yard: Boolean(yard),
     times_label: road.label,

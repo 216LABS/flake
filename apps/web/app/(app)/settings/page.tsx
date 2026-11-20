@@ -9,6 +9,9 @@ import { inFreeSeason } from '@flake/core/fees';
 import { DEFAULT_RATE_CARD, type RateCard } from '@flake/core/quote';
 import { Badge, Card, PageHeader, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
+import { TriggersPanel } from './triggers-panel';
+import { defaultTrigger, triggerTable } from '@/lib/triggers';
+import { ButtonA, ButtonLink, proseLink } from '@/components/links';
 import { asUser, requirePage } from '@/lib/auth';
 import { baseUrl } from '@/lib/env';
 import { canTextFrom } from '@/lib/messaging';
@@ -26,7 +29,13 @@ import { logoUrl } from '@/lib/logo';
 
 export const metadata = { title: 'Settings' };
 
-const TABS = [['company', 'Company'], ['rate', 'Rate card'], ['crew', 'Crew'], ['equipment', 'Equipment'], ['team', 'Team'], ['alerts', 'Alerts'], ['payments', 'Payments'], ['accounting', 'Accounting'], ['sms', 'Text messages'], ['plan', 'Plan'], ['data', 'Data export'], ['system', 'System']] as const;
+const TABS = [['company', 'Company'], ['rate', 'Rate card'], ['crew', 'Crew'], ['equipment', 'Equipment'], ['team', 'Team'], ['alerts', 'Alerts'], ['triggers', 'Snow triggers'], ['payments', 'Payments'], ['accounting', 'Accounting'], ['sms', 'Text messages'], ['plan', 'Plan'], ['data', 'Data export'], ['system', 'System']] as const;
+/** Human names for the export buttons (issue 200). */
+const EXPORT_LABEL: Record<string, string> = {
+  customer: 'Customers', site: 'Lots', contract: 'Contracts', crew_member: 'Crew', route: 'Routes', storm: 'Storms', storm_run: 'Storm trucks', run_stop: 'Storm stops',
+  visit: 'Visits', visit_photo: 'Visit photos', visit_correction: 'Visit corrections', problem_report: 'Driver problems', invoice_draft: 'Invoices', message_log: 'Messages',
+  proof_packet: 'Proof packets', truck: 'Trucks', equipment_log: 'Equipment log', site_walk_item: 'Site walk notes',
+};
 const EXPORTS = ['customer', 'site', 'contract', 'crew_member', 'route', 'storm', 'storm_run', 'run_stop', 'visit', 'visit_photo', 'visit_correction', 'problem_report', 'invoice_draft', 'message_log', 'proof_packet', 'truck', 'equipment_log', 'site_walk_item'];
 
 /** Everything in these saves through owner-only routes. */
@@ -65,6 +74,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         return <fieldset disabled={readOnly} className={readOnly ? 'view-only contents' : 'contents'}><EquipmentPanel tz={tz} trucks={data.trucks} storms={data.storms} logs={JSON.parse(JSON.stringify(data.logs))} reminders={JSON.parse(JSON.stringify(data.reminders))} /></fieldset>;
       })() : null}
       {tab === 'accounting' ? <AccountingPanel owner={owner} note={qboNote ?? null} /> : null}
+      {tab === 'triggers' ? <TriggersPanel rows={await triggerTable(ctx.tenantId)} defaultIn={await defaultTrigger(ctx.tenantId)} owner={owner} canEdit={ctx.role !== 'viewer'} /> : null}
       {tab === 'alerts' ? <PushPanel publicKey={(await getProviders()).push.publicKey} /> : null}
       {allowed && tab === 'team' ? <TeamPanel members={await listTeam(ctx.tenantId)} me={ctx.userId} /> : null}
       {allowed && tab === 'payments' ? <PaymentsPanel connected={Boolean(t.stripe_account_id)} enabled={await chargesEnabled(t)} payInstructions={t.pay_instructions} available={(await available()).payments} /> : null}
@@ -76,7 +86,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
             {t.sms_sender ? <p className="mt-1 text-sm">Number: {t.sms_sender}</p> : null}
             {t.sms_status_detail ? <p className="mt-1 text-sm text-danger">Reason: {t.sms_status_detail}. Fix the details and resubmit.</p> : null}
             <p className="mt-2 text-sm text-muted">Texts go out from your own verified toll-free number, in your legal business name. Fill in the business details, then submit: verification takes 3 to 5 business days. Until then crew links go by QR and copy-link.</p>
-            <p className="mt-2 text-sm">Your public opt-in page: <Link className="text-link underline" href={`/b/${t.slug}/sms`}>{baseUrl()}/b/{t.slug}/sms</Link></p>
+            <p className="mt-2 text-sm">Your public opt-in page: <Link className={proseLink} href={`/b/${t.slug}/sms`}>{baseUrl()}/b/{t.slug}/sms</Link></p>
             {/* No Twilio keys on the platform: say so rather than a submit that can only fail (issue 173). */}
             {(await available()).sms ? <SmsSubmit status={t.sms_status ?? 'none'} /> : <p className="mt-3 rounded-md bg-tint p-3 text-sm" data-testid="sms-unavailable">Texting isn&apos;t available in Flake yet, so there&apos;s nothing to submit. Your business details below are saved for when it is. Crew links work now by QR code and copy-link.</p>}
             <h3 className="mt-4 text-sm font-medium">Sample messages we submit</h3>
@@ -90,7 +100,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         <Card className="max-w-2xl">
           <h2 className="font-semibold">Export your data</h2>
           <p className="mt-1 text-sm text-muted">One CSV per table. Records are kept 7 years by default because claims can arrive months or years later. Photos and PDFs stay available through their links.</p>
-          <ul className="mt-3 grid gap-1 text-sm sm:grid-cols-2">{EXPORTS.map((n) => <li key={n}><a className="text-link underline" href={`/api/settings/export?table=${n}`}>{n}</a></li>)}</ul>
+          <ul className="mt-3 flex flex-wrap gap-2" data-testid="exports">{EXPORTS.map((n) => <li key={n}><ButtonA size="sm" href={`/api/settings/export?table=${n}`} download data-testid={`export-${n}`}>{EXPORT_LABEL[n] ?? n}</ButtonA></li>)}</ul>
         </Card>
       ) : null}
       {tab === 'system' ? await SystemTab(ctx.tenantId, tz, ctx.email, owner) : null}
@@ -152,9 +162,9 @@ async function SystemTab(tenantId: string, tz: string, email: string | null, can
       {isOutboundAdmin(email) || (isPlatformAdmin(email) && (await saltOrderingReady())) ? (
         <Card className="max-w-2xl">
           <h2 className="font-semibold">216LABS</h2>
-          {isOutboundAdmin(email) ? <p className="mt-1 text-sm"><Link className="text-link underline" href="/admin/sending" data-testid="admin-sending-link">Which companies Flake sends for</Link></p> : null}
-          {isPlatformAdmin(email) && (await saltOrderingReady()) ? <p className="mt-1 text-sm"><Link className="text-link underline" href="/admin/salt" data-testid="admin-salt-link">Salt suppliers and referral fees</Link></p> : null}
-          {isPlatformAdmin(email) ? <p className="mt-1 text-sm"><Link className="text-link underline" href="/admin/feedback">Feedback</Link></p> : null}
+          {isOutboundAdmin(email) ? <p className="mt-2"><ButtonLink size="sm" href="/admin/sending" data-testid="admin-sending-link">Which companies Flake sends for</ButtonLink></p> : null}
+          {isPlatformAdmin(email) && (await saltOrderingReady()) ? <p className="mt-2"><ButtonLink size="sm" href="/admin/salt" data-testid="admin-salt-link">Salt suppliers and referral fees</ButtonLink></p> : null}
+          {isPlatformAdmin(email) ? <p className="mt-2"><ButtonLink size="sm" href="/admin/feedback">Feedback</ButtonLink></p> : null}
         </Card>
       ) : null}
       <h2 className="font-semibold">Recent messages</h2>

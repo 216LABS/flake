@@ -83,3 +83,53 @@ describe('issue 68: plan all routes', () => {
     expect(a.routes.map((r) => r.site_ids)).toEqual(b.routes.map((r) => r.site_ids));
   }, 60_000);
 });
+
+describe('issue 194: plan all routes keeps routes people know', () => {
+  // Three neighborhoods, one route each, a little uneven: the kind of company Flip has.
+  const hood = (prefix: string, n: number, lat: number, lon: number, seed: number): RouteSite[] => {
+    const r = rng(seed);
+    return Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}`, lat: lat + r() * 0.012, lon: lon + r() * 0.012, priority: 2, sqft: null }));
+  };
+  const west = hood('w', 11, 41.48, -81.82, 1);
+  const east = hood('e', 8, 41.48, -81.78, 2);
+  const river = hood('r', 9, 41.46, -81.86, 3);
+  const sites = [...west, ...east, ...river];
+  const trucks = [{ id: 'west', current: west.map((s) => s.id) }, { id: 'east', current: east.map((s) => s.id) }, { id: 'river', current: river.map((s) => s.id) }];
+
+  it('in keep mode moves only a few lots, each saving its keep, while a fresh start moves more', () => {
+    const keep = planFleet(sites, trucks, { yard, budgetMs: 1500, mode: 'keep' });
+    const fresh = planFleet(sites, trucks, { yard, budgetMs: 1500, mode: 'fresh' });
+    const routedMoves = (p: typeof keep) => p.moves.filter((m) => m.from !== null).length;
+    expect(routedMoves(keep)).toBeLessThanOrEqual(Math.floor(sites.length * 0.2));
+    expect(routedMoves(keep)).toBeLessThanOrEqual(routedMoves(fresh));
+    // Each route keeps most of its own neighborhood.
+    for (const [t, hoodLots] of [[0, west], [1, east], [2, river]] as const) {
+      const kept = keep.routes[t]!.site_ids.filter((id) => hoodLots.some((s) => s.id === id)).length;
+      expect(kept).toBeGreaterThanOrEqual(Math.ceil(hoodLots.length * 0.75));
+    }
+    expect(keep.mode).toBe('keep');
+  });
+
+  it('with a high churn cost nothing moves at all', () => {
+    const p = planFleet(sites, trucks, { yard, budgetMs: 800, mode: 'keep', churnMinutes: 10_000 });
+    expect(p.moves.filter((m) => m.from !== null)).toEqual([]);
+  });
+
+  it('add-only puts lots on no route onto the nearest route and moves no routed lot', () => {
+    const loose = hood('x', 3, 41.481, -81.781, 9); // next to the east lots
+    const p = planFleet([...sites, ...loose], trucks, { yard, budgetMs: 800, mode: 'add_only' });
+    expect(p.moves.every((m) => m.from === null)).toBe(true);
+    expect(p.moves.map((m) => m.site_id).sort()).toEqual(loose.map((s) => s.id).sort());
+    for (const t of [0, 1, 2]) for (const id of trucks[t]!.current) expect(p.routes[t]!.site_ids).toContain(id);
+    expect(p.moves.every((m) => m.to === 'east')).toBe(true);
+  });
+
+  it('says how much closer a moved lot is to its new neighbors', () => {
+    // One west lot sitting in the middle of the east lots.
+    const stray = { id: 'wstray', lat: 41.486, lon: -81.774, priority: 2, sqft: null };
+    const p = planFleet([...sites, stray], [{ ...trucks[0]!, current: [...trucks[0]!.current, 'wstray'] }, trucks[1]!, trucks[2]!], { yard, budgetMs: 1500, mode: 'keep' });
+    const m = p.moves.find((x) => x.site_id === 'wstray');
+    expect(m).toMatchObject({ from: 'west', to: 'east' });
+    expect(m!.closer_min).toBeGreaterThan(0);
+  });
+});

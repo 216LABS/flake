@@ -1,6 +1,6 @@
-import { and, contract, crew_member, customer, desc, eq, isNull, message_log, route, route_stop, run_stop, serviceDb, site, sql, storm, storm_run, trigger_alert } from '@flake/db';
+import { and, contract, crew_member, customer, desc, eq, isNull, message_log, route, route_stop, serviceDb, site, sql, storm, trigger_alert } from '@flake/db';
 import { fmtLocal, stormWhen } from '@flake/core/time';
-import { Badge, buttonVariants, Card, EmptyState, Eyebrow, PageHeader, Progress, Stat, Table, Td, Th } from '@flake/ui';
+import { Badge, buttonVariants, Eyebrow, PageHeader, Stat, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
 import { stormStatus } from '@/lib/labels';
@@ -11,8 +11,13 @@ import { complianceAlerts } from '@/lib/compliance';
 import { renewalQueue, renewalsOpen } from '@/lib/bids';
 import { localDay } from '@flake/core/receivables';
 import { canSeeUsage, deploymentUsage } from '@/lib/usage';
-import { tenantWeatherHeader } from '@/lib/weather';
+import { areaWeather, tenantWeatherHeader } from '@/lib/weather';
 import { available, getSetting } from '@/lib/providers';
+import { openBills } from '@/lib/receivables';
+import { liveStorms } from '@/lib/live';
+import { ButtonLink, entityLink } from '@/components/links';
+import { LiveBanner } from '../storms/live-banner';
+import { HowItWorks } from './how-it-works';
 
 export const metadata = { title: 'Dashboard' };
 
@@ -21,23 +26,18 @@ export default async function Dashboard() {
   const tz = ctx.tenant.timezone;
   const data = await asUser(ctx, async (tx) => ({
     alerts: await tx.select().from(trigger_alert).where(eq(trigger_alert.status, 'open')).orderBy(desc(trigger_alert.created_at)).limit(10),
-    active: await tx.select().from(storm).where(eq(storm.status, 'active')).orderBy(desc(storm.started_at)),
     recent: await tx.select({ id: storm.id, name: storm.name, started_at: storm.started_at, status: storm.status, billedNothing: sql<boolean>`not exists (select 1 from invoice_draft d where d.storm_id = ${storm.id} and d.status <> 'void')` }).from(storm).where(sql`${storm.status} <> 'active'`).orderBy(desc(storm.started_at)).limit(5),
     // Active customers decide the first-run card, Start a storm and the checklist; archived ones only change the words (issue 139).
     customers: await tx.select({ n: sql<number>`(count(*) filter (where ${customer.archived_at} is null))::int`, all: sql<number>`count(*)::int` }).from(customer),
     crew: await tx.select({ n: sql<number>`count(*)::int` }).from(crew_member).where(eq(crew_member.active, true)),
     routed: await tx.select({ n: sql<number>`count(*)::int` }).from(route_stop).innerJoin(route, eq(route.id, route_stop.route_id)).innerJoin(site, eq(site.id, route_stop.site_id)).where(and(isNull(route.archived_at), eq(site.active, true))),
-    progress: await tx.select({ storm_id: storm_run.storm_id, finished: sql<number>`count(*) filter (where ${run_stop.status} in ('done', 'skipped'))::int`, total: sql<number>`count(*)::int` }).from(run_stop).innerJoin(storm_run, eq(storm_run.id, run_stop.storm_run_id)).innerJoin(storm, eq(storm.id, storm_run.storm_id)).where(eq(storm.status, 'active')).groupBy(storm_run.storm_id),
     // Quotes waiting for a signature, whether emailed or handed over as a link (issue 92), on lots still in service, the
     // same set Customers' "Quote waiting" filter lists.
     pendingQuotes: await tx.select({ n: sql<number>`count(distinct coalesce(${contract.quote_token_hash}, ${contract.id}::text))::int` }).from(contract).innerJoin(site, eq(site.id, contract.site_id)).where(and(sql`${contract.status} in ('sent', 'draft')`, eq(site.active, true))),
-    // What customers still owe: storm bills not collected yet, and seasonal installments not paid.
-    owed: (await tx.execute(sql`
-      select c.id, c.name, sum(x.cents)::int as cents, count(*)::int as n from (
-        select customer_id, subtotal_cents as cents from invoice_draft where status in ('approved', 'sent', 'failed') and subtotal_cents > 0
-        union all
-        select s.customer_id, i.amount_cents from installment_invoice i join contract k on k.id = i.contract_id join site s on s.id = k.site_id where i.status in ('manual', 'sent', 'failed')
-      ) x join customer c on c.id = x.customer_id group by c.id, c.name order by cents desc`)) as unknown as { id: string; name: string; cents: number; n: number }[],
+    // What customers still owe, after part payments, with how late (issue 188).
+    owed: ctx.role === 'viewer' ? [] : await openBills(tx, tz),
+    live: await liveStorms(tx, tz),
+    storms: (await tx.select({ n: sql<number>`count(*)::int`, billed: sql<number>`(count(*) filter (where ${storm.status} = 'billed'))::int` }).from(storm))[0]!,
     // Truck service due soon or overdue (issue 161).
     service: (await listMaintenance(tx)).filter((m) => m.status.state !== 'ok'),
   }));
@@ -48,7 +48,15 @@ export default async function Dashboard() {
   // Renewals for next winter, from the company's start date (issue 166).
   const renewals = ctx.role === 'viewer' ? null : await asUser(ctx, (tx) => renewalQueue(tx, tz));
   const renewNow = renewals && renewals.rows.length && renewalsOpen(localDay(new Date(), tz), ctx.tenant.renewal_start ?? '08-01', renewals.season) ? renewals : null;
-  const owedTotal = data.owed.reduce((n, r) => n + r.cents, 0);
+  // One line per customer: what they owe in all, how many bills, and the oldest one's days late.
+  const owedBy = [...data.owed.reduce((m, r) => {
+    const x = m.get(r.customer_id) ?? { id: r.customer_id, name: r.customer, cents: 0, n: 0, late: 0 };
+    x.cents += r.balance_cents;
+    x.n += 1;
+    x.late = Math.max(x.late, r.days_late);
+    return m.set(r.customer_id, x);
+  }, new Map<string, { id: string; name: string; cents: number; n: number; late: number }>()).values()].sort((a, b) => b.late - a.late || b.cents - a.cents);
+  const owedTotal = owedBy.reduce((n, r) => n + r.cents, 0);
   // Customers' "come back" requests from their records page, one per lot and hour, for a week (issue 5).
   const requests = (await serviceDb().execute(sql`
     select distinct on (m.related->>'site_id', date_trunc('hour', m.created_at), coalesce(m.related->>'note', '')) m.related->>'site_id' as site_id, m.related->>'customer_id' as customer_id, m.related->>'note' as note, m.created_at, s.label, c.name
@@ -57,6 +65,8 @@ export default async function Dashboard() {
     order by m.related->>'site_id', date_trunc('hour', m.created_at), coalesce(m.related->>'note', ''), m.created_at`)) as unknown as { site_id: string; customer_id: string; note: string | null; created_at: string; label: string; name: string }[];
   requests.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const w = await tenantWeatherHeader(ctx.tenantId);
+  // A row per service area when there's more than one (issue 198).
+  const areas = await areaWeather(ctx.tenantId);
   // Failures retry; rejected addresses don't, and need someone to fix the address (issue 49).
   // "Still retrying" only while a send for this company is actually waiting for another try (issue 69).
   const [{ retrying } = { retrying: false }] = (await serviceDb().execute(sql`select exists (select 1 from job where done_at is null and dead_at is null and attempts > 0 and last_error is not null
@@ -83,37 +93,65 @@ export default async function Dashboard() {
     ...(can.sms ? [{ done: t.sms_status === 'approved', text: t.sms_status === 'pending' ? 'Text number: waiting on verification (3 to 5 business days)' : 'Get your text number verified. Crew links go by QR and copy-link until then.', href: '/settings?tab=sms' }] : []),
     { done: Boolean(t.logo_path), text: 'Add your logo for quotes and bills', href: '/settings?tab=company', optional: true },
   ];
+  const quotes = data.pendingQuotes[0]!.n;
+  const step = data.customers[0]!.n === 0 ? 0 : data.routed[0]!.n === 0 ? 1 : data.storms.n === 0 ? 2 : 3;
+  const needs = Boolean(requests.length || renewNow || insurance.length || lowSalt.length || data.service.length);
+  const showSetup = setup.some((s) => !s.done && !s.optional);
   return (
     <>
-      <PageHeader title="Dashboard" subtitle={ctx.tenant.name} actions={canEdit && data.routed[0]!.n > 0 ? <Link href="/storms#start" className={buttonVariants({ variant: 'accent' })}>Start a storm</Link> : null} />
-      {/* Customers but no lot on a route: a storm would have nothing to send, so say the next step (first-run walk). */}
-      {canEdit && data.customers[0]!.n > 0 && data.routed[0]!.n === 0 ? <p className="mb-4 rounded-md bg-info-tint p-3 text-sm text-ink" data-testid="needs-route">Next: put your lots on a route. A storm sends each route to one truck. <Link className="font-semibold underline" href="/routes">Open Routes</Link></p> : null}
+      <PageHeader title="Dashboard" subtitle={ctx.tenant.name} actions={canEdit && data.routed[0]!.n > 0 && !data.live.length ? <Link href="/storms#start" className={buttonVariants({ variant: 'accent' })}>Start a storm</Link> : null} />
+      {/* (a) The storm being worked, first (issues 187, 188). */}
+      <LiveBanner storms={data.live} />
+      {/* Things that are wrong right now: the sentence, then one button. */}
+      {usage?.near_limit ? <Notice tone="danger" testId="usage-warning" text={`Storage is nearly full (${usage.files_mb} of ${usage.files_limit_mb} MB of files, ${usage.db_mb} of ${usage.db_limit_mb} MB of database).`} action={<ButtonLink size="sm" href="/settings?tab=system">See details</ButtonLink>} /> : null}
+      {failedMessages ? <Notice tone="danger" testId="messages-failed" text={`${failedMessages === 1 ? '1 message' : `${failedMessages} messages`} could not be sent in the last 24 hours. ${retrying ? 'Flake is still retrying.' : 'Flake has stopped retrying. Check the address, then send again from the driver or customer.'}`} action={<ButtonLink size="sm" href="/settings?tab=system">See why</ButtonLink>} /> : null}
+      {rejectedMessages ? <Notice tone="warn" testId="messages-rejected" text={`${rejectedMessages === 1 ? '1 message was' : `${rejectedMessages} messages were`} not delivered because the email address or phone number was rejected. Fix it on the driver or customer, and route links go out again.`} action={<ButtonLink size="sm" href="/settings?tab=system">See which</ButtonLink>} /> : null}
+      {canEdit && data.customers[0]!.n > 0 && data.routed[0]!.n === 0 ? <Notice tone="info" testId="needs-route" text="Next: put your lots on a route. A storm sends each route to one truck." action={<ButtonLink size="sm" variant="accent" href="/routes">Open Routes</ButtonLink>} /> : null}
       {/* Issue 171: every company starts with sending off; say so where the office looks first. */}
-      {canEdit && !ctx.tenant.outbound_enabled ? <p className="mb-4 rounded-md bg-info-tint p-3 text-sm text-ink" data-testid="sending-off">Flake isn&apos;t sending email or texts for your company yet, so bills, quotes and notices stay inside Flake. 216LABS turns sending on when your company is approved. Until then, share links yourself: each quote, bill and driver page has one.</p> : null}
-      {usage?.near_limit ? <p className="mb-4 rounded-md bg-danger-tint p-3 text-sm text-danger" data-testid="usage-warning">Storage is nearly full ({usage.files_mb} of {usage.files_limit_mb} MB of files, {usage.db_mb} of {usage.db_limit_mb} MB of database). <Link className="underline" href="/settings?tab=system">See details</Link></p> : null}
-      {failedMessages ? <p className="mb-4 rounded-md bg-danger-tint p-3 text-sm text-danger" data-testid="messages-failed">{failedMessages === 1 ? '1 message' : `${failedMessages} messages`} could not be sent in the last 24 hours. {retrying ? 'Flake is still retrying.' : 'Flake has stopped retrying. Check the address, then send again from the driver or customer.'} <Link className="underline" href="/settings?tab=system">See why</Link></p> : null}
-      {rejectedMessages ? <p className="mb-4 rounded-md bg-warn-tint p-3 text-sm text-warn-ink" data-testid="messages-rejected">{rejectedMessages === 1 ? '1 message was' : `${rejectedMessages} messages were`} not delivered because the email address or phone number was rejected. Fix it on the driver or customer, and route links go out again. <Link className="underline" href="/settings?tab=system">See which</Link></p> : null}
+      {canEdit && !ctx.tenant.outbound_enabled ? <Notice tone="info" testId="sending-off" text="Flake isn't sending email or texts for your company yet, so bills, quotes and notices stay inside Flake. 216LABS turns sending on when your company is approved. Until then, share links yourself: each quote, bill and driver page has one." /> : null}
       {/* A brand-new company has no lots, so no forecast to show yet: say what comes first instead of "unavailable" (issue 129). */}
       {data.customers[0]!.n === 0 ? (
-        <section className="rounded-md bg-slate-950 p-5 text-white" data-testid="first-run">
+        <section className="mb-6 rounded-md bg-slate-950 p-5 text-white" data-testid="first-run">
           <h2 className="font-display text-xl font-semibold">{data.customers[0]!.all ? 'No active customers' : 'Welcome to Flake'}</h2>
           <p className="mt-1 text-sm text-slate-300">{data.customers[0]!.all ? 'Every customer is archived. Add one, or restore one from Archived customers.' : 'Add a customer and their lot.'} The snow forecast for your lots shows here once there&apos;s one to watch.</p>
           {canEdit ? <div className="mt-3 flex flex-wrap gap-2"><Link href="/customers/new" className={buttonVariants({ variant: 'accent' })}>Add your first customer</Link><Link href="/customers/import" className={buttonVariants({ variant: 'outline', className: 'text-ink' })}>Import a list</Link></div> : null}
         </section>
       ) : (
-      <section className="overflow-hidden rounded-md bg-slate-950 text-white" data-testid="conditions">
-        <div className="flex flex-wrap items-end gap-x-10 gap-y-4 p-5">
-          <Stat label="Next 12 h" value={fmt(w.forecast_in)} />
-          <Stat label="Elapsed this event" value={fmt(w.elapsed_in)} />
-          <Stat label="Temperature" value={fmt(w.temp_f, ' F')} />
-          <p className="ml-auto text-xs text-slate-300">{w.reason ? `${w.reason} ` : ''}{w.source === 'unavailable' ? '' : `Live forecast. Source: ${w.source}${w.fetched_at ? `, ${fmtLocal(w.fetched_at, tz)}` : ''}`}</p>
-        </div>
-      </section>
+        <section className="mb-6 overflow-hidden rounded-md bg-slate-950 text-white" data-testid="conditions">
+          {areas.length > 1 ? (
+            <div className="p-4" data-testid="area-weather">
+              <table className="w-full text-sm">
+                <thead><tr className="text-left text-xs uppercase tracking-wider text-slate-300"><th className="pb-2 font-semibold">Area</th><th className="pb-2 font-semibold">Next 12 h</th><th className="pb-2 font-semibold max-sm:hidden">Elapsed</th><th className="pb-2 font-semibold max-sm:hidden">Temp</th><th className="pb-2 font-semibold">Lots at trigger</th></tr></thead>
+                <tbody>
+                  {areas.map((a) => (
+                    <tr key={a.area} className="border-t border-slate-800" data-testid="area-row">
+                      <td className="py-2 font-semibold">{a.area}<span className="block text-xs font-normal text-slate-400">{a.lots} {a.lots === 1 ? 'lot' : 'lots'}</span></td>
+                      <td className="tabular py-2 font-display text-xl">{fmt(a.forecast_in)}</td>
+                      <td className="tabular py-2 max-sm:hidden">{fmt(a.elapsed_in)}</td>
+                      <td className="tabular py-2 max-sm:hidden">{fmt(a.temp_f, ' F')}</td>
+                      <td className="py-2">{a.at_trigger ? <span className="font-bold text-beacon">{a.at_trigger} at trigger</span> : a.near_trigger ? <span className="text-amber-300">{a.near_trigger} close</span> : <span className="text-slate-400">None</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="mt-2 text-xs text-slate-300">{w.source === 'unavailable' ? (w.reason ?? 'No forecast yet for your lots.') : `Live forecast by area. Source: ${w.source}${w.fetched_at ? `, ${fmtLocal(w.fetched_at, tz)}` : ''}`}</p>
+            </div>
+          ) : (
+          <div className="flex flex-wrap items-end gap-x-10 gap-y-4 p-5">
+            <Stat label="Next 12 h" value={fmt(w.forecast_in)} />
+            <Stat label="Elapsed this event" value={fmt(w.elapsed_in)} />
+            <Stat label="Temperature" value={fmt(w.temp_f, ' F')} />
+            <p className="ml-auto max-w-md text-xs text-slate-300">{w.source === 'unavailable' ? (w.reason ?? 'No forecast yet for your lots.') : `Live forecast. Source: ${w.source}${w.fetched_at ? `, ${fmtLocal(w.fetched_at, tz)}` : ''}`}</p>
+          </div>
+          )}
+        </section>
       )}
-      <div className={`mt-6 grid grid-cols-1 gap-6 ${setup.some((s) => !s.done && !s.optional) ? 'lg:grid-cols-3' : ''}`}>
-        <div className={`space-y-6 ${setup.some((s) => !s.done && !s.optional) ? 'lg:col-span-2' : ''}`}>
+      {data.storms.billed === 0 && canEdit ? <HowItWorks step={step} /> : null}
+      <div className={`grid grid-cols-1 gap-6 ${showSetup ? 'lg:grid-cols-3' : ''}`}>
+        <div className={`space-y-6 ${showSetup ? 'lg:col-span-2' : ''}`}>
+          {/* (b) Snow alerts: the one section that says so when it's empty. */}
           <section>
-            <Eyebrow className="mb-2">Trigger alerts</Eyebrow>
+            <Eyebrow className="mb-2">Snow alerts</Eyebrow>
             {data.alerts.length ? (
               <ul className="divide-y divide-line-faint rounded-md border border-beacon bg-surface">
                 {data.alerts.map((a) => (
@@ -123,100 +161,67 @@ export default async function Dashboard() {
                   </li>
                 ))}
               </ul>
-            ) : <p className="rounded-md border border-line-faint bg-surface p-3 text-sm text-muted">No open alerts.</p>}
+            ) : <p className="rounded-md border border-line-faint bg-surface p-3 text-sm text-muted">No snow alerts. Flake checks each lot&apos;s forecast and shows an alert here when one reaches its trigger.</p>}
+            {!data.live.length ? <p className="mt-2 text-sm text-muted" data-testid="no-storm">No storm is running. {canEdit ? 'Start one by hand, or wait for a trigger alert.' : 'The office starts one when snow is coming.'}</p> : null}
           </section>
-          {requests.length ? (
-            <section data-testid="visit-requests">
-              <Eyebrow className="mb-2">Customers asking for a visit</Eyebrow>
-              <ul className="divide-y divide-line-faint rounded-md border border-line-faint bg-surface">
-                {requests.slice(0, 8).map((r) => (
-                  <li key={`${r.site_id}:${r.created_at}`} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
-                    <span className="min-w-0"><Link className="font-medium text-ink underline" href={`/customers/${r.customer_id}`}>{r.name}</Link>, {r.label}{r.note ? `: "${r.note}"` : ''}</span>
-                    <span className="text-xs text-muted">{fmtLocal(r.created_at, tz)}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-          {owedTotal || data.pendingQuotes[0]!.n ? (
-            <section data-testid="waiting-on">
-              <Eyebrow className="mb-2">Waiting on customers</Eyebrow>
-              <div className="rounded-md border border-line-faint bg-surface p-3 text-sm">
-                {data.pendingQuotes[0]!.n ? <p data-testid="quotes-waiting">{data.pendingQuotes[0]!.n === 1 ? '1 quote is' : `${data.pendingQuotes[0]!.n} quotes are`} waiting for a signature. <Link className="text-link underline" href="/customers?waiting=1">See which</Link></p> : null}
-                {owedTotal ? (
-                  <>
-                    <p className={data.pendingQuotes[0]!.n ? 'mt-2' : ''} data-testid="owed-total">Still owed: <b className="tabular">{money(owedTotal)}</b></p>
-                    <ul className="mt-1 space-y-0.5">
-                      {data.owed.slice(0, 8).map((r) => <li key={r.id}><Link className="text-link underline" href={`/customers/${r.id}`}>{r.name}</Link>: <span className="tabular">{money(r.cents)}</span>{r.n > 1 ? ` (${r.n} bills)` : ''}</li>)}
+          {/* (c) Needs you today. */}
+          {needs ? (
+            <section data-testid="needs-you">
+              <Eyebrow className="mb-2">Needs you today</Eyebrow>
+              <div className="grid gap-3 md:grid-cols-2">
+                {requests.length ? (
+                  <ActionCard title="Customers asking for a visit" testId="visit-requests" body="They asked from their records page in the last week." action={<ButtonLink size="sm" href="/storms">Go to storms</ButtonLink>}>
+                    <ul className="mt-2 space-y-1 text-sm">
+                      {requests.slice(0, 6).map((r) => <li key={`${r.site_id}:${r.created_at}`}><Link className={entityLink} href={`/customers/${r.customer_id}`}>{r.name}</Link>, {r.label}{r.note ? `: "${r.note}"` : ''} <span className="text-xs text-muted">{fmtLocal(r.created_at, tz)}</span></li>)}
                     </ul>
-                    {data.owed.length > 8 ? <p className="mt-1 text-xs text-muted">And {data.owed.length - 8} more customers.</p> : null}
-                    <Link className="mt-1 inline-block text-link underline" href="/receivables" data-testid="open-receivables">Receivables: what's late, payments, reminders</Link>
-                  </>
+                  </ActionCard>
+                ) : null}
+                {renewNow ? <ActionCard title="Renewals" testId="renewals-due" body={`${renewNow.rows.length} ${renewNow.rows.length === 1 ? 'lot has' : 'lots have'} no quote yet for ${renewNow.next}.`} action={<ButtonLink size="sm" variant="accent" href="/bids">Renew them</ButtonLink>} /> : null}
+                {insurance.length ? (
+                  <ActionCard title="Insurance" testId="insurance-alerts" body="Certificates ending soon or ended, and subs without cover." action={<ButtonLink size="sm" href="/compliance">Open insurance and claims</ButtonLink>}>
+                    <ul className="mt-2 space-y-1 text-sm">{insurance.slice(0, 4).map((a, i) => <li key={i} className="flex flex-wrap gap-2"><Badge tone={a.tone}>{a.tone === 'red' ? 'Act now' : 'Soon'}</Badge><span className="wrap-anywhere">{a.text}</span></li>)}</ul>
+                  </ActionCard>
+                ) : null}
+                {lowSalt.length ? (
+                  <ActionCard title="Salt is low" testId="salt-reorder" tone="warn" body={lowSalt.map((y) => `${y.yard.name}: ${y.tons} t on hand (reorder at ${Number(y.yard.reorder_tons)} t).`).join(' ')} action={<ButtonLink size="sm" variant="accent" href="/salt">Order salt</ButtonLink>} />
+                ) : null}
+                {data.service.length ? (
+                  <ActionCard title="Truck service" testId="service-due" body="Service due soon or overdue." action={<ButtonLink size="sm" href="/settings?tab=equipment">Open equipment</ButtonLink>}>
+                    <ul className="mt-2 space-y-1 text-sm">
+                      {data.service.slice(0, 6).map((m) => (
+                        <li key={m.id} className="flex flex-wrap items-center gap-2" data-testid="service-row">
+                          <Badge tone={m.status.state === 'overdue' ? 'red' : 'amber'}>{m.status.state === 'overdue' ? 'Overdue' : 'Due soon'}</Badge>
+                          <span className="wrap-anywhere"><b>{m.truck_name}</b>: {m.name}</span>
+                          <span className="text-muted">{m.status.detail}</span>
+                        </li>
+                      ))}
+                      {data.service.length > 6 ? <li className="text-xs text-muted">And {data.service.length - 6} more.</li> : null}
+                    </ul>
+                  </ActionCard>
                 ) : null}
               </div>
             </section>
           ) : null}
-          {renewNow ? (
-            <section data-testid="renewals-due">
-              <Eyebrow className="mb-2">Renewals</Eyebrow>
-              <p className="rounded-md border border-line-faint bg-surface p-3 text-sm">{renewNow.rows.length} {renewNow.rows.length === 1 ? 'lot has' : 'lots have'} nothing yet for {renewNow.next}. <Link className="font-semibold text-link underline" href="/bids">Renew them</Link></p>
-            </section>
-          ) : null}
-          {insurance.length ? (
-            <section data-testid="insurance-alerts">
-              <Eyebrow className="mb-2">Insurance</Eyebrow>
-              <ul className="space-y-1 rounded-md border border-line-faint bg-surface p-3 text-sm">
-                {insurance.slice(0, 6).map((a, i) => <li key={i} className="flex flex-wrap gap-2"><Badge tone={a.tone}>{a.tone === 'red' ? 'Act now' : 'Soon'}</Badge><span className="wrap-anywhere">{a.text}</span></li>)}
-                <li><Link className="text-link underline" href="/compliance">Insurance and claims</Link></li>
-              </ul>
-            </section>
-          ) : null}
-          {lowSalt.length ? (
-            <section data-testid="salt-reorder">
-              <Eyebrow className="mb-2">Salt</Eyebrow>
-              <ul className="space-y-1 rounded-md border border-warn-line bg-warn-tint p-3 text-sm text-warn-ink">
-                {lowSalt.map((y) => <li key={y.yard.id}>Reorder salt, {y.yard.name}: {y.tons} tons on hand (reorder at {Number(y.yard.reorder_tons)}). <Link className="font-semibold underline" href="/reports">Order salt</Link></li>)}
-              </ul>
-            </section>
-          ) : null}
-          {data.service.length ? (
-            <section data-testid="service-due">
-              <Eyebrow className="mb-2">Truck service</Eyebrow>
-              <ul className="space-y-1 rounded-md border border-line-faint bg-surface p-3 text-sm">
-                {data.service.slice(0, 8).map((m) => (
-                  <li key={m.id} className="flex flex-wrap items-center gap-2" data-testid="service-row">
-                    <Badge tone={m.status.state === 'overdue' ? 'red' : 'amber'}>{m.status.state === 'overdue' ? 'Overdue' : 'Due soon'}</Badge>
-                    <span className="wrap-anywhere"><b>{m.truck_name}</b>: {m.name}</span>
-                    <span className="text-muted">{m.status.detail}</span>
-                  </li>
-                ))}
-                {data.service.length > 8 ? <li className="text-xs text-muted">And {data.service.length - 8} more.</li> : null}
-                <li><Link className="text-link underline" href="/settings?tab=equipment">Open Equipment</Link></li>
-              </ul>
-            </section>
-          ) : null}
-          <section>
-            <Eyebrow className="mb-2">Active storms</Eyebrow>
-            {data.active.length ? (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                {data.active.map((s) => {
-                  const p = data.progress.find((x) => x.storm_id === s.id);
-                  return (
-                    <Link key={s.id} href={`/storms/${s.id}`} data-testid="active-storm">
-                      <Card className="transition-colors hover:border-ink">
-                        <div className="flex items-start justify-between gap-2"><div className="font-display text-lg font-semibold leading-tight">{s.name}</div><Badge tone={stormStatus('active').tone}>{stormStatus('active').word}</Badge></div>
-                        <div className="mt-0.5 text-xs text-muted">Started {stormWhen(s.started_at, tz)}</div>
-                        <Progress className="mt-3" value={p?.finished ?? 0} max={p?.total ?? 0} label={`Stops finished in ${s.name}`} />
-                        <div className="tabular mt-1.5 text-sm font-medium text-ink" data-testid="storm-progress">{p ? `${p.finished} of ${p.total} stops finished` : 'No stops yet'}</div>
-                      </Card>
-                    </Link>
-                  );
-                })}
+          {/* (d) Money: unsigned quotes and money owed are different things, so two cards (issue 188). */}
+          {owedTotal || quotes ? (
+            <section data-testid="waiting-on">
+              <Eyebrow className="mb-2">Money</Eyebrow>
+              <div className="grid gap-3 md:grid-cols-2">
+                {quotes ? <ActionCard title="Quotes not signed yet" testId="quotes-waiting" body={`${quotes === 1 ? '1 quote is' : `${quotes} quotes are`} waiting for a signature. Until a customer signs, their lots aren't billed and don't get snow alerts.`} action={<ButtonLink size="sm" href="/customers?waiting=1">See unsigned quotes</ButtonLink>} /> : null}
+                {owedTotal ? (
+                  <ActionCard title="Money owed to you" testId="owed-total" body={`${money(owedTotal)} from ${owedBy.length === 1 ? '1 customer' : `${owedBy.length} customers`}.`} action={<ButtonLink size="sm" variant="accent" href="/receivables" data-testid="open-receivables">Open receivables</ButtonLink>}>
+                    <ul className="mt-2 space-y-0.5 text-sm">
+                      {owedBy.slice(0, 6).map((r) => <li key={r.id} className="flex flex-wrap justify-between gap-x-3"><span><Link className={entityLink} href={`/customers/${r.id}`}>{r.name}</Link>: <span className="tabular">{money(r.cents)}</span>{r.n > 1 ? ` (${r.n} bills)` : ''}</span>{r.late > 0 ? <span className="text-xs font-semibold text-warn-ink">{r.late} {r.late === 1 ? 'day' : 'days'} late</span> : null}</li>)}
+                    </ul>
+                    {owedBy.length > 6 ? <p className="mt-1 text-xs text-muted">And {owedBy.length - 6} more customers.</p> : null}
+                  </ActionCard>
+                ) : null}
               </div>
-            ) : <EmptyState title="No storm is running" body={canEdit ? 'Start one by hand, or wait for a trigger alert.' : 'The office starts one when snow is coming.'} />}
-          </section>
+            </section>
+          ) : null}
         </div>
-        {setup.some((s) => !s.done && !s.optional) ? (
+        {/* (e) Setup for a new company. */}
+        {showSetup ? (
           <section data-testid="setup-checklist">
             <Eyebrow className="mb-2">Finish setup: {setup.filter((s) => s.done).length} of {setup.length} done</Eyebrow>
             <ul className="divide-y divide-line-faint rounded-md border border-line-faint bg-surface">
@@ -225,7 +230,7 @@ export default async function Dashboard() {
                   {s.done ? (
                     <span className="flex items-start gap-2 text-muted"><span aria-hidden="true" className="text-ok-ink">✓</span><span><span className="sr-only">Done: </span>{s.text}</span></span>
                   ) : (
-                    <span className="flex items-start gap-2"><span aria-hidden="true" className="text-faint">○</span><span><Link className="font-medium text-ink underline-offset-2 hover:underline" href={s.href}>{s.text}</Link>{s.optional ? <span className="text-muted"> (optional)</span> : null}{s.more ? <Link className="mt-0.5 block text-xs text-link underline" href={s.more.href}>{s.more.text}</Link> : null}</span></span>
+                    <span className="flex items-start gap-2"><span aria-hidden="true" className="text-faint">○</span><span><Link className={entityLink} href={s.href}>{s.text}</Link>{s.optional ? <span className="text-muted"> (optional)</span> : null}{s.more ? <ButtonLink size="sm" variant="ghost" className="-ml-3 mt-0.5 flex w-fit" href={s.more.href}>{s.more.text}</ButtonLink> : null}</span></span>
                   )}
                 </li>
               ))}
@@ -233,22 +238,48 @@ export default async function Dashboard() {
           </section>
         ) : null}
       </div>
-      <Eyebrow className="mb-2 mt-6">Recent storms</Eyebrow>
+      {/* (f) Recent storms. */}
       {data.recent.length ? (
-        <Table stack>
-          <thead><tr><Th>Storm</Th><Th>Started</Th><Th>Status</Th><Th><span className="sr-only">Actions</span></Th></tr></thead>
-          <tbody>
-            {data.recent.map((s) => (
-              <tr key={s.id}>
-                <Td><Link className="text-link underline" href={`/storms/${s.id}`}>{s.name}</Link></Td>
-                <Td label="Started">{stormWhen(s.started_at, tz)}</Td>
-                <Td label="Status"><Badge tone={stormStatus(s.status ?? '', s.billedNothing).tone}>{stormStatus(s.status ?? '', s.billedNothing).word}</Badge></Td>
-                <Td><Link className="text-link underline" href={`/billing?storm=${s.id}`}>Billing</Link></Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-      ) : <p className="text-sm text-muted">None yet.</p>}
+        <>
+          <Eyebrow className="mb-2 mt-6">Recent storms</Eyebrow>
+          <Table stack>
+            <thead><tr><Th>Storm</Th><Th>Started</Th><Th>Status</Th><Th><span className="sr-only">Actions</span></Th></tr></thead>
+            <tbody>
+              {data.recent.map((s) => (
+                <tr key={s.id}>
+                  <Td><Link className={entityLink} href={`/storms/${s.id}`}>{s.name}</Link></Td>
+                  <Td label="Started">{stormWhen(s.started_at, tz)}</Td>
+                  <Td label="Status"><Badge tone={stormStatus(s.status ?? '', s.billedNothing).tone}>{stormStatus(s.status ?? '', s.billedNothing).word}</Badge></Td>
+                  <Td><ButtonLink size="sm" href={`/billing?storm=${s.id}`}>Billing</ButtonLink></Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </>
+      ) : null}
     </>
+  );
+}
+
+/** One thing that needs the office: a heading, one sentence, at most one button (issue 188). */
+function ActionCard({ title, body, action, testId, tone, children }: { title: string; body: string; action?: React.ReactNode; testId?: string; tone?: 'warn'; children?: React.ReactNode }) {
+  return (
+    <div className={tone === 'warn' ? 'rounded-md border border-warn-line bg-warn-tint p-4 text-warn-ink' : 'rounded-md border border-line-faint bg-surface p-4'} data-testid={testId}>
+      <h3 className="font-semibold text-ink">{title}</h3>
+      <p className="mt-1 text-sm">{body}</p>
+      {children}
+      {action ? <div className="mt-3">{action}</div> : null}
+    </div>
+  );
+}
+
+/** A banner across the top: the sentence, then the button, never a link inside the sentence. */
+function Notice({ tone, text, action, testId }: { tone: 'danger' | 'warn' | 'info'; text: string; action?: React.ReactNode; testId: string }) {
+  const color = { danger: 'bg-danger-tint text-danger', warn: 'bg-warn-tint text-warn-ink', info: 'bg-info-tint text-ink' }[tone];
+  return (
+    <div className={`mb-4 flex flex-wrap items-center gap-3 rounded-md p-3 text-sm ${color}`} data-testid={testId}>
+      <p className="min-w-0 flex-1">{text}</p>
+      {action}
+    </div>
   );
 }

@@ -1,10 +1,13 @@
 import { and, crew_member, desc, eq, invoice_draft, isNull, ne, route, site, sql, storm } from '@flake/db';
 import { fmtLocal, stormWhen } from '@flake/core/time';
-import { Badge, buttonVariants, Card, cn, EmptyState, PageHeader } from '@flake/ui';
+import { Badge, buttonVariants, Card, cn, EmptyState, Eyebrow, PageHeader } from '@flake/ui';
 import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
 import { stormStatus } from '@/lib/labels';
 import { NewStorm } from './new-storm';
+import { LiveBanner } from './live-banner';
+import { liveStorms } from '@/lib/live';
+import { FilterTabs } from '@/components/links';
 
 export const metadata = { title: 'Storms' };
 
@@ -27,34 +30,52 @@ export default async function Storms({ searchParams }: { searchParams: Promise<{
     routes: await tx.select().from(route).where(isNull(route.archived_at)),
     crew: await tx.select().from(crew_member).where(eq(crew_member.active, true)),
     // A lot on no route is left out of every storm started here, so say which.
+    live: await liveStorms(tx, ctx.tenant.timezone),
     unrouted: await tx.select({ id: site.id, label: site.label }).from(site).where(and(eq(site.active, true), sql`not exists (select 1 from route_stop rs join route r on r.id = rs.route_id where rs.site_id = ${site.id} and r.archived_at is null)`)).orderBy(site.label),
   }));
   // Live and Ready to bill storms always show; billed ones only the newest few until asked.
   const billed = data.storms.filter((s) => s.status === 'billed');
   const hidden = showOlder ? [] : billed.slice(RECENT_BILLED).map((s) => s.id);
   const listed = data.storms.filter((s) => !hidden.includes(s.id));
-  const olderCount = showOlder ? 0 : Math.max(0, data.billedCount - RECENT_BILLED);
   return (
     <>
       <PageHeader title="Storms" subtitle="Start from your master routes, publish once, then move stops." actions={ctx.role !== 'viewer' ? <a href="#start" className={cn(buttonVariants({ variant: 'accent' }), 'lg:hidden')} data-testid="jump-start-storm">Start a storm</a> : null} />
+      <LiveBanner storms={data.live} />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          {data.storms.length ? (
-            <ul className="space-y-2">
-              {listed.map((s) => (
-                <li key={s.id}>
-                  <Link href={`/storms/${s.id}`}>
-                    <Card className="flex items-center justify-between transition-colors hover:border-ink">
-                      <div><div className="font-display text-lg font-semibold leading-tight">{s.name}</div><div className="text-sm text-muted">{stormWhen(s.started_at, ctx.tenant.timezone)}</div></div>
-                      <Badge tone={stormStatus(s.status, !data.withBills.includes(s.id)).tone}>{stormStatus(s.status, !data.withBills.includes(s.id)).word}</Badge>
-                    </Card>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {olderCount ? <Link className="mt-3 inline-block text-sm font-semibold text-link underline" href="/storms?older=1" data-testid="older-storms">Show {olderCount} older billed {olderCount === 1 ? 'storm' : 'storms'}</Link> : null}
-          {showOlder && billed.length > RECENT_BILLED ? <Link className="mt-3 inline-block text-sm text-link underline" href="/storms">Show only recent storms</Link> : null}
+          {(() => {
+            // Live, then Ready to bill, then Billed (issue 187). Live storms also sit in the banner above.
+            const groups = [
+              { key: 'live', title: 'Live', rows: listed.filter((s) => s.status === 'active') },
+              { key: 'to-bill', title: 'Ready to bill', rows: listed.filter((s) => s.status !== 'active' && s.status !== 'billed') },
+              { key: 'billed', title: 'Billed', rows: listed.filter((s) => s.status === 'billed') },
+            ].filter((g) => g.rows.length || (g.key === 'billed' && data.billedCount));
+            return groups.map((g) => (
+              <section key={g.key} className="mb-6" data-testid={`storms-${g.key}`}>
+                <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                  <Eyebrow>{g.title}</Eyebrow>
+                  {g.key === 'billed' && data.billedCount > RECENT_BILLED ? (
+                    <FilterTabs label="Billed storms" className="mb-0 border-b-0" items={[
+                      { href: '/storms', label: 'Recent', active: !showOlder },
+                      { href: '/storms?older=1', label: `All ${data.billedCount}`, active: showOlder, testId: 'older-storms' },
+                    ]} />
+                  ) : null}
+                </div>
+                <ul className="space-y-2">
+                  {g.rows.map((s) => (
+                    <li key={s.id}>
+                      <Link href={`/storms/${s.id}`}>
+                        <Card className={cn('flex items-center justify-between transition-colors hover:border-ink', s.status === 'active' && 'border-beacon')}>
+                          <div><div className="font-display text-lg font-semibold leading-tight">{s.name}</div><div className="text-sm text-muted">{stormWhen(s.started_at, ctx.tenant.timezone)}</div></div>
+                          <Badge tone={stormStatus(s.status, !data.withBills.includes(s.id)).tone}>{stormStatus(s.status, !data.withBills.includes(s.id)).word}</Badge>
+                        </Card>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ));
+          })()}
           {data.storms.length ? null : <EmptyState title="No storms yet" body="Add routes first, then start your first storm here." />}
         </div>
         {/* On a phone the form sits below every storm so far; the header button and the dashboard jump here. */}

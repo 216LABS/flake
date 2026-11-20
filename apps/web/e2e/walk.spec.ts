@@ -60,7 +60,12 @@ test('walk every office screen and use its main control', async ({ page }) => {
   await page.getByLabel('New route').fill(routeName);
   await page.getByRole('button', { name: 'Add', exact: true }).click();
   await expect(page.getByLabel(`Add a site to ${routeName}`)).toBeVisible();
-  await page.getByLabel(`Add a site to ${routeName}`).selectOption({ index: 1 });
+  // The lot picker (issue 193): open it, show every lot, tick one, add it.
+  await page.getByLabel(`Add a site to ${routeName}`).click();
+  const picker = page.getByTestId('route-card').filter({ has: page.getByLabel(`Add a site to ${routeName}`) }).getByTestId('route-add');
+  await picker.getByRole('button', { name: 'All', exact: true }).click();
+  await picker.getByTestId('route-add-option').first().click();
+  await picker.getByTestId('route-add-add').click();
   // An earlier device's walk may have put this lot on its own route, and then the app asks first.
   if (await page.getByTestId('confirm-dialog').isVisible({ timeout: 2000 }).catch(() => false)) await page.getByTestId('confirm-yes').click();
   await expect.poll(async () => (await sql`select count(*)::int as n from route_stop rs join route r on r.id = rs.route_id where r.name = ${routeName}`)[0]!.n).toBe(1);
@@ -111,9 +116,10 @@ test('walk every office screen and use its main control', async ({ page }) => {
 
   // Billing on the seeded historical storm: the three demo flags show up.
   await page.goto('/billing');
-  // Options read "name, date" and are grouped by status, so pick by the storm's name.
-  const opt = await page.getByTestId('storm-picker').locator('option', { hasText: 'Dec 13 Lake-Effect Storm (Demo)' }).getAttribute('value');
-  await page.getByTestId('storm-picker').selectOption(opt!);
+  // The storm list (issue 195): pick the storm by its name. Billed ones sit under a fold.
+  const row = page.getByTestId('storm-row').filter({ hasText: 'Dec 13 Lake-Effect Storm (Demo)' });
+  if (!(await row.isVisible())) await page.getByTestId('storm-list').locator('summary').click();
+  await row.click();
   await page.waitForURL(/billing\?storm=/);
   for (const code of ['no_after_photo', 'missing_salt_qty']) await expect(page.locator(`[data-code="${code}"]`)).toHaveCount(1);
   // The sample storm is priced by last winter's contracts, so a new user sees real bills, not "no contract" at $0.

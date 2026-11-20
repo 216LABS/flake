@@ -79,7 +79,8 @@ for (const size of SIZES) {
       const picker = page.getByTestId('settings-section');
       // One line: the tabs took three rows and pushed the settings half a screen down.
       expect((await picker.boundingBox())!.height).toBeLessThan(60);
-      expect(await picker.locator('option').count()).toBe(12);
+      // 13 with Snow triggers (issue 198).
+      expect(await picker.locator('option').count()).toBe(13);
       expect(await picker.inputValue()).toBe('company');
       await picker.selectOption('payments');
       await page.waitForURL(/tab=payments/);
@@ -112,7 +113,7 @@ for (const size of SIZES) {
       for (const b of [from, to, show]) expect(b!.x + b!.width).toBeLessThanOrEqual(size.width);
 
       await page.goto('/proof');
-      const site = await page.getByTestId('proof-site').inputValue();
+      const site = await page.getByTestId('proof-site').getAttribute('data-site-id');
       await expect(page.getByTestId('proof-preview')).toBeVisible();
       const made = await page.request.post('/api/proof', { data: { siteId: site, from: new Date(Date.now() - 30 * 86400000).toISOString(), to: new Date().toISOString() } });
       expect(made.status()).toBe(202);

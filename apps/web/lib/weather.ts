@@ -1,6 +1,6 @@
 import { gzipSync } from 'node:zlib';
 import { and, app_setting, asc, contract, desc, driver_action, eq, gte, inArray, lte, or, serviceDb, site, sql, storm, tenant, trigger_alert, weather_snapshot } from '@flake/db';
-import { expandSeries, evaluateSite, groupDecisions, alertHeadline, newWinterAlerts, summarize, sumOverlap, toFahrenheit, toInches, type DepthReport, type HourBucket, type NwsAlert, type SiteDecision, type TriggerSite, type WeatherSeries } from '@flake/core/trigger';
+import { expandSeries, evaluateSite, groupDecisions, alertHeadline, serviceArea, newWinterAlerts, summarize, sumOverlap, toFahrenheit, toInches, type DepthReport, type HourBucket, type NwsAlert, type SiteDecision, type TriggerSite, type WeatherSeries } from '@flake/core/trigger';
 import type { ContractService } from '@flake/core/pricing';
 import { fmtLocal, liveContracts } from '@flake/core/time';
 import type { FetchedDoc } from '@flake/providers';
@@ -84,6 +84,17 @@ export async function latestGrids(cells: Cell[]) {
     .orderBy(asc(weather_snapshot.office), asc(weather_snapshot.grid_x), asc(weather_snapshot.grid_y), desc(weather_snapshot.fetched_at));
   for (const r of rows) out.set(cellKey(r.office, r.grid_x, r.grid_y), r);
   return out;
+}
+
+/** The owner's names for lots' service areas (issue 198), kept as a setting: { site_id: area name }. */
+export const areasKey = (tenantId: string) => `areas:${tenantId}`;
+export async function areaOverrides(tenantId: string): Promise<Record<string, string>> {
+  return (await getSetting<Record<string, string>>(areasKey(tenantId))) ?? {};
+}
+/** Each lot's area: the owner's name for it, else its city. */
+export async function areasFor(tenantId: string, sites: { id: string; address: string }[]) {
+  const named = await areaOverrides(tenantId);
+  return new Map(sites.map((s) => [s.id, serviceArea(s.address, named[s.id])]));
 }
 
 /** Maps sites to an NWS grid cell on first sight and every 7 days after. */
@@ -220,17 +231,20 @@ export async function evaluateTenant(tenantId: string): Promise<string[]> {
   const prior = await db.select().from(trigger_alert).where(eq(trigger_alert.tenant_id, tenantId));
   const priorSends = prior.flatMap((a) => ((a.detail.sites ?? []) as SiteDecision[]).map((d) => ({ kind: a.kind!, site_id: d.site_id, event_key: d.event_key })));
   // Debounce on the evaluation clock so the demo's fake clock behaves like real time.
-  const recent = prior.map((a) => ({ kind: a.kind!, created_at: a.detail.evaluated_at ? Date.parse(a.detail.evaluated_at) : Date.parse(a.created_at!) }));
-  const proposals = groupDecisions(decisions, priorSends, recent, nowMs);
+  const recent = prior.map((a) => ({ kind: a.kind!, created_at: a.detail.evaluated_at ? Date.parse(a.detail.evaluated_at) : Date.parse(a.created_at!), area: (a.detail.area as string | undefined) }));
+  // One alert per service area (issue 198): Lakewood and Akron can get different snow.
+  const areaOf = await areasFor(tenantId, sites);
+  const proposals = groupDecisions(decisions, priorSends, recent, nowMs, (id) => areaOf.get(id) ?? 'Your area');
   const area = areaName(sites.map((s) => s.address));
   const created: string[] = [];
   for (const p of proposals) {
     const snapshotIds = sites.filter((s) => p.site_ids.includes(s.id)).map((s) => latest.get(siteCell(s))?.id).filter((v): v is string => Boolean(v));
     // More sites reaching a trigger while one is still waiting on someone: that alert grows, and people hear about it.
-    const open = prior.find((a) => a.status === 'open' && a.kind === p.kind);
+    // Only its own area's open alert grows; another area gets its own.
+    const open = prior.find((a) => a.status === 'open' && a.kind === p.kind && ((a.detail.area as string | undefined) ?? null) === (p.area ?? null));
     if (open) {
       const merged = { ...p, site_ids: [...new Set([...(open.site_ids ?? []), ...p.site_ids])], sites: [...((open.detail.sites ?? []) as SiteDecision[]), ...p.sites] };
-      const grown = alertHeadline(merged as typeof p, area, t.timezone);
+      const grown = alertHeadline(merged as typeof p, p.area ?? area, t.timezone);
       // Someone may have dispatched or dismissed it since it was read. Then it stays as they left it.
       const grew = await db.update(trigger_alert).set({ site_ids: merged.site_ids, snapshot_ids: [...new Set([...(open.snapshot_ids ?? []), ...snapshotIds])], detail: { ...open.detail, headline: grown, sites: merged.sites, evaluated_at: now.toISOString(), evaluated_at_local: fmtLocal(now, t.timezone) } })
         .where(and(eq(trigger_alert.id, open.id), eq(trigger_alert.status, 'open'))).returning({ id: trigger_alert.id });
@@ -239,13 +253,13 @@ export async function evaluateTenant(tenantId: string): Promise<string[]> {
       await notifyOwners(t, open.id, grown, merged.site_ids.length);
       continue;
     }
-    const headline = alertHeadline(p, area, t.timezone);
+    const headline = alertHeadline(p, p.area ?? area, t.timezone);
     const [row] = await db.insert(trigger_alert).values({
       tenant_id: tenantId,
       kind: p.kind,
       site_ids: p.site_ids,
       snapshot_ids: [...new Set(snapshotIds)],
-      detail: { headline, sites: p.sites, evaluated_at: now.toISOString(), evaluated_at_local: fmtLocal(now, t.timezone) },
+      detail: { headline, sites: p.sites, ...(p.area ? { area: p.area } : {}), evaluated_at: now.toISOString(), evaluated_at_local: fmtLocal(now, t.timezone) },
     }).returning();
     created.push(row!.id);
     await notifyOwners(t, row!.id, headline);
@@ -263,30 +277,40 @@ export async function fetchAlerts(tenantId: string) {
   const sites = await db.select().from(site).where(and(eq(site.tenant_id, tenantId), eq(site.active, true)));
   if (!sites.length) return;
   const [t] = await db.select().from(tenant).where(eq(tenant.id, tenantId));
-  const lat = sites.reduce((s, x) => s + x.lat, 0) / sites.length;
-  const lon = sites.reduce((s, x) => s + x.lon, 0) / sites.length;
   const { weather } = await getProviders();
   const now = await weatherNow();
-  let doc: FetchedDoc;
-  try {
-    doc = await weather.fetchAlerts(lat, lon, now);
-    await recordSuccess();
-  } catch (err) {
-    await recordFailure();
-    throw err;
-  }
-  const alerts = alertSummaries(doc);
-  const { path, sha256 } = await archive('nws_alerts', `${lat.toFixed(2)},${lon.toFixed(2)}`, now, doc.raw);
-  const snap = await insertSnapshot({ source: 'nws_alerts', fetchedAt: now, lastModified: doc.lastModified, url: doc.url, path, sha256, summary: { alerts, ...(doc.synthetic ? { synthetic: true } : {}) } });
+  // At each service area's middle, not the company's (issue 198): the average of Lakewood and Akron is Brecksville,
+  // which can miss a warning in either.
+  const areaOf = await areasFor(tenantId, sites);
+  const areas = [...new Set(areaOf.values())].sort();
   const prior = await db.select().from(trigger_alert).where(and(eq(trigger_alert.tenant_id, tenantId), eq(trigger_alert.kind, 'nws_alert')));
-  const fresh = newWinterAlerts(alerts, prior.flatMap((a) => (a.detail.alert_ids ?? []) as string[]));
-  if (!fresh.length) return;
-  const headline = `${fresh[0]!.event}: ${fresh[0]!.headline ?? 'active for your service area'}`;
-  const [row] = await db.insert(trigger_alert).values({
-    tenant_id: tenantId, kind: 'nws_alert', site_ids: sites.map((s) => s.id), snapshot_ids: [snap.id],
-    detail: { headline, alert_ids: fresh.map((a) => a.id), alerts: fresh, evaluated_at: now.toISOString() },
-  }).returning();
-  await notifyOwners(t!, row!.id, headline);
+  const seen = prior.flatMap((a) => (a.detail.alert_ids ?? []) as string[]);
+  for (const name of areas) {
+    const mine = sites.filter((s) => areaOf.get(s.id) === name);
+    const lat = mine.reduce((n, x) => n + x.lat, 0) / mine.length;
+    const lon = mine.reduce((n, x) => n + x.lon, 0) / mine.length;
+    let doc: FetchedDoc;
+    try {
+      doc = await weather.fetchAlerts(lat, lon, now);
+      await recordSuccess();
+    } catch (err) {
+      await recordFailure();
+      throw err;
+    }
+    const alerts = alertSummaries(doc);
+    const { path, sha256 } = await archive('nws_alerts', `${lat.toFixed(2)},${lon.toFixed(2)}`, now, doc.raw);
+    const snap = await insertSnapshot({ source: 'nws_alerts', fetchedAt: now, lastModified: doc.lastModified, url: doc.url, path, sha256, summary: { alerts, area: name, ...(doc.synthetic ? { synthetic: true } : {}) } });
+    // One NWS warning often covers two areas: it alerts once, for the first.
+    const fresh = newWinterAlerts(alerts, seen);
+    if (!fresh.length) continue;
+    seen.push(...fresh.map((a) => a.id));
+    const headline = `${areas.length > 1 ? `${name}: ` : ''}${fresh[0]!.event}: ${fresh[0]!.headline ?? 'active for your service area'}`;
+    const [row] = await db.insert(trigger_alert).values({
+      tenant_id: tenantId, kind: 'nws_alert', site_ids: mine.map((s) => s.id), snapshot_ids: [snap.id],
+      detail: { headline, area: name, alert_ids: fresh.map((a) => a.id), alerts: fresh, evaluated_at: now.toISOString() },
+    }).returning();
+    await notifyOwners(t!, row!.id, headline);
+  }
 }
 
 /** weather.nohrsc: observed totals sampled at each active site. Evidence and billing only; too slow for dispatch. */
@@ -341,6 +365,38 @@ export async function tenantWeatherHeader(tenantId: string, siteIds?: string[]) 
   const now = await weatherNow();
   const v = summarize(seriesFromSummary(snap.summary), now.getTime());
   return { forecast_in: v.snow_next12h_in, elapsed_in: v.snow_elapsed_in, temp_f: v.temp_f, source: snap.summary.synthetic ? 'Synthetic demo data' : 'NWS gridded forecast', synthetic: Boolean(snap.summary.synthetic), fetched_at: snap.fetched_at, breaker_open: breakerOpen(breaker), reason: null as string | null };
+}
+
+/**
+ * The forecast by service area for the dashboard (issue 198): next 12 h, elapsed and temperature, and how many lots are
+ * at or near their trigger. The snowiest area first. One row per area instead of one arbitrary lot's numbers.
+ */
+export async function areaWeather(tenantId: string) {
+  const db = serviceDb();
+  const [t] = await db.select().from(tenant).where(eq(tenant.id, tenantId));
+  const sites = await db.select().from(site).where(and(eq(site.tenant_id, tenantId), eq(site.active, true)));
+  if (!t || !sites.length) return [];
+  const areaOf = await areasFor(tenantId, sites);
+  const latest = await latestGrids(sites.map((s) => ({ office: s.nws_office, x: s.nws_grid_x, y: s.nws_grid_y })));
+  const contracts = liveContracts(await db.select().from(contract).where(and(eq(contract.tenant_id, tenantId), eq(contract.status, 'accepted'))).orderBy(desc(contract.created_at)), new Date(), t.timezone);
+  const now = (await weatherNow()).getTime();
+  const rows = [...new Set(areaOf.values())].map((name) => {
+    const mine = sites.filter((s) => areaOf.get(s.id) === name);
+    const sums = mine.map((s) => {
+      const snap = latest.get(cellKey(s.nws_office, s.nws_grid_x, s.nws_grid_y));
+      const v = snap ? summarize(seriesFromSummary(snap.summary), now) : null;
+      const triggers = ((contracts.find((c) => c.site_id === s.id)?.services ?? []) as ContractService[]).map((x) => x.trigger_in).filter((x): x is number => typeof x === 'number');
+      return { v, trigger: triggers.length ? Math.min(...triggers) : null };
+    });
+    const vals = (pick: (v: NonNullable<(typeof sums)[number]['v']>) => number | null) => sums.map((x) => (x.v ? pick(x.v) : null)).filter((x): x is number => x !== null);
+    const next = vals((v) => v.snow_next12h_in);
+    const elapsed = vals((v) => v.snow_elapsed_in);
+    const temps = vals((v) => v.temp_f);
+    const at = sums.filter((x) => x.trigger !== null && x.v?.snow_next12h_in != null && x.v.snow_next12h_in >= x.trigger).length;
+    const near = sums.filter((x) => x.trigger !== null && x.v?.snow_next12h_in != null && x.v.snow_next12h_in < x.trigger && x.v.snow_next12h_in >= x.trigger * 0.75).length;
+    return { area: name, lots: mine.length, forecast_in: next.length ? Math.max(...next) : null, elapsed_in: elapsed.length ? Math.max(...elapsed) : null, temp_f: temps.length ? Math.round(temps.reduce((a, b) => a + b, 0) / temps.length) : null, at_trigger: at, near_trigger: near };
+  });
+  return rows.sort((a, b) => (b.forecast_in ?? -1) - (a.forecast_in ?? -1) || a.area.localeCompare(b.area));
 }
 
 /** How far past the close an observed total may run and still count as the storm's snow. */

@@ -2,6 +2,7 @@
 
 import { Badge, Button, Input, Label, Select, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
+import { ButtonA, ButtonLink, entityLink } from '@/components/links';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api, dollarsToCents, money } from '@/lib/client';
@@ -38,9 +39,9 @@ export function ReceivablesTable({ rows, today, readOnly }: { rows: Row[]; today
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} data-testid="receivable-row">
-              <Td><Link className="font-medium text-link underline wrap-anywhere" href={`/customers/${r.customer_id}`}>{r.customer}</Link></Td>
+              <Td><Link className={`${entityLink} wrap-anywhere`} href={`/customers/${r.customer_id}`}>{r.customer}</Link></Td>
               <Td label="Bill" className="wrap-anywhere">
-                {r.storm_id ? <Link className="underline" href={`/billing?storm=${r.storm_id}`}>{r.label}</Link> : r.label}
+                {r.storm_id ? <Link className={entityLink} href={`/billing?storm=${r.storm_id}`}>{r.label}</Link> : r.label}
                 <span className="block text-xs text-muted">{money(r.total_cents)}{r.paid_cents ? `, ${money(r.paid_cents)} paid` : ''}</span>
               </Td>
               <Td label="Left" className="text-right tabular font-semibold" data-testid="receivable-left">{money(r.balance_cents)}</Td>
@@ -53,10 +54,10 @@ export function ReceivablesTable({ rows, today, readOnly }: { rows: Row[]; today
                       const out = await api<{ sent: boolean; to: string | null; phone: string | null; text: string }>('/api/receivables', { body: { action: 'remind', customer_id: r.customer_id } });
                       setNote(out.sent ? { id: r.id, text: `Reminder texted to ${out.to}.` } : { id: r.id, text: 'They have not said yes to texts from you, so send it from your own phone:', sms: sms(out.phone, out.text) });
                     })}>Reminder</Button> : null}
-                    <Link className="self-center text-xs text-link underline" href={`/customers/${r.customer_id}/statement`}>Statement</Link>
+                    <ButtonLink size="sm" href={`/customers/${r.customer_id}/statement`} data-testid="open-statement">Statement</ButtonLink>
                   </div>
                 ) : null}
-                {note?.id === r.id ? <p className="mt-1 text-xs" role="status" data-testid="reminder-note">{note.text} {note.sms ? <a className="font-semibold text-link underline" href={note.sms} data-testid="reminder-sms">Text it from my phone</a> : null}</p> : null}
+                {note?.id === r.id ? <p className="mt-1 text-xs" role="status" data-testid="reminder-note">{note.text} {note.sms ? <ButtonA size="sm" className="mt-1" href={note.sms} data-testid="reminder-sms">Text from my phone</ButtonA> : null}</p> : null}
                 {open === r.id ? (
                   <div className="mt-2 grid gap-2 rounded-md border border-line-faint p-2 sm:grid-cols-2" data-testid="payment-form">
                     <div><Label htmlFor={`amt-${r.id}`}>Amount ($)</Label><Input id={`amt-${r.id}`} type="number" inputMode="decimal" min={0.01} step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} data-testid="payment-amount" /></div>

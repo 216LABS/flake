@@ -16,16 +16,25 @@ test('on a closed storm, the status badge and Reopen fit inside the storm card',
 });
 
 /** Issue 124: on a desk, a storm with more trucks than fit wraps them onto more rows, so none sits hidden to the side. */
-for (const width of [768, 1280]) test(`at ${width} px, every truck column is in view without scrolling sideways`, async ({ page }) => {
+for (const width of [768, 1280]) test(`at ${width} px, trucks are lanes in one row and a second pass is a toggle, not more lanes`, async ({ page }) => {
   await login(page);
   await page.setViewportSize({ width, height: 900 });
   const { id } = await startStorm(page.request, `Columns ${Date.now()}`, ['West Lakewood', 'East Lakewood + Cleveland West', 'Rocky River']);
   expect((await page.request.post(`/api/storms/${id}/pass`)).ok()).toBe(true);
   await page.goto(`/storms/${id}`);
+  // Issue 189: the newest pass shows, one lane per truck, all in one row.
+  await expect(page.getByTestId('pass-toggle')).toBeVisible();
+  await expect(page.getByTestId('truck-lane')).toHaveCount(3);
+  await expect(page.getByTestId('run-column')).toHaveCount(3);
+  const tops = await page.getByTestId('truck-lane').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+  expect(new Set(tops).size).toBe(1);
+  // The lanes scroll inside their row; the page itself never scrolls sideways.
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+  // All: both passes, under their own dividers, still three lanes.
+  await page.getByTestId('pass-all').click();
+  await expect(page.getByTestId('truck-lane')).toHaveCount(3);
   await expect(page.getByTestId('run-column')).toHaveCount(6);
-  const row = page.getByTestId('run-column').first().locator('xpath=..');
-  expect(await row.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
-  for (const box of await page.getByTestId('run-column').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().right))) expect(box).toBeLessThanOrEqual(width);
+  await expect(page.getByTestId('pass-divider').first()).toContainText('Pass 1');
   await page.request.post(`/api/storms/${id}/close`, { data: { force: true } });
 });
 

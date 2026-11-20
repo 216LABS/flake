@@ -63,3 +63,20 @@ export function clock12(hm: string | null | undefined): string {
   const h = Number(m[1]);
   return `${h % 12 || 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
 }
+
+/**
+ * A stop's status: the word on its badge, the badge tone, and the map pin color, from one place so a color means the same
+ * thing on the board and on the map (issue 191). Pin colors are the solid version of each badge's hue.
+ */
+export const STOP_STATUS: Record<string, { word: string; tone: 'gray' | 'blue' | 'green' | 'amber' | 'red'; color: string }> = {
+  open: { word: 'Open', tone: 'gray', color: '#475569' },
+  enroute: { word: 'On the way', tone: 'blue', color: '#0284c7' },
+  onsite: { word: 'On site', tone: 'amber', color: '#d97706' },
+  done: { word: 'Done', tone: 'green', color: '#059669' },
+  skipped: { word: 'Skipped', tone: 'gray', color: '#a8b3c2' },
+  problem: { word: 'Problem', tone: 'red', color: '#dc2626' },
+};
+/** The driver's last reported spot on the map. */
+export const DRIVER_PIN = '#7c3aed';
+/** One color per truck, for its lane edge and its pins' rings. */
+export const TRUCK_COLORS = ['#2563eb', '#db2777', '#16a34a', '#ea580c', '#0891b2', '#ca8a04', '#4f46e5', '#be123c'];

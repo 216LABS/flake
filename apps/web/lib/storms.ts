@@ -493,7 +493,9 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     const pins = stops.length ? await tx.select().from(site_pin).where(inArray(site_pin.site_id, stops.map((x) => x.site.id))) : [];
     const crew = await tx.select({ id: crew_member.id, name: crew_member.name, kind: crew_member.kind }).from(crew_member).where(eq(crew_member.active, true)).orderBy(asc(crew_member.name));
     // The same rule billing uses: a renewal signed only for next winter doesn't cover this storm.
-    const contracted = stops.length ? new Set(liveContracts(await tx.select({ site_id: contract.site_id, season: contract.season }).from(contract).where(and(eq(contract.status, 'accepted'), inArray(contract.site_id, stops.map((x) => x.site.id)))).orderBy(desc(contract.created_at)), s!.started_at, ctx.timezone).map((c) => c.site_id)) : new Set<string>();
+    // The contract in force at the storm's start, per lot: whether it bills, and what the driver can tick (issue 192).
+    const inForce = stops.length ? liveContracts(await tx.select({ site_id: contract.site_id, season: contract.season, services: contract.services }).from(contract).where(and(eq(contract.status, 'accepted'), inArray(contract.site_id, stops.map((x) => x.site.id)))).orderBy(desc(contract.created_at)), s!.started_at, ctx.timezone) : [];
+    const contracted = new Map(inForce.map((c) => [c.site_id, ((c.services ?? []) as { service: string }[]).map((x) => x.service)]));
     const trucks = await tx.select({ id: truck.id, name: truck.name }).from(truck).where(eq(truck.active, true)).orderBy(asc(truck.name));
     return { s: s!, runs, stops, visits, photoCounts, problems, positions, pins, crew, contracted, trucks };
   });
@@ -516,7 +518,7 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
         lateSites.add(st.id);
         alerts.push({ kind: 'late', text: `${st.label} is past its ${clock12(st.service_window?.open_by)} deadline`, stop_id: stop.id });
       }
-      return { id: stop.id, seq: stop.seq, status: stop.status, late, priority: st.priority, site_id: st.id, label: st.label, address: st.address, lat: st.lat, lon: st.lon, customer: c.name, no_contract: !data.contracted.has(st.id), arrived_at: stop.status === 'onsite' ? (open?.arrived_device_at ?? null) : null, done_at: finished?.departed_device_at ?? null, depth_in: finished?.depth_in === null || finished?.depth_in === undefined ? null : Number(finished.depth_in), photos, after_photos: afterPhotos, problem: problem ? { kind: problem.kind, note: problem.note } : null };
+      return { id: stop.id, seq: stop.seq, status: stop.status, late, priority: st.priority, site_id: st.id, label: st.label, address: st.address, lat: st.lat, lon: st.lon, customer: c.name, no_contract: !data.contracted.has(st.id), services: data.contracted.get(st.id) ?? ['plow'], arrived_at: stop.status === 'onsite' ? (open?.arrived_device_at ?? null) : null, done_at: finished?.departed_device_at ?? null, depth_in: finished?.depth_in === null || finished?.depth_in === undefined ? null : Number(finished.depth_in), photos, after_photos: afterPhotos, problem: problem ? { kind: problem.kind, note: problem.note } : null };
     }).sort((a, b) => Number(b.late && b.priority <= 2) - Number(a.late && a.priority <= 2) || a.seq - b.seq);
     if (crew?.kind === 'sub' && run.published_at && !run.started_at && now - Date.parse(run.published_at) > 30 * 60000) {
       alerts.push({ kind: 'not_started', text: `${crew.name} has not started 30 minutes after publish`, at: run.published_at });

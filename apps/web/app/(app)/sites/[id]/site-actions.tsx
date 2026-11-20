@@ -1,6 +1,7 @@
 'use client';
 
 import { Badge, Button, Card, Input, Label, Select } from '@flake/ui';
+import { ButtonA } from '@/components/links';
 import { quotableSeasons } from '@flake/contracts';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -33,19 +34,31 @@ export function quoteProblem(price: string, trigger: number | string): string | 
 }
 
 /** Renewals and price changes. The newest accepted contract is the one that prices visits. */
-export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [] }: { siteId: string; defaultSeason: string; saltCents: number; signedSeasons?: string[] }) {
+export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [], defaultTrigger = 2 }: { siteId: string; defaultSeason: string; saltCents: number; signedSeasons?: string[]; defaultTrigger?: number }) {
   const router = useRouter();
   const [type, setType] = useState<PricingType>('per_push');
   const [price, setPrice] = useState('');
-  const [trigger, setTrigger] = useState<string>('2');
+  const [trigger, setTrigger] = useState<string>(String(defaultTrigger));
   const [season, setSeason] = useState(defaultSeason);
   const [salt, setSalt] = useState(false);
+  // Walks and haul on a quote (issue 192): each with its own price. Salt in the unit the yard buys in.
+  const [saltUnit, setSaltUnit] = useState<'bag50lb' | 'ton' | 'application' | 'lb'>('bag50lb');
+  const [saltPrice, setSaltPrice] = useState((saltCents / 100).toFixed(2));
+  const [plow, setPlow] = useState(true);
+  const [walks, setWalks] = useState(false);
+  const [walksPrice, setWalksPrice] = useState('');
+  const [haul, setHaul] = useState(false);
+  const [haulRate, setHaulRate] = useState('');
   const [url, setUrl] = useState<string | null>(null);
   const [lots, setLots] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ask, dialog] = useConfirm();
-  const problem = quoteProblem(price, trigger);
+  const extraProblem = !plow && !salt && !walks && !haul ? 'Pick at least one service.'
+    : salt && !(Number(saltPrice) > 0) ? 'Enter a salt price.'
+      : walks && !(Number(walksPrice) > 0) ? 'Enter a price for walks.'
+        : haul && !(Number(haulRate) > 0) ? 'Enter an hourly rate for haul.' : null;
+  const problem = (plow ? quoteProblem(price, trigger) : null) ?? extraProblem;
   const replaces = signedSeasons.includes(season.trim());
   const zero = Number(trigger) === 0 && trigger !== '';
   const [sent, setSent] = useState(true);
@@ -54,8 +67,13 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [] 
     setError(null);
     setBusy(true);
     try {
-      const services = [{ service: 'plow', trigger_in: Number(trigger), pricing: pricing(type, dollarsToCents(price)) }, ...(salt ? [{ service: 'salt', trigger_in: null }] : [])];
-      const out = await api('/api/quotes', { body: { site_id: siteId, season: season.trim(), services, salt_pricing: salt ? { unit: 'bag50lb', amount_cents: saltCents } : null, send } });
+      const services = [
+        ...(plow ? [{ service: 'plow', trigger_in: Number(trigger), pricing: pricing(type, dollarsToCents(price)) }] : []),
+        ...(salt ? [{ service: 'salt', trigger_in: null }] : []),
+        ...(walks ? [{ service: 'walks', trigger_in: plow ? Number(trigger) : null, pricing: { type: 'per_push', amount_cents: dollarsToCents(walksPrice) } }] : []),
+        ...(haul ? [{ service: 'haul', trigger_in: null, pricing: { type: 'hourly', rate_cents: dollarsToCents(haulRate) } }] : []),
+      ];
+      const out = await api('/api/quotes', { body: { site_id: siteId, season: season.trim(), services, salt_pricing: salt ? { unit: saltUnit, amount_cents: dollarsToCents(saltPrice) } : null, send } });
       setSent(send);
       setLots(out.lots ?? 1);
       setUrl(out.url);
@@ -77,10 +95,24 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [] 
         {zero ? <p className="text-xs text-warn-ink" data-testid="q-zero-warning">0 inches means any measurable snow starts service{type === 'seasonal' ? '.' : ', so every dusting is billable.'}</p> : null}
         {/* This season or next: a typed season could land on a winter long gone or decades out (issue 126). */}
         <div><Label htmlFor="q-season">Season</Label><Select id="q-season" data-testid="q-season" value={season} onChange={(e) => setSeason(e.target.value)}>{[...new Set([defaultSeason, ...quotableSeasons()])].sort().map((x) => <option key={x} value={x}>{x}</option>)}</Select></div>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={salt} onChange={(e) => setSalt(e.target.checked)} /> Include salt per 50 lb bag</label>
+        <fieldset className="space-y-2 rounded-md border border-line-faint p-3" data-testid="q-services">
+          <legend className="px-1 text-sm font-semibold">Services the driver can log here</legend>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={plow} data-testid="q-plow" onChange={(e) => setPlow(e.target.checked)} /> Plow (priced above)</label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={salt} data-testid="q-salt" onChange={(e) => setSalt(e.target.checked)} /> Salt</label>
+          {salt ? (
+            <div className="ml-6 grid grid-cols-2 gap-2">
+              <div><Label htmlFor="q-salt-price">Price ($)</Label><Input id="q-salt-price" type="number" step="0.01" min="0.01" value={saltPrice} data-testid="q-salt-price" onChange={(e) => setSaltPrice(e.target.value)} /></div>
+              <div><Label htmlFor="q-salt-unit">Per</Label><Select id="q-salt-unit" value={saltUnit} data-testid="q-salt-unit" onChange={(e) => setSaltUnit(e.target.value as typeof saltUnit)}><option value="bag50lb">50 lb bag</option><option value="ton">ton</option><option value="application">application</option><option value="lb">lb</option></Select></div>
+            </div>
+          ) : null}
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={walks} data-testid="q-walks" onChange={(e) => setWalks(e.target.checked)} /> Walks</label>
+          {walks ? <div className="ml-6"><Label htmlFor="q-walks-price">Price per visit ($)</Label><Input id="q-walks-price" type="number" step="0.01" min="0.01" value={walksPrice} data-testid="q-walks-price" onChange={(e) => setWalksPrice(e.target.value)} /></div> : null}
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={haul} data-testid="q-haul" onChange={(e) => setHaul(e.target.checked)} /> Haul snow away</label>
+          {haul ? <div className="ml-6"><Label htmlFor="q-haul-rate">Hourly rate ($)</Label><Input id="q-haul-rate" type="number" step="0.01" min="0.01" value={haulRate} data-testid="q-haul-rate" onChange={(e) => setHaulRate(e.target.value)} /></div> : null}
+        </fieldset>
         {replaces ? <p className="rounded-md bg-warn-tint p-2 text-xs text-warn-ink" data-testid="q-replaces">This lot already has a signed contract for {season.trim()}. If the customer accepts this quote, it replaces that one. Seasonal installments already billed count toward the new price, and the rest of it is split over the installments left.</p> : null}
       </div>
-      {price !== '' && problem ? <p className="mt-2 text-sm text-danger" data-testid="q-problem">{problem}</p> : null}
+      {(price !== '' || !plow) && problem ? <p className="mt-2 text-sm text-danger" data-testid="q-problem">{problem}</p> : null}
       <Button className="mt-3 w-full" disabled={busy || Boolean(problem) || !season.trim()} data-testid="q-send" onClick={() => void make(true)}>Send quote</Button>
       {/* For a quote handed over in person or sent from the office's own phone: nothing is emailed or texted (issue 92). */}
       <Button variant="outline" className="mt-2 w-full" disabled={busy || Boolean(problem) || !season.trim()} data-testid="q-link-only" onClick={() => void make(false)}>Get link only, don&apos;t send</Button>
@@ -148,7 +180,7 @@ export function ContractList({ contracts, canEdit, pdf }: { contracts: ContractR
         ))}
         {!contracts.length ? <li className="text-muted">None.</li> : null}
       </ul>
-      {pdf ? <a className="mt-2 block text-sm text-link underline" href={pdf}>Signed contract PDF</a> : null}
+      {pdf ? <ButtonA size="sm" className="mt-2" href={pdf} data-testid="contract-pdf">Signed contract PDF</ButtonA> : null}
       {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
     </Card>
   );

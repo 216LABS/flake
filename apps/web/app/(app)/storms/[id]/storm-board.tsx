@@ -9,13 +9,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { StopSheet } from './stop-sheet';
 import { sendRoutesBody } from './send-routes';
 import { api, possessive } from '@/lib/client';
-import { stormStatus } from '@/lib/labels';
+import { LotPicker } from '@/components/lot-picker';
+import type { LotOption } from '@/lib/lots';
+import { DRIVER_PIN, STOP_STATUS, stormStatus, TRUCK_COLORS } from '@/lib/labels';
+import { Grip, useSortable } from '@/components/sortable';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useConfirm } from '@/components/confirm';
-import { MapView, type MapPin, type TileLayers } from '@/components/map-view';
+import { MapView, type LegendItem, type MapPin, type TileLayers } from '@/components/map-view';
 
-const STATUS_WORD: Record<string, string> = { open: 'Open', enroute: 'On the way', onsite: 'On site', done: 'Done', skipped: 'Skipped', problem: 'Problem' };
-const STATUS_TONE: Record<string, 'gray' | 'blue' | 'green' | 'amber' | 'red'> = { open: 'gray', enroute: 'blue', onsite: 'amber', done: 'green', skipped: 'gray', problem: 'red' };
-const PIN_COLOR: Record<string, string> = { open: '#475569', enroute: '#0284c7', onsite: '#d97706', done: '#059669', skipped: '#94a3b8', problem: '#dc2626' };
+// One source for a status's word, badge and pin color (issue 191).
+const STATUS_WORD: Record<string, string> = Object.fromEntries(Object.entries(STOP_STATUS).map(([k, v]) => [k, v.word]));
+const STATUS_TONE: Record<string, 'gray' | 'blue' | 'green' | 'amber' | 'red'> = Object.fromEntries(Object.entries(STOP_STATUS).map(([k, v]) => [k, v.tone]));
 
 /**
  * Hands the route link to the phone: the share sheet where there is one (pick Messages, WhatsApp, anything), and a new
@@ -63,7 +67,7 @@ function StormSnow({ w, closed }: { w: { forecast_in: number | null; observed_in
   );
 }
 
-export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sites = [] }: { stormId: string; tz: string; initial: any; layers: TileLayers; canEdit: boolean; canText: boolean; sites?: { id: string; label: string }[] }) {
+export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sites = [] }: { stormId: string; tz: string; initial: any; layers: TileLayers; canEdit: boolean; canText: boolean; sites?: LotOption[] }) {
   const router = useRouter();
   const [live, setLive] = useState<any>(initial);
   const [now, setNow] = useState(Date.parse(initial.storm.started_at));
@@ -80,6 +84,26 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
   const [openStop, setOpenStop] = useState<string | null>(null);
   const [lastOk, setLastOk] = useState(() => Date.now());
   const columns = useRef<Record<string, HTMLElement | null>>({});
+  // Issue 189: passes are a toggle, not more lanes; lanes scroll sideways on a desk.
+  const passes = useMemo(() => [...new Set((live.runs as { pass: number }[]).map((r) => r.pass))].sort((a, b) => a - b), [live]);
+  const newestOpenPass = useMemo(() => [...passes].reverse().find((p) => (live.runs as any[]).some((r) => r.pass === p && r.stops.some((x: any) => !['done', 'skipped'].includes(x.status)))) ?? passes.at(-1) ?? 1, [passes, live]);
+  const [passView, setPassView] = useState<number | 'all' | null>(null);
+  const shownPass = passView ?? newestOpenPass;
+  const [colorBy, setColorBy] = useState<'status' | 'truck'>('status');
+  const [selected, setSelected] = useState<string | null>(null);
+  const [showLinks, setShowLinks] = useState(false);
+  const lanesBox = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+  const measure = () => {
+    const el = lanesBox.current;
+    if (!el) return;
+    setEdges({ left: el.scrollLeft > 4, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4 });
+  };
+  useEffect(() => {
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [live, shownPass]);
 
   const load = async () => {
     try {
@@ -149,10 +173,30 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
   const unpublished = live.runs.some((r: any) => !r.published_at);
   const allStops: any[] = useMemo(() => live.runs.flatMap((r: any) => r.stops), [live]);
   const inStorm = useMemo(() => new Set(allStops.map((x: any) => x.site_id as string)), [allStops]);
+  // Each route keeps one color across passes, for its lane edge and its pins' rings (issue 191).
+  const routeNames = useMemo(() => [...new Set((live.runs as any[]).map((r) => r.name as string))], [live]);
+  const truckColor = (name: string) => TRUCK_COLORS[routeNames.indexOf(name) % TRUCK_COLORS.length]!;
+  const visibleRuns: any[] = useMemo(() => (live.runs as any[]).filter((r) => shownPass === 'all' || r.pass === shownPass), [live, shownPass]);
   const pins: MapPin[] = useMemo(() => [
-    ...allStops.map((s) => ({ id: s.id, lat: s.lat, lon: s.lon, color: PIN_COLOR[s.status], label: `${s.label}: ${s.status}` })),
-    ...live.runs.filter((r: any) => r.position).map((r: any) => ({ id: `pos-${r.id}`, lat: r.position.lat, lon: r.position.lon, color: '#7c3aed', label: `${r.crew?.name ?? 'Driver'}, last seen ${since(r.position.at, now)} ago` })),
-  ], [live, allStops]);
+    ...visibleRuns.flatMap((r) => [...r.stops].sort((a: any, b: any) => a.seq - b.seq).map((s: any, i: number) => ({
+      id: s.id, lat: s.lat, lon: s.lon, n: i + 1, ring: truckColor(r.name),
+      color: colorBy === 'truck' ? truckColor(r.name) : STOP_STATUS[s.status]?.color,
+      label: `${i + 1}. ${s.label}: ${STATUS_WORD[s.status] ?? s.status} (${r.name})`,
+    }))),
+    ...visibleRuns.filter((r) => r.position).map((r) => ({ id: `pos-${r.id}`, lat: r.position.lat, lon: r.position.lon, color: DRIVER_PIN, label: `${r.crew?.name ?? 'Driver'}, last seen ${since(r.position.at, now)} ago` })),
+  ], [visibleRuns, colorBy, now]);
+  const legend: LegendItem[] = colorBy === 'status'
+    ? [...Object.values(STOP_STATUS).map((v) => ({ color: v.color, label: v.word })), { color: DRIVER_PIN, label: 'Driver (last seen)' }]
+    : [...routeNames.map((n) => ({ color: truckColor(n), label: n })), { color: DRIVER_PIN, label: 'Driver (last seen)' }];
+  /** A pin tapped on the map: highlight its stop and bring it into view. */
+  const pickPin = (id: string) => {
+    if (id.startsWith('pos-')) return;
+    setSelected(id);
+    document.querySelector(`[data-stop-id="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+  };
+  // Drivers we can't text yet: one banner for the board, not a warning in every lane (issue 189).
+  const unreached: any[] = (live.runs as any[]).filter((r) => r.published_at && r.link && r.crew && !r.crew.reachable && !closed);
+  const unreachedDrivers = [...new Set(unreached.map((r) => r.crew.name as string))];
 
   const elapsed = since(live.storm.started_at, live.storm.closed_at ? Date.parse(live.storm.closed_at) : now);
 
@@ -305,134 +349,159 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
         </Card>
       ) : null}
 
-      {showMap ? <div className="mb-4"><MapView layers={layers} center={{ lat: allStops[0]?.lat ?? 41.48, lon: allStops[0]?.lon ?? -81.8 }} zoom={12} pins={pins} className="h-80" /></div> : null}
-
-      {allStops.length > 12 ? (
-        <div className="mb-3 flex flex-wrap gap-2" role="search" data-testid="board-filter">
-          <Input type="search" className="min-w-0 flex-1 sm:max-w-xs" aria-label="Find a lot on this storm" placeholder="Find a lot" value={boardFind} onChange={(e) => setBoardFind(e.target.value)} data-testid="board-find" />
-          <Select aria-label="Show stops" className="w-auto" value={boardStatus} onChange={(e) => setBoardStatus(e.target.value)} data-testid="board-status">
-            <option value="">Every stop</option>
-            <option value="open">Not started</option>
-            <option value="enroute">On the way</option>
-            <option value="onsite">On site</option>
-            <option value="problem">Problem</option>
-            <option value="done">Done</option>
-            <option value="skipped">Skipped</option>
-          </Select>
-          {boardFind.trim() || boardStatus ? <span className="self-center text-sm text-muted" data-testid="board-filter-count">{allStops.filter(shows).length} of {allStops.length} stops</span> : null}
+      {showMap ? (
+        <div className="mb-4">
+          <div className="mb-1 flex flex-wrap items-center justify-end gap-2 text-xs">
+            <span className="font-semibold text-muted">Color by</span>
+            {(['status', 'truck'] as const).map((k) => (
+              <button key={k} type="button" aria-pressed={colorBy === k} data-testid={`color-by-${k}`} onClick={() => setColorBy(k)} className={cn('min-h-8 rounded-full border px-3 font-semibold', colorBy === k ? 'border-ink bg-ink text-surface' : 'border-line bg-surface')}>{k === 'status' ? 'Status' : 'Truck'}</button>
+            ))}
+          </div>
+          <MapView layers={layers} center={{ lat: allStops[0]?.lat ?? 41.48, lon: allStops[0]?.lon ?? -81.8 }} zoom={12} pins={pins} className="h-80" legend={legend} selected={selected} onPinClick={pickPin} fit />
         </div>
       ) : null}
-      {live.runs.length > 1 ? (
+
+      {/* One banner for the board while drivers can't be texted, with each one's link a tap away (issue 189). */}
+      {unreachedDrivers.length ? (
+        <div className="mb-3 rounded-md border border-warn-line bg-warn-tint p-3 text-sm text-warn-ink" data-testid="texting-banner">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="min-w-0 flex-1">Texting isn&apos;t set up yet. {unreachedDrivers.length === 1 ? `${unreachedDrivers[0]} needs their link from you.` : `${unreachedDrivers.length} drivers need their link from you.`}</p>
+            <Button size="sm" variant="outline" data-testid="texting-banner-open" onClick={() => setShowLinks(!showLinks)}>{showLinks ? 'Hide links' : 'Show their links'}</Button>
+          </div>
+          {showLinks ? (
+            <ul className="mt-2 space-y-1">
+              {unreached.map((r) => <li key={r.id} className="flex flex-wrap items-center gap-2"><span className="font-semibold">{r.crew.name}</span><span className="text-xs">{r.name}{r.pass > 1 ? `, pass ${r.pass}` : ''}</span><Button size="sm" variant="ghost" onClick={() => void showLink(r)}>QR / copy link</Button></li>)}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Alerts sit above the lanes, so a lane never scrolls under them (issue 189). */}
+      {live.alerts.length ? (
+        <details open className="mb-3 rounded-md border border-line-faint bg-surface p-3">
+          <summary className="cursor-pointer font-semibold">Alerts ({live.alerts.length})</summary>
+          <ul className="mt-2 grid gap-2 text-sm md:grid-cols-2 xl:grid-cols-3" data-testid="alerts-rail">
+            {live.alerts.map((a: any, i: number) => (
+              <li key={i} className={cn('flex flex-wrap items-center gap-2 rounded-md p-2', a.kind === 'late' || a.kind === 'problem' ? 'bg-danger-tint text-danger-ink' : 'bg-warn-tint text-warn-ink')}>
+                <span className="min-w-0 flex-1">{a.text}</span>
+                {a.problem_id ? <Button size="sm" variant="ghost" data-testid="resolve-problem" onClick={() => act(() => api(`/api/problems/${a.problem_id}`, { method: 'PATCH' }))}>Resolved</Button> : null}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        {passes.length > 1 ? (
+          <div className="flex rounded-control bg-tint-2 p-1" role="group" aria-label="Which pass" data-testid="pass-toggle">
+            {[...passes, 'all' as const].map((p) => (
+              <button key={p} type="button" aria-pressed={shownPass === p} data-testid={`pass-${p}`} onClick={() => setPassView(p)}
+                className={cn('min-h-9 rounded-row px-3 text-sm font-medium', shownPass === p ? 'bg-surface font-semibold text-ink shadow-drop ring-1 ring-line-strong' : 'text-muted hover:text-ink')}>
+                {p === 'all' ? 'All' : `Pass ${p}`}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {allStops.length > 12 ? (
+          <div className="flex min-w-0 flex-1 flex-wrap gap-2" role="search" data-testid="board-filter">
+            <Input type="search" className="min-w-0 flex-1 sm:max-w-xs" aria-label="Find a lot on this storm" placeholder="Find a lot" value={boardFind} onChange={(e) => setBoardFind(e.target.value)} data-testid="board-find" />
+            <Select aria-label="Show stops" className="w-auto" value={boardStatus} onChange={(e) => setBoardStatus(e.target.value)} data-testid="board-status">
+              <option value="">Every stop</option>
+              <option value="open">Not started</option>
+              <option value="enroute">On the way</option>
+              <option value="onsite">On site</option>
+              <option value="problem">Problem</option>
+              <option value="done">Done</option>
+              <option value="skipped">Skipped</option>
+            </Select>
+            {boardFind.trim() || boardStatus ? <span className="self-center text-sm text-muted" data-testid="board-filter-count">{allStops.filter(shows).length} of {allStops.length} stops</span> : null}
+          </div>
+        ) : null}
+      </div>
+
+      {visibleRuns.length > 1 ? (
         <nav aria-label="Trucks" className="-mx-1 mb-3 flex gap-2 overflow-x-auto px-1 pb-1 md:hidden" data-testid="truck-switcher">
-          {live.runs.map((r: any) => (
-            <button key={r.id} type="button" className="min-h-10 shrink-0 rounded-full border border-line bg-surface px-3 text-sm font-medium" onClick={() => columns.current[r.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
-              {r.name}{r.pass > 1 ? ` ${r.pass}` : ''} <span className="tabular text-muted">{r.stops.filter((x: any) => x.status === 'done' || x.status === 'skipped').length}/{r.stops.length}</span>
+          {visibleRuns.map((r) => (
+            <button key={r.id} type="button" className="min-h-10 shrink-0 rounded-full border border-line bg-surface px-3 text-sm font-medium" style={{ borderLeftColor: truckColor(r.name), borderLeftWidth: 4 }} onClick={() => columns.current[r.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+              {r.name}{passes.length > 1 ? ` · pass ${r.pass}` : ''} <span className="tabular text-muted">{r.stops.filter((x: any) => x.status === 'done' || x.status === 'skipped').length}/{r.stops.length}</span>
             </button>
           ))}
         </nav>
       ) : null}
 
-      <div className="flex flex-col gap-4 lg:flex-row">
-        {/* On a phone every truck is stacked, full width, so none hides off to the side (issue 46). On a tablet or desk the
-            trucks wrap onto more rows instead of scrolling under the Alerts card with no sign there's more (issues 124, 128). */}
-        <div className="flex min-w-0 flex-1 flex-col gap-3 pb-2 md:flex-row md:flex-wrap md:items-start">
-          {live.runs.map((r: any) => (
-            <section
-              key={r.id}
-              ref={(el) => { columns.current[r.id] = el; }}
-              className={cn('w-full scroll-mt-20 rounded-surface bg-tint-2 p-2 md:min-w-72 md:max-w-md md:flex-1', dragging && 'ring-2 ring-ink')}
-              data-testid="run-column"
-              data-run={r.id}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (dragging) void move(dragging, r.id);
-                setDragging(null);
-              }}
-            >
-              <header className="mb-2 px-1">
-                <div className="flex items-baseline justify-between gap-2"><div className="font-display text-lg font-semibold leading-tight">{r.name}{r.pass > 1 ? ` (pass ${r.pass})` : ''}</div><div className="tabular shrink-0 text-xs font-medium text-muted" data-testid="run-progress">{runProgress(r.stops)}</div></div>
-                <div className="text-sm text-muted">{r.crew?.name ?? 'No driver'}{r.crew?.kind === 'sub' ? ' (sub)' : ''}{r.crew?.callout_reply ? `, replied ${r.crew.callout_reply}` : ''}</div>
-                {editable ? (
-                  <Select aria-label={`Driver for ${r.name}`} data-testid="assign-driver" className="mt-1 h-8 py-0 text-xs" value={r.crew?.id ?? ''} onChange={(e) => e.target.value && void reassign(r, e.target.value)}>
-                    <option value="">Choose a driver</option>
-                    {live.crew.map((c: any) => <option key={c.id} value={c.id}>{c.name}{c.kind === 'sub' ? ' (sub)' : ''}</option>)}
-                  </Select>
-                ) : null}
-                {/* Which truck ran this route, for a damage question later and fuel per storm. Only once a company has trucks. */}
-                {live.trucks?.length ? (editable ? (
-                  <Select aria-label={`Truck for ${r.name}`} data-testid="assign-truck" className="mt-1 h-8 py-0 text-xs" value={r.truck_id ?? ''} onChange={(e) => void act(() => api(`/api/runs/${r.id}`, { method: 'PATCH', body: { truck_id: e.target.value || null } }))}>
-                    <option value="">No truck set</option>
-                    {live.trucks.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </Select>
-                ) : r.truck_id ? <div className="text-xs text-muted" data-testid="run-truck">{live.trucks.find((t: any) => t.id === r.truck_id)?.name ?? 'Retired truck'}</div> : null) : null}
-                {/* Did the driver get the link? Known the moment their phone opens it, not only once they tap something (issue 86). */}
-                {r.opened_at ? <p className="mt-1 text-xs text-ink-2" data-testid="link-opened">Opened {clock(r.opened_at, tz)}</p>
-                  : r.crew && !closed ? <p className="mt-1 text-xs font-medium text-warn-ink" data-testid="link-opened">Not opened yet</p> : null}
-                {r.published_at && r.link && r.crew && !r.crew.reachable ? <p className="mt-1 text-xs font-medium text-warn-ink" data-testid="no-reach">We can&apos;t text {r.crew.name} yet, so they don&apos;t have this route. Show them the QR code, or send the link from your phone.</p> : null}
-                {r.link && !closed ? <Button size="sm" variant="ghost" className="-ml-3" data-testid="show-link" onClick={() => showLink(r)}>{r.published_at ? 'QR / copy link' : 'QR / copy link (no message sent)'}</Button> : null}
-                {editable && r.stops.length > 1 ? <RunPlan runId={r.id} onDone={() => void load()} /> : null}
-              </header>
-              <ul className="space-y-2">
-                {r.stops.map((s: any, n: number) => !shows(s) ? null : (
-                  <li key={s.id} draggable={editable && s.status !== 'onsite' && s.status !== 'done'} onDragStart={(e) => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; setDragging(s.id); }} onDragEnd={() => setDragging(null)} data-testid="stop-card" data-status={s.status} className={cn('rounded-row border border-line-faint bg-surface p-2 text-sm shadow-drop', (s.status === 'done' || s.status === 'skipped') && 'border-transparent bg-tint shadow-none', s.status === 'onsite' && 'border-beacon bg-warn-tint ring-2 ring-beacon', s.late && 'border-danger bg-danger-tint')}>
-                    {/* The name opens the stop's visits and photos (issue 41); the buttons below stay their own targets. */}
-                    <button type="button" className="-m-1 block w-[calc(100%+0.5rem)] rounded p-1 text-left hover:bg-tint focus-visible:outline-2 focus-visible:outline-ink" data-testid="stop-open" aria-label={`${n + 1}. ${s.label}: details and photos`} onClick={() => setOpenStop(s.id)}>
-                      <span className="flex items-start justify-between gap-2">
-                        <span className="min-w-0 font-medium wrap-anywhere">{n + 1}. {s.label}</span>
-                        <Badge className="shrink-0" tone={STATUS_TONE[s.status]}>{STATUS_WORD[s.status] ?? s.status}</Badge>
-                      </span>
-                      <span className="block text-xs text-muted">{s.customer}</span>
-                      {/* Work here bills nothing: the customer declined or never signed (found in a QA pass). */}
-                      {s.no_contract ? <span className="block text-xs font-medium text-warn-ink" data-testid="no-contract">No accepted contract: this lot won&apos;t be billed</span> : null}
-                      {s.done_at ? <span className="block text-xs text-ink-2" data-testid="stop-summary">Finished {clock(s.done_at, tz)}{s.depth_in !== null ? `, ${s.depth_in}"` : ''}, {s.photos === 0 ? 'no photos' : `${s.photos === 1 ? '1 photo' : `${s.photos} photos`}${s.after_photos === 0 ? ', no after photo' : ''}`}</span> : null}
-                      {s.problem ? <span className="block text-xs font-medium text-danger">{s.problem.kind}{s.problem.note ? `: ${s.problem.note}` : ''}</span> : null}
-                    </button>
-                    {s.late ? <div className="text-xs font-bold text-danger">Late</div> : null}
-                    {s.arrived_at ? <div className="text-xs text-muted">On site {since(s.arrived_at, now)}</div> : null}
-                    {editable && !['done', 'onsite'].includes(s.status) ? (
-                      <div className="mt-1.5 flex items-center gap-1">
-                        {Math.min(...r.stops.map((x: any) => x.seq)) < s.seq ? <Button size="sm" variant="ghost" className="h-10 w-10 shrink-0 p-0 md:h-8 md:w-8" aria-label={`Move ${s.label} earlier`} data-testid="move-up" onClick={() => void shift(r, s.id, -1)}><ArrowUp size={18} aria-hidden="true" /></Button> : null}
-                        {Math.max(...r.stops.map((x: any) => x.seq)) > s.seq ? <Button size="sm" variant="ghost" className="h-10 w-10 shrink-0 p-0 md:h-8 md:w-8" aria-label={`Move ${s.label} later`} data-testid="move-down" onClick={() => void shift(r, s.id, 1)}><ArrowDown size={18} aria-hidden="true" /></Button> : null}
-                        {live.runs.length > 1 ? (
-                          <Select aria-label={`Move ${s.label} to another truck`} data-testid="move-to" className="h-10 min-w-0 flex-1 py-0 text-xs md:h-8" value="" onChange={(e) => e.target.value && void move(s.id, e.target.value)}>
-                            <option value="">Move to...</option>
-                            {live.runs.filter((x: any) => x.id !== r.id).map((x: any) => <option key={x.id} value={x.id}>{x.name} ({x.crew?.name ?? 'no driver'})</option>)}
-                          </Select>
-                        ) : <span className="flex-1" />}
-                        {/* Named for its stop, so a screen reader hears "Skip Lot 3", not ten buttons called Skip. */}
-                        <Button size="sm" variant="ghost" className="h-10 shrink-0 px-3 md:h-8" aria-label={`${s.status === 'skipped' ? 'Reopen' : 'Skip'} ${s.label}`} data-testid="skip-toggle" onClick={() => void skip(s)}>{s.status === 'skipped' ? 'Reopen' : 'Skip'}</Button>
+      {/* On a phone every truck is stacked, full width (issue 46). On a tablet or desk, one lane per truck in a single row
+          that scrolls sideways, Jira style, with buttons and a fade to say there's more (issue 189). */}
+      <div className="relative">
+        {edges.left ? <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 z-10 hidden w-10 bg-gradient-to-r from-page to-transparent md:block" /> : null}
+        {edges.right ? <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 z-10 hidden w-10 bg-gradient-to-l from-page to-transparent md:block" /> : null}
+        {edges.left ? <Button size="sm" variant="outline" className="absolute left-1 top-2 z-20 hidden size-10 rounded-full p-0 md:flex" aria-label="Scroll to earlier trucks" data-testid="lanes-left" onClick={() => lanesBox.current?.scrollBy({ left: -340, behavior: 'smooth' })}><ChevronLeft size={20} aria-hidden="true" /></Button> : null}
+        {edges.right ? <Button size="sm" variant="outline" className="absolute right-1 top-2 z-20 hidden size-10 rounded-full p-0 md:flex" aria-label="Scroll to more trucks" data-testid="lanes-right" onClick={() => lanesBox.current?.scrollBy({ left: 340, behavior: 'smooth' })}><ChevronRight size={20} aria-hidden="true" /></Button> : null}
+        <div ref={lanesBox} onScroll={measure} className="flex min-w-0 flex-col gap-3 pb-2 md:snap-x md:flex-row md:items-start md:overflow-x-auto" data-testid="lanes">
+          {routeNames.map((name) => {
+            const laneRuns = visibleRuns.filter((r) => r.name === name).sort((a, b) => a.pass - b.pass);
+            if (!laneRuns.length) return null;
+            const laneStops = laneRuns.flatMap((r) => r.stops);
+            return (
+              <section key={name} className="w-full shrink-0 snap-start rounded-surface border-t-4 bg-tint-2 p-2 md:w-80" style={{ borderTopColor: truckColor(name) }} data-testid="truck-lane">
+                <header className="sticky top-12 z-[1] -mx-2 -mt-2 mb-2 rounded-t-surface bg-tint-2 px-3 pb-1 pt-2 md:top-0">
+                  <div className="flex items-baseline justify-between gap-2"><h2 className="font-display text-lg font-semibold leading-tight">{name}</h2><div className="tabular shrink-0 text-xs font-medium text-muted" data-testid="run-progress">{runProgress(laneStops)}</div></div>
+                </header>
+                {laneRuns.map((r) => (
+                  <div
+                    key={r.id}
+                    ref={(el) => { columns.current[r.id] = el; }}
+                    className={cn('scroll-mt-20 rounded-md', dragging && 'ring-2 ring-ink', laneRuns.length > 1 && 'mt-2')}
+                    data-testid="run-column"
+                    data-run={r.id}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (dragging) void move(dragging, r.id);
+                      setDragging(null);
+                    }}
+                  >
+                    {laneRuns.length > 1 ? <div className="mb-1 flex items-center gap-2 px-1 text-xs font-bold uppercase tracking-wide text-muted" data-testid="pass-divider"><span className="h-px flex-1 bg-line" />Pass {r.pass}<span className="h-px flex-1 bg-line" /></div> : null}
+                    <div className="mb-2 px-1">
+                      <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted">
+                        <span>{r.crew?.name ?? 'No driver'}{r.crew?.kind === 'sub' ? ' (sub)' : ''}{r.crew?.callout_reply ? `, replied ${r.crew.callout_reply}` : ''}</span>
+                        {r.published_at && r.link && r.crew && !r.crew.reachable && !closed ? <Badge tone="amber" data-testid="no-reach">Link not sent</Badge> : null}
                       </div>
+                      {editable ? (
+                        <Select aria-label={`Driver for ${r.name}`} data-testid="assign-driver" className="mt-1 h-8 py-0 text-xs" value={r.crew?.id ?? ''} onChange={(e) => e.target.value && void reassign(r, e.target.value)}>
+                          <option value="">Choose a driver</option>
+                          {live.crew.map((c: any) => <option key={c.id} value={c.id}>{c.name}{c.kind === 'sub' ? ' (sub)' : ''}</option>)}
+                        </Select>
+                      ) : null}
+                      {/* Which truck ran this route, for a damage question later and fuel per storm. Only once a company has trucks. */}
+                      {live.trucks?.length ? (editable ? (
+                        <Select aria-label={`Truck for ${r.name}`} data-testid="assign-truck" className="mt-1 h-8 py-0 text-xs" value={r.truck_id ?? ''} onChange={(e) => void act(() => api(`/api/runs/${r.id}`, { method: 'PATCH', body: { truck_id: e.target.value || null } }))}>
+                          <option value="">No truck set</option>
+                          {live.trucks.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </Select>
+                      ) : r.truck_id ? <div className="text-xs text-muted" data-testid="run-truck">{live.trucks.find((t: any) => t.id === r.truck_id)?.name ?? 'Retired truck'}</div> : null) : null}
+                      {/* Did the driver get the link? Known the moment their phone opens it, not only once they tap something (issue 86). */}
+                      {r.opened_at ? <p className="mt-1 text-xs text-ink-2" data-testid="link-opened">Opened {clock(r.opened_at, tz)}</p>
+                        : r.crew && !closed ? <p className="mt-1 text-xs font-medium text-warn-ink" data-testid="link-opened">Not opened yet</p> : null}
+                      {r.link && !closed ? <Button size="sm" variant="ghost" className="-ml-3" data-testid="show-link" onClick={() => showLink(r)}>{r.published_at ? 'QR / copy link' : 'QR / copy link (no message sent)'}</Button> : null}
+                      {editable && r.stops.length > 1 ? <RunPlan runId={r.id} onDone={() => void load()} /> : null}
+                    </div>
+                    <LaneStops
+                      run={r} runs={visibleRuns} allRuns={live.runs} editable={editable} filtering={Boolean(boardFind.trim() || boardStatus)} shows={shows} now={now} tz={tz} selected={selected}
+                      onOpen={(id) => { setSelected(id); setOpenStop(id); }} onShift={shift} onMove={move} onSkip={skip} onDragStart={setDragging} onDragEnd={() => setDragging(null)}
+                      onOrder={(ids) => act(() => api(`/api/runs/${r.id}/order`, { body: { stop_ids: ids } }))}
+                    />
+                    {editable ? (
+                      sites.some((x) => !inStorm.has(x.id)) ? (
+                        <LotPicker className="mt-2" label={`Add a site to ${r.name}`} placeholder="Add a lot to this truck" testId="add-stop" lots={sites} exclude={[...inStorm]}
+                          near={r.stops.map((x: any) => ({ lat: x.lat, lon: x.lon }))} onPick={([siteId]) => siteId && void act(() => api(`/api/runs/${r.id}/stops`, { body: { site_id: siteId } }))} />
+                      ) : <p className="mt-2 px-1 text-xs text-muted" data-testid="add-stop-none">Every site you have is already on this storm.</p>
                     ) : null}
-                  </li>
+                  </div>
                 ))}
-              </ul>
-              {editable ? (
-                sites.some((x) => !inStorm.has(x.id)) ? (
-                  <Select aria-label={`Add a site to ${r.name}`} data-testid="add-stop" className="mt-2 h-10 py-0 text-xs md:h-8" value="" onChange={(e) => e.target.value && void act(() => api(`/api/runs/${r.id}/stops`, { body: { site_id: e.target.value } }))}>
-                    <option value="">Add a site to this truck...</option>
-                    {sites.filter((x) => !inStorm.has(x.id)).map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
-                  </Select>
-                ) : <p className="mt-2 px-1 text-xs text-muted" data-testid="add-stop-none">Every site you have is already on this storm.</p>
-              ) : null}
-            </section>
-          ))}
+              </section>
+            );
+          })}
         </div>
-        <aside className={cn('order-first w-full shrink-0 lg:order-none lg:block lg:w-72', !live.alerts.length && 'hidden')}>
-          <Card>
-            <h2 className="font-semibold">Alerts</h2>
-            {live.alerts.length ? (
-              <ul className="mt-2 space-y-2 text-sm" data-testid="alerts-rail">
-                {live.alerts.map((a: any, i: number) => (
-                  <li key={i} className={cn('rounded-md p-2', a.kind === 'late' || a.kind === 'problem' ? 'bg-danger-tint text-danger-ink' : 'bg-warn-tint text-warn-ink')}>
-                    {a.text}
-                    {a.problem_id ? <Button size="sm" variant="ghost" data-testid="resolve-problem" onClick={() => act(() => api(`/api/problems/${a.problem_id}`, { method: 'PATCH' }))}>Resolved</Button> : null}
-                  </li>
-                ))}
-              </ul>
-            ) : <p className="mt-2 text-sm text-muted">Nothing needs you right now.</p>}
-          </Card>
-        </aside>
       </div>
     </div>
   );
@@ -491,3 +560,90 @@ function NotifyPanel({ tz, stops, onSend, onClose }: { tz: string; stops: any[];
     </Card>
   );
 }
+
+/**
+ * One truck's stops in a lane (issues 189, 190). Finished stops fold into "6 done" so the ones still to do stay in view.
+ * Stops still to do drag by their grip to a new place in this truck, with a finger, a mouse or the keyboard; dragging the
+ * card onto another lane moves it to that truck, as before. Arrows and "Move to" stay for fine moves.
+ */
+function LaneStops({ run: r, allRuns, editable, filtering, shows, now, tz, selected, onOpen, onShift, onMove, onSkip, onDragStart, onDragEnd, onOrder }: {
+  run: any; runs: any[]; allRuns: any[]; editable: boolean; filtering: boolean; shows: (s: any) => boolean; now: number; tz: string; selected: string | null;
+  onOpen: (id: string) => void; onShift: (run: any, stopId: string, by: -1 | 1) => unknown; onMove: (stopId: string, runId: string) => unknown; onSkip: (s: any) => unknown;
+  onDragStart: (id: string) => void; onDragEnd: () => void; onOrder: (ids: string[]) => unknown;
+}) {
+  const finished = (s: any) => s.status === 'done' || s.status === 'skipped';
+  const todo: any[] = r.stops.filter((s: any) => !finished(s));
+  const doneList: any[] = r.stops.filter(finished);
+  const fold = !filtering && doneList.length >= 4;
+  const bySeq = [...r.stops].sort((a: any, b: any) => a.seq - b.seq);
+  const place = (s: any) => bySeq.findIndex((x: any) => x.id === s.id) + 1;
+  const sort = useSortable({
+    count: todo.length,
+    label: (i) => todo[i]?.label ?? '',
+    onMove: (from, to) => {
+      // Where the stop lands among the lane's stops still to do, written back as the truck's whole order.
+      const ids = bySeq.map((x: any) => x.id as string);
+      const moving = todo[from].id as string;
+      const target = todo[to].id as string;
+      ids.splice(ids.indexOf(moving), 1);
+      ids.splice(ids.indexOf(target) + (to > from ? 1 : 0), 0, moving);
+      void onOrder(ids);
+    },
+  });
+  const card = (s: any, i: number | null) => (
+    <li key={s.id} {...(i !== null ? sort.row(i) : {})} data-stop-id={s.id} draggable={editable && s.status !== 'onsite' && s.status !== 'done'}
+      onDragStart={(e) => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; onDragStart(s.id); }} onDragEnd={onDragEnd}
+      data-testid="stop-card" data-status={s.status}
+      className={cn(i !== null ? sort.row(i).className : 'relative', 'rounded-row border border-line-faint bg-surface p-2 text-sm shadow-drop', finished(s) && 'border-transparent bg-tint shadow-none', s.status === 'onsite' && 'border-beacon bg-warn-tint ring-2 ring-beacon', s.late && 'border-danger bg-danger-tint', selected === s.id && 'outline outline-2 outline-offset-2 outline-ink')}>
+      <div className="flex items-start gap-1">
+        {i !== null && editable && !filtering && s.status !== 'onsite' ? <Grip {...sort.handle(i)} testId="stop-grip" /> : null}
+        {/* The name opens the stop's visits and photos (issue 41); the buttons below stay their own targets. */}
+        <button type="button" className="-m-1 block min-w-0 flex-1 rounded p-1 text-left hover:bg-tint focus-visible:outline-2 focus-visible:outline-ink" data-testid="stop-open" aria-label={`${place(s)}. ${s.label}: details and photos`} onClick={() => onOpen(s.id)}>
+          <span className="flex items-start justify-between gap-2">
+            <span className="min-w-0 font-medium wrap-anywhere">{place(s)}. {s.label}</span>
+            <Badge className="shrink-0" tone={STATUS_TONE[s.status]}>{STATUS_WORD[s.status] ?? s.status}</Badge>
+          </span>
+          <span className="block text-xs text-muted">{s.customer}</span>
+          {/* What the driver can tick here (issue 192). */}
+          {s.services?.length ? <span className="mt-0.5 block text-xs text-ink-2" data-testid="stop-services">{(s.services as string[]).map((x) => STATUS_SERVICE[x] ?? x).join(' · ')}</span> : null}
+          {/* Work here bills nothing: the customer declined or never signed (found in a QA pass). */}
+          {s.no_contract ? <span className="block text-xs font-medium text-warn-ink" data-testid="no-contract">No accepted contract: this lot won&apos;t be billed</span> : null}
+          {s.done_at ? <span className="block text-xs text-ink-2" data-testid="stop-summary">Finished {clock(s.done_at, tz)}{s.depth_in !== null ? `, ${s.depth_in}"` : ''}, {s.photos === 0 ? 'no photos' : `${s.photos === 1 ? '1 photo' : `${s.photos} photos`}${s.after_photos === 0 ? ', no after photo' : ''}`}</span> : null}
+          {s.problem ? <span className="block text-xs font-medium text-danger">{s.problem.kind}{s.problem.note ? `: ${s.problem.note}` : ''}</span> : null}
+        </button>
+      </div>
+      {s.late ? <div className="text-xs font-bold text-danger">Late</div> : null}
+      {s.arrived_at ? <div className="text-xs text-muted">On site {since(s.arrived_at, now)}</div> : null}
+      {editable && !['done', 'onsite'].includes(s.status) ? (
+        <div className="mt-1.5 flex items-center gap-1">
+          {Math.min(...r.stops.map((x: any) => x.seq)) < s.seq ? <Button size="sm" variant="ghost" className="h-10 w-10 shrink-0 p-0 md:h-8 md:w-8" aria-label={`Move ${s.label} earlier`} data-testid="move-up" onClick={() => void onShift(r, s.id, -1)}><ArrowUp size={18} aria-hidden="true" /></Button> : null}
+          {Math.max(...r.stops.map((x: any) => x.seq)) > s.seq ? <Button size="sm" variant="ghost" className="h-10 w-10 shrink-0 p-0 md:h-8 md:w-8" aria-label={`Move ${s.label} later`} data-testid="move-down" onClick={() => void onShift(r, s.id, 1)}><ArrowDown size={18} aria-hidden="true" /></Button> : null}
+          {allRuns.length > 1 ? (
+            <Select aria-label={`Move ${s.label} to another truck`} data-testid="move-to" className="h-10 min-w-0 flex-1 py-0 text-xs md:h-8" value="" onChange={(e) => e.target.value && void onMove(s.id, e.target.value)}>
+              <option value="">Move to...</option>
+              {allRuns.filter((x: any) => x.id !== r.id).map((x: any) => <option key={x.id} value={x.id}>{x.name}{x.pass > 1 ? ` pass ${x.pass}` : ''} ({x.crew?.name ?? 'no driver'})</option>)}
+            </Select>
+          ) : <span className="flex-1" />}
+          {/* Named for its stop, so a screen reader hears "Skip Lot 3", not ten buttons called Skip. */}
+          <Button size="sm" variant="ghost" className="h-10 shrink-0 px-3 md:h-8" aria-label={`${s.status === 'skipped' ? 'Reopen' : 'Skip'} ${s.label}`} data-testid="skip-toggle" onClick={() => void onSkip(s)}>{s.status === 'skipped' ? 'Reopen' : 'Skip'}</Button>
+        </div>
+      ) : null}
+    </li>
+  );
+  return (
+    <>
+      {sort.live}
+      {fold ? (
+        <details className="mb-2 rounded-row bg-tint px-2 py-1" data-testid="finished-stops" open={doneList.some((s) => s.id === selected)}>
+          <summary className="cursor-pointer py-1 text-sm font-semibold text-muted">{doneList.length} done{doneList.some((s) => s.status === 'skipped') ? ' or skipped' : ''}</summary>
+          <ul className="mt-1 space-y-2">{doneList.filter(shows).map((s) => card(s, null))}</ul>
+        </details>
+      ) : null}
+      <ul className="space-y-2">
+        {(fold ? todo : r.stops).map((s: any) => (!shows(s) ? null : card(s, todo.indexOf(s) >= 0 ? todo.indexOf(s) : null)))}
+      </ul>
+    </>
+  );
+}
+
+const STATUS_SERVICE: Record<string, string> = { plow: 'Plow', salt: 'Salt', walks: 'Walks', haul: 'Haul' };

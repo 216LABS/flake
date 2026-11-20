@@ -132,6 +132,10 @@ test('a new plow company runs a whole storm from sign up to paid invoices', asyn
   expect(contracts.filter((k) => k.pm).length).toBe(3);
   const stops = await sql`select r.name, count(*)::int as n from route_stop rs join route r on r.id = rs.route_id where r.tenant_id = ${tenantId} group by r.name order by r.name`;
   expect(stops.map((r) => `${r.name}:${r.n}`)).toEqual(['North:2', 'South:2']);
+  // Issue 198: alerts go by service area. This company works Lakewood and the Rocky River church as one area, so the
+  // owner puts the church in it, and one alert covers all four lots.
+  const [church] = await sql`select s.id from site s join customer c on c.id = s.customer_id where c.tenant_id = ${tenantId} and c.name = ${`Church ${stamp}`}`;
+  expect((await page.request.patch('/api/settings/triggers', { data: { site_id: church!.id, area: 'Lakewood' } })).ok()).toBe(true);
   // 5. Overnight the forecast crosses the trigger and the owner gets an alert.
   await page.goto('/dev/weather');
   await page.getByTestId('load-fixture').click();
@@ -155,11 +159,13 @@ test('a new plow company runs a whole storm from sign up to paid invoices', asyn
   await expect(page.getByTestId('run-column')).toHaveCount(2);
   // Texting isn't set up yet and drivers are never emailed (D16), so the board says to show each driver the QR code.
   await expect(page.getByTestId('no-reach')).toHaveCount(2);
-  await expect(page.getByTestId('no-reach').first()).toContainText("can't text");
+  await expect(page.getByTestId('no-reach').first()).toContainText('Link not sent');
+  // One banner for the board, not a warning per truck (issue 189).
+  await expect(page.getByTestId('texting-banner')).toContainText("Texting isn't set up yet");
   expect((await sql`select count(*)::int as n from message_log where tenant_id = ${tenantId} and template = 'crew_link' and channel = 'email'`)[0]!.n).toBe(0);
   const links: Record<string, string> = {};
   for (const route of ['North', 'South']) {
-    const col = page.getByTestId('run-column').filter({ hasText: new RegExp(`^${route}[0-9]`) });
+    const col = page.getByTestId('truck-lane').filter({ has: page.getByRole('heading', { name: route, exact: true }) }).getByTestId('run-column');
     await col.getByTestId('show-link').click();
     const panel = page.getByTestId('link-panel');
     await expect(panel).toContainText(route);
@@ -267,8 +273,10 @@ test('a new plow company runs a whole storm from sign up to paid invoices', asyn
   const hours = await (await page.request.get('/api/reports/hours.csv')).text();
   expect(hours).toContain('Dana North');
   await page.goto('/proof');
-  const clinicSite = await page.getByTestId('proof-site').locator('option', { hasText: `Clinic ${stamp}` }).getAttribute('value');
-  await page.getByTestId('proof-site').selectOption(clinicSite!);
+  // The lot picker (issue 193): type the name, pick it.
+  await page.getByTestId('proof-lot-input').fill(`Clinic ${stamp}`);
+  await page.getByTestId('proof-lot-option').filter({ hasText: `Clinic ${stamp}` }).first().click();
+  await expect(page.getByTestId('proof-site')).toBeVisible();
   await page.getByTestId('proof-generate').click();
   await expect(page.getByTestId('proof-ready')).toBeVisible({ timeout: 90000 });
 

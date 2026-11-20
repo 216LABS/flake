@@ -4,8 +4,11 @@ import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { asUser, requireApi } from '@/lib/auth';
 import { HttpError, parseJson, rateLimit, route } from '@/lib/http';
-import { enqueue } from '@/lib/jobs';
+import { enqueue, runSoon } from '@/lib/jobs';
 import { isLocalOrTest } from '@/lib/env';
+
+// Room to render the packet after answering the request.
+export const maxDuration = 60;
 
 export const GET = route(async () => {
   const ctx = await requireApi('viewer');
@@ -25,5 +28,7 @@ export const POST = route(async (req) => {
   if (!st) throw new HttpError(404, 'Site not found');
   const packetId = randomUUID();
   await enqueue('proof.render', { tenantId: ctx.tenantId, siteId, from, to, packetId, createdBy: ctx.userId, ...(incident_at ? { incidentAt: incident_at } : {}) }, { dedupeKey: `proof:${packetId}` });
+  // Made right after this answer, not at the next scheduled run, so the office isn't left waiting (issue 196).
+  runSoon(`proof:${packetId}`);
   return NextResponse.json({ id: packetId, status: 'queued' }, { status: 202 });
 });

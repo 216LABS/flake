@@ -1,7 +1,8 @@
-import { asc, customer, desc, eq, proof_packet, site } from '@flake/db';
+import { desc, proof_packet } from '@flake/db';
 import { buttonVariants, EmptyState, PageHeader } from '@flake/ui';
 import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
+import { lotOptions } from '@/lib/lots';
 import { ProofForm } from './proof-form';
 
 export const metadata = { title: 'Proof packets' };
@@ -10,7 +11,8 @@ export default async function Proof({ searchParams }: { searchParams: Promise<{ 
   const { site: preselect, incident } = await searchParams;
   const ctx = await requirePage();
   const data = await asUser(ctx, async (tx) => ({
-    sites: await tx.select({ id: site.id, label: site.label, customer: customer.name }).from(site).innerJoin(customer, eq(customer.id, site.customer_id)).orderBy(asc(site.label)),
+    // Retired lots too: a claim can be about one (issue 193 picker).
+    sites: await lotOptions(tx, { retired: true }),
     packets: await tx.select({ id: proof_packet.id, site_id: proof_packet.site_id, from_ts: proof_packet.from_ts, to_ts: proof_packet.to_ts, manifest_sha256: proof_packet.manifest_sha256, created_at: proof_packet.created_at }).from(proof_packet).orderBy(desc(proof_packet.created_at)).limit(20),
   }));
   return (

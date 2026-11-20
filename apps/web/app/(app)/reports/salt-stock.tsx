@@ -4,6 +4,7 @@ import { Button, Card, Input, Label, Select } from '@flake/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api } from '@/lib/client';
+import { useConfirm } from '@/components/confirm';
 
 type Entry = { id: string; kind: 'delivery' | 'count'; tons: number; note?: string; when: string };
 
@@ -31,7 +32,9 @@ export function SaltStockForm({ canEdit, entries }: { canEdit: boolean; entries:
       setBusy(false);
     }
   };
+  const [ask, dialog] = useConfirm();
   const remove = async (id: string) => {
+    if (!(await ask({ title: 'Remove this line?', body: 'For a line entered by mistake. On-hand tons are worked out again without it.', confirm: 'Remove line', danger: true }))) return;
     setError('');
     try {
       await api(`/api/reports/salt?id=${id}`, { method: 'DELETE' });
@@ -56,6 +59,7 @@ export function SaltStockForm({ canEdit, entries }: { canEdit: boolean; entries:
           <Button onClick={save} disabled={busy} data-testid="salt-save">{busy ? 'Saving' : 'Save'}</Button>
         </div>
       ) : null}
+      {dialog}
       {error ? <p role="alert" className="mb-3 text-sm text-danger">{error}</p> : null}
       {entries.length ? (
         <ul className="divide-y divide-line-faint text-sm" data-testid="salt-entries">

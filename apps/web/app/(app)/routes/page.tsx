@@ -1,7 +1,10 @@
 import { asc, contract, crew_member, eq, isNotNull, isNull, route, route_stop, site, truck } from '@flake/db';
-import { Card, EmptyState, PageHeader } from '@flake/ui';
+import { buttonVariants, Card, EmptyState, PageHeader } from '@flake/ui';
 import Link from 'next/link';
+import { FilterTabs } from '@/components/links';
 import { asUser, requirePage } from '@/lib/auth';
+import { lotOptions } from '@/lib/lots';
+import { getProviders } from '@/lib/providers';
 import { RestoreRoute } from './restore-route';
 import { RoutesEditor } from './routes-editor';
 
@@ -18,6 +21,7 @@ export default async function Routes({ searchParams }: { searchParams: Promise<{
     sites: await tx.select({ id: site.id, label: site.label, active: site.active }).from(site).orderBy(asc(site.label)),
     crew: await tx.select({ id: crew_member.id, name: crew_member.name }).from(crew_member).where(eq(crew_member.active, true)),
     trucks: await tx.select({ id: truck.id, name: truck.name }).from(truck).where(eq(truck.active, true)).orderBy(asc(truck.name)),
+    lots: await lotOptions(tx),
     contracted: await tx.selectDistinct({ site_id: contract.site_id }).from(contract).where(eq(contract.status, 'accepted')),
   }));
   if (showArchived) {
@@ -25,6 +29,7 @@ export default async function Routes({ searchParams }: { searchParams: Promise<{
     return (
       <>
         <PageHeader title="Archived routes" subtitle="Restore one to put it back on Routes and the storm form, with its stops and driver." />
+        <FilterTabs label="Which routes" items={[{ href: '/routes', label: 'Active', active: false }, { href: '/routes?archived=1', label: `Archived (${data.archived.length})`, active: true }]} />
         {data.archived.length ? (
           <ul className="max-w-2xl space-y-2">
             {data.archived.map((r) => (
@@ -40,15 +45,14 @@ export default async function Routes({ searchParams }: { searchParams: Promise<{
             ))}
           </ul>
         ) : <EmptyState title="No archived routes" />}
-        <Link className="mt-4 inline-block text-sm text-link underline" href="/routes">Back to routes</Link>
       </>
     );
   }
   return (
     <>
-      <PageHeader title="Routes" subtitle="Master routes. Each storm snapshots these, so changes here never disturb a running storm." actions={data.routes.length >= 2 && ctx.role !== 'viewer' ? <Link className="inline-flex h-10 items-center rounded-md border px-3 text-sm font-semibold hover:bg-tint" href="/routes/plan" data-testid="plan-all-link">Plan all routes</Link> : null} />
-      <fieldset disabled={ctx.role === 'viewer'} className={ctx.role === 'viewer' ? 'view-only contents' : 'contents'}><RoutesEditor yard={ctx.tenant.yard?.address ?? null} sites={data.sites.map((s) => ({ ...s, active: Boolean(s.active), contracted: data.contracted.some((c) => c.site_id === s.id) }))} crew={data.crew} trucks={data.trucks} routes={data.routes.map((r) => ({ id: r.id, name: r.name, default_crew_id: r.default_crew_id, default_truck_id: r.default_truck_id, yard_trip: r.yard_trip, site_ids: data.stops.filter((s) => s.route_id === r.id).map((s) => s.site_id) }))} /></fieldset>
-      {data.archived.length ? <Link className="mt-4 inline-block text-sm text-link underline" href="/routes?archived=1" data-testid="show-archived-routes">Archived routes ({data.archived.length})</Link> : null}
+      <PageHeader title="Routes" subtitle="Master routes. Each storm snapshots these, so changes here never disturb a running storm." actions={data.routes.length >= 2 && ctx.role !== 'viewer' ? <Link className={buttonVariants({ variant: 'outline' })} href="/routes/plan" data-testid="plan-all-link">Plan all routes</Link> : null} />
+      {data.archived.length ? <FilterTabs label="Which routes" items={[{ href: '/routes', label: 'Active', active: true }, { href: '/routes?archived=1', label: `Archived (${data.archived.length})`, active: false, testId: 'show-archived-routes' }]} /> : null}
+      <fieldset disabled={ctx.role === 'viewer'} className={ctx.role === 'viewer' ? 'view-only contents' : 'contents'}><RoutesEditor lots={data.lots} layers={(await getProviders()).tiles.layers()} yard={ctx.tenant.yard?.address ?? null} sites={data.sites.map((s) => ({ ...s, active: Boolean(s.active), contracted: data.contracted.some((c) => c.site_id === s.id) }))} crew={data.crew} trucks={data.trucks} routes={data.routes.map((r) => ({ id: r.id, name: r.name, default_crew_id: r.default_crew_id, default_truck_id: r.default_truck_id, yard_trip: r.yard_trip, site_ids: data.stops.filter((s) => s.route_id === r.id).map((s) => s.site_id) }))} /></fieldset>
     </>
   );
 }

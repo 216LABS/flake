@@ -10,6 +10,8 @@ import { isUuid } from '@/lib/http';
 import { money } from '@/lib/client';
 import { invoiceStatus } from '@/lib/labels';
 import { contractStanding } from '@/lib/scope';
+import { entityLink } from '@/components/links';
+import { ServiceChips } from '@/components/service-chips';
 
 export const metadata = { title: 'Customer' };
 
@@ -55,7 +57,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
       </div>
       <h2 className="mb-2 mt-6 font-semibold">Sites</h2>
       <Table stack>
-        <thead><tr><Th>Site</Th><Th>Address</Th><Th>Area</Th><Th>Contract</Th></tr></thead>
+        <thead><tr><Th>Site</Th><Th>Address</Th><Th>Services</Th><Th>Area</Th><Th>Contract</Th></tr></thead>
         <tbody>
           {[...sites].sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active))).map((s) => {
             // The agreement in force this winter wins, even with a renewal waiting or declined beside it (issue 157); otherwise
@@ -64,9 +66,11 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
             const k = contracts.find((x) => x.site_id === s.id && x.status !== 'void');
             return (
               <tr key={s.id} className={s.active ? '' : 'text-faint'} data-testid="site-row" data-active={String(Boolean(s.active))}>
-                <Td className="wrap-anywhere"><Link className="text-link underline" href={`/sites/${s.id}`}>{s.label}</Link>{s.active ? null : <Badge className="ml-2">retired</Badge>}</Td>
+                <Td className="wrap-anywhere"><Link className={entityLink} href={`/sites/${s.id}`}>{s.label}</Link>{s.active ? null : <Badge className="ml-2">retired</Badge>}</Td>
                 <Td label="Address" className="wrap-anywhere">{s.address}</Td>
-                <Td label="Area">{s.area_confirmed_sqft ? `${Number(s.area_confirmed_sqft).toLocaleString()} sq ft` : s.area_estimate_sqft ? `~${Number(s.area_estimate_sqft).toLocaleString()} sq ft` : 'unavailable'}</Td>
+                {/* What the driver can tick here, from the contract in force (issue 192). */}
+                <Td label="Services"><ServiceChips services={standing?.inForce ? ((contracts.find((x) => x.site_id === s.id && x.status === 'accepted' && x.season === standing.inForce)?.services ?? null) as { service: string; trigger_in?: number | null }[] | null) : null} compact /></Td>
+                <Td label="Area">{s.area_confirmed_sqft ? `${Number(s.area_confirmed_sqft).toLocaleString()} sq ft` : s.area_estimate_sqft ? `~${Number(s.area_estimate_sqft).toLocaleString()} sq ft (estimate)` : <Link className={entityLink} href={`/sites/${s.id}#area`} data-testid="area-not-measured">Not measured. Draw it</Link>}</Td>
                 <Td label="Contract">{standing ? <span className={standing.tone === 'green' ? 'text-ok-ink' : 'text-warn-ink'} data-testid="contract-standing">{standing.text}</span> : <Badge tone="amber">{k ? ({ sent: 'quote sent', draft: 'quote waiting', declined: 'quote declined' } as Record<string, string>)[k.status] ?? k.status : 'none'}</Badge>}</Td>
               </tr>
             );
@@ -82,7 +86,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
             <tbody>
               {invoices.map((i) => (
                 <tr key={i.id} data-testid="customer-invoice">
-                  <Td><Link className="text-link underline" href={`/billing?storm=${i.storm_id}`}>{i.storm}</Link></Td>
+                  <Td><Link className={entityLink} href={`/billing?storm=${i.storm_id}`}>{i.storm}</Link></Td>
                   <Td label="Total" className="tabular">{money(i.total)}</Td>
                   <Td label="Status"><div className="min-w-0">{invoiceStatus(i.status ?? '')}{i.status_detail ? <span className="block text-xs text-muted">{i.status_detail}</span> : null}</div></Td>
                 </tr>

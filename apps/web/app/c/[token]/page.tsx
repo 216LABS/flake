@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { money, phone, possessive } from '@/lib/client';
 import { portalData, resolvePortal } from '@/lib/portal';
 import { RequestVisit } from './request-visit';
+import { ButtonA } from '@/components/links';
 
 export const metadata = { title: 'Your service records', robots: 'noindex, nofollow' };
 export const dynamic = 'force-dynamic';
@@ -57,7 +58,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
           <Card className="border-warn-line bg-warn-tint" data-testid="portal-due">
             <h2 className="font-semibold">{due.length === 1 ? 'An invoice is waiting' : `${due.length} invoices are waiting`}</h2>
             <ul className="mt-2 space-y-1 text-sm">
-              {due.map((i) => <li key={i.id}>{i.name}: <b className="tabular">{money(i.total_cents)}</b>{i.status === 'failed' ? ' (the last payment did not go through)' : ''}. {i.pay_link ? <a className="font-semibold text-link underline" href={i.pay_link}>View and pay</a> : <a className="font-semibold text-link underline" href={`#${i.anchor}`}>See what it&apos;s for</a>}</li>)}
+              {due.map((i) => <li key={i.id}>{i.name}: <b className="tabular">{money(i.total_cents)}</b>{i.status === 'failed' ? ' (the last payment did not go through)' : ''}. <span className="mt-1 flex flex-wrap gap-2">{i.pay_link ? <ButtonA variant="accent" size="sm" href={i.pay_link}>View and pay</ButtonA> : null}<ButtonA size="sm" href={`#${i.anchor}`}>See what it&apos;s for</ButtonA></span></li>)}
             </ul>
             {due.some((i) => i.offline) ? <p className="mt-2 text-sm text-ink-2" data-testid="portal-pay-offline">Online payment isn&apos;t set up for {due.every((i) => i.offline) ? (due.length === 1 ? 'this' : 'these') : 'some of these'}. {payHow}</p> : null}
           </Card>
@@ -73,7 +74,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
                 <div className="flex flex-wrap items-center gap-2">
                   {s.contract?.status === 'accepted' ? <Badge tone="green">Season {s.contract.season}</Badge> : null}
                   {s.quote ? (s.quote.url
-                    ? <a href={s.quote.url} className="inline-block rounded-sm bg-warn-tint px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-warn-ink underline" data-testid="portal-quote-link">Quote waiting: review and sign</a>
+                    ? <ButtonA variant="accent" size="lg" href={s.quote.url} data-testid="portal-quote-link">Review and sign quote</ButtonA>
                     : <Badge tone="amber" title="The quote link is in the email it came in.">Quote waiting, see your email</Badge>) : null}
                 </div>
               </div>
@@ -121,7 +122,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
                     <thead><tr><Th>Date</Th><Th>Time</Th><Th>Done</Th><Th>Photos</Th></tr></thead>
                     <tbody>
                       {s.visits.slice(10).map((v) => (
-                        <tr key={v.id}><Td>{day(v.arrived)}</Td><Td className="tabular">{span(v.arrived, v.departed)}</Td><Td>{v.services.flatMap((x) => (SERVICE[x] ? [SERVICE[x]] : [])).join(', ')}</Td><Td>{v.photos.map((p, i) => <a key={p.id} className="mr-2 text-link underline" href={photo(p.id)} target="_blank" rel="noopener">{i + 1}</a>)}</Td></tr>
+                        <tr key={v.id}><Td>{day(v.arrived)}</Td><Td className="tabular">{span(v.arrived, v.departed)}</Td><Td>{v.services.flatMap((x) => (SERVICE[x] ? [SERVICE[x]] : [])).join(', ')}</Td><Td>{v.photos.map((p, i) => <a key={p.id} className="mr-1 inline-flex min-h-9 min-w-9 items-center justify-center rounded-control border border-line px-2 text-sm font-medium hover:border-ink" href={photo(p.id)} target="_blank" rel="noopener" aria-label={`Photo ${i + 1}`}>{i + 1}</a>)}</Td></tr>
                       ))}
                     </tbody>
                   </Table>
@@ -130,7 +131,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
               {s.packets.length ? (
                 <p className="mt-3 text-sm" data-testid="portal-packets">
                   Signed service records (PDF):{' '}
-                  {s.packets.map((p, i) => <span key={p.id}>{i ? ', ' : ''}<a className="text-link underline" href={`/api/c/${token}/packet/${p.id}`}>{fmtLocal(p.from, tz, { month: 'short', day: 'numeric', year: 'numeric' })} to {fmtLocal(p.to, tz, { month: 'short', day: 'numeric', year: 'numeric' })}</a></span>)}
+                  {s.packets.map((p) => <span key={p.id} className="mr-2 inline-block"><ButtonA size="sm" className="mt-1" href={`/api/c/${token}/packet/${p.id}`}>{fmtLocal(p.from, tz, { month: 'short', day: 'numeric', year: 'numeric' })} to {fmtLocal(p.to, tz, { month: 'short', day: 'numeric', year: 'numeric' })} (PDF)</ButtonA></span>)}
                 </p>
               ) : null}
             </section>
@@ -154,9 +155,9 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
                         {i.lines.map((l, n) => <li key={n} className="flex justify-between gap-3 py-1.5"><span>{l.description}{l.quantity > 1 ? ` (${l.quantity})` : ''}</span><span className="tabular shrink-0">{money(l.amount_cents)}</span></li>)}
                       </ul>
                       <p className="mt-2 flex justify-between text-sm font-semibold"><span>Total</span><span className="tabular">{money(i.total_cents)}</span></p>
-                      {i.pay_link ? <a className="mt-2 inline-block font-semibold text-link underline" href={i.pay_link}>View and pay</a>
+                      {i.pay_link ? <ButtonA variant="accent" className="mt-2" href={i.pay_link}>View and pay</ButtonA>
                         : i.due ? <p className="mt-2 text-sm text-ink-2">{payHow}</p> : null}
-                      {i.total_cents > 0 ? <a className="ml-3 mt-2 inline-block text-sm text-link underline" href={`/api/c/${token}/invoice/${i.id}`} target="_blank" rel="noopener" data-testid="portal-invoice-pdf">Invoice PDF</a> : null}
+                      {i.total_cents > 0 ? <ButtonA className="ml-2 mt-2" href={`/api/c/${token}/invoice/${i.id}`} target="_blank" rel="noopener" data-testid="portal-invoice-pdf">Invoice PDF</ButtonA> : null}
                     </div>
                   </details>
                 </li>

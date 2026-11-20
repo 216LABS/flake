@@ -14,7 +14,9 @@ test('a customer calls mid-storm: the office adds their lot to a truck and the d
   const [extra] = await sql`select s.id, s.label from site s join tenant t on t.id = s.tenant_id where t.slug = 'lakeshore-demo' and s.active and s.id not in (select site_id from run_stop where storm_run_id = ${run.id}) order by s.label limit 1`;
   await page.goto(`/storms/${id}`);
   const column = page.getByTestId('run-column').first();
-  await column.getByTestId('add-stop').selectOption(extra!.id as string);
+  // The lot picker (issue 193): type part of the name, pick it.
+  await column.getByTestId('add-stop-input').fill(extra!.label as string);
+  await column.locator(`[data-testid="add-stop-option"][data-lot-id="${extra!.id}"]`).click();
   await expect(column.getByTestId('stop-card')).toHaveCount(before + 1);
   await expect(column.getByTestId('stop-card').last()).toContainText(extra!.label as string);
 

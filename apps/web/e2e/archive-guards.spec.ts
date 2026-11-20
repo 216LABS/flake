@@ -50,6 +50,6 @@ test('the storms list keeps live and unbilled storms up top and older billed one
   await page.getByTestId('older-storms').click();
   await expect(page.getByText(`Billed ${tag} 6`)).toBeVisible();
   await page.goto('/billing');
-  await expect(page.getByTestId('storm-picker').locator('optgroup[label="Ready to bill"] option', { hasText: `Unbilled ${tag}` })).toHaveCount(1);
+  await expect(page.locator('[data-testid="storm-row"][data-status="closed"]', { hasText: `Unbilled ${tag}` })).toHaveCount(1);
   await sql`update storm set status = 'billed' where id = ${old!.id}`;
 });

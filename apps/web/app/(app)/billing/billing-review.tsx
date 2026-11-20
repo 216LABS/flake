@@ -5,12 +5,16 @@ import { Badge, Button, Card, EmptyState, Input, Table, Td, Th, buttonVariants }
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useConfirm } from '@/components/confirm';
+import { ButtonA, proseLink } from '@/components/links';
 import { api, money, possessive } from '@/lib/client';
 import { billingLabel, invoiceStatus } from '@/lib/labels';
 
 export interface DraftRow {
   id: string;
   customer: string;
+  customer_id?: string;
+  has_payment_method?: boolean;
+  has_email?: boolean;
   billing_mode: string;
   status: string;
   status_detail: string | null;
@@ -27,7 +31,7 @@ const TONE: Record<string, 'gray' | 'blue' | 'green' | 'amber' | 'red'> = { draf
 
 const SALT_UNIT: Record<string, string> = { bag50lb: 'bags', lb: 'lb', ton: 'tons', application: 'applications' };
 
-export function BillingReview({ stormId, initial, canExport, showFees, stormActive = false, stripeReady = true, nothingToBill = false, readOnly = false }: { readOnly?: boolean; stormId: string; initial: DraftRow[]; canExport: boolean; showFees: boolean; stormActive?: boolean; stripeReady?: boolean; nothingToBill?: boolean }) {
+export function BillingReview({ stormId, initial, canExport, showFees, stormActive = false, stripeReady = true, nothingToBill = false, readOnly = false, sending = true }: { readOnly?: boolean; stormId: string; initial: DraftRow[]; canExport: boolean; showFees: boolean; stormActive?: boolean; stripeReady?: boolean; nothingToBill?: boolean; sending?: boolean }) {
   const router = useRouter();
   const [ask, dialog] = useConfirm();
   const [rows, setRows] = useState(initial);
@@ -106,7 +110,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
       {readOnly ? <p className="mb-4 rounded-md bg-tint p-3 text-sm text-ink-2" data-testid="view-only-note">You have view-only access. Ask the owner to approve, void or send bills.</p> : null}
       {!stripeReady && rows.length ? (
         <p className="mb-4 rounded-md bg-info-tint p-3 text-sm text-link" data-testid="stripe-not-connected">
-          Stripe isn&apos;t connected, so approving doesn&apos;t charge anyone yet. Approved invoices wait here. Connect Stripe in <a className="underline" href="/settings?tab=payments">Settings, Payments</a>, then press Charge now on each. Or press Send bill to email each customer their bill, and Mark paid when the money comes in.
+          Stripe isn&apos;t connected, so approving doesn&apos;t charge anyone yet. Approved invoices wait here. Connect Stripe in <a className={proseLink} href="/settings?tab=payments">Settings, Payments</a>, then press Charge now on each. Or press Send bill to email each customer their bill, and Mark paid when the money comes in.
         </p>
       ) : null}
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -150,6 +154,13 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
               </div>
             </div>
             {r.status_detail ? <p className="mt-1 text-sm text-warn-ink" data-testid="status-detail">{r.status_detail}</p> : null}
+            {/* Exactly what happens for this customer (issue 195), and their link, since often the office sends it. */}
+            {r.status !== 'void' ? (
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-ink-2" data-testid="how-billed">
+                <span className="min-w-0">{howBilled(r, stripeReady, sending)}</span>
+                {r.customer_id && !readOnly ? <CopyLink customerId={r.customer_id} /> : null}
+              </div>
+            ) : null}
             <div className="mt-1 flex flex-wrap gap-2">
               {r.status === 'failed' || (r.status === 'approved' && r.status_detail && r.billing_mode !== 'manual') ? <Button size="sm" variant="outline" disabled={busy || (r.status === 'approved' && !stripeReady)} data-testid="retry" onClick={() => run(() => api('/api/billing/retry', { body: { draftId: r.id } }))}>{r.status === 'failed' ? 'Try again' : 'Charge now'}</Button> : null}
               {r.status === 'approved' && (r.billing_mode === 'manual' || !stripeReady) ? <Button size="sm" variant="outline" disabled={busy} data-testid="send-bill" onClick={() => void sendBill(r)}>Send bill</Button> : null}
@@ -158,9 +169,9 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
               {['draft', 'approved', 'failed'].includes(r.status) ? <Button size="sm" variant="ghost" disabled={busy} data-testid="void" onClick={() => void revise(r, 'void')}>Void</Button> : null}
               {r.status === 'void' ? <Button size="sm" variant="ghost" disabled={busy} data-testid="unvoid" onClick={() => void revise(r, 'draft')}>Unvoid</Button> : null}
             </div>
-            {r.pay_link ? <p className="mt-1 text-sm">Pay link sent: <a className="text-link underline" href={r.pay_link}>open</a></p> : null}
+            {r.pay_link ? <p className="mt-2 flex flex-wrap items-center gap-2 text-sm">Pay link sent. <ButtonA size="sm" href={r.pay_link} target="_blank" rel="noopener" data-testid="open-pay-link">Open pay link</ButtonA></p> : null}
             {/* A printable invoice for a customer who pays by check (issue 146), once the bill is past review. */}
-            {!['draft', 'void'].includes(r.status) && r.subtotal_cents > 0 ? <a className="mt-1 inline-block text-sm text-link underline" href={`/api/billing/${r.id}/pdf`} target="_blank" rel="noopener" data-testid="invoice-pdf">Invoice PDF</a> : null}
+            {!['draft', 'void'].includes(r.status) && r.subtotal_cents > 0 ? <ButtonA size="sm" className="mt-2" href={`/api/billing/${r.id}/pdf`} target="_blank" rel="noopener" data-testid="invoice-pdf">Invoice PDF</ButtonA> : null}
             {r.lines.length ? (
               <div className="mt-2"><Table>
                 <thead><tr><Th>Line</Th><Th>Qty</Th><Th>Amount</Th></tr></thead>
@@ -238,5 +249,41 @@ function FlagRow({ flag, editable, busy, onFix }: { flag: BillingFlag; editable:
         </div>
       ) : null}
     </li>
+  );
+}
+
+/** What approving does for this customer, in one line (issue 195). */
+function howBilled(r: DraftRow, stripeReady: boolean, sending: boolean): string {
+  if (stripeReady && (r.billing_mode === 'card_on_file' || r.billing_mode === 'ach_on_file')) {
+    const what = r.billing_mode === 'card_on_file' ? 'Card' : 'Bank account';
+    if (r.has_payment_method) return `${what} on file: charged when you approve.`;
+    return `No ${what.toLowerCase()} on file yet: they get a pay link when you approve. Or copy their link and send it yourself.`;
+  }
+  if (stripeReady && r.billing_mode === 'invoice_net30') return 'Gets a Stripe invoice by email when you approve, due in 30 days.';
+  if (sending && r.has_email) return 'Approve, then Send bill: they get an email with the total and their records page link, which says how to pay you.';
+  if (sending) return 'No email on file: copy their link and send it yourself.';
+  return 'Flake sending is off for your company: copy their link and send it yourself.';
+}
+
+/** The customer's records page link, where they see the bill and how to pay. */
+function CopyLink({ customerId }: { customerId: string }) {
+  const [said, setSaid] = useState<string | null>(null);
+  return (
+    <>
+      <Button size="sm" variant="outline" data-testid="copy-customer-link" onClick={async () => {
+        try {
+          const { url } = await api<{ url: string }>(`/api/customers/${customerId}/portal`);
+          try {
+            await navigator.clipboard.writeText(url);
+            setSaid('Copied');
+          } catch {
+            setSaid(url);
+          }
+        } catch (e) {
+          setSaid((e as Error).message);
+        }
+      }}>Copy customer link</Button>
+      {said ? <span role="status" className="break-all text-xs text-muted" data-testid="copy-customer-link-note">{said}</span> : null}
+    </>
   );
 }

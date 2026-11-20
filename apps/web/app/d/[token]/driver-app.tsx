@@ -51,7 +51,7 @@ const NEAR_M = 800;
 const FIX_FRESH_MS = 20 * 1000;
 const FIX_MAX_ACC_M = 250;
 const FIX_WAIT_MS = 6000;
-const FIX_PROMPT_MS = 30 * 1000;
+const FIX_PROMPT_MS = 15 * 1000;
 type Sync = 'saved' | 'sending' | 'synced';
 
 const uuid = () => crypto.randomUUID();
@@ -93,6 +93,8 @@ export function DriverApp({ token, build }: { token: string; build?: string }) {
   // The phone hasn't been asked for location yet: say what to tap before it asks (issue 184).
   const [geoAsk, setGeoAsk] = useState(false);
   const geoState = useRef<string>('unknown');
+  // The extra wait for the location question happens once; a driver who ignores it isn't kept waiting on every tap.
+  const promptWaited = useRef(false);
   // Taps still being saved: a reload for a new version waits for these.
   const busy = useRef(0);
   const generation = useRef(0);
@@ -407,7 +409,9 @@ export function DriverApp({ token, build }: { token: string; build?: string }) {
     return new Promise((resolve) => {
       const give = (v: { lat: number; lon: number; acc: number } | null) => { clearTimeout(timer); resolve(v); };
       // The phone's "allow location?" question may still be on screen: give the driver time to answer it.
-      const timer = setTimeout(() => give(usable(position.current)), FIX_WAIT_MS + 500 + (geoState.current === 'granted' ? 0 : FIX_PROMPT_MS));
+      const extra = geoState.current !== 'granted' && !promptWaited.current ? FIX_PROMPT_MS : 0;
+      if (extra) promptWaited.current = true;
+      const timer = setTimeout(() => give(usable(position.current)), FIX_WAIT_MS + 500 + extra);
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           position.current = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy, got: Date.now() };
@@ -573,7 +577,7 @@ export function DriverApp({ token, build }: { token: string; build?: string }) {
       </header>
 
       {geoAsk && !locationOff ? <div className="mx-4 mb-2 rounded-lg bg-slate-800 p-3 text-base text-white" data-testid="location-ask">{t('location_ask')}</div> : null}
-      {locationOff ? <div role="alert" className="mx-4 mb-2 rounded-lg bg-amber-300 p-3 text-base font-semibold text-black" data-testid="location-off">{t('location_off')}<details className="mt-1 text-sm font-normal" data-testid="location-how"><summary className="cursor-pointer font-semibold underline">{t('location_how')}</summary><p className="mt-1">{t('location_steps')}</p></details></div> : null}
+      {locationOff ? <div role="alert" className="mx-4 mb-2 rounded-lg bg-amber-300 p-3 text-base font-semibold text-black" data-testid="location-off">{t('location_off')}<details className="mt-2 text-base font-normal" data-testid="location-how"><summary className="flex min-h-[48px] cursor-pointer list-none items-center justify-between rounded-lg bg-black/10 px-3 font-bold">{t('location_how')}<span aria-hidden="true">▾</span></summary><p className="mt-2">{t('location_steps')}</p></details></div> : null}
       {/* Always mounted, so a screen reader hears every toast, not only ones it happened to catch appearing (issue 158). */}
       <div role="status" aria-live="polite" data-testid="toast-region">{toast ? <div className="mx-4 mb-2 rounded-lg bg-sky-300 p-3 text-center text-lg font-bold text-black">{toast}</div> : null}</div>
 

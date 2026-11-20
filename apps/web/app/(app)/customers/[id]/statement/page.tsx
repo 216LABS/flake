@@ -1,12 +1,13 @@
 import { localDay } from '@flake/core/receivables';
 import { customer, eq } from '@flake/db';
 import { Card, Input, PageHeader, Table, Td, Th } from '@flake/ui';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { asUser, requirePage } from '@/lib/auth';
 import { money } from '@/lib/client';
 import { customerStatement } from '@/lib/receivables';
 import { PrintButton } from './print-button';
+import { Breadcrumb, ButtonA } from '@/components/links';
+import { Button } from '@flake/ui';
 
 export const metadata = { title: 'Statement' };
 const ymd = /^\d{4}-\d{2}-\d{2}$/;
@@ -28,13 +29,14 @@ export default async function Statement({ params, searchParams }: { params: Prom
   const day = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
   return (
     <>
+      <Breadcrumb href={`/customers/${c.id}`}>{c.name}</Breadcrumb>
       <PageHeader title={`Statement: ${c.name}`} subtitle={`${day(from)} to ${day(to)}. From ${ctx.tenant.name}.`} />
       <form data-print-hide className="mb-4 flex flex-wrap items-end gap-2 text-sm" data-testid="statement-range">
         <label>From <Input type="date" name="from" defaultValue={from} className="w-auto" /></label>
         <label>To <Input type="date" name="to" defaultValue={to} className="w-auto" /></label>
-        <button className="rounded border px-3 py-1 font-semibold" type="submit">Show</button>
+        <Button variant="outline" size="lg" type="submit">Show</Button>
         <PrintButton />
-        <a className="text-link underline" href={`/api/customers/${c.id}/statement?from=${from}&to=${to}`} data-testid="statement-csv">Download CSV</a>
+        <ButtonA size="lg" href={`/api/customers/${c.id}/statement?from=${from}&to=${to}`} data-testid="statement-csv">Download CSV</ButtonA>
       </form>
       <Card className="max-w-3xl">
         <Table>
@@ -54,7 +56,6 @@ export default async function Statement({ params, searchParams }: { params: Prom
           </tbody>
         </Table>
       </Card>
-      <Link data-print-hide className="mt-4 inline-block text-sm text-link underline" href={`/customers/${c.id}`}>Back to {c.name}</Link>
     </>
   );
 }

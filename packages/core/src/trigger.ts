@@ -235,6 +235,15 @@ export interface ProposedAlert {
   kind: 'forecast' | 'depth_report' | 'refreeze';
   site_ids: string[];
   sites: SiteDecision[];
+  /** The service area these lots are in (issue 198): Lakewood and Akron get their own alerts. */
+  area?: string;
+}
+
+/** A lot's service area: the owner's name for it, or else the city in its address. */
+export function serviceArea(address: string, override?: string | null): string {
+  const named = override?.trim();
+  if (named) return named;
+  return address.split(',')[1]?.trim() || 'Your area';
 }
 
 /**
@@ -244,17 +253,22 @@ export interface ProposedAlert {
 export function groupDecisions(
   decisions: SiteDecision[],
   prior: PriorSend[],
-  recent: { kind: AlertKind; created_at: number }[],
+  recent: { kind: AlertKind; created_at: number; area?: string }[],
   now: number,
+  areaOf?: (siteId: string) => string,
 ): ProposedAlert[] {
   const sent = new Set(prior.map((p) => `${p.kind}|${p.site_id}|${p.event_key}`));
   const fresh = decisions.filter((d) => !sent.has(`${d.kind}|${d.site_id}|${d.event_key}`));
   const out: ProposedAlert[] = [];
+  // One alert per kind and service area (issue 198). Without areas, everything is one area, as before.
+  const areas = areaOf ? [...new Set(fresh.map((d) => areaOf(d.site_id)))].sort() : [undefined];
   for (const kind of ['forecast', 'depth_report', 'refreeze'] as const) {
-    const sites = fresh.filter((d) => d.kind === kind);
-    if (!sites.length) continue;
-    if (recent.some((r) => r.kind === kind && now - r.created_at < DEBOUNCE_MS)) continue;
-    out.push({ kind, site_ids: [...new Set(sites.map((s) => s.site_id))], sites });
+    for (const area of areas) {
+      const sites = fresh.filter((d) => d.kind === kind && (area === undefined || areaOf!(d.site_id) === area));
+      if (!sites.length) continue;
+      if (recent.some((r) => r.kind === kind && (area === undefined || r.area === undefined || r.area === area) && now - r.created_at < DEBOUNCE_MS)) continue;
+      out.push({ kind, site_ids: [...new Set(sites.map((s) => s.site_id))], sites, ...(area !== undefined ? { area } : {}) });
+    }
   }
   return out;
 }

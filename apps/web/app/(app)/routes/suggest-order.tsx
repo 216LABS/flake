@@ -4,6 +4,7 @@ import { Button, Input, Label } from '@flake/ui';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/client';
 import { useConfirm } from '@/components/confirm';
+import { MapView, type TileLayers } from '@/components/map-view';
 
 interface Stop { id: string; arrive: string; finish: string; drive_min: number; late: boolean; wait_min?: number; break_min?: number; via_yard?: boolean; out_at?: string | null }
 interface Plan { stops: Stop[]; drive_min: number; total_min: number; late: number; break_min?: number; work_min?: number }
@@ -16,11 +17,12 @@ const clock = (hm: string) => {
 const hours = (min: number) => (min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${min % 60} min`);
 
 /** Suggests a stop order. It never saves by itself: the dispatcher reads it and taps Use this order. */
-export function SuggestOrder({ routeId, siteIds, label, onAccept, yard = null }: { routeId: string; siteIds: string[]; label: (id: string) => string; onAccept: (ids: string[]) => void; yard?: string | null }) {
+export function SuggestOrder({ routeId, siteIds, label, onAccept, yard = null, points = {}, layers }: { routeId: string; siteIds: string[]; label: (id: string) => string; onAccept: (ids: string[]) => void; yard?: string | null; points?: Record<string, { lat: number; lon: number }>; layers?: TileLayers }) {
   const [open, setOpen] = useState(false);
   const [ask, dialog] = useConfirm();
   const [start, setStart] = useState('04:00');
   const [keepFirst, setKeepFirst] = useState(false);
+  const [strict, setStrict] = useState(true);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
   const key = siteIds.join(',');
@@ -29,11 +31,11 @@ export function SuggestOrder({ routeId, siteIds, label, onAccept, yard = null }:
     if (!open) return;
     let live = true;
     setError(null);
-    api<Result>(`/api/routes/${routeId}/suggest`, { body: { site_ids: key.split(','), start: start || '04:00', keep_first: keepFirst } })
+    api<Result>(`/api/routes/${routeId}/suggest`, { body: { site_ids: key.split(','), start: start || '04:00', keep_first: keepFirst, strict_priority: strict } })
       .then((r) => live && setResult(r))
       .catch((e) => live && setError((e as Error).message));
     return () => { live = false; };
-  }, [open, routeId, key, start, keepFirst]);
+  }, [open, routeId, key, start, keepFirst, strict]);
 
   if (siteIds.length < 3) return null;
   if (!open) return <Button size="sm" variant="outline" className="mt-2" onClick={() => setOpen(true)} data-testid="suggest-open">Suggest order</Button>;
@@ -47,6 +49,7 @@ export function SuggestOrder({ routeId, siteIds, label, onAccept, yard = null }:
       <div className="flex flex-wrap items-end gap-3">
         <div><Label htmlFor={`start-${routeId}`}>{yard ? 'Leave the yard at' : 'First stop at'}</Label><Input id={`start-${routeId}`} type="time" value={start} onChange={(e) => setStart(e.target.value)} className="w-32" /></div>
         <label className="flex items-center gap-2 pb-2"><input type="checkbox" checked={keepFirst} onChange={(e) => setKeepFirst(e.target.checked)} /> Keep the first stop first</label>
+        <label className="flex w-full min-w-0 items-center gap-2 pb-2"><span className="sr-only">Priority</span><select className="h-9 w-full min-w-0 max-w-full truncate rounded-control border border-line bg-surface px-2 text-sm" value={strict ? 'strict' : 'soft'} data-testid="suggest-priority" onChange={(e) => setStrict(e.target.value === 'strict')}><option value="strict">Priority 1 strictly first</option><option value="soft">Priority 1 by open-by time, else shortest</option></select></label>
       </div>
       {yard ? <p className="mt-2 text-ink-2" data-testid="suggest-yard">Starts and ends at the yard, {yard}. Drive times include the trip out and back.</p> : null}
       {error ? <p className="mt-2 text-danger" role="alert">{error}</p> : null}
@@ -65,6 +68,13 @@ export function SuggestOrder({ routeId, siteIds, label, onAccept, yard = null }:
             {s.break_min ? <span data-testid="suggest-work">About {hours(s.work_min ?? s.total_min)} of work with plowing time, plus a {hours(s.break_min)} break between runs. </span> : <>Whole route about {hours(s.total_min)} with plowing time. </>}{s.late ? `${s.late} ${s.late === 1 ? 'stop misses its' : 'stops miss their'} open-by time.` : 'Every open-by time is met.'}
             {c.late !== s.late ? ` Now: ${c.late} missed.` : ''}
           </p>
+          {/* The proposed order on a map, numbered, with the line it drives (issue 191): the easiest way to judge it. */}
+          {layers && s.stops.some((x) => points[x.id]) ? (() => {
+            const at = s.stops.filter((x) => points[x.id]).map((x) => ({ id: x.id, ...points[x.id]! }));
+            return <MapView className="mt-2 h-56" layers={layers} center={at[0]!} zoom={12} fit
+              pins={at.map((p, i) => ({ id: p.id, lat: p.lat, lon: p.lon, n: i + 1, color: '#0f172a', ring: '#f5b301', label: `${i + 1}. ${label(p.id)}` }))}
+              lines={[{ id: 'order', color: '#f5b301', coords: at }]} />;
+          })() : null}
           <ol className="mt-2 space-y-1" data-testid="suggest-list">
             {s.stops.map((x, i) => (
               <li key={x.id} className="flex items-center gap-2">
@@ -77,7 +87,7 @@ export function SuggestOrder({ routeId, siteIds, label, onAccept, yard = null }:
               </li>
             ))}
           </ol>
-          <p className="mt-2 text-xs text-faint">Priority 1 sites go first, then 2, and so on. <span data-testid="suggest-times">{result.times_label ?? 'Drive times are estimates from distance, not live traffic.'}</span>{result.skipped ? ` ${result.skipped} retired ${result.skipped === 1 ? 'site was' : 'sites were'} left out.` : ''}</p>
+          <p className="mt-2 text-xs text-faint">{strict ? 'Priority 1 sites go first, then 2, and so on.' : 'Priorities do not fix the order. Open-by times still count, so a lot with a deadline is done in time.'} <span data-testid="suggest-times">{result.times_label ?? 'Drive times are estimates from distance, not live traffic.'}</span>{result.skipped ? ` ${result.skipped} retired ${result.skipped === 1 ? 'site was' : 'sites were'} left out.` : ''}</p>
         </>
       ) : null}
       <div className="mt-3 flex gap-2">

@@ -1,5 +1,6 @@
 import { Card, Eyebrow, PageHeader } from '@flake/ui';
 import Link from 'next/link';
+import { proseLink } from '@/components/links';
 import { requirePage } from '@/lib/auth';
 
 export const metadata = { title: 'Storm-night guide' };
@@ -36,7 +37,7 @@ export default async function Help() {
         <Card>
           <Eyebrow className="mb-2">Before the first storm</Eyebrow>
           <ol className="list-decimal space-y-2 pl-5 text-sm">
-            {BEFORE.map(([t, body, href]) => <li key={t}><Link className="font-semibold text-link underline" href={href}>{t}</Link>: {body}</li>)}
+            {BEFORE.map(([t, body, href]) => <li key={t}><Link className={proseLink} href={href}>{t}</Link>: {body}</li>)}
           </ol>
           <p className="mt-3 text-sm text-ink-2">Do one practice storm with a driver before real snow: start it, have them open the link, arrive, take photos, finish two lots, then close and look at the bills. Delete nothing; practice bills can be voided.</p>
         </Card>

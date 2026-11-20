@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge, Button, Card, Input, Label, Select } from '@flake/ui';
+import { Badge, Button, buttonVariants, Card, cn, Input, Label, Select } from '@flake/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api } from '@/lib/client';
@@ -46,7 +46,7 @@ export function SiteEditor({ site, pins, layers }: { site: any; pins: any[]; lay
     router.refresh();
   };
   return (
-    <Card>
+    <Card id="area" className="scroll-mt-20">
       {dialog}
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <Button size="sm" variant={mode === 'edit' ? 'accent' : 'outline'} onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}>Draw / edit area</Button>
@@ -72,7 +72,7 @@ export function SiteEditor({ site, pins, layers }: { site: any; pins: any[]; lay
               <Badge>{p.kind}</Badge>
               <span>{p.note}</span>
               {p.photo_path ? <img src={`/api/pins/${p.id}/photo?v=${encodeURIComponent(p.photo_path)}`} alt={p.note ?? p.kind} width={64} height={64} className="h-16 w-16 rounded-sm object-cover" data-testid={`pin-thumb-${p.id}`} /> : null}
-              <label className="cursor-pointer text-link underline">
+              <label className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'cursor-pointer focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ink')}>
                 {p.photo_path ? 'Replace photo' : 'Add photo'}
                 <input type="file" accept="image/*" className="sr-only" data-testid={`pin-photo-${p.id}`} onChange={async (e) => {
                   const file = e.target.files?.[0];

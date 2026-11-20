@@ -1,6 +1,7 @@
 import { PageHeader } from '@flake/ui';
 import { redirect } from 'next/navigation';
 import { requirePage } from '@/lib/auth';
+import { Breadcrumb } from '@/components/links';
 import { CrewImportForm } from './crew-import-form';
 
 export const metadata = { title: 'Import crew' };
@@ -11,6 +12,7 @@ export default async function ImportCrew() {
   if (ctx.role === 'viewer') redirect('/settings?tab=crew');
   return (
     <>
+      <Breadcrumb href="/settings?tab=crew">Crew</Breadcrumb>
       <PageHeader title="Import crew" subtitle="Bring your drivers and subs over from a spreadsheet. Nothing is sent to anyone." />
       <CrewImportForm />
     </>

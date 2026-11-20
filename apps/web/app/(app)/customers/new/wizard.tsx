@@ -3,7 +3,8 @@
 import { quotingSeason } from '@flake/core/time';
 import { quotableSeasons } from '@flake/contracts';
 import { suggestPrice, type RateCard } from '@flake/core/quote';
-import { Badge, Button, Card, Input, Label, PageHeader, Segmented, Select, Progress } from '@flake/ui';
+import { Badge, Button, buttonVariants, Card, cn, Input, Label, PageHeader, Segmented, Select, Progress } from '@flake/ui';
+import { proseLink } from '@/components/links';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -251,7 +252,7 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
         {step === 0 ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2"><Label htmlFor="name">Name</Label><Input id="name" data-testid="c-name" value={c.name} onChange={(e) => setC({ ...c, name: e.target.value })} /></div>
-            {twin ? <p className="text-sm text-warn-ink sm:col-span-2" data-testid="customer-twin">You already have a customer named {twin.name}. <Link className="font-semibold text-link underline" href={`/customers/new?customer=${twin.id}`}>Add this lot to them</Link>, or keep going to make a second customer.</p> : null}
+            {twin ? <p className="text-sm text-warn-ink sm:col-span-2" data-testid="customer-twin">You already have a customer named {twin.name}. <Link className={proseLink} href={`/customers/new?customer=${twin.id}`}>Add this lot to them</Link>, or keep going to make a second customer.</p> : null}
             <Segmented label="Kind" name="kind" testId="kind" value={c.kind as 'commercial' | 'residential' | 'hoa'} options={[['commercial', 'Commercial'], ['residential', 'Residential'], ['hoa', 'HOA']] as const} onChange={(kind) => setC({ ...c, kind })} />
             <div><Label htmlFor="billing">Billing</Label>
               <Select id="billing" value={c.billing_mode} onChange={(e) => setC({ ...c, billing_mode: e.target.value })}><option value="card_on_file">Card on file</option><option value="ach_on_file">Bank (ACH) on file</option><option value="invoice_net30">Net-30 invoice</option><option value="manual">Manual</option></Select>
@@ -283,7 +284,7 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
             ) : null}
             {hit ? (
               <div className="mt-3">
-                {lotTwin && lotTwin.customer_id !== existing?.id ? <p className="mb-2 rounded-md bg-warn-tint p-2 text-sm text-warn-ink" data-testid="lot-twin">You already have {lotTwin.customer}&apos;s {lotTwin.label} at {lotTwin.address}. <Link className="font-semibold underline" href={`/customers/${lotTwin.customer_id}`}>Open it instead</Link>, or keep going if this is a different lot.</p> : null}
+                {lotTwin && lotTwin.customer_id !== existing?.id ? <p className="mb-2 rounded-md bg-warn-tint p-2 text-sm text-warn-ink" data-testid="lot-twin">You already have {lotTwin.customer}&apos;s {lotTwin.label} at {lotTwin.address}. <Link className={proseLink} href={`/customers/${lotTwin.customer_id}`}>Open it instead</Link>, or keep going if this is a different lot.</p> : null}
                 <p className="mb-2 text-sm" data-testid="address-saved">Address on file: <b>{hit.label.replace(' (mock geocode)', '')}</b>{sameStreet(address, hit.label) ? null : <span className="ml-1 text-warn-ink">(not the street you typed)</span>}</p>
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <Badge tone="amber" data-testid="estimate-label">Estimate, drag to adjust</Badge>
@@ -343,7 +344,7 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
             {hit ? <MapView layers={layers} base="satellite" center={{ lat: hit.lat, lon: hit.lon }} zoom={18} polygon={polygon} mode="pin" pins={pins.map((p, i) => ({ id: String(i), lat: p.lat, lon: p.lon, label: p.kind }))} onPin={(lat, lon) => setPins((list) => [...list, { kind: pinKind, lat, lon, note: '' }])} /> : null}
             <ul className="mt-2 space-y-1 text-sm">
               {pins.map((p, i) => (
-                <li key={i} className="flex items-center gap-2"><Badge>{p.kind}</Badge><Input aria-label="Pin note" placeholder="Note" value={p.note} onChange={(e) => setPins(pins.map((x, j) => (j === i ? { ...x, note: e.target.value } : x)))} /><label className="cursor-pointer whitespace-nowrap text-link underline">{p.file ? 'Photo added' : 'Add photo'}<input type="file" accept="image/*" className="sr-only" data-testid="wizard-pin-photo" onChange={(e) => { const file = e.target.files?.[0]; if (file) setPins((list) => list.map((x, j) => (j === i ? { ...x, file } : x))); }} /></label><Button size="sm" variant="ghost" onClick={() => setPins(pins.filter((_, j) => j !== i))}>Remove</Button></li>
+                <li key={i} className="flex items-center gap-2"><Badge>{p.kind}</Badge><Input aria-label="Pin note" placeholder="Note" value={p.note} onChange={(e) => setPins(pins.map((x, j) => (j === i ? { ...x, note: e.target.value } : x)))} /><label className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'cursor-pointer focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ink')}>{p.file ? 'Photo added' : 'Add photo'}<input type="file" accept="image/*" className="sr-only" data-testid="wizard-pin-photo" onChange={(e) => { const file = e.target.files?.[0]; if (file) setPins((list) => list.map((x, j) => (j === i ? { ...x, file } : x))); }} /></label><Button size="sm" variant="ghost" onClick={() => setPins(pins.filter((_, j) => j !== i))}>Remove</Button></li>
               ))}
             </ul>
           </div>

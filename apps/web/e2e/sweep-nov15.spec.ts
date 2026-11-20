@@ -90,7 +90,7 @@ test('a route stop moves to a typed position', async ({ page }) => {
   await login(page);
   await page.goto('/routes');
   const card = page.getByTestId('route-card').filter({ has: page.getByTestId('route-position').nth(2) }).first();
-  const labels = async () => (await card.locator('ol > li').allInnerTexts()).map((t) => t.replace(/^\d+\.\s*/, '').split('\n')[0]);
+  const labels = async () => (await card.locator('ol > li').allInnerTexts()).map((t) => t.replace(/^\d+\.?\s*/, '').split('\n')[0]);
   const start = await labels();
   try {
     await card.getByTestId('route-position').nth(2).click();
@@ -191,6 +191,7 @@ test('feedback goes to the Flake team with the page, and the storm-night guide o
   await page.goto('/admin/feedback');
   await expect(page.getByTestId('feedback-item').filter({ hasText: text })).toContainText('on /billing');
   await page.goto('/dashboard');
+  await page.getByTestId('feedback-open').click();
   await page.getByTestId('help-link').click();
   await expect(page.getByRole('heading', { name: 'Storm-night guide' })).toBeVisible();
 });
@@ -200,7 +201,7 @@ test('an incident packet is made from the time it happened', async ({ page }) =>
   await login(page);
   const [c1] = await sql`select s.id from site s join tenant t on t.id = s.tenant_id where t.slug = 'lakeshore-demo' and s.label = 'Madison Ave Retail Lot'`;
   await page.goto(`/proof?site=${c1!.id}`);
-  await page.getByTestId('proof-mode').getByText('Incident').click();
+  await page.getByTestId('proof-mode').getByText('Slip or damage (incident)').click();
   await page.getByTestId('proof-incident').fill('2025-12-13T08:30');
   const generate = async () => {
     await page.getByTestId('proof-generate').click();

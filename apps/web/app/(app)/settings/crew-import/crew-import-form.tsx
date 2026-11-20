@@ -1,7 +1,7 @@
 'use client';
 
 import { Button, Card, Label, Table, Td, Th } from '@flake/ui';
-import Link from 'next/link';
+import { ButtonLink } from '@/components/links';
 import { useState } from 'react';
 import { api } from '@/lib/client';
 import { crewFromCsv, importCrewKind, importLanguage, type CsvCrew } from '@/lib/csv';
@@ -47,7 +47,7 @@ export function CrewImportForm() {
           {results.map((r) => <li key={r.row} className={r.ok ? '' : 'text-danger'} data-testid="crew-import-row">{r.ok ? r.name : `${ready[r.row]?.name ?? 'Row'}: ${r.error}`}</li>)}
         </ul>
         <p className="mt-3 text-sm text-ink-2">Nobody has been texted. Next: on Crew, press Invite for each driver and send the join link from your phone. They agree to texts on that page.</p>
-        <Link href="/settings?tab=crew" className="mt-3 inline-block font-semibold text-link underline">Back to Crew</Link>
+        <ButtonLink href="/settings?tab=crew" className="mt-3">Go to Crew</ButtonLink>
       </Card>
     );
   }
