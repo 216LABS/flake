@@ -9,7 +9,7 @@ for (const size of [{ width: 390, height: 844 }, { width: 375, height: 667 }]) {
     await page.setViewportSize(size);
     await login(page);
     const email = `link-only-${randomUUID().slice(0, 6)}@example.com`;
-    const c = await (await page.request.post('/api/customers', { data: { name: `Link only ${randomUUID().slice(0, 6)}`, kind: 'residential', email, billing_mode: 'card_on_file' } })).json();
+    const c = await (await page.request.post('/api/customers', { data: { name: `Link only ${randomUUID().slice(0, 6)}`, kind: 'residential', email, phone_e164: '+12165550142', billing_mode: 'card_on_file' } })).json();
     const s = await (await page.request.post('/api/sites', { data: { customer_id: c.id, label: 'Link lot', address: '100 Test St, Lakewood, OH', lat: 41.48, lon: -81.8 } })).json();
 
     // Issue 92: "Get link only" makes the quote and sends nothing.
@@ -19,6 +19,13 @@ for (const size of [{ width: 390, height: 844 }, { width: 375, height: 667 }]) {
     const url = await page.getByTestId('q-url').inputValue();
     expect(url).toContain('/q/');
     await expect(page.getByText('Nothing was sent, so share it with the customer.')).toBeVisible();
+    // D16: the office texts it from its own phone, to the customer's number, with the link and the company's name.
+    const href = (await page.getByTestId('q-text-it').getAttribute('href'))!;
+    expect(href).toMatch(/^sms:\+12165550142[&?]body=/);
+    expect(decodeURIComponent(href.split('body=')[1]!)).toContain(url);
+    expect(decodeURIComponent(href.split('body=')[1]!)).toContain('Lakeshore Plow Co.');
+    await page.reload();
+    expect(await page.getByTestId('contract-text-it').getAttribute('href')).toContain(encodeURIComponent(url));
     await page.waitForTimeout(1500);
     expect((await sql`select count(*)::int as n from message_log where to_addr = ${email}`)[0]!.n).toBe(0);
     expect((await sql`select count(*)::int as n from job where payload::text like ${`%${email}%`}`)[0]!.n).toBe(0);

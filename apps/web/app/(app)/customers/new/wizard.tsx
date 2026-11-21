@@ -5,6 +5,8 @@ import { quotableSeasons } from '@flake/contracts';
 import { suggestPrice, type RateCard } from '@flake/core/quote';
 import { Badge, Button, buttonVariants, Card, cn, Input, Label, PageHeader, Segmented, Select, Progress } from '@flake/ui';
 import { proseLink } from '@/components/links';
+import { CopyLink, TextIt } from '@/components/text-it';
+import type { Share } from '@/lib/share';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -79,6 +81,7 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
   const [position, setPosition] = useState('');
   const [quoteUrl, setQuoteUrl] = useState<string | null>(null);
   const [emailed, setEmailed] = useState(false);
+  const [share, setShare] = useState<Share | null>(null);
   const [sendingOff, setSendingOff] = useState(false);
   const [lots, setLots] = useState(1);
   // A new step takes keyboard focus (issue 158), so the next Tab is inside it, not back at the skip link and the nav.
@@ -227,6 +230,7 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
       setEmailed(send && Boolean(out.emailed && c.email));
       setSendingOff(send && Boolean(out.sending_off));
       setLots(out.lots ?? 1);
+      setShare(out.share ?? null);
       setQuoteUrl(out.url);
     } catch (e) {
       setError((e as Error).message);
@@ -242,7 +246,8 @@ export function Wizard({ layers, rateCard, routes, existing, others = [], knownL
         <p className="mt-1 text-sm text-muted" data-testid="quote-note">{emailed ? 'We are emailing the customer this link. You can also share it directly.' : sendingOff ? 'Flake is not sending email or texts for your company yet, so nothing went out. Share this link with the customer.' : 'Nothing was emailed, so share this link with the customer.'}</p>
         {photoNote ? <p className="mt-1 text-sm text-warn-ink">{photoNote}</p> : null}
         {lots > 1 ? <p className="mt-1 text-sm" data-testid="quote-lots">This is the same link as their other quote{lots > 2 ? 's' : ''} waiting for a signature. It now covers all {lots} properties, and one signature accepts them all.</p> : null}
-        <Input readOnly className="mt-3" value={quoteUrl} data-testid="quote-url" />
+        <Input readOnly className="mt-3" value={quoteUrl} data-testid="quote-url" onFocus={(e) => e.currentTarget.select()} />
+        <div className="mt-2 flex flex-wrap items-center gap-2"><CopyLink url={quoteUrl} testId="quote-copy" />{share && !emailed ? <TextIt share={share} testId="quote-text-it" /> : null}</div>
         <div className="mt-4 flex gap-2">
           <Button variant="accent" onClick={() => router.push('/customers')}>Done</Button>
         </div>

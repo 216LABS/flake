@@ -39,7 +39,7 @@ export default async function Storms({ searchParams }: { searchParams: Promise<{
   const listed = data.storms.filter((s) => !hidden.includes(s.id));
   return (
     <>
-      <PageHeader title="Storms" subtitle="Start from your master routes, publish once, then move stops." actions={ctx.role !== 'viewer' ? <a href="#start" className={cn(buttonVariants({ variant: 'accent' }), 'lg:hidden')} data-testid="jump-start-storm">Start a storm</a> : null} />
+      <PageHeader title="Storms" subtitle="When snow comes, start a storm: each truck gets its route on the driver's phone, and you can move stops while it runs." actions={ctx.role !== 'viewer' ? <a href="#start" className={cn(buttonVariants({ variant: 'accent' }), 'lg:hidden')} data-testid="jump-start-storm">Start a storm</a> : null} />
       <LiveBanner storms={data.live} />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
@@ -99,7 +99,7 @@ export default async function Storms({ searchParams }: { searchParams: Promise<{
               </>
             );
           })()}
-          {data.storms.length ? null : <EmptyState title="No storms yet" body="Add routes first, then start your first storm here." />}
+          {data.storms.length ? null : <EmptyState title="No storms yet" body={data.routes.length ? 'Start your first one here when snow is coming. You can try one now and close it: nothing is billed until you approve.' : 'Put your lots on a route first (Routes), then start your first storm here.'} />}
         </div>
         {/* On a phone the form sits below every storm so far; the header button and the dashboard jump here. */}
         <div id="start" className="scroll-mt-20"><NewStorm defaultName={`Storm ${fmtLocal(new Date(), ctx.tenant.timezone, { month: 'short', day: 'numeric' })}`} routes={data.routes.map((r) => ({ id: r.id, name: r.name, default_crew_id: r.default_crew_id }))} crew={data.crew.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))} unrouted={data.unrouted.map((s) => s.label)} /></div>

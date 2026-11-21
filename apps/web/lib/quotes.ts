@@ -5,6 +5,7 @@ import { CUSTOMER_CONSENT_TEXT } from '@flake/core/messages';
 import { quoteAccept, quoteCreate, quoteDecline } from '@flake/contracts';
 import { z } from 'zod';
 import { phone } from './client';
+import { quoteShare } from './share';
 import { baseUrl, emailConfigured } from './env';
 import { HttpError } from './http';
 import { notifyOffice, plainText, queueNotify, shortLink } from './messaging';
@@ -48,7 +49,7 @@ export async function createQuote(ctx: Ctx, input: z.infer<typeof quoteCreate>) 
     await queueNotify(row.tenant.id, { phone: row.customer.phone_e164, email: row.customer.email }, { template: 'quote', vars: { link }, subject: `${row.tenant.name}: your snow service quote`, key: `quote:${row.contract.id}`, related: { contract_id: row.contract.id } });
   }
   // Whether this quote went out by email now (issue 152): only when it was sent, to a customer with an address.
-  return { contract: row.contract, url, token, lots: row.lots, emailed: Boolean(input.send && row.customer.email && emailConfigured() && row.tenant.outbound_enabled), sending_off: !row.tenant.outbound_enabled };
+  return { contract: row.contract, url, token, lots: row.lots, share: quoteShare(row.tenant.name, url, row.customer.phone_e164, row.lots), emailed: Boolean(input.send && row.customer.email && emailConfigured() && row.tenant.outbound_enabled), sending_off: !row.tenant.outbound_enabled };
 }
 
 /**
@@ -210,7 +211,8 @@ export async function resendQuote(ctx: Ctx, contractId: string) {
   });
   const link = await shortLink(ctx.tenantId, `/q/${token}`);
   await queueNotify(row.tenant.id, { phone: row.customer.phone_e164, email: row.customer.email }, { template: 'quote', vars: { link }, subject: `${row.tenant.name}: your snow service quote`, key: `quote:${row.contract.id}:${hashToken(token).slice(0, 12)}`, related: { contract_id: row.contract.id } });
-  return { url: `${baseUrl()}/q/${token}` };
+  const url = `${baseUrl()}/q/${token}`;
+  return { url, share: quoteShare(row.tenant.name, url, row.customer.phone_e164) };
 }
 
 /** The link to a quote still waiting for a signature, sent or handed over as a link only (issue 92). */

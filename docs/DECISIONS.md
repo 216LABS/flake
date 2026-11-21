@@ -185,3 +185,9 @@ Flip is reworking pricing for next season. **[J]**
 - **In the app, a company inside its free season sees no plans, prices or upgrade buttons** on Settings, Plan. After the season (or for a company without one) the old Plan panel comes back unchanged. Billing logic, plans and the site cap are unchanged.
 - **The Flake fee on payments through Flake is still charged (D5), so it isn't hidden**: the free-season page, Plan and Terms say there is a small Flake fee on card and bank payments, and billing review shows its amount on each bill before it is sent. No percentage is published while pricing is reworked. Stripe isn't connected on production, so nobody pays it yet.
 - **Terms** no longer point to a pricing page: the fee's amount is shown in billing review before a bill is sent, and any later charge or fee change is shown and agreed before it applies. Terms date moved to Nov 19, 2026.
+
+## D21. Customers get their links by text from the office's phone (Nov 21, 2026)
+Follows D16 (text, not email). **[J]**
+- **Every customer link has "Text it from my phone"** next to its copy button: a new quote, a quote on the site page, a resent quote, the records page, and each bill in billing review. It opens the office phone's Messages with the customer's mobile and a short message with the company name and the link. Flake sends nothing, so it needs no consent, no Twilio and no sending switch. Overdue reminders already worked this way (D18).
+- **Email stays where it already was** (a company with sending on, a customer with an email, Stripe's own invoices). Nothing new emails anyone.
+- **Owner sign-in is still an emailed code.** Moving it to a text code needs Twilio in Supabase (or custom SMTP for the email code); see the launch list.

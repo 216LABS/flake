@@ -31,7 +31,10 @@ test('maintenance reminders: due soon on the dashboard, Mark done resets it', as
     await page.getByTestId('log-truck').selectOption({ label: name });
     await page.getByTestId('reminder-row').filter({ hasText: 'Oil change' }).getByTestId('reminder-done').click();
     await page.getByTestId('confirm-yes').click();
-    await expect(page.getByTestId('reminder-row').filter({ hasText: 'Oil change' })).toContainText('0 of 250 h');
+    // "0 of 250 h" is also inside the old "230 of 250 h", so wait for the reset itself before leaving the page.
+    const reset = page.getByTestId('reminder-row').filter({ hasText: 'Oil change' });
+    await expect(reset).toContainText(/(^|\D)0 of 250 h/);
+    await expect(reset).not.toContainText('230 of 250 h');
     await page.goto('/dashboard');
     await expect(page.getByTestId('service-row').filter({ hasText: name })).toHaveCount(0);
   } finally {

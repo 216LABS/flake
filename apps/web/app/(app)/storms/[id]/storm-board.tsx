@@ -463,7 +463,8 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
                     {laneRuns.length > 1 ? <div className="mb-1 flex items-center gap-2 px-1 text-xs font-bold uppercase tracking-wide text-muted" data-testid="pass-divider"><span className="h-px flex-1 bg-line" />Pass {r.pass}<span className="h-px flex-1 bg-line" /></div> : null}
                     <div className="mb-2 px-1">
                       <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted">
-                        <span>{r.crew?.name ?? 'No driver'}{r.crew?.kind === 'sub' ? ' (sub)' : ''}{r.crew?.callout_reply ? `, replied ${r.crew.callout_reply}` : ''}</span>
+                        {/* The picker below already shows the name, so the label just says what it is. */}
+                        <span>{editable ? 'Driver' : `${r.crew?.name ?? 'No driver'}${r.crew?.kind === 'sub' ? ' (sub)' : ''}`}{r.crew?.callout_reply ? `, replied ${r.crew.callout_reply}` : ''}</span>
                         {r.published_at && r.link && r.crew && !r.crew.reachable && !closed ? <Badge tone="amber" data-testid="no-reach">Link not sent</Badge> : null}
                       </div>
                       {editable ? (

@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useConfirm } from '@/components/confirm';
 import { ButtonA, proseLink } from '@/components/links';
+import { TextIt } from '@/components/text-it';
+import type { Share } from '@/lib/share';
 import { api, money, possessive } from '@/lib/client';
 import { billingLabel, invoiceStatus } from '@/lib/labels';
 
@@ -257,22 +259,24 @@ function howBilled(r: DraftRow, stripeReady: boolean, sending: boolean): string 
   if (stripeReady && (r.billing_mode === 'card_on_file' || r.billing_mode === 'ach_on_file')) {
     const what = r.billing_mode === 'card_on_file' ? 'Card' : 'Bank account';
     if (r.has_payment_method) return `${what} on file: charged when you approve.`;
-    return `No ${what.toLowerCase()} on file yet: they get a pay link when you approve. Or copy their link and send it yourself.`;
+    return `No ${what.toLowerCase()} on file yet: they get a pay link when you approve. Or copy their link, or text it from your phone.`;
   }
   if (stripeReady && r.billing_mode === 'invoice_net30') return 'Gets a Stripe invoice by email when you approve, due in 30 days.';
   if (sending && r.has_email) return 'Approve, then Send bill: they get an email with the total and their records page link, which says how to pay you.';
-  if (sending) return 'No email on file: copy their link and send it yourself.';
-  return 'Flake sending is off for your company: copy their link and send it yourself.';
+  if (sending) return 'No email on file: copy their link, or text it from your phone.';
+  return 'Flake sending is off for your company: copy their link, or text it from your phone.';
 }
 
 /** The customer's records page link, where they see the bill and how to pay. */
 function CopyLink({ customerId }: { customerId: string }) {
   const [said, setSaid] = useState<string | null>(null);
+  const [share, setShare] = useState<Share | null>(null);
   return (
     <>
       <Button size="sm" variant="outline" data-testid="copy-customer-link" onClick={async () => {
         try {
-          const { url } = await api<{ url: string }>(`/api/customers/${customerId}/portal`);
+          const { url, share: s } = await api<{ url: string; share: Share }>(`/api/customers/${customerId}/portal`);
+          setShare(s);
           try {
             await navigator.clipboard.writeText(url);
             setSaid('Copied');
@@ -284,6 +288,7 @@ function CopyLink({ customerId }: { customerId: string }) {
         }
       }}>Copy customer link</Button>
       {said ? <span role="status" className="break-all text-xs text-muted" data-testid="copy-customer-link-note">{said}</span> : null}
+      {share ? <TextIt share={share} testId="bill-text-it" /> : null}
     </>
   );
 }

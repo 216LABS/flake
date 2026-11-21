@@ -4,11 +4,11 @@ import { Button, Card, Input, Label, Segmented, Select } from '@flake/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useConfirm } from '@/components/confirm';
-import { api } from '@/lib/client';
+import { api, phone } from '@/lib/client';
 
 export function CustomerEditor({ customer }: { customer: { id: string; name: string; kind: string; contact_name: string | null; email: string | null; phone_e164: string | null; billing_mode: string } }) {
   const router = useRouter();
-  const [f, setF] = useState({ name: customer.name, kind: customer.kind, contact_name: customer.contact_name ?? '', email: customer.email ?? '', phone_e164: customer.phone_e164 ?? '', billing_mode: customer.billing_mode });
+  const [f, setF] = useState({ name: customer.name, kind: customer.kind, contact_name: customer.contact_name ?? '', email: customer.email ?? '', phone_e164: phone(customer.phone_e164), billing_mode: customer.billing_mode });
   // What the server had when this form loaded or last saved. Only changed fields are sent, with what they were, so a
   // second tab can't overwrite edits it never saw (issue 144).
   const [base, setBase] = useState(() => ({ name: customer.name, kind: customer.kind, contact_name: customer.contact_name, email: customer.email, phone_e164: customer.phone_e164, billing_mode: customer.billing_mode }));
@@ -42,7 +42,7 @@ export function CustomerEditor({ customer }: { customer: { id: string; name: str
             // The form shows the saved row, so fields this tab didn't touch pick up another tab's changes too (issue 164).
             // Otherwise the next save would send a field the tab never changed, as stale, and undo the other edit.
             setBase({ name: saved.name, kind: saved.kind, contact_name: saved.contact_name, email: saved.email, phone_e164: saved.phone_e164, billing_mode: saved.billing_mode });
-            setF({ name: saved.name, kind: saved.kind, contact_name: saved.contact_name ?? '', email: saved.email ?? '', phone_e164: saved.phone_e164 ?? '', billing_mode: saved.billing_mode });
+            setF({ name: saved.name, kind: saved.kind, contact_name: saved.contact_name ?? '', email: saved.email ?? '', phone_e164: phone(saved.phone_e164), billing_mode: saved.billing_mode });
             setMsg({ ok: true, text: 'Saved' });
             router.refresh();
           } catch (e) {

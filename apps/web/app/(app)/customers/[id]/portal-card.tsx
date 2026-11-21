@@ -3,10 +3,13 @@
 import { Button, Card } from '@flake/ui';
 import { useState } from 'react';
 import { api } from '@/lib/client';
+import { TextIt } from '@/components/text-it';
+import type { Share } from '@/lib/share';
 
 /** The customer's private records page: every visit with photos, and their invoices. */
 export function PortalCard({ customerId, email }: { customerId: string; email: string | null }) {
   const [url, setUrl] = useState<string | null>(null);
+  const [share, setShare] = useState<Share | null>(null);
   const [note, setNote] = useState('');
   const [error, setError] = useState('');
   const [confirmReset, setConfirmReset] = useState(false);
@@ -20,8 +23,10 @@ export function PortalCard({ customerId, email }: { customerId: string; email: s
     }
   };
   const copy = () => run(async () => {
-    const link = url ?? (await api<{ url: string }>(`/api/customers/${customerId}/portal`)).url;
+    const out = url && share ? { url, share } : await api<{ url: string; share: Share }>(`/api/customers/${customerId}/portal`);
+    const link = out.url;
     setUrl(link);
+    setShare(out.share);
     try {
       await navigator.clipboard.writeText(link);
       setNote('Copied.');
@@ -35,8 +40,9 @@ export function PortalCard({ customerId, email }: { customerId: string; email: s
     setNote(`Emailed to ${r.sent_to}.`);
   });
   const reset = () => run(async () => {
-    const r = await api<{ url: string }>(`/api/customers/${customerId}/portal`, { body: { action: 'reset' } });
+    const r = await api<{ url: string; share: Share }>(`/api/customers/${customerId}/portal`, { body: { action: 'reset' } });
     setUrl(r.url);
+    setShare(r.share);
     setConfirmReset(false);
     setNote('New link made. The old one no longer works.');
   });
@@ -55,6 +61,7 @@ export function PortalCard({ customerId, email }: { customerId: string; email: s
         ) : <Button variant="ghost" size="sm" onClick={() => setConfirmReset(true)} data-testid="portal-reset">Make a new link</Button>}
       </div>
       {url ? <input readOnly value={url} aria-label="Records page link" onFocus={(e) => e.currentTarget.select()} className="mt-3 w-full rounded-md border border-line bg-tint px-2 py-1 text-xs" data-testid="portal-url" /> : null}
+      {url && share ? <TextIt share={share} className="mt-2" testId="portal-text-it" /> : null}
       {note ? <p className="mt-2 text-sm text-ok-ink" role="status">{note}</p> : null}
       {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
     </Card>

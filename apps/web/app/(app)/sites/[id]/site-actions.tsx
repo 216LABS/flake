@@ -2,6 +2,8 @@
 
 import { Badge, Button, Card, Input, Label, Select } from '@flake/ui';
 import { ButtonA } from '@/components/links';
+import { CopyLink, TextIt } from '@/components/text-it';
+import type { Share } from '@/lib/share';
 import { quotableSeasons } from '@flake/contracts';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -51,6 +53,7 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [],
   const [haulRate, setHaulRate] = useState('');
   const [url, setUrl] = useState<string | null>(null);
   const [lots, setLots] = useState(1);
+  const [share, setShare] = useState<Share | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ask, dialog] = useConfirm();
@@ -76,6 +79,7 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [],
       const out = await api('/api/quotes', { body: { site_id: siteId, season: season.trim(), services, salt_pricing: salt ? { unit: saltUnit, amount_cents: dollarsToCents(saltPrice) } : null, send } });
       setSent(send);
       setLots(out.lots ?? 1);
+      setShare(out.share ?? null);
       setUrl(out.url);
       router.refresh();
     } catch (e) {
@@ -117,12 +121,12 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [],
       {/* For a quote handed over in person or sent from the office's own phone: nothing is emailed or texted (issue 92). */}
       <Button variant="outline" className="mt-2 w-full" disabled={busy || Boolean(problem) || !season.trim()} data-testid="q-link-only" onClick={() => void make(false)}>Get link only, don&apos;t send</Button>
       {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
-      {url ? <div className="mt-2"><Label>{sent ? 'Quote link. Share it if the customer has no email on file.' : 'Quote link. Nothing was sent, so share it with the customer.'}</Label><Input readOnly value={url} data-testid="q-url" />{lots > 1 ? <p className="mt-1 text-xs text-muted" data-testid="q-lots">The same link as this customer&apos;s other waiting quote{lots > 2 ? 's' : ''}: it covers all {lots} properties, and one signature accepts them all.</p> : null}</div> : null}
+      {url ? <div className="mt-2"><Label>{sent ? 'Quote link. Share it if the customer has no email on file.' : 'Quote link. Nothing was sent, so share it with the customer.'}</Label><Input readOnly value={url} data-testid="q-url" onFocus={(e) => e.currentTarget.select()} /><div className="mt-2 flex flex-wrap items-center gap-2"><CopyLink url={url} testId="q-copy" />{share ? <TextIt share={share} testId="q-text-it" /> : null}</div>{lots > 1 ? <p className="mt-1 text-xs text-muted" data-testid="q-lots">The same link as this customer&apos;s other waiting quote{lots > 2 ? 's' : ''}: it covers all {lots} properties, and one signature accepts them all.</p> : null}</div> : null}
     </Card>
   );
 }
 
-export interface ContractRow { id: string; status: string; season: string; services: any[]; salt_pricing: any; accepted_name: string | null; accepted_at: string | null; created_at: string | null; installments_billed: number; quote_url?: string | null; decline_reason?: string | null; prior?: PriorBilled | null; in_force?: boolean }
+export interface ContractRow { id: string; status: string; season: string; services: any[]; salt_pricing: any; accepted_name: string | null; accepted_at: string | null; created_at: string | null; installments_billed: number; quote_url?: string | null; quote_share?: Share | null; decline_reason?: string | null; prior?: PriorBilled | null; in_force?: boolean }
 
 const TONE: Record<string, 'green' | 'amber' | 'gray' | 'blue' | 'red'> = { accepted: 'green', sent: 'blue', draft: 'amber', void: 'gray', declined: 'red' };
 
@@ -130,7 +134,7 @@ const TONE: Record<string, 'green' | 'amber' | 'gray' | 'blue' | 'red'> = { acce
 export function ContractList({ contracts, canEdit, pdf }: { contracts: ContractRow[]; canEdit: boolean; pdf: string | null }) {
   const router = useRouter();
   const [ask, dialog] = useConfirm();
-  const [links, setLinks] = useState<Record<string, string>>({});
+  const [links, setLinks] = useState<Record<string, { url: string; share?: Share }>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const run = async (fn: () => Promise<void>) => {
@@ -156,13 +160,13 @@ export function ContractList({ contracts, canEdit, pdf }: { contracts: ContractR
             <ul className="mt-1 text-ink-2">{k.services.map((s, i) => <li key={i}>{scopeLine(s, k.salt_pricing, k.prior)}</li>)}</ul>
             {k.status === 'declined' ? <div className="text-ink-2" data-testid="declined-note">Declined by the customer{k.decline_reason ? `: "${k.decline_reason}"` : '.'} Send a new quote to try again.</div> : null}
             {k.accepted_name ? <div className="text-muted">Signed by {k.accepted_name}{k.installments_billed ? `. ${k.installments_billed} installment${k.installments_billed === 1 ? '' : 's'} billed.` : '.'}</div> : null}
-            {links[k.id] ? <Input readOnly value={links[k.id]} className="mt-1" data-testid="resent-url" aria-label="New quote link" />
-              : k.quote_url ? <Input readOnly value={k.quote_url} className="mt-1" data-testid="quote-link" aria-label="Quote link" onFocus={(e) => e.target.select()} /> : null}
+            {links[k.id] ? <><Input readOnly value={links[k.id]!.url} className="mt-1" data-testid="resent-url" aria-label="New quote link" onFocus={(e) => e.target.select()} />{links[k.id]!.share ? <TextIt share={links[k.id]!.share!} className="mt-1" testId="contract-text-it" /> : null}</>
+              : k.quote_url ? <><Input readOnly value={k.quote_url} className="mt-1" data-testid="quote-link" aria-label="Quote link" onFocus={(e) => e.target.select()} />{k.quote_share ? <TextIt share={k.quote_share} className="mt-1" testId="contract-text-it" /> : null}</> : null}
             {canEdit && k.status !== 'void' ? (
               <div className="mt-1 flex flex-wrap gap-2">
                 {k.status === 'draft' || k.status === 'sent' ? <Button size="sm" variant="outline" disabled={busy} data-testid="contract-resend" onClick={() => void run(async () => {
-                  const out = await api<{ url: string }>(`/api/contracts/${k.id}/resend`, { method: 'POST' });
-                  setLinks((all) => ({ ...all, [k.id]: out.url }));
+                  const out = await api<{ url: string; share?: Share }>(`/api/contracts/${k.id}/resend`, { method: 'POST' });
+                  setLinks((all) => ({ ...all, [k.id]: out }));
                 })}>{k.status === 'draft' ? 'Send' : 'Resend'}</Button> : null}
                 <Button size="sm" variant="ghost" disabled={busy} data-testid="contract-void" onClick={async () => {
                   const signed = k.status === 'accepted';

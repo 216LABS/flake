@@ -182,10 +182,39 @@ test('a driver who blocks location is told plainly what it costs (issue 77)', as
     await d.goto(runs[0]!.link);
     await expect(d.getByTestId('location-off')).toHaveCount(0);
     await d.getByTestId('arrive').click();
+    // Issue 211: on site it is one short line, so it can't push the stop's buttons under the Done panel.
+    await expect(d.getByTestId('location-off')).toContainText("won't show you were here");
+    await expect(d.getByTestId('location-how')).toHaveCount(0);
+    // Off the on-site card the full banner is back. Issue 184: the steps to turn it on are one tap away.
+    await d.getByTestId('onsite').getByTestId('problem').click();
     await expect(d.getByTestId('location-off')).toContainText("won't show you were at the lot");
-    // Issue 184: the steps to turn it back on are one tap away, not in the way of the buttons.
     await d.getByTestId('location-how').locator('summary').click();
     await expect(d.getByTestId('location-how')).toContainText('Safari Websites');
+  } finally {
+    await ctx.close();
+    await sql`update storm set status = 'closed', closed_at = now() where id = ${id}`;
+  }
+});
+
+test('with location off, salt + is tappable on first view after Arrive at 390x844 (issue 211)', async ({ browser, baseURL, page }) => {
+  await login(page);
+  const [salted] = await sql`select s.label from contract c join site s on s.id = c.site_id join route_stop rs on rs.site_id = s.id join route r on r.id = rs.route_id where r.name = 'West Lakewood' and c.services::text like '%salt%' and c.status = 'accepted' limit 1`;
+  const { id, runs } = await startStorm(page.request, `Salt no location ${Date.now()}`, ['West Lakewood']);
+  const ctx = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, permissions: [] });
+  try {
+    const d = await ctx.newPage();
+    await d.goto(runs[0]!.link);
+    await expect(d.getByTestId('next-stop')).toBeVisible();
+    if (!((await d.getByTestId('stop-label').textContent()) ?? '').includes(salted!.label as string)) await d.getByTestId('other-stop').filter({ hasText: salted!.label as string }).first().click();
+    await expect(d.getByTestId('stop-label')).toContainText(salted!.label as string);
+    await d.getByTestId('arrive').click();
+    await expect(d.getByTestId('location-off')).toBeVisible();
+    const plus = d.getByTestId('salt-plus');
+    await expect(plus).toBeInViewport({ ratio: 1 });
+    const pb = (await plus.boundingBox())!;
+    expect(await d.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('[data-testid="salt-plus"]') !== null, [pb.x + pb.width / 2, pb.y + pb.height / 2])).toBe(true);
+    await plus.click();
+    await expect(d.getByTestId('salt-qty')).toHaveText('1');
   } finally {
     await ctx.close();
     await sql`update storm set status = 'closed', closed_at = now() where id = ${id}`;

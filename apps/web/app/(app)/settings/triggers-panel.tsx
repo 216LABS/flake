@@ -106,10 +106,10 @@ export function TriggersPanel({ rows, defaultIn, saltDefault, owner, canEdit }: 
                 ) : ruleText(r.salt_rule)}
               </Td>
               <Td label="Services">{r.services.length ? r.services.map((s) => WORD[s] ?? s).join(', ') : '-'}</Td>
-              <Td label="Now">
+              <Td label="Now" className="sm:min-w-44">
                 {r.forecast_in === null ? <span className="text-muted">No forecast yet</span> : (
                   <span>
-                    <span className="block">{r.forecast_in}&quot; forecast{r.trigger_in !== null ? ` of ${r.trigger_in}"` : ''}</span>
+                    <span className="block sm:whitespace-nowrap">{r.forecast_in}&quot; forecast{r.trigger_in !== null ? ` of ${r.trigger_in}"` : ''}</span>
                     {r.range_in ? <span className="block text-xs text-muted">Models: {r.range_in[0]} to {r.range_in[1]}&quot;</span> : null}
                     {r.contract === 'signed' ? (
                       <span className={r.now.plow || r.now.salt ? 'font-semibold text-warn-ink' : 'text-muted'} data-testid={r.now.plow ? 'will-trigger' : r.now.salt ? 'will-salt' : 'no-trigger'}>{r.now.text}</span>

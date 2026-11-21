@@ -30,7 +30,7 @@ export default async function Salt() {
         <Card><Stat label="On hand" value={plan.on_hand === null ? 'Not counted' : t(plan.on_hand)} note={plan.on_hand === null ? 'Count a pile below to start' : `Across ${yards.length === 1 ? '1 yard' : `${yards.length} yards`}`} /></Card>
         <Card data-testid="salt-next-storm">
           {plan.next_storm ? (
-            <Stat label="Next storm needs" value={`~${t(plan.next_storm.need_tons)}`} note={plan.next_storm.short_tons ? `${plan.next_storm.lots} salt lots with snow coming. Order ${Math.ceil(plan.next_storm.short_tons)}+ t.` : `${plan.next_storm.lots} salt lots with snow coming. You have enough.`} />
+            <Stat label="Next storm needs" value={`~${t(plan.next_storm.need_tons)}`} note={plan.next_storm.short_tons ? `${plan.next_storm.lots} salt lot${plan.next_storm.lots === 1 ? '' : 's'} with snow coming. Order ${Math.ceil(plan.next_storm.short_tons)}+ t.` : `${plan.next_storm.lots} salt lot${plan.next_storm.lots === 1 ? '' : 's'} with snow coming. ${plan.on_hand === null ? 'Count your pile to know if you have enough.' : 'You have enough.'}`} />
           ) : <Stat label="Next storm needs" value="Nothing yet" note="No snow in the next 12 hours at your salt lots" />}
         </Card>
         <Card><Stat label="Used this season" value={t(plan.used_this_season)} note={`Season ${plan.season}`} /></Card>

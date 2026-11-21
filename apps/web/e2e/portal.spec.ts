@@ -35,6 +35,7 @@ test('customer records page: visits with photos and salt, private to that custom
   await page.getByTestId('portal-copy').click();
   const url = await page.getByTestId('portal-url').inputValue();
   expect(url).toContain('/c/');
+  expect(await page.getByTestId('portal-text-it').getAttribute('href')).toContain(encodeURIComponent(url));
 
   // The customer opens it with no login.
   const guest = await browser.newContext({ baseURL });

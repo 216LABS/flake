@@ -50,7 +50,7 @@ export default async function Routes({ searchParams }: { searchParams: Promise<{
   }
   return (
     <>
-      <PageHeader title="Routes" subtitle="Master routes. Each storm snapshots these, so changes here never disturb a running storm." actions={data.routes.length >= 2 && ctx.role !== 'viewer' ? <Link className={buttonVariants({ variant: 'outline' })} href="/routes/plan" data-testid="plan-all-link">Plan all routes</Link> : null} />
+      <PageHeader title="Routes" subtitle="Your usual routes, one per truck. A storm copies them when it starts, so edits here never change a storm that is running." actions={data.routes.length >= 2 && ctx.role !== 'viewer' ? <Link className={buttonVariants({ variant: 'outline' })} href="/routes/plan" data-testid="plan-all-link">Plan all routes</Link> : null} />
       {data.archived.length ? <FilterTabs label="Which routes" items={[{ href: '/routes', label: 'Active', active: true }, { href: '/routes?archived=1', label: `Archived (${data.archived.length})`, active: false, testId: 'show-archived-routes' }]} /> : null}
       <fieldset disabled={ctx.role === 'viewer'} className={ctx.role === 'viewer' ? 'view-only contents' : 'contents'}><RoutesEditor lots={data.lots} layers={(await getProviders()).tiles.layers()} yard={ctx.tenant.yard?.address ?? null} sites={data.sites.map((s) => ({ ...s, active: Boolean(s.active), contracted: data.contracted.some((c) => c.site_id === s.id) }))} crew={data.crew} trucks={data.trucks} routes={data.routes.map((r) => ({ id: r.id, name: r.name, default_crew_id: r.default_crew_id, default_truck_id: r.default_truck_id, yard_trip: r.yard_trip, site_ids: data.stops.filter((s) => s.route_id === r.id).map((s) => s.site_id) }))} /></fieldset>
     </>

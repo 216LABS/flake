@@ -406,7 +406,8 @@ export function DriverApp({ token, build }: { token: string; build?: string }) {
   const freshFix = async (): Promise<{ lat: number; lon: number; acc: number } | null> => {
     const now = usable(position.current);
     if (now || !('geolocation' in navigator)) return now;
-    flashToast(t('location_finding'));
+    // Location is blocked: no "getting your location" note, there's nothing to wait for.
+    if (geoState.current !== 'denied') flashToast(t('location_finding'));
     return new Promise((resolve) => {
       const give = (v: { lat: number; lon: number; acc: number } | null) => { clearTimeout(timer); resolve(v); };
       // The phone's "allow location?" question may still be on screen: give the driver time to answer it.
@@ -566,6 +567,7 @@ export function DriverApp({ token, build }: { token: string; build?: string }) {
   const needDepth = !run.has_reported_depth && !local.depthGiven;
   const canUndo = local.last && Date.now() - local.last.at < UNDO_MS;
   void tick;
+  const onSiteView = Boolean(next && (next.status === 'onsite' || stormClosed) && local.visits[next.id] && !showProblem);
 
   return (
     <Shell>
@@ -580,10 +582,12 @@ export function DriverApp({ token, build }: { token: string; build?: string }) {
         </div>
       </header>
 
-      {geoAsk && !locationOff ? <div className="mx-4 mb-2 rounded-lg bg-slate-800 p-3 text-base text-white" data-testid="location-ask">{t('location_ask')}</div> : null}
-      {locationOff ? <div role="alert" className="mx-4 mb-2 rounded-lg bg-amber-300 p-3 text-base font-semibold text-black" data-testid="location-off">{t('location_off')}<details className="mt-2 text-base font-normal" data-testid="location-how"><summary className="flex min-h-[48px] cursor-pointer list-none items-center justify-between rounded-lg bg-black/10 px-3 font-bold">{t('location_how')}<span aria-hidden="true">▾</span></summary><p className="mt-2">{t('location_steps')}</p></details></div> : null}
+      {/* On site the driver is already at the lot, so these banners give way to a small line in the stop card: they can't push salt and Services under the Done panel (issue 211). */}
+      {geoAsk && !locationOff && !onSiteView ? <div className="mx-4 mb-2 rounded-lg bg-slate-800 p-3 text-base text-white" data-testid="location-ask">{t('location_ask')}</div> : null}
+      {locationOff && !onSiteView ? <div role="alert" className="mx-4 mb-2 rounded-lg bg-amber-300 p-3 text-base font-semibold text-black" data-testid="location-off">{t('location_off')}<details className="mt-2 text-base font-normal" data-testid="location-how"><summary className="flex min-h-[48px] cursor-pointer list-none items-center justify-between rounded-lg bg-black/10 px-3 font-bold">{t('location_how')}<span aria-hidden="true">▾</span></summary><p className="mt-2">{t('location_steps')}</p></details></div> : null}
       {/* Always mounted, so a screen reader hears every toast, not only ones it happened to catch appearing (issue 158). */}
-      <div role="status" aria-live="polite" data-testid="toast-region">{toast ? <div className="mx-4 mb-2 rounded-lg bg-sky-300 p-3 text-center text-lg font-bold text-black">{toast}</div> : null}</div>
+      {/* It floats over the page below the header, so a toast never pushes the buttons a driver is about to tap (issue 211). */}
+      <div role="status" aria-live="polite" data-testid="toast-region" className="pointer-events-none fixed inset-x-0 top-24 z-20">{toast ? <div className="mx-4 rounded-lg bg-sky-300 p-3 text-center text-lg font-bold text-black shadow-lg">{toast}</div> : null}</div>
 
       {here && next && next.status !== 'onsite' && run.storm.status === 'active' ? (
         <button type="button" onClick={() => arrive(next)} className={cn(bigButtonClass('go', 'tall'), 'mx-4 mb-3 w-[calc(100%-2rem)]')} data-testid="geofence-banner">{t('here_arrive')}</button>
@@ -605,6 +609,7 @@ export function DriverApp({ token, build }: { token: string; build?: string }) {
               stop={next}
               visit={local.visits[next.id]!}
               needDepth={needDepth}
+              locationOff={locationOff}
               onPhoto={(p, e) => onPhoto(next, p, e)}
               onDepth={(d) => chooseDepth(next, d)}
               onServices={(services) => patchVisit(next.id, { services })}
@@ -708,7 +713,7 @@ function PhotoButton({ label, done, count = done ? 1 : 0, testId, onChange }: { 
   );
 }
 
-function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; onPhoto: (phase: 'before' | 'after', e: ChangeEvent<HTMLInputElement>) => void; onDepth: (d: number) => void; onServices: (s: string[]) => void; onSalt: (n: number) => void; onDone: () => void; onProblem: () => void }) {
+function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; locationOff: boolean; onPhoto: (phase: 'before' | 'after', e: ChangeEvent<HTMLInputElement>) => void; onDepth: (d: number) => void; onServices: (s: string[]) => void; onSalt: (n: number) => void; onDone: () => void; onProblem: () => void }) {
   const { t, stop, visit } = p;
   const blocked = p.needDepth && visit.depth === null;
   // Done with nothing ticked priced the visit at $0 with no reason given (issue 2).
@@ -716,6 +721,7 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; on
   return (
     <section className="space-y-4 rounded-lg bg-slate-800 p-4" data-testid="onsite">
       <h1 className="font-display text-3xl font-bold leading-tight">{stop.site.label}</h1>
+      {p.locationOff ? <p role="alert" className="-mt-2 text-base font-semibold text-amber-300" data-testid="location-off">{t('location_off_short')}</p> : null}
       <PhotoButton label={t('before_photo')} done={visit.before} count={visit.beforeN} testId="before-photo" onChange={(e) => p.onPhoto('before', e)} />
       <div>
         <h2 className="mb-2 text-lg font-bold">{p.needDepth ? t('depth_required') : t('depth')}</h2>

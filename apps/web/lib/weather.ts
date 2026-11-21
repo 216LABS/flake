@@ -566,6 +566,8 @@ export async function stormWeather(tenantId: string, s: { status: string; starte
   if (forecast_in === null && observed_in === null) {
     if (!active) note = 'No weather was captured for this storm.';
     else if (breakerOpen(await breakerState())) note = WHY.breaker;
+    // A forecast is in hand but no storm hour has passed yet: that isn't "no forecast fetched".
+    else if (grids.length) note = 'Counted from when the storm started, so the first number shows after its first hour.';
     else note = cells.length ? WHY.no_snapshot : WHY.not_mapped;
   }
   return { forecast_in, observed_in, synthetic: grids.some((g) => Boolean(g.summary.synthetic)), note };

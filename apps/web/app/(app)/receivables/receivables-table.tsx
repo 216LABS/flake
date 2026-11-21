@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ButtonA, ButtonLink, entityLink } from '@/components/links';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { smsHref } from '@/lib/share';
 import { api, dollarsToCents, money } from '@/lib/client';
 
 interface Row { kind: 'draft' | 'installment'; id: string; customer_id: string; customer: string; label: string; storm_id: string | null; status: string; total_cents: number; paid_cents: number; balance_cents: number; due_on: string; days_late: number; bucket: string }
@@ -30,7 +31,7 @@ export function ReceivablesTable({ rows, today, readOnly }: { rows: Row[]; today
       setBusy(false);
     }
   };
-  const sms = (phone: string | null, text: string) => `sms:${phone ?? ''}${typeof navigator !== 'undefined' && /iPhone|iPad/.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent(text)}`;
+  const sms = (phone: string | null, text: string) => smsHref(phone, text);
   return (
     <div className="max-w-5xl">
       {error ? <p className="mb-2 text-sm text-danger" role="alert" data-testid="receivables-error">{error}</p> : null}

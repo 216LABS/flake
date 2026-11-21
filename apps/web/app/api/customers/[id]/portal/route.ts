@@ -5,6 +5,7 @@ import { baseUrl } from '@/lib/env';
 import { HttpError, isUuid, parseJson, route } from '@/lib/http';
 import { queueNotify } from '@/lib/messaging';
 import { portalToken, resetPortalToken } from '@/lib/portal';
+import { recordsShare } from '@/lib/share';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -18,8 +19,9 @@ async function load(id: string, minRole: 'viewer' | 'dispatcher') {
 }
 
 export const GET = route<Ctx>(async (_req, { params }) => {
-  const { c } = await load((await params).id, 'dispatcher');
-  return { url: `${baseUrl()}/c/${await portalToken(c.id)}` };
+  const { ctx, c } = await load((await params).id, 'dispatcher');
+  const url = `${baseUrl()}/c/${await portalToken(c.id)}`;
+  return { url, share: recordsShare(ctx.tenant.name, url, c.phone_e164) };
 });
 
 const body = z.object({ action: z.enum(['email', 'reset']) });
@@ -28,7 +30,10 @@ const body = z.object({ action: z.enum(['email', 'reset']) });
 export const POST = route<Ctx>(async (req, { params }) => {
   const { ctx, c } = await load((await params).id, 'dispatcher');
   const { action } = await parseJson(req, body);
-  if (action === 'reset') return { url: `${baseUrl()}/c/${await resetPortalToken(c.id)}` };
+  if (action === 'reset') {
+    const fresh = `${baseUrl()}/c/${await resetPortalToken(c.id)}`;
+    return { url: fresh, share: recordsShare(ctx.tenant.name, fresh, c.phone_e164) };
+  }
   if (!c.email) throw new HttpError(422, 'Add an email for this customer first.');
   const url = `${baseUrl()}/c/${await portalToken(c.id)}`;
   await queueNotify(ctx.tenantId, { email: c.email }, { template: 'portal', vars: { link: url }, subject: `${ctx.tenant.name}: your snow service records`, key: `portal:${c.id}:${Date.now()}`, related: { customer_id: c.id } });
