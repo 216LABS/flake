@@ -326,6 +326,8 @@ export function DriverApp({ token, build }: { token: string; build?: string }) {
   useEffect(() => {
     void navigator.permissions?.query({ name: 'geolocation' as PermissionName }).then((p) => {
       if (p.state === 'granted') setGeoOn(true);
+      // Blocked before this page opened: say so on the first screen, not after the first Arrive.
+      if (p.state === 'denied') setLocationOff(true);
       geoState.current = p.state;
       setGeoAsk(p.state === 'prompt');
       p.onchange = () => {
@@ -719,7 +721,7 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; lo
   // Done with nothing ticked priced the visit at $0 with no reason given (issue 2).
   const noService = stop.services.length > 0 && !visit.services.some((s) => stop.services.includes(s));
   return (
-    <section className="space-y-4 rounded-lg bg-slate-800 p-4" data-testid="onsite">
+    <section className="space-y-3 rounded-lg bg-slate-800 p-4" data-testid="onsite">
       <h1 className="font-display text-3xl font-bold leading-tight">{stop.site.label}</h1>
       {p.locationOff ? <p role="alert" className="-mt-2 text-base font-semibold text-amber-300" data-testid="location-off">{t('location_off_short')}</p> : null}
       <PhotoButton label={t('before_photo')} done={visit.before} count={visit.beforeN} testId="before-photo" onChange={(e) => p.onPhoto('before', e)} />
@@ -750,7 +752,7 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; lo
           })}
         </div>
       </div>
-      <div className="sticky bottom-0 -mx-4 space-y-3 bg-slate-800 px-4 pb-4 pt-3 shadow-[0_-10px_16px_rgba(0,0,0,0.4)]">
+      <div className="sticky bottom-0 -mx-4 space-y-2 bg-slate-800 px-4 pb-4 pt-3 shadow-[0_-10px_16px_rgba(0,0,0,0.4)]">
         <PhotoButton label={t('after_photo')} done={visit.after} count={visit.afterN} testId="after-photo" onChange={(e) => p.onPhoto('after', e)} />
         {!visit.after ? <p className="text-center text-base font-medium text-amber-300" data-testid="no-photo-hint">{t('no_after_photo')}</p> : null}
         {noService ? <p className="text-center text-base font-bold text-amber-300" data-testid="no-service-hint">{t('no_service')}</p> : null}

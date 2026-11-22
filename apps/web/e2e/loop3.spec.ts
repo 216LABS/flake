@@ -183,7 +183,7 @@ test('a driver who blocks location is told plainly what it costs (issue 77)', as
     await expect(d.getByTestId('location-off')).toHaveCount(0);
     await d.getByTestId('arrive').click();
     // Issue 211: on site it is one short line, so it can't push the stop's buttons under the Done panel.
-    await expect(d.getByTestId('location-off')).toContainText("won't show you were here");
+    await expect(d.getByTestId('location-off')).toContainText("no proof you were here");
     await expect(d.getByTestId('location-how')).toHaveCount(0);
     // Off the on-site card the full banner is back. Issue 184: the steps to turn it on are one tap away.
     await d.getByTestId('onsite').getByTestId('problem').click();
@@ -213,6 +213,10 @@ test('with location off, salt + is tappable on first view after Arrive at 390x84
     await expect(plus).toBeInViewport({ ratio: 1 });
     const pb = (await plus.boundingBox())!;
     expect(await d.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('[data-testid="salt-plus"]') !== null, [pb.x + pb.width / 2, pb.y + pb.height / 2])).toBe(true);
+    // STAR's note on 8ea962f: the Services chips too, down to their bottom edge, not only salt.
+    const chip = d.locator('[data-testid^="service-"]').first();
+    const cb = (await chip.boundingBox())!;
+    expect(await d.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('[data-testid^="service-"]') !== null, [cb.x + cb.width / 2, cb.y + cb.height - 6])).toBe(true);
     await plus.click();
     await expect(d.getByTestId('salt-qty')).toHaveText('1');
   } finally {

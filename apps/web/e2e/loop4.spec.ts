@@ -26,6 +26,7 @@ for (const size of [{ width: 390, height: 844 }, { width: 375, height: 667 }]) {
     expect(decodeURIComponent(href.split('body=')[1]!)).toContain('Lakeshore Plow Co.');
     await page.reload();
     expect(await page.getByTestId('contract-text-it').getAttribute('href')).toContain(encodeURIComponent(url));
+    await expect(page.getByTestId('contract-copy')).toBeVisible();
     await page.waitForTimeout(1500);
     expect((await sql`select count(*)::int as n from message_log where to_addr = ${email}`)[0]!.n).toBe(0);
     expect((await sql`select count(*)::int as n from job where payload::text like ${`%${email}%`}`)[0]!.n).toBe(0);
