@@ -27,6 +27,17 @@ function newLink() {
 }
 
 /** Snapshots master routes into runs. "Publish, then move": the list is never rebuilt after this. */
+/**
+ * Lots whose customer declined the quote and that have no signed contract (issue 218). They stay off new storms and
+ * Plan all, so no one plows them for free. A lot with no quote at all (a handshake customer) still goes, flagged as before.
+ */
+export async function declinedLots(tx: Tx, siteIds: string[]): Promise<Set<string>> {
+  if (!siteIds.length) return new Set();
+  const rows = await tx.select({ id: contract.site_id }).from(contract)
+    .where(and(inArray(contract.site_id, siteIds), eq(contract.status, 'declined'), sql`not exists (select 1 from contract k where k.site_id = ${contract.site_id} and k.status = 'accepted')`));
+  return new Set(rows.map((r) => r.id));
+}
+
 export async function createStorm(ctx: Ctx, raw: z.input<typeof stormCreate>) {
   const input = { ...raw, routeIds: [...new Set(raw.routeIds ?? [])], crewAssignments: raw.crewAssignments ?? {}, skipBusy: raw.skipBusy ?? false };
   const snapshotIds = await latestSnapshotIds(ctx.tenantId);
@@ -51,6 +62,7 @@ export async function createStorm(ctx: Ctx, raw: z.input<typeof stormCreate>) {
     const plans: { r: typeof route.$inferSelect; chosen: { site_id: string }[] }[] = [];
     const taken = new Set<string>();
     const clash: typeof busy = [];
+    const leftDeclined = new Set<string>();
     for (const routeId of input.routeIds) {
       const [r] = await tx.select().from(route).where(eq(route.id, routeId));
       if (!r) throw new HttpError(404, 'Route not found');
@@ -58,7 +70,9 @@ export async function createStorm(ctx: Ctx, raw: z.input<typeof stormCreate>) {
       // Retired sites stay on old storms but don't join new ones.
       const stops = await tx.select({ site_id: route_stop.site_id }).from(route_stop).innerJoin(site, eq(site.id, route_stop.site_id)).where(and(eq(route_stop.route_id, routeId), eq(site.active, true))).orderBy(asc(route_stop.seq));
       // A lot on two of the chosen routes goes on the first one only, so it isn't plowed twice (issue 26).
-      const chosen = (input.siteIds ? stops.filter((x) => input.siteIds!.includes(x.site_id)) : stops).filter((x) => !taken.has(x.site_id));
+      const declined = await declinedLots(tx, stops.map((x) => x.site_id));
+      for (const x of stops) if (declined.has(x.site_id)) leftDeclined.add(x.site_id);
+      const chosen = (input.siteIds ? stops.filter((x) => input.siteIds!.includes(x.site_id)) : stops).filter((x) => !taken.has(x.site_id) && !declined.has(x.site_id));
       for (const x of chosen) {
         taken.add(x.site_id);
         if (busyIds.has(x.site_id)) clash.push(busy.find((b) => b.site_id === x.site_id)!);
@@ -95,8 +109,8 @@ export async function createStorm(ctx: Ctx, raw: z.input<typeof stormCreate>) {
     // An alert for lots this storm now covers has been acted on, so it leaves the dashboard (issue 5).
     if (runs.length) await settleAlerts(tx, s!.id);
     if (!runs.length && clash.length) throw new HttpError(409, `Every lot on these routes is already on ${clash[0]!.storm}, which is still running. Add to that storm from its board instead.`, 'all_busy');
-    if (!runs.length) throw new HttpError(422, 'There is nothing to plow: none of these sites is on a route. Add them to a route first.', 'no_stops');
-    return { storm: s!, runs, left_out: clash.length };
+    if (!runs.length) throw new HttpError(422, leftDeclined.size ? 'There is nothing to plow: the only lots on these routes have a declined quote and no signed contract.' : 'There is nothing to plow: none of these sites is on a route. Add them to a route first.', 'no_stops');
+    return { storm: s!, runs, left_out: clash.length, left_declined: leftDeclined.size };
   });
 }
 

@@ -85,11 +85,14 @@ test('a master route lists each stop on one line with icon controls named for th
   await page.setViewportSize({ width: 375, height: 667 });
   await login(page);
   await page.goto('/routes');
-  const row = page.getByTestId('route-up').nth(1).locator('xpath=..');
+  // A seeded route, so a route another test left behind can't be the one measured.
+  const row = page.getByTestId('route-card').filter({ has: page.locator('input[value="West Lakewood"]') }).getByTestId('route-up').nth(1).locator('xpath=..');
   const tops = await row.locator('button').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
   expect(new Set(tops).size).toBe(1);
-  // One line: a short name used to wrap onto three lines (90px+) beside wordy buttons. 44px tap targets plus padding is about 62px.
-  expect((await row.boundingBox())!.height).toBeLessThan(70);
+  // One line: a short name used to wrap onto three lines (90px+) beside wordy buttons. 44px tap targets plus padding is
+  // about 62px, plus a small line naming the customer when another lot has the same label (issue 225).
+  const named = await row.getByTestId('route-stop-customer').count();
+  expect((await row.boundingBox())!.height).toBeLessThan(named ? 86 : 70);
   await expect(row.getByTestId('route-remove')).toHaveAttribute('aria-label', /^Remove .+/);
 });
 

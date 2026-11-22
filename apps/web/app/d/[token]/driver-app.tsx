@@ -588,8 +588,8 @@ export function DriverApp({ token, build }: { token: string; build?: string }) {
       {geoAsk && !locationOff && !onSiteView ? <div className="mx-4 mb-2 rounded-lg bg-slate-800 p-3 text-base text-white" data-testid="location-ask">{t('location_ask')}</div> : null}
       {locationOff && !onSiteView ? <div role="alert" className="mx-4 mb-2 rounded-lg bg-amber-300 p-3 text-base font-semibold text-black" data-testid="location-off">{t('location_off')}<details className="mt-2 text-base font-normal" data-testid="location-how"><summary className="flex min-h-[48px] cursor-pointer list-none items-center justify-between rounded-lg bg-black/10 px-3 font-bold">{t('location_how')}<span aria-hidden="true">▾</span></summary><p className="mt-2">{t('location_steps')}</p></details></div> : null}
       {/* Always mounted, so a screen reader hears every toast, not only ones it happened to catch appearing (issue 158). */}
-      {/* It floats over the page below the header, so a toast never pushes the buttons a driver is about to tap (issue 211). */}
-      <div role="status" aria-live="polite" data-testid="toast-region" className="pointer-events-none fixed inset-x-0 top-24 z-20">{toast ? <div className="mx-4 rounded-lg bg-sky-300 p-3 text-center text-lg font-bold text-black shadow-lg">{toast}</div> : null}</div>
+      {/* It floats over the header bar, so it never pushes the buttons a driver is about to tap (issue 211) or hides the lot's name (issue 214). */}
+      <div role="status" aria-live="polite" data-testid="toast-region" className="pointer-events-none fixed inset-x-0 top-2 z-20">{toast ? <div className="mx-4 rounded-lg bg-sky-300 p-3 text-center text-lg font-bold text-black shadow-lg">{toast}</div> : null}</div>
 
       {here && next && next.status !== 'onsite' && run.storm.status === 'active' ? (
         <button type="button" onClick={() => arrive(next)} className={cn(bigButtonClass('go', 'tall'), 'mx-4 mb-3 w-[calc(100%-2rem)]')} data-testid="geofence-banner">{t('here_arrive')}</button>
@@ -668,7 +668,8 @@ const PIN_KEYS = new Set(['stake', 'pile', 'ada', 'entrance', 'hazard', 'other']
 const pinWord = (t: T, kind: string | null) => (kind && PIN_KEYS.has(kind) ? t(`pin_${kind}` as DictKey) : (kind ?? t('pin_other')));
 
 function NextStop({ t, token, stop, awayM, index, total, onNavigate, onArrive, onProblem }: { t: T; token: string; stop: Stop; awayM: number | null; index: number; total: number; onNavigate: () => void; onArrive: () => void; onProblem: () => void }) {
-  const away = awayM === null ? null : (({ d, unit }) => t(unit === 'ft' ? 'away_ft' : 'away_mi', { d }))(usDistance(awayM));
+  // At the lot, "0 ft away" reads like a glitch (issue 221).
+  const away = awayM === null ? null : awayM < 30 ? t('you_are_here') : (({ d, unit }) => t(unit === 'ft' ? 'away_ft' : 'away_mi', { d }))(usDistance(awayM));
   return (
     <section className="rounded-lg bg-slate-800 p-4" data-testid="next-stop">
       <div className="flex items-baseline justify-between gap-2">
@@ -706,9 +707,9 @@ function NextStop({ t, token, stop, awayM, index, total, onNavigate, onArrive, o
   );
 }
 
-function PhotoButton({ label, done, count = done ? 1 : 0, testId, onChange }: { label: string; done: boolean; count?: number; testId: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void }) {
+function PhotoButton({ label, done, count = done ? 1 : 0, testId, className, onChange }: { label: string; done: boolean; count?: number; testId: string; className?: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void }) {
   return (
-    <label className={cn(bigButtonClass(done ? 'on' : 'plain', 'tall'), 'w-full cursor-pointer')}>
+    <label className={cn(bigButtonClass(done ? 'on' : 'plain', 'tall'), 'w-full cursor-pointer', className)}>
       {done ? `✓ ${label}${count > 1 ? ` (${count})` : ''}` : label}
       <input type="file" accept="image/*" capture="environment" className="sr-only" data-testid={testId} onChange={onChange} />
     </label>
@@ -735,7 +736,7 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; lo
       </div>
       {/* Salt sits right after depth, one compact row; its scroll margin keeps it above the After photo panel when scrolled to (issue 211). */}
       {stop.salt_unit ? (
-        <div className="flex scroll-mb-80 items-center gap-3" data-testid="salt-row">
+        <div className="flex scroll-mb-52 items-center gap-3" data-testid="salt-row">
           <h2 className="min-w-0 flex-1 text-lg font-bold leading-tight">{t('salt')} <span className="block text-base font-medium text-slate-300">{UNIT_KEY[stop.salt_unit] ? t(UNIT_KEY[stop.salt_unit]!) : stop.salt_unit}</span></h2>
           <BigButton className="w-16 text-3xl" aria-label={`${t('salt')} -1`} onClick={() => p.onSalt(Math.max(0, visit.salt - 1))} data-testid="salt-minus">-</BigButton>
           <span className="w-12 text-center text-3xl font-bold" data-testid="salt-qty">{visit.salt}</span>
@@ -748,15 +749,18 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; lo
           {stop.services.map((s) => {
             const on = visit.services.includes(s);
             // Every service starts ticked. The check mark and pressed state show that, so a tap that un-ticks one is seen.
-            return <BigButton key={s} tone={on ? 'on' : 'plain'} aria-pressed={on} className={cn(on && 'ring-4 ring-white')} onClick={() => p.onServices(on ? visit.services.filter((x) => x !== s) : [...visit.services, s])} data-testid={`service-${s}`}>{on ? '✓ ' : ''}{({ plow: t('service_plow'), salt: t('service_salt'), walks: t('service_walks'), haul: t('service_haul') } as Record<string, string>)[s] ?? s}</BigButton>;
+            return <BigButton key={s} tone={on ? 'on' : 'plain'} aria-pressed={on} className={cn('scroll-mb-52', on && 'ring-4 ring-white')} onClick={() => p.onServices(on ? visit.services.filter((x) => x !== s) : [...visit.services, s])} data-testid={`service-${s}`}>{on ? '✓ ' : ''}{({ plow: t('service_plow'), salt: t('service_salt'), walks: t('service_walks'), haul: t('service_haul') } as Record<string, string>)[s] ?? s}</BigButton>;
           })}
         </div>
       </div>
       <div className="sticky bottom-0 -mx-4 space-y-2 bg-slate-800 px-4 pb-4 pt-3 shadow-[0_-10px_16px_rgba(0,0,0,0.4)]">
-        <PhotoButton label={t('after_photo')} done={visit.after} count={visit.afterN} testId="after-photo" onChange={(e) => p.onPhoto('after', e)} />
+        {/* Side by side, so the panel takes one row of a phone's screen, not two (issue 215). */}
+        <div className="grid grid-cols-2 gap-2">
+          <PhotoButton label={t('after_photo')} done={visit.after} count={visit.afterN} testId="after-photo" className="px-2 text-2xl leading-tight" onChange={(e) => p.onPhoto('after', e)} />
+          <BigButton tone="done" height="tall" className="w-full px-2 text-2xl" disabled={blocked || noService} onClick={p.onDone} data-testid="done">{t('done')}</BigButton>
+        </div>
         {!visit.after ? <p className="text-center text-base font-medium text-amber-300" data-testid="no-photo-hint">{t('no_after_photo')}</p> : null}
         {noService ? <p className="text-center text-base font-bold text-amber-300" data-testid="no-service-hint">{t('no_service')}</p> : null}
-        <BigButton tone="done" height="tall" className="w-full" disabled={blocked || noService} onClick={p.onDone} data-testid="done">{t('done')}</BigButton>
       </div>
       <BigButton tone="warn" className="w-full" onClick={p.onProblem} data-testid="problem">{t('problem')}</BigButton>
     </section>

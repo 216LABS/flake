@@ -12,7 +12,7 @@ import { renderProof } from './proof';
 import { setTollFreeStatus, submitTollFree } from './sms-admin';
 import { notifyCustomer, notifyRouteChanged, sendRunLink } from './storms';
 import { decryptToken, sha256Hex } from './tokens';
-import { evaluateTenant, fetchAlerts, fetchCell, fetchModel, fetchNohrsc } from './weather';
+import { evaluateTenant, fetchAlerts, fetchCell, fetchModel, fetchNohrsc, mapNewLots } from './weather';
 
 async function photoLink(tenantId: string, visitId: string): Promise<string | null> {
   const [p] = await serviceDb().select().from(visit_photo).where(and(eq(visit_photo.tenant_id, tenantId), eq(visit_photo.visit_id, visitId), eq(visit_photo.phase, 'after'))).limit(1);
@@ -139,6 +139,7 @@ export const JOB_HANDLERS: Record<string, JobHandler> = {
   'weather.nbm': async () => void (await fetchModel('nbm')),
   'weather.nowcast': async () => void (await fetchModel('nowcast')),
   'weather.radar': async () => void (await fetchModel('radar')),
+  'weather.map_sites': (p) => oneAtATime(`alerts:${p.tenantId}`, () => mapNewLots(p.tenantId)),
   'trigger.evaluate': (p) => oneAtATime(`alerts:${p.tenantId}`, () => evaluateTenant(p.tenantId)),
   'storm.publish_links': (p) => sendRunLink(p.tenantId, p.runId),
   'storm.late_check': async () => void (await lateCheck()),

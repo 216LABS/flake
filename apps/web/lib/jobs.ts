@@ -8,7 +8,7 @@ const LEASE = sql`interval '2 minutes'`;
  * Work goes in the order people are waiting on it. A big storm queues two reports per visit, and a driver's route link
  * must not sit behind them. Anything not listed is lane 1.
  */
-const LANE_NOW = ['storm.publish_links', 'notify.route_changed', 'notify.party', 'notify.push', 'trigger.evaluate'];
+const LANE_NOW = ['storm.publish_links', 'notify.route_changed', 'notify.party', 'notify.push', 'trigger.evaluate', 'weather.map_sites'];
 const LANE_LATER = ['report.completion', 'billing.installments', 'weather.nohrsc', 'qbo.poll'];
 // A Blend run decodes a dozen national fields: alone, so it never shares a function's memory with a proof render.
 const LANE_HEAVY = ['photo.process', 'proof.render', 'weather.nbm'];

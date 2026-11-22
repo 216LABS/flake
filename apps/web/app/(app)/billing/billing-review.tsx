@@ -112,7 +112,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
       {readOnly ? <p className="mb-4 rounded-md bg-tint p-3 text-sm text-ink-2" data-testid="view-only-note">You have view-only access. Ask the owner to approve, void or send bills.</p> : null}
       {!stripeReady && rows.length ? (
         <p className="mb-4 rounded-md bg-info-tint p-3 text-sm text-link" data-testid="stripe-not-connected">
-          Stripe isn&apos;t connected, so approving doesn&apos;t charge anyone yet. Approved invoices wait here. {paymentsAvailable ? <>Connect Stripe in <a className={proseLink} href="/settings?tab=payments">Settings, Payments</a>, then press Charge now on each. Or press</> : 'Card payments aren’t available in Flake yet, so press'} Send bill to send each customer their bill, and Mark paid when the money comes in.
+          Stripe isn&apos;t connected, so approving doesn&apos;t charge anyone. Approve, then send each customer their link ({sending ? 'Send bill, or ' : ''}copy it or text it from your phone), and press Mark paid when the money comes in.{paymentsAvailable ? <> To take cards, connect Stripe in <a className={proseLink} href="/settings?tab=payments">Settings, Payments</a>.</> : null}
         </p>
       ) : null}
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -155,7 +155,8 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
                 <span className="font-semibold" data-testid="draft-total">{money(r.subtotal_cents)}</span>
               </div>
             </div>
-            {r.status_detail ? <p className="mt-1 text-sm text-warn-ink" data-testid="status-detail">{r.status_detail}</p> : null}
+            {/* An approved bill the office sends itself already says how, on the line below (issue 213). */}
+            {r.status_detail && !(r.status === 'approved' && /^(Billed by you|Manual billing|Payments are not connected)/.test(r.status_detail)) ? <p className="mt-1 text-sm text-warn-ink" data-testid="status-detail">{r.status_detail}</p> : null}
             {/* Exactly what happens for this customer (issue 195), and their link, since often the office sends it. */}
             {r.status !== 'void' ? (
               <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-ink-2" data-testid="how-billed">
@@ -164,8 +165,8 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
               </div>
             ) : null}
             <div className="mt-1 flex flex-wrap gap-2">
-              {r.status === 'failed' || (r.status === 'approved' && r.status_detail && r.billing_mode !== 'manual') ? <Button size="sm" variant="outline" disabled={busy || (r.status === 'approved' && !stripeReady)} data-testid="retry" onClick={() => run(() => api('/api/billing/retry', { body: { draftId: r.id } }))}>{r.status === 'failed' ? 'Try again' : 'Charge now'}</Button> : null}
-              {r.status === 'approved' && (r.billing_mode === 'manual' || !stripeReady) ? <Button size="sm" variant="outline" disabled={busy} data-testid="send-bill" onClick={() => void sendBill(r)}>Send bill</Button> : null}
+              {r.status === 'failed' || (r.status === 'approved' && r.status_detail && r.billing_mode !== 'manual' && stripeReady) ? <Button size="sm" variant="outline" disabled={busy} data-testid="retry" onClick={() => run(() => api('/api/billing/retry', { body: { draftId: r.id } }))}>{r.status === 'failed' ? 'Try again' : 'Charge now'}</Button> : null}
+              {r.status === 'approved' && sending && (r.billing_mode === 'manual' || !stripeReady) ? <Button size="sm" variant="outline" disabled={busy} data-testid="send-bill" onClick={() => void sendBill(r)}>Send bill</Button> : null}
               {r.status === 'approved' || r.status === 'failed' ? <Button size="sm" variant="outline" disabled={busy} data-testid="mark-paid" onClick={() => void revise(r, 'paid')}>Mark paid</Button> : null}
               {r.status === 'approved' || r.status === 'failed' ? <Button size="sm" variant="ghost" disabled={busy} data-testid="unapprove" onClick={() => void revise(r, 'draft')}>Back to review</Button> : null}
               {['draft', 'approved', 'failed'].includes(r.status) ? <Button size="sm" variant="ghost" disabled={busy} data-testid="void" onClick={() => void revise(r, 'void')}>Void</Button> : null}
@@ -262,9 +263,9 @@ function howBilled(r: DraftRow, stripeReady: boolean, sending: boolean): string 
     return `No ${what.toLowerCase()} on file yet: they get a pay link when you approve. Or copy their link, or text it from your phone.`;
   }
   if (stripeReady && r.billing_mode === 'invoice_net30') return 'Gets a Stripe invoice by email when you approve, due in 30 days.';
-  if (sending && r.has_email) return 'Approve, then Send bill: they get an email with the total and their records page link, which says how to pay you.';
+  if (sending && r.has_email) return 'Approve, then Send bill: they get a text (if they said yes to texts) or an email with the total and their records page link, which says how to pay you.';
   if (sending) return 'No email on file: copy their link, or text it from your phone.';
-  return 'Flake sending is off for your company: copy their link, or text it from your phone.';
+  return 'Flake sending is off for your company: copy their link, or text it from your phone. Mark paid when the money comes in.';
 }
 
 /** The customer's records page link, where they see the bill and how to pay. */

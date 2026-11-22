@@ -11,7 +11,7 @@ const en = {
   moved: 'Your route changed.', problem_sent: 'Problem sent', problem_reported: 'Problem reported. Tap to go back to it.', stop_taken: 'Someone else on this route is already doing this stop.', photo_not_image: 'That file is not a photo. Take the photo again.', photo_too_big: 'That photo is too big. Take it again.', photo_again: 'Photo added. This stop has {n} now.', storm_closed_title: 'This storm is closed', storm_closed_body: 'Work you already did is sent. Do not start new stops. Call the office if you think this is a mistake.', undone: 'Undone', set_next: 'Do this one next', offline_loading: 'No signal and this route is not saved yet. Open it once with signal.',
   save_failed: 'Could not save on this phone. Free up storage and tap again.',
   keep_open: 'Keep this page open until it says Synced, so the office gets your last stop.',
-  call_office: 'Call office', away_mi: '{d} mi away', away_ft: '{d} ft away', stop_n: 'Stop {i} of {n}',
+  call_office: 'Call office', away_mi: '{d} mi away', away_ft: '{d} ft away', you_are_here: 'You\'re here', stop_n: 'Stop {i} of {n}',
   language: 'Español', status_open: 'Open', status_done: 'Done', status_skipped: 'Skipped', status_problem: 'Problem', status_onsite: 'On site', status_enroute: 'On the way',
 };
 
@@ -26,7 +26,7 @@ const es: typeof en = {
   moved: 'Tu ruta cambió.', problem_sent: 'Problema enviado', problem_reported: 'Problema reportado. Toca para volver a esta.', stop_taken: 'Otra persona en esta ruta ya está haciendo esta parada.', photo_not_image: 'Ese archivo no es una foto. Toma la foto otra vez.', photo_too_big: 'Esa foto es demasiado grande. Tómala otra vez.', photo_again: 'Foto agregada. Esta parada ya tiene {n}.', storm_closed_title: 'Esta tormenta está cerrada', storm_closed_body: 'El trabajo que ya hiciste se envía. No empieces paradas nuevas. Llama a la oficina si crees que es un error.', undone: 'Deshecho', set_next: 'Hacer esta ahora', offline_loading: 'Sin señal y esta ruta aún no está guardada. Ábrela una vez con señal.',
   save_failed: 'No se pudo guardar en este teléfono. Libera espacio y vuelve a tocar.',
   keep_open: 'Mantén esta página abierta hasta que diga Sincronizado, para que la oficina reciba tu última parada.',
-  call_office: 'Llamar a la oficina', away_mi: 'a {d} mi', away_ft: 'a {d} pies', stop_n: 'Parada {i} de {n}',
+  call_office: 'Llamar a la oficina', away_mi: 'a {d} mi', away_ft: 'a {d} pies', you_are_here: 'Estás aquí', stop_n: 'Parada {i} de {n}',
   language: 'English', status_open: 'Abierta', status_done: 'Lista', status_skipped: 'Omitida', status_problem: 'Problema', status_onsite: 'En sitio', status_enroute: 'En camino',
 };
 

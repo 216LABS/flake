@@ -3,6 +3,7 @@ import { Badge, buttonVariants, EmptyState, Input, PageHeader, Table, Td, Th } f
 import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
 import { ButtonLink, FilterTabs } from '@/components/links';
+import { QuoteLots } from '@/components/quote-lots';
 import { billingLabel, kindLabel } from '@/lib/labels';
 
 export const metadata = { title: 'Customers' };
@@ -16,11 +17,13 @@ export default async function Customers({ searchParams }: { searchParams: Promis
   const showArchived = params.archived === '1';
   const q = (params.q ?? '').trim().toLowerCase();
   const ctx = await requirePage();
-  const { customers: all, sites, quotes } = await asUser(ctx, async (tx) => ({
+  const { customers: all, sites, quotes, quoted } = await asUser(ctx, async (tx) => ({
     customers: await tx.select().from(customer).orderBy(desc(customer.created_at)),
     sites: await tx.select().from(site),
     // Quotes waiting for a signature, sent or handed over as a link.
     quotes: await tx.select({ site_id: contract.site_id }).from(contract).where(inArray(contract.status, ['sent', 'draft'])),
+    // Lots never quoted at all (issue 217): no contract of any kind, not even a declined one.
+    quoted: await tx.selectDistinct({ site_id: contract.site_id }).from(contract),
   }));
   const waitingIds = new Set(sites.filter((s) => s.active && quotes.some((k) => k.site_id === s.id)).map((s) => s.customer_id));
   const onlyWaiting = params.waiting === '1';
@@ -75,6 +78,17 @@ export default async function Customers({ searchParams }: { searchParams: Promis
         </Table>
       ) : onlyWaiting ? <EmptyState title="No quotes are waiting" body="Every quote has been signed or answered." /> : q ? <EmptyState title="No customers match" body="Try part of a name, a street, an email or a phone number." /> : showArchived ? <EmptyState title="No archived customers" /> : <EmptyState title="No customers yet" body="Most operators add one in a few minutes." action={<Link href="/customers/new" className={buttonVariants({ variant: 'accent' })}>Add your first customer</Link>} />}
       {customers.length < found.length ? <p className="mt-3 text-sm text-muted" data-testid="customers-more">Showing {customers.length} of {found.length}. <ButtonLink variant="outline" size="sm" href={keep({ all: '1' })}>Show all {found.length}</ButtonLink></p> : null}
+      {/* Below the list, so it never pushes customers off a phone's first screen. */}
+      {!showArchived && ctx.role !== 'viewer' ? (() => {
+        const live = new Set(all.filter((c) => !c.archived_at).map((c) => c.id));
+        const never = sites.filter((s) => s.active && live.has(s.customer_id) && !quoted.some((k) => k.site_id === s.id));
+        return never.length ? (
+          <div className="mt-4 max-w-3xl rounded-md border border-line-faint bg-surface p-3" data-testid="unquoted-lots">
+            <p className="text-sm"><b>{never.length === 1 ? '1 lot has' : `${never.length} lots have`} no quote yet</b>, so {never.length === 1 ? 'it' : 'they'} never trigger and aren&apos;t billed.</p>
+            <QuoteLots siteIds={never.map((s) => s.id)} testId="customers-quote-all" />
+          </div>
+        ) : null;
+      })() : null}
     </>
   );
 }

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { asUser, requireApi } from '@/lib/auth';
 import { HttpError, parseJson, route } from '@/lib/http';
 import { roadTimes } from '@/lib/road-times';
+import { declinedLots } from '@/lib/storms';
 
 export const maxDuration = 30;
 
@@ -33,6 +34,9 @@ export const POST = route(async (req) => {
       const onAny = await tx.selectDistinct({ site_id: route_stop.site_id }).from(route_stop).innerJoin(routeTable, eq(routeTable.id, route_stop.route_id)).where(isNull(routeTable.archived_at));
       const taken = new Set(onAny.map((r) => r.site_id));
       loose = (await tx.select({ id: site.id }).from(site).where(eq(site.active, true))).map((s) => s.id).filter((id) => !taken.has(id));
+      // A lot whose customer declined, with nothing signed, isn't placed on a truck (issue 218).
+      const declined = await declinedLots(tx, loose);
+      loose = loose.filter((id) => !declined.has(id));
     }
     const want = [...new Set([...stops.map((s) => s.site_id), ...loose])];
     const sites = want.length

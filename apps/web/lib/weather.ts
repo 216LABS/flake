@@ -135,6 +135,19 @@ export async function mapSites(tenantId?: string, force = false) {
   return rows.length;
 }
 
+/**
+ * A company's new lots get their forecast area right away, not at the next weather run up to an hour later (issue 224):
+ * map them, fetch any cell no lot had before, then check triggers. Queued when lots are added.
+ */
+export async function mapNewLots(tenantId: string) {
+  if (breakerOpen(await breakerState())) return;
+  if (!(await mapSites(tenantId))) return;
+  const cells = await serviceDb().selectDistinct({ office: site.nws_office, x: site.nws_grid_x, y: site.nws_grid_y }).from(site).where(and(eq(site.tenant_id, tenantId), eq(site.active, true), sql`${site.nws_office} is not null`));
+  const have = await latestGrids(cells);
+  for (const c of cells) if (!have.has(cellKey(c.office, c.x, c.y))) await fetchCell(c.office!, c.x!, c.y!);
+  await evaluateTenant(tenantId);
+}
+
 /** /api/cron/weather: 60 min normally, 15 min when snow is forecast within 24 h or an alert is active. */
 export async function scheduleWeather() {
   const breaker = await breakerState();
@@ -453,7 +466,7 @@ export async function latestSnapshotIds(tenantId: string): Promise<string[]> {
 /** Why there are no numbers, in words a dispatcher can act on (issue 45). */
 const WHY = {
   breaker: 'NWS is not answering, so Flake paused weather for a few minutes. It tries again on its own.',
-  not_mapped: 'These lots are not matched to an NWS forecast area yet. That happens a few minutes after a site is added with its address.',
+  not_mapped: 'These lots are not matched to an NWS forecast area yet. That happens within a minute or two of adding a site with its address.',
   no_snapshot: 'No NWS forecast has been fetched for these lots yet. It updates every few minutes.',
   no_coverage: 'The National Weather Service has no forecast for these lots, which happens outside the US or for a pin in the wrong place. Check the address. Drivers can still report depth.',
 } as const;

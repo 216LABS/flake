@@ -196,11 +196,11 @@ test('a driver who blocks location is told plainly what it costs (issue 77)', as
   }
 });
 
-test('with location off, salt + is tappable on first view after Arrive at 390x844 (issue 211)', async ({ browser, baseURL, page }) => {
+test('with location off, salt + is tappable on first view after Arrive at 390x664 (an iPhone 13 with Safari bars), and Services once scrolled to (issues 211, 215)', async ({ browser, baseURL, page }) => {
   await login(page);
   const [salted] = await sql`select s.label from contract c join site s on s.id = c.site_id join route_stop rs on rs.site_id = s.id join route r on r.id = rs.route_id where r.name = 'West Lakewood' and c.services::text like '%salt%' and c.status = 'accepted' limit 1`;
   const { id, runs } = await startStorm(page.request, `Salt no location ${Date.now()}`, ['West Lakewood']);
-  const ctx = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, permissions: [] });
+  const ctx = await browser.newContext({ baseURL, viewport: { width: 390, height: 664 }, permissions: [] });
   try {
     const d = await ctx.newPage();
     await d.goto(runs[0]!.link);
@@ -213,8 +213,9 @@ test('with location off, salt + is tappable on first view after Arrive at 390x84
     await expect(plus).toBeInViewport({ ratio: 1 });
     const pb = (await plus.boundingBox())!;
     expect(await d.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('[data-testid="salt-plus"]') !== null, [pb.x + pb.width / 2, pb.y + pb.height / 2])).toBe(true);
-    // STAR's note on 8ea962f: the Services chips too, down to their bottom edge, not only salt.
+    // STAR's note on 8ea962f: the Services chips too, down to their bottom edge, once scrolled to: never under the Done panel.
     const chip = d.locator('[data-testid^="service-"]').first();
+    await chip.evaluate((el) => el.scrollIntoView({ block: 'nearest' }));
     const cb = (await chip.boundingBox())!;
     expect(await d.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('[data-testid^="service-"]') !== null, [cb.x + cb.width / 2, cb.y + cb.height - 6])).toBe(true);
     await plus.click();

@@ -491,8 +491,8 @@ async function chargeDraftLocked(tenantId: string, draftId: string, attempt?: nu
   const setStatus = (status: typeof draft.status, detail: string | null, extra: Partial<typeof invoice_draft.$inferInsert> = {}) => db.update(invoice_draft).set({ status, status_detail: detail, ...extra }).where(eq(invoice_draft.id, draftId));
 
   if (draft.subtotal_cents <= 0) return void (await setStatus('void', 'Nothing to charge'));
-  if (c.billing_mode === 'manual') return void (await setStatus('approved', 'Manual billing: press Send bill to email it to the customer, then Mark paid when it is paid.'));
-  if (!t.stripe_account_id || !t.stripe_charges_enabled) return void (await setStatus('approved', 'Payments are not connected: press Send bill to email it to the customer and Mark paid when it is paid, or connect Stripe in Settings and press Charge now.'));
+  if (c.billing_mode === 'manual') return void (await setStatus('approved', 'Billed by you: send the customer their link, then Mark paid when it is paid.'));
+  if (!t.stripe_account_id || !t.stripe_charges_enabled) return void (await setStatus('approved', 'Payments are not connected: send the customer their link, then Mark paid when it is paid.'));
 
   const { payments } = await getProviders();
   const fee = applicationFeeCents(draft.subtotal_cents, tenantFeeRate(t));

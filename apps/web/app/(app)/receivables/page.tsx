@@ -43,7 +43,7 @@ export default async function Receivables({ searchParams }: { searchParams: Prom
           <h2 className="font-semibold">Payments recorded</h2>
           <ul className="mt-2 divide-y divide-line-faint text-sm">
             {data.recent.map(({ p, name }) => (
-              <li key={p.id} className="flex flex-wrap gap-2 py-1.5"><span className="tabular">{p.paid_on}</span><span className="font-medium wrap-anywhere">{name}</span><span className="tabular">{money(p.amount_cents)}</span><span className="text-muted">{p.method}{p.reference ? ` ${p.reference}` : ''}</span></li>
+              <li key={p.id} className="flex flex-wrap gap-2 py-1.5"><span>{new Date(`${p.paid_on}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</span><span className="font-medium wrap-anywhere">{name}</span><span className="tabular">{money(p.amount_cents)}</span><span className="text-muted">{p.method}{p.reference ? ` ${p.reference}` : ''}</span></li>
             ))}
           </ul>
         </Card>

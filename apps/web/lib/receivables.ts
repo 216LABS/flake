@@ -125,6 +125,6 @@ export async function customerStatement(tx: Tx, tz: string, customerId: string, 
     const recorded = ledger.filter((p) => p.installment_id === i.id).reduce((a, p) => a + p.amount_cents, 0);
     if (i.status === 'paid' && recorded < i.amount_cents) entries.push({ day, kind: 'payment', ref: `F-I${i.id.slice(0, 7)}`, description: 'Paid by card', cents: i.amount_cents - recorded });
   }
-  for (const p of ledger) entries.push({ day: p.paid_on, kind: 'payment', ref: p.reference ? `${p.method} ${p.reference}` : p.method, description: `Payment, ${p.method}`, cents: p.amount_cents });
+  for (const p of ledger) entries.push({ day: p.paid_on, kind: 'payment', ref: p.reference ?? '', description: `Payment, ${p.method}`, cents: p.amount_cents });
   return statement(entries, from, to);
 }

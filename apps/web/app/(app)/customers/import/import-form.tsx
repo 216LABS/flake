@@ -1,12 +1,13 @@
 'use client';
 
 import { Button, Card, Label, Table, Td, Th } from '@flake/ui';
+import { QuoteLots } from '@/components/quote-lots';
 import { ButtonLink } from '@/components/links';
 import { useState } from 'react';
 import { api } from '@/lib/client';
 import { customersFromCsv, type CsvCustomer } from '@/lib/csv';
 
-type Result = { row: number; ok: true; customer: string; site: string; added_to_existing: boolean } | { row: number; ok: false; error: string };
+type Result = { row: number; ok: true; customer: string; site: string; site_id: string; added_to_existing: boolean } | { row: number; ok: false; error: string };
 const SAMPLE = 'name,address,label,email,phone,kind,billing\nBayview HOA,100 Lake Ave Lakewood OH,North drive,board@example.com,216-555-0101,HOA,invoice\nBayview HOA,120 Lake Ave Lakewood OH,South drive,,,HOA,invoice\nKim Lee,14 Elm St Lakewood OH,,kim@example.com,,residential,card';
 
 /** Paste or upload, check every row, then add them 25 at a time, each address found on the map. */
@@ -49,7 +50,8 @@ export function ImportForm() {
         <ul className="mt-2 space-y-1 text-sm">
           {results.map((r) => <li key={r.row} className={r.ok ? '' : 'text-danger'} data-testid="import-row">{r.ok ? `${r.customer}: ${r.site}${r.added_to_existing ? ' (added to this customer)' : ''}` : `${ready[r.row]?.name ?? 'Row'}, ${ready[r.row]?.address ?? ''}: ${r.error}`}</li>)}
         </ul>
-        <p className="mt-3 text-sm text-ink-2">Next: put the lots on a route, then make a quote for each lot from its site page. A customer&apos;s quotes share one link, and one signature accepts them all. A lot with no quote has no contract, so it never triggers and isn&apos;t billed.</p>
+        <p className="mt-3 text-sm text-ink-2">Next: quote the lots, then put them on a route. A customer&apos;s quotes share one link, and one signature accepts them all. A lot with no quote has no contract, so it never triggers and isn&apos;t billed.</p>
+        <QuoteLots siteIds={results.flatMap((r) => (r.ok ? [r.site_id] : []))} testId="import-quote-all" />
         <div className="mt-3 flex gap-2">
           <ButtonLink variant="accent" href="/routes" data-testid="import-go-routes">Go to routes</ButtonLink>
           <ButtonLink href="/customers" data-testid="import-view-customers">View customers</ButtonLink>

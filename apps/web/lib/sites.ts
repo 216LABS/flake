@@ -85,3 +85,9 @@ export async function takeSitesOffWork(tx: Tx, siteIds: string[]) {
   await tx.update(run_stop).set({ status: 'skipped', updated_at: new Date().toISOString() })
     .where(and(inArray(run_stop.site_id, siteIds), inArray(run_stop.storm_run_id, live.map((r) => r.id)), inArray(run_stop.status, ['open', 'enroute', 'problem'])));
 }
+
+/** New lots get their forecast area within a minute (issue 224). One job per company per minute, however many lots. */
+export async function queueMapNewLots(tenantId: string) {
+  const { enqueue } = await import('./jobs');
+  await enqueue('weather.map_sites', { tenantId }, { dedupeKey: `map_sites:${tenantId}:${Math.floor(Date.now() / 60_000)}` });
+}

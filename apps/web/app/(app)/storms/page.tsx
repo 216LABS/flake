@@ -31,6 +31,8 @@ export default async function Storms({ searchParams }: { searchParams: Promise<{
     crew: await tx.select().from(crew_member).where(eq(crew_member.active, true)),
     // A lot on no route is left out of every storm started here, so say which.
     live: await liveStorms(tx, ctx.tenant.timezone),
+    // On a route but the customer declined the quote, with nothing signed: a storm leaves them out (issue 218).
+    declined: await tx.select({ id: site.id, label: site.label }).from(site).where(and(eq(site.active, true), sql`exists (select 1 from route_stop rs join route r on r.id = rs.route_id where rs.site_id = ${site.id} and r.archived_at is null)`, sql`exists (select 1 from contract k where k.site_id = ${site.id} and k.status = 'declined')`, sql`not exists (select 1 from contract k where k.site_id = ${site.id} and k.status = 'accepted')`)).orderBy(site.label),
     unrouted: await tx.select({ id: site.id, label: site.label }).from(site).where(and(eq(site.active, true), sql`not exists (select 1 from route_stop rs join route r on r.id = rs.route_id where rs.site_id = ${site.id} and r.archived_at is null)`)).orderBy(site.label),
   }));
   // Live and Ready to bill storms always show; billed ones only the newest few until asked.
@@ -102,7 +104,7 @@ export default async function Storms({ searchParams }: { searchParams: Promise<{
           {data.storms.length ? null : <EmptyState title="No storms yet" body={data.routes.length ? 'Start your first one here when snow is coming. You can try one now and close it: nothing is billed until you approve.' : 'Put your lots on a route first (Routes), then start your first storm here.'} />}
         </div>
         {/* On a phone the form sits below every storm so far; the header button and the dashboard jump here. */}
-        <div id="start" className="scroll-mt-20"><NewStorm defaultName={`Storm ${fmtLocal(new Date(), ctx.tenant.timezone, { month: 'short', day: 'numeric' })}`} routes={data.routes.map((r) => ({ id: r.id, name: r.name, default_crew_id: r.default_crew_id }))} crew={data.crew.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))} unrouted={data.unrouted.map((s) => s.label)} /></div>
+        <div id="start" className="scroll-mt-20"><NewStorm defaultName={`Storm ${fmtLocal(new Date(), ctx.tenant.timezone, { month: 'short', day: 'numeric' })}`} routes={data.routes.map((r) => ({ id: r.id, name: r.name, default_crew_id: r.default_crew_id }))} crew={data.crew.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))} unrouted={data.unrouted.map((s) => s.label)} declined={data.declined.map((s) => s.label)} /></div>
       </div>
     </>
   );

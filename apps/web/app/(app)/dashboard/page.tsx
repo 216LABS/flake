@@ -95,6 +95,8 @@ export default async function Dashboard() {
     { done: data.routed[0]!.n > 0, text: 'Put your lots on a route, so a storm knows where to go', href: '/routes' },
     ...(pushReady ? [{ done: pushOn, text: 'Turn on snow alerts on your phone, so a trigger reaches you at 3 AM', href: '/settings?tab=alerts' }] : []),
     ...(can.payments ? [{ done: Boolean(t.stripe_charges_enabled), text: 'Connect Stripe to get paid by card or bank', href: '/settings?tab=payments' }] : []),
+    // Without Stripe, a customer's bill only says "pay the way you usually do" until this is filled in (issue 216).
+    ...(!t.stripe_charges_enabled ? [{ done: Boolean(t.pay_instructions?.trim()), text: 'Tell customers how to pay you (check to, Zelle, Venmo...)', href: '/settings?tab=payments' }] : []),
     ...(can.sms ? [{ done: t.sms_status === 'approved', text: t.sms_status === 'pending' ? 'Text number: waiting on verification (3 to 5 business days)' : 'Get your text number verified. Crew links go by QR and copy-link until then.', href: '/settings?tab=sms' }] : []),
     { done: Boolean(t.logo_path), text: 'Add your logo for quotes and bills', href: '/settings?tab=company', optional: true },
   ];
