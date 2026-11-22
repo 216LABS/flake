@@ -4,7 +4,7 @@ import { t as translate, type DictKey, type Lang } from '@flake/core/i18n';
 import { clock12 } from '@/lib/labels';
 import { usDistance } from '@flake/core/units';
 import { BigButton, bigButtonClass, cn } from '@flake/ui';
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { commit, flush, kvGet, kvSet, pending } from './outbox';
 import { heifViewCopy } from '@/lib/shrink-image';
 
@@ -712,10 +712,11 @@ function NextStop({ t, token, stop, awayM, index, total, onNavigate, onArrive, o
   );
 }
 
-function PhotoButton({ label, done, count = done ? 1 : 0, testId, className, onChange }: { label: string; done: boolean; count?: number; testId: string; className?: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void }) {
+function PhotoButton({ label, done, count = done ? 1 : 0, testId, className, hint, onChange }: { label: string; done: boolean; count?: number; testId: string; className?: string; hint?: ReactNode; onChange: (e: ChangeEvent<HTMLInputElement>) => void }) {
   return (
-    <label className={cn(bigButtonClass(done ? 'on' : 'plain', 'tall'), 'w-full cursor-pointer', className)}>
-      {done ? `✓ ${label}${count > 1 ? ` (${count})` : ''}` : label}
+    <label className={cn(bigButtonClass(done ? 'on' : 'plain', 'tall'), 'w-full cursor-pointer', hint ? 'flex-col gap-0.5 py-1' : '', className)}>
+      <span>{done ? `✓ ${label}${count > 1 ? ` (${count})` : ''}` : label}</span>
+      {hint}
       <input type="file" accept="image/*" capture="environment" className="sr-only" data-testid={testId} onChange={onChange} />
     </label>
   );
@@ -749,9 +750,10 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; lo
           <BigButton className="w-16 text-3xl" aria-label={`${t('salt')} +1`} onClick={() => p.onSalt(visit.salt + 1)} data-testid="salt-plus">+</BigButton>
         </div>
       ) : null}
-      <div>
-        <h2 className="mb-2 text-lg font-bold">{t('services')}</h2>
-        <div className="flex flex-wrap gap-2">
+      {/* The label sits beside the chips, so on a salt lot they still clear the After photo panel at 390x664 (issue 241). */}
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="mr-1 text-lg font-bold">{t('services')}</h2>
+        <div className="contents">
           {stop.services.map((s) => {
             const on = visit.services.includes(s);
             // Every service starts ticked. The check mark and pressed state show that, so a tap that un-ticks one is seen.
@@ -759,13 +761,13 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; lo
           })}
         </div>
       </div>
-      <div className="sticky bottom-0 -mx-4 space-y-2 bg-slate-800 px-4 pb-4 pt-3 shadow-[0_-10px_16px_rgba(0,0,0,0.4)]">
+      <div className="sticky bottom-0 -mx-4 space-y-2 bg-slate-800 px-4 pb-3 pt-2 shadow-[0_-10px_16px_rgba(0,0,0,0.4)]">
         {/* Side by side, so the panel takes one row of a phone's screen, not two (issue 215). */}
         <div className="grid grid-cols-2 gap-2">
-          <PhotoButton label={t('after_photo')} done={visit.after} count={visit.afterN} testId="after-photo" className="px-2 text-2xl leading-tight" onChange={(e) => p.onPhoto('after', e)} />
+          {/* The warning rides inside the button instead of its own line under the panel (issue 241). */}
+          <PhotoButton label={t('after_photo')} done={visit.after} count={visit.afterN} testId="after-photo" className="px-2 text-2xl leading-tight" hint={!visit.after ? <span className="text-sm font-semibold leading-tight text-amber-300" data-testid="no-photo-hint">{t('no_after_photo_short')}</span> : null} onChange={(e) => p.onPhoto('after', e)} />
           <BigButton tone="done" height="tall" className="w-full px-2 text-2xl" disabled={blocked || noService} onClick={p.onDone} data-testid="done">{t('done')}</BigButton>
         </div>
-        {!visit.after ? <p className="text-center text-base font-medium text-amber-300" data-testid="no-photo-hint">{t('no_after_photo')}</p> : null}
         {noService ? <p className="text-center text-base font-bold text-amber-300" data-testid="no-service-hint">{t('no_service')}</p> : null}
       </div>
       <BigButton tone="warn" className="w-full" onClick={p.onProblem} data-testid="problem">{t('problem')}</BigButton>

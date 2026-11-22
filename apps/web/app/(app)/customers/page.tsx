@@ -84,7 +84,7 @@ export default async function Customers({ searchParams }: { searchParams: Promis
         const never = sites.filter((s) => s.active && live.has(s.customer_id) && !quoted.some((k) => k.site_id === s.id));
         return never.length ? (
           <div className="mt-4 max-w-3xl rounded-md border border-line-faint bg-surface p-3" data-testid="unquoted-lots">
-            <p className="text-sm"><b>{never.length === 1 ? '1 lot has' : `${never.length} lots have`} no quote yet</b>, so {never.length === 1 ? 'it' : 'they'} never trigger and aren&apos;t billed.</p>
+            <p className="text-sm"><b>{never.length === 1 ? '1 lot has' : `${never.length} lots have`} no quote yet</b>, so {never.length === 1 ? 'it never triggers and isn’t billed' : 'they never trigger and aren’t billed'}.</p>
             <QuoteLots siteIds={never.map((s) => s.id)} testId="customers-quote-all" />
           </div>
         ) : null;

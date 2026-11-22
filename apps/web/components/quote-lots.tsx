@@ -33,6 +33,7 @@ export function QuoteLots({ siteIds, testId = 'quote-lots' }: { siteIds: string[
             </li>
           ))}
         </ul>
+        <Button className="mt-2" size="sm" variant="outline" data-testid={`${testId}-finished`} onClick={() => router.refresh()}>Done</Button>
       </div>
     );
   }
@@ -42,8 +43,9 @@ export function QuoteLots({ siteIds, testId = 'quote-lots' }: { siteIds: string[
         setBusy(true);
         setError(null);
         try {
+          // No refresh yet: the page around this box only shows it while a lot has no quote, so a refresh would take the
+          // links away before anyone copies them (issue 240). Done refreshes.
           setOut(await api<Out>('/api/quotes/bulk', { body: { site_ids: siteIds } }));
-          router.refresh();
         } catch (e) {
           setError((e as Error).message);
         } finally {
