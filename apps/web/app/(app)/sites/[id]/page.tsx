@@ -1,4 +1,5 @@
 import { quotingSeason } from '@flake/core/time';
+import { DEFAULT_RATE_CARD, suggestPrice, type RateCard } from '@flake/core/quote';
 import { SiteWalk } from './site-walk';
 import { contract, customer, desc, eq, site, site_pin, site_walk_item } from '@flake/db';
 import { Badge, buttonVariants, PageHeader } from '@flake/ui';
@@ -36,6 +37,10 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
   const signed = contracts.find((k) => k.status === 'accepted' && k.pdf_path);
   const pdf = signed?.pdf_path ? await contractPdfUrl(ctx.tenantId, signed.pdf_path) : null;
   const canEdit = ctx.role !== 'viewer';
+  // A new quote starts from the rate card's price for this lot's measured area, like the new-customer wizard.
+  const sqft = Number(s.area_confirmed_sqft ?? s.area_estimate_sqft ?? 0);
+  const est = sqft > 0 ? suggestPrice({ sqft }, (Object.keys(ctx.tenant.rate_card as object).length ? ctx.tenant.rate_card : DEFAULT_RATE_CARD) as RateCard) : null;
+  const suggested = est ? { per_push: est.per_push_cents, per_event: est.per_event_cents, seasonal: est.seasonal_cents, per_inch_tier: est.tiers[0]?.amount_cents ?? est.per_push_cents } : undefined;
   // A re-sign mid-season shows what is left to bill, the same words the customer signed (issue 156).
   // Which signed agreement prices this winter's storms (issue 157), when there's more than one.
   const standing = contractStanding(contracts.filter((k) => k.status === 'accepted'), new Date(), ctx.tenant.timezone);
@@ -53,7 +58,7 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
         <div className="space-y-4">
         <ContractList contracts={JSON.parse(JSON.stringify(contracts.map((k, n) => ({ id: k.id, status: k.status, season: k.season, services: k.services, salt_pricing: k.salt_pricing, accepted_name: k.accepted_name, accepted_at: k.accepted_at, created_at: k.created_at, installments_billed: k.installments_billed, quote_url: quoteUrl(k), quote_share: quoteUrl(k) ? quoteShare(ctx.tenant.name, quoteUrl(k)!, c.phone_e164) : null, decline_reason: k.decline_reason, prior: priors[n], in_force: k.id === inForceId && (contracts.filter((x) => x.status === 'accepted').length > 1 || standing?.tone === 'amber') }))))} canEdit={canEdit} pdf={pdf} />
         {/* A retired lot can't be quoted; restore it first. */}
-        {s.active && canEdit ? <div id="quote" className="scroll-mt-20"><NewQuote siteId={s.id} defaultSeason={quotingSeason(new Date(), ctx.tenant.timezone)} saltCents={((ctx.tenant.rate_card as { salt_bag_cents?: number }).salt_bag_cents) ?? 1800} signedSeasons={contracts.filter((k) => k.status === 'accepted').map((k) => k.season)} defaultTrigger={await defaultTrigger(ctx.tenantId)} /></div> : null}
+        {s.active && canEdit ? <div id="quote" className="scroll-mt-20"><NewQuote siteId={s.id} defaultSeason={quotingSeason(new Date(), ctx.tenant.timezone)} saltCents={((ctx.tenant.rate_card as { salt_bag_cents?: number }).salt_bag_cents) ?? 1800} signedSeasons={contracts.filter((k) => k.status === 'accepted').map((k) => k.season)} defaultTrigger={await defaultTrigger(ctx.tenantId)} suggested={suggested} /></div> : null}
         </div>
       </div>
     </>

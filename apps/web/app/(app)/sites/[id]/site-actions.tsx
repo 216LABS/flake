@@ -36,10 +36,13 @@ export function quoteProblem(price: string, trigger: number | string): string | 
 }
 
 /** Renewals and price changes. The newest accepted contract is the one that prices visits. */
-export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [], defaultTrigger = 2 }: { siteId: string; defaultSeason: string; saltCents: number; signedSeasons?: string[]; defaultTrigger?: number }) {
+export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [], defaultTrigger = 2, suggested }: { siteId: string; defaultSeason: string; saltCents: number; signedSeasons?: string[]; defaultTrigger?: number; suggested?: Partial<Record<PricingType, number>> }) {
   const router = useRouter();
   const [type, setType] = useState<PricingType>('per_push');
-  const [price, setPrice] = useState('');
+  const hint = (t: PricingType) => (suggested?.[t] ? (suggested[t]! / 100).toFixed(2) : '');
+  const [price, setPrice] = useState(() => hint('per_push'));
+  // Until the price is typed over, switching the pricing type moves to that type's suggested price.
+  const [priceTyped, setPriceTyped] = useState(false);
   const [trigger, setTrigger] = useState<string>(String(defaultTrigger));
   const [season, setSeason] = useState(defaultSeason);
   const [salt, setSalt] = useState(false);
@@ -93,8 +96,8 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [],
       {dialog}
       <h2 className="font-semibold">Send a new quote</h2>
       <div className="mt-2 space-y-2">
-        <div><Label htmlFor="q-type">Pricing</Label><Select id="q-type" value={type} data-testid="q-type" onChange={(e) => setType(e.target.value as PricingType)}><option value="per_push">Per push</option><option value="per_inch_tier">Per inch tiers (price is the first tier)</option><option value="per_event">Per event</option><option value="seasonal">Seasonal (5 installments)</option><option value="hourly">Hourly</option></Select></div>
-        <div><Label htmlFor="q-price">{type === 'seasonal' ? 'Season total ($)' : 'Price ($)'}</Label><Input id="q-price" type="number" step="0.01" min="0.01" max="100000" value={price} data-testid="q-price" onChange={(e) => setPrice(e.target.value)} /></div>
+        <div><Label htmlFor="q-type">Pricing</Label><Select id="q-type" value={type} data-testid="q-type" onChange={(e) => { const t = e.target.value as PricingType; setType(t); if (!priceTyped) setPrice(hint(t)); }}><option value="per_push">Per push</option><option value="per_inch_tier">Per inch tiers (price is the first tier)</option><option value="per_event">Per event</option><option value="seasonal">Seasonal (5 installments)</option><option value="hourly">Hourly</option></Select></div>
+        <div><Label htmlFor="q-price">{type === 'seasonal' ? 'Season total ($)' : 'Price ($)'}{!priceTyped && price && price === hint(type) ? <span className="font-normal text-muted"> suggested from your rate card</span> : null}</Label><Input id="q-price" type="number" step="0.01" min="0.01" max="100000" value={price} data-testid="q-price" onChange={(e) => { setPrice(e.target.value); setPriceTyped(true); }} /></div>
         <div><Label htmlFor="q-trigger">Trigger depth (in)</Label><Input id="q-trigger" type="number" step="0.5" min="0" max="48" value={trigger} data-testid="q-trigger" onChange={(e) => setTrigger(e.target.value)} /></div>
         {zero ? <p className="text-xs text-warn-ink" data-testid="q-zero-warning">0 inches means any measurable snow starts service{type === 'seasonal' ? '.' : ', so every dusting is billable.'}</p> : null}
         {/* This season or next: a typed season could land on a winter long gone or decades out (issue 126). */}

@@ -111,6 +111,9 @@ test('a new owner signs up: terms are linked and required, sending starts off, t
     await expect(page.getByTestId('setup-checklist')).toContainText('legal business name');
     await expect(page.getByTestId('setup-checklist')).toContainText('Have a list? Import it');
     await expect(steps.filter({ hasText: 'logo' })).toHaveAttribute('data-done', 'no');
+    // Snow alerts on the owner's phone are a step until a phone is subscribed, and the step opens Settings, Alerts.
+    await expect(steps.filter({ hasText: 'snow alerts on your phone' })).toHaveAttribute('data-done', 'no');
+    await expect(steps.filter({ hasText: 'snow alerts on your phone' }).getByRole('link').first()).toHaveAttribute('href', '/settings?tab=alerts');
 
     // Checking the prices ticks its step.
     await page.goto('/settings?tab=rate');

@@ -23,7 +23,12 @@ export function LoginForm({ demo, next = '/dashboard' }: { demo: boolean; next?:
     document.cookie = `${NEXT_COOKIE}=${encodeURIComponent(next)}; path=/; max-age=3600; samesite=lax`;
     const { error: err } = await supabase().auth.signInWithOtp({ email, options: { emailRedirectTo: `${location.origin}/auth/callback` } });
     setBusy(false);
-    if (err) setError(err.message);
+    // Supabase's own words ("email rate limit exceeded") don't say what to do.
+    // Rate limited means an email already went out, so the code box opens for the code in it.
+    if (err && /rate limit|too many/i.test(err.message)) {
+      setSent(true);
+      setError('Too many sign-in emails were sent in the last hour. Use the code from the newest one, or try again in a few minutes.');
+    } else if (err) setError(err.message);
     else setSent(true);
   };
   /**

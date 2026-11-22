@@ -39,3 +39,21 @@ for (const size of [{ width: 390, height: 844 }, { width: 375, height: 667 }]) {
     await guest.close();
   });
 }
+
+test('a new quote on a measured lot starts from the rate card price, and follows the pricing type until typed over', async ({ page }, info) => {
+  test.skip(info.project.name === 'pixel-7', 'once is enough');
+  await login(page);
+  const [s] = await sql`select s.id from site s join tenant t on t.id = s.tenant_id where t.slug = 'lakeshore-demo' and s.active and coalesce(s.area_confirmed_sqft, s.area_estimate_sqft) > 0 limit 1`;
+  test.skip(!s, 'no measured lot in the seed');
+  await page.goto(`/sites/${s!.id}`);
+  const price = page.getByTestId('q-price');
+  const perPush = await price.inputValue();
+  expect(Number(perPush)).toBeGreaterThan(0);
+  await expect(page.getByText('suggested from your rate card')).toBeVisible();
+  await page.getByTestId('q-type').selectOption('seasonal');
+  expect(Number(await price.inputValue())).toBeGreaterThan(Number(perPush));
+  await price.fill('123');
+  await page.getByTestId('q-type').selectOption('per_push');
+  await expect(price).toHaveValue('123');
+  await expect(page.getByText('suggested from your rate card')).toHaveCount(0);
+});

@@ -69,8 +69,8 @@ export function PushPanel({ publicKey }: { publicKey: string | null }) {
   return (
     <Card className="max-w-xl" data-testid="push-panel" data-state={publicKey ? state : 'not_configured'}>
       <h2 className="font-semibold">Alerts on this device</h2>
-      <p className="mt-1 text-sm text-muted">Trigger alerts, late sites and driver problems as notifications, for owners and dispatchers. Email alerts keep working either way.</p>
-      {!publicKey ? <p className="mt-3 text-sm text-ink-2">Push is not set up on this deployment yet, so alerts go by email.</p> : null}
+      <p className="mt-1 text-sm text-muted">Trigger alerts, late sites and driver problems as notifications, for owners and dispatchers. Turn it on on each phone or computer that should wake you. These work even while Flake isn&apos;t sending email or texts for your company.</p>
+      {!publicKey ? <p className="mt-3 text-sm text-ink-2">Push is not set up on this deployment yet. Alerts show on the dashboard, and by email or text once sending is on for your company.</p> : null}
       {publicKey && state === 'unsupported' ? <p className="mt-3 text-sm text-ink-2">This browser can&apos;t receive push notifications.</p> : null}
       {publicKey && state === 'needs_install' ? <p className="mt-3 text-sm text-ink-2">On iPhone, tap Share, then Add to Home Screen, and open Flake from there. iOS only allows notifications for installed apps (iOS 16.4 or newer).</p> : null}
       {publicKey && state === 'blocked' ? <p className="mt-3 text-sm text-ink-2">Notifications are blocked for this site. Allow them in your browser settings, then come back.</p> : null}

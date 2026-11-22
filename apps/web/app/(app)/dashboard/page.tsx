@@ -1,4 +1,4 @@
-import { and, contract, crew_member, customer, desc, eq, isNull, message_log, route, route_stop, serviceDb, site, sql, storm, trigger_alert } from '@flake/db';
+import { and, contract, crew_member, customer, desc, eq, isNull, message_log, push_subscription, route, route_stop, serviceDb, site, sql, storm, trigger_alert } from '@flake/db';
 import { fmtLocal, stormWhen } from '@flake/core/time';
 import { Badge, buttonVariants, Eyebrow, PageHeader, Stat, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
@@ -12,7 +12,7 @@ import { renewalQueue, renewalsOpen } from '@/lib/bids';
 import { localDay } from '@flake/core/receivables';
 import { canSeeUsage, deploymentUsage } from '@/lib/usage';
 import { areaWeather, tenantWeatherHeader } from '@/lib/weather';
-import { available, getSetting } from '@/lib/providers';
+import { available, getProviders, getSetting } from '@/lib/providers';
 import { openBills } from '@/lib/receivables';
 import { liveStorms } from '@/lib/live';
 import { ButtonLink, entityLink } from '@/components/links';
@@ -83,12 +83,17 @@ export default async function Dashboard() {
   const t = ctx.tenant;
   const hasAddress = Boolean((t.address as { line1?: string } | null)?.line1);
   const rateChecked = ctx.role === 'owner' ? Boolean(await getSetting(`setup.rate:${t.id}`)) : false;
+  // Snow alerts reach the owner by push even while the company's email and texts are off (D19), but only on a phone
+  // that turned them on. Without it, the first trigger alert waits on this dashboard unseen.
+  const pushReady = ctx.role === 'owner' && Boolean((await getProviders()).push.publicKey);
+  const pushOn = pushReady ? (await serviceDb().select({ id: push_subscription.id }).from(push_subscription).where(and(eq(push_subscription.tenant_id, t.id), eq(push_subscription.user_id, ctx.userId))).limit(1)).length > 0 : false;
   const setup: { done: boolean; text: string; href: string; more?: { text: string; href: string }; optional?: boolean }[] = ctx.role !== 'owner' ? [] : [
     { done: Boolean(t.business_legal_name?.trim()) && hasAddress, text: 'Add your legal business name and address', href: can.sms ? '/settings?tab=sms' : '/settings?tab=company' },
     { done: rateChecked, text: 'Check your prices. Flake starts with typical ones.', href: '/settings?tab=rate' },
     { done: data.customers[0]!.n > 0, text: data.customers[0]!.all ? 'Add a customer' : 'Add your first customer and lot', href: '/customers/new', more: { text: 'Have a list? Import it', href: '/customers/import' } },
     { done: data.crew[0]!.n > 0, text: 'Add your drivers', href: '/settings?tab=crew', more: { text: 'Have a list? Import it', href: '/settings/crew-import' } },
     { done: data.routed[0]!.n > 0, text: 'Put your lots on a route, so a storm knows where to go', href: '/routes' },
+    ...(pushReady ? [{ done: pushOn, text: 'Turn on snow alerts on your phone, so a trigger reaches you at 3 AM', href: '/settings?tab=alerts' }] : []),
     ...(can.payments ? [{ done: Boolean(t.stripe_charges_enabled), text: 'Connect Stripe to get paid by card or bank', href: '/settings?tab=payments' }] : []),
     ...(can.sms ? [{ done: t.sms_status === 'approved', text: t.sms_status === 'pending' ? 'Text number: waiting on verification (3 to 5 business days)' : 'Get your text number verified. Crew links go by QR and copy-link until then.', href: '/settings?tab=sms' }] : []),
     { done: Boolean(t.logo_path), text: 'Add your logo for quotes and bills', href: '/settings?tab=company', optional: true },
