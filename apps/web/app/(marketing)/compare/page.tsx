@@ -67,6 +67,13 @@ export default function Compare() {
           </div>
         </div>
       </section>
+      <section className="mx-auto max-w-3xl px-4 py-12" data-testid="with-jobber">
+        <h2 className="font-display text-3xl font-semibold tracking-tight">Use Flake with Jobber or Service Autopilot</h2>
+        <div className="mt-4 space-y-3 text-ink-2">
+          <p>Keep them for lawn work. Use Flake for winter. Export your client list from Jobber or Service Autopilot and import the file into Flake as it is: Flake reads their columns, puts the service address together, and shows you which column it used for each field before anything is added.</p>
+          <p>Winter bills go back to your books through Flake&apos;s QuickBooks Online sync, or as a QuickBooks invoice file for any date range. Flake doesn&apos;t sync with Jobber or Service Autopilot themselves, so winter jobs don&apos;t show up there.</p>
+        </div>
+      </section>
 
       <section className="mx-auto max-w-3xl px-4 py-12">
         <h2 className="font-display text-3xl font-semibold tracking-tight">What it costs</h2>

@@ -91,6 +91,9 @@ export default function Home() {
         <div className="mt-4 flex flex-wrap gap-4 text-sm font-medium">
           <Link className="text-link underline underline-offset-2" href="/tools/snow-removal-contract">Snow removal contract builder</Link>
           <Link className="text-link underline underline-offset-2" href="/tools/snow-removal-pricing-calculator">Snow removal pricing calculator</Link>
+          <Link className="text-link underline underline-offset-2" href="/tools/snow-removal-invoice-template">Invoice template</Link>
+          <Link className="text-link underline underline-offset-2" href="/tools/snow-removal-estimate-template">Estimate template</Link>
+          <Link className="text-link underline underline-offset-2" href="/tools/snow-plow-log-sheet">Plow log sheet</Link>
         </div>
       </section>
     </>

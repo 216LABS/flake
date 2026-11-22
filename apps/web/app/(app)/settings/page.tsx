@@ -1,4 +1,4 @@
-import { and, crew_member, desc, eq, equipment_log, job, message_log, serviceDb, sql, storm, tenant, truck } from '@flake/db';
+import { and, crew_member, customer, desc, eq, isNull, route, site, yard, equipment_log, job, message_log, serviceDb, sql, storm, tenant, truck } from '@flake/db';
 import { AccountingPanel } from './accounting-panel';
 import { EquipmentPanel } from './equipment-panel';
 import { listMaintenance } from '@/lib/maintenance';
@@ -7,7 +7,7 @@ import { SectionPicker } from './section-picker';
 import { fmtLocal, todayIn } from '@flake/core/time';
 import { inFreeSeason } from '@flake/core/fees';
 import { DEFAULT_RATE_CARD, type RateCard } from '@flake/core/quote';
-import { Badge, Card, PageHeader, Table, Td, Th } from '@flake/ui';
+import { Badge, buttonVariants, Card, PageHeader, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
 import { TriggersPanel } from './triggers-panel';
 import { defaultTrigger, triggerTable } from '@/lib/triggers';
@@ -24,9 +24,18 @@ import { available, getProviders, getSetting } from '@/lib/providers';
 import { listTeam } from '@/lib/team';
 import { CHANNEL_LABEL, jobLabel, messageLabel, messageStatus } from '@/lib/labels';
 import { PushPanel } from './push-panel';
+import { NoShowPanel } from './noshow-panel';
+import { FatiguePanel } from './fatigue-panel';
+import { fatigueLimits } from '@/lib/fatigue';
+import { noShowMinutes } from '@/lib/noshow';
 import { canSeeUsage, cronCalls, deploymentUsage, plainJobError } from '@/lib/usage';
 import { BusinessForm, CompanyForm, CrewPanel, LogoForm, PaymentsPanel, PlanPanel, RateCardForm, RetryJob, SmsSubmit, TeamPanel } from './panels';
 import { logoUrl } from '@/lib/logo';
+import { listSubCompanies } from '@/lib/subs';
+import { tenantHasPro } from '@/lib/billing';
+import { SubsPanel } from './subs-panel';
+import { BranchesPanel } from './branches-panel';
+import { branchCounts, listBranches } from '@/lib/branches';
 
 export const metadata = { title: 'Settings' };
 
@@ -64,7 +73,15 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       {!allowed ? <Card className="max-w-2xl" data-testid="owner-only"><p className="text-sm">Only an owner can open this.</p></Card> : null}
       {allowed && tab === 'company' ? <div className="space-y-4"><CompanyForm tenant={JSON.parse(JSON.stringify(t))} /><LogoForm url={logoUrl(t)} /></div> : null}
       {allowed && tab === 'rate' ? <RateCardForm card={(Object.keys(t.rate_card as object).length ? t.rate_card : DEFAULT_RATE_CARD) as RateCard} /> : null}
-      {tab === 'crew' ? <fieldset disabled={readOnly} className={readOnly ? 'view-only contents' : 'contents'}><CrewPanel canText={canTextFrom(ctx.tenant)} cover={Object.fromEntries((await asUser(ctx, (tx) => complianceOverview(tx, tz))).subs.map((s) => [s.id, s.coverage]))} crew={JSON.parse(JSON.stringify(await asUser(ctx, (tx) => tx.select().from(crew_member).orderBy(crew_member.name))))} /></fieldset> : null}
+      {tab === 'crew' ? <fieldset disabled={readOnly} className={readOnly ? 'view-only contents' : 'contents'}><CrewPanel canText={canTextFrom(ctx.tenant)} cover={Object.fromEntries((await asUser(ctx, (tx) => complianceOverview(tx, tz))).subs.map((s) => [s.id, s.coverage]))} crew={JSON.parse(JSON.stringify(await asUser(ctx, (tx) => tx.select().from(crew_member).orderBy(crew_member.name))))} />{ctx.role === 'viewer' ? null : await (async () => {
+        // Sub companies (issue 226).
+        const d = await asUser(ctx, async (tx) => ({
+          subs: await listSubCompanies(tx),
+          lots: await tx.select({ id: site.id, label: site.label, customer: customer.name, sub_company_id: site.sub_company_id }).from(site).innerJoin(customer, eq(customer.id, site.customer_id)).where(eq(site.active, true)).orderBy(customer.name, site.label),
+          drivers: await tx.select({ id: crew_member.id, name: crew_member.name, kind: crew_member.kind, sub_company_id: crew_member.sub_company_id }).from(crew_member).where(eq(crew_member.active, true)).orderBy(crew_member.name),
+        }));
+        return <SubsPanel subs={d.subs} lots={d.lots} drivers={d.drivers} block={t.block_lapsed_coi} owner={owner} pro={tenantHasPro(t)} />;
+      })()}</fieldset> : null}
       {tab === 'equipment' ? await (async () => {
         const data = await asUser(ctx, async (tx) => ({
           trucks: await tx.select({ id: truck.id, name: truck.name, kind: truck.kind, plate: truck.plate, active: truck.active }).from(truck).orderBy(truck.name),
@@ -76,8 +93,24 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       })() : null}
       {tab === 'accounting' ? <AccountingPanel owner={owner} note={qboNote ?? null} /> : null}
       {tab === 'triggers' ? <TriggersPanel rows={await triggerTable(ctx.tenantId)} defaultIn={await defaultTrigger(ctx.tenantId)} saltDefault={(await saltSettings(ctx.tenantId)).default} owner={owner} canEdit={ctx.role !== 'viewer'} /> : null}
-      {tab === 'alerts' ? <PushPanel publicKey={(await getProviders()).push.publicKey} /> : null}
-      {allowed && tab === 'team' ? <TeamPanel members={await listTeam(ctx.tenantId)} me={ctx.userId} /> : null}
+      {tab === 'alerts' ? <><PushPanel publicKey={(await getProviders()).push.publicKey} /><NoShowPanel minutes={await noShowMinutes(t.id)} canEdit={ctx.role === 'owner'} />{await (async () => { const l = await fatigueLimits(t.id); return <FatiguePanel warn={l.warn_hours} rest={l.min_rest_hours} canEdit={ctx.role === 'owner'} />; })()}</> : null}
+      {allowed && tab === 'team' ? await (async () => {
+        // Branches (issue 227): the list, what each holds, and everything that can move between them.
+        const d = await asUser(ctx, async (tx) => {
+          const list = await listBranches(tx);
+          const counts = await branchCounts(tx);
+          return {
+            branches: list.map((b) => ({ id: b.id, name: b.name, yard: b.yard, counts: counts.get(b.id) ?? null })),
+            items: list.length > 1 ? {
+              site: await tx.select({ id: site.id, name: site.label, sub: customer.name, branch_id: site.branch_id }).from(site).innerJoin(customer, eq(customer.id, site.customer_id)).where(eq(site.active, true)).orderBy(customer.name, site.label),
+              route: await tx.select({ id: route.id, name: route.name, sub: sql<null>`null`, branch_id: route.branch_id }).from(route).where(isNull(route.archived_at)).orderBy(route.name),
+              crew: await tx.select({ id: crew_member.id, name: crew_member.name, sub: sql<null>`null`, branch_id: crew_member.branch_id }).from(crew_member).where(eq(crew_member.active, true)).orderBy(crew_member.name),
+              yard: await tx.select({ id: yard.id, name: yard.name, sub: yard.address, branch_id: yard.branch_id }).from(yard).orderBy(yard.name),
+            } : { site: [], route: [], crew: [], yard: [] },
+          };
+        });
+        return <><TeamPanel members={await listTeam(ctx.tenantId)} me={ctx.userId} branches={d.branches} /><BranchesPanel branches={JSON.parse(JSON.stringify(d.branches))} items={d.items} /></>;
+      })() : null}
       {allowed && tab === 'payments' ? <PaymentsPanel connected={Boolean(t.stripe_account_id)} enabled={await chargesEnabled(t)} payInstructions={t.pay_instructions} available={(await available()).payments} /> : null}
       {allowed && tab === 'sms' ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -103,6 +136,19 @@ export default async function Settings({ searchParams }: { searchParams: Promise
           <ButtonA className="mt-3" href="/api/settings/export?table=all" download data-testid="export-all">Download all (.zip)</ButtonA>
           <p className="mt-3 text-sm text-muted">Or one CSV per table. Records are kept 7 years by default because claims can arrive months or years later. Photos and PDFs stay available through their links.</p>
           <ul className="mt-3 flex flex-wrap gap-2" data-testid="exports">{EXPORTS.map((n) => <li key={n}><ButtonA size="sm" href={`/api/settings/export?table=${n}`} download data-testid={`export-${n}`}>{EXPORT_LABEL[n] ?? n}</ButtonA></li>)}</ul>
+        </Card>
+      ) : null}
+      {allowed && tab === 'data' ? (
+        // Issue 239: plenty of companies keep Jobber or Service Autopilot for lawn work. Winter bills go to the books here.
+        <Card className="mt-4 max-w-2xl" data-testid="books-export">
+          <h2 className="font-semibold">Winter bills back to your books</h2>
+          <p className="mt-1 text-sm text-muted">Keep Jobber or Service Autopilot for lawn work if you use them; Flake doesn&apos;t sync with either. Your winter bills go to QuickBooks Online with the sync in <Link className={proseLink} href="/settings?tab=accounting">Settings, Accounting</Link>, or as one file you import into QuickBooks (or hand your bookkeeper).</p>
+          <form className="mt-3 flex flex-wrap items-end gap-2" action="/api/billing/export.csv" method="get">
+            <div><label className="block text-sm font-medium" htmlFor="bx-from">From</label><input id="bx-from" name="from" type="date" required className="min-h-11 rounded-md border border-line bg-surface px-2 text-base" data-testid="books-from" /></div>
+            <div><label className="block text-sm font-medium" htmlFor="bx-to">To</label><input id="bx-to" name="to" type="date" required className="min-h-11 rounded-md border border-line bg-surface px-2 text-base" data-testid="books-to" /></div>
+            <button type="submit" className={buttonVariants({ variant: 'outline' })} data-testid="books-download">Download invoices (QuickBooks CSV)</button>
+          </form>
+          <p className="mt-2 text-xs text-muted">Every approved storm bill for storms that started in those dates, one row per line, in QuickBooks Online&apos;s invoice import format.</p>
         </Card>
       ) : null}
       {tab === 'system' ? await SystemTab(ctx.tenantId, tz, ctx.email, owner) : null}

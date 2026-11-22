@@ -51,13 +51,15 @@ function tiersInOrder(tiers: { up_to_in: number | null }[]) {
 const TIER_ORDER_MESSAGE = 'List the tiers from the smallest depth up, each deeper than the last, with one "above that" tier at the end.';
 
 export const pricingSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('per_push'), amount_cents: price }),
+  // Optional contract terms (issue 233): a seasonal minimum on per push, what measures the inches, a seasonal push cap.
+  z.object({ type: z.literal('per_push'), amount_cents: price, season_min_cents: price.nullable().optional() }),
   z.object({
     type: z.literal('per_inch_tier'),
     tiers: z.array(z.object({ up_to_in: z.number().positive().max(120).nullable(), amount_cents: price })).min(1).max(20).refine(tiersInOrder, TIER_ORDER_MESSAGE),
+    depth_source: z.enum(['driver', 'noaa']).nullable().optional(),
   }),
   z.object({ type: z.literal('per_event'), amount_cents: price }),
-  z.object({ type: z.literal('seasonal'), total_cents: price, installments: z.number().int().min(1).max(12) }),
+  z.object({ type: z.literal('seasonal'), total_cents: price, installments: z.number().int().min(1).max(12), included_pushes: z.number().int().min(1).max(500).nullable().optional(), overage_cents: price.nullable().optional() }),
   z.object({ type: z.literal('hourly'), rate_cents: price }),
 ]);
 
@@ -414,6 +416,9 @@ export const toolContract = z.object({
   salt_text: z.string().max(500).default('').refine((s) => !NEGATIVE_AMOUNT.test(s), "The salt price can't be negative."),
   insurance_text: z.string().max(2000).default(''),
   payment_terms: z.string().max(500).default('Net 30'),
+  // Optional terms (issue 233): what measures the inches, and a seasonal cap or minimum, in the owner's words.
+  measure: z.enum(['driver', 'noaa']).default('driver'),
+  limits_text: z.string().max(500).default('').refine((s) => !NEGATIVE_AMOUNT.test(s), "The amounts can't be negative."),
   email: emptyToNull(email),
 });
 
@@ -490,7 +495,29 @@ export const pushSubscribe = z.object({ endpoint: pushEndpoint, keys: z.object({
 export const pushUnsubscribe = z.object({ endpoint: z.string().max(1000) });
 /** expand: after a save found nothing, also try the numbers next door and the street (issue 87). */
 export const addressSuggest = z.object({ q: z.string().trim().min(3).max(200), expand: z.boolean().optional() });
-export const teamAdd = z.object({ email, role: z.enum(['owner', 'dispatcher', 'viewer']) });
+/** Issue 227: the finer roles, and the branches a member is limited to (none is every branch). */
+export const memberRole = z.enum(['owner', 'dispatcher', 'viewer', 'branch_manager', 'billing', 'field_lead']);
+export const teamAdd = z.object({ email, role: memberRole, branch_ids: z.array(uuid).max(50).nullish() });
+export const teamChange = z.object({ role: memberRole, branch_ids: z.array(uuid).max(50).nullish() });
 /** Joining the crew: the driver's mobile for route links by text, and whether they agree to texts. No email (D16). */
 export const crewJoin = z.object({ consent: z.boolean(), phone: z.union([e164, z.literal('')]).optional() });
 export const proCheckout = z.object({ interval: z.enum(['monthly', 'yearly']) });
+
+/** Issue 226: a subcontractor company. Phone and email are the office's contact for it, never a driver's inbox. */
+export const subCompanyInput = z.object({
+  name: z.string().trim().min(1).max(200),
+  contact_name: z.string().trim().max(200).nullish(),
+  phone_e164: z.union([e164, z.literal('')]).nullish(),
+  email: z.union([email, z.literal('')]).nullish(),
+});
+export const subCompanyPatch = subCompanyInput.partial().extend({ archived: z.boolean().optional() });
+export const subAssign = z.object({ site_ids: z.array(uuid).min(1).max(1000), sub_company_id: uuid.nullable() });
+export const subDriver = z.object({ crew_id: uuid, sub_company_id: uuid.nullable() });
+export const subAnswer = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  status: z.enum(['acknowledged', 'disputed']), note: z.string().max(2000).nullish(), disputed_line: z.string().max(500).nullish(),
+});
+/** Issue 227: a branch (yard) and moving lots, routes, crew and salt yards into it. */
+export const branchInput = z.object({ name: z.string().trim().min(1).max(120), yard_address: z.string().trim().max(300).nullish(), timezone: z.string().max(60).nullish() });
+export const branchPatch = branchInput.partial().extend({ archived: z.boolean().optional() });
+export const branchAssign = z.object({ kind: z.enum(['site', 'route', 'crew', 'yard']), ids: z.array(uuid).min(1).max(1000), branch_id: uuid.nullable() });

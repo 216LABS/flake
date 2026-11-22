@@ -48,11 +48,12 @@ export function seasonalPlan(p: { total_cents: number; installments: number }, s
 export function priceText(p: any, season?: string, prior?: PriorBilled | null): string {
   if (!p) return 'priced per unit';
   switch (p.type) {
-    case 'per_push': return `${money(p.amount_cents)} per push`;
+    // The optional terms from issue 233, in the words the customer signs.
+    case 'per_push': return `${money(p.amount_cents)} per push${p.season_min_cents ? `, with a season minimum of ${money(p.season_min_cents)} (if pushes come to less, the difference is billed at season end)` : ''}`;
     case 'per_event': return `${money(p.amount_cents)} per storm`;
     case 'hourly': return `${money(p.rate_cents)} per hour, rounded up to 15 minutes`;
-    case 'seasonal': return seasonalPlan(p, season, new Date(), prior);
-    case 'per_inch_tier': return p.tiers.map((t: any) => `${t.up_to_in ? `up to ${t.up_to_in}"` : 'above that'}: ${money(t.amount_cents)}`).join('; ');
+    case 'seasonal': return `${seasonalPlan(p, season, new Date(), prior)}${p.included_pushes && p.overage_cents ? `. Covers ${p.included_pushes} pushes; each push after that is ${money(p.overage_cents)}` : ''}`;
+    case 'per_inch_tier': return `${p.tiers.map((t: any) => `${t.up_to_in ? `up to ${t.up_to_in}"` : 'above that'}: ${money(t.amount_cents)}`).join('; ')}. Inches ${p.depth_source === 'noaa' ? "from NOAA's observed snowfall at the property (NOHRSC), with the driver's measurement if NOAA has none" : "as measured on site by the driver, with NOAA's observed snowfall if no measurement was taken"}`;
     default: return '';
   }
 }

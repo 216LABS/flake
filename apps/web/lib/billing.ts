@@ -125,6 +125,23 @@ export async function visitsUndoneOnBills(ctx: Ctx, stormId: string) {
   });
 }
 
+/**
+ * Pushes each lot already had this season (from July 1) on storms before this one, for a seasonal push cap (issue 233).
+ * Finished plow visits only; voided ones don't count.
+ */
+async function seasonPushesBefore(tx: Tx, s: { id: string; started_at: string }, siteIds: string[], tz: string): Promise<Record<string, number>> {
+  if (!siteIds.length) return {};
+  const season = currentSeason(new Date(s.started_at), tz);
+  const from = `${season.slice(0, 4)}-07-01`;
+  const ids = sql.join(siteIds.map((id) => sql`${id}::uuid`), sql`, `);
+  const rows = (await tx.execute(sql`
+    select v.site_id, count(*)::int as n from visit v join storm st on st.id = v.storm_id
+    where v.site_id in (${ids}) and v.departed_device_at is not null and st.id <> ${s.id} and st.started_at >= ${from}::date and st.started_at < ${s.started_at}
+      and 'plow' = any(v.services) and not exists (select 1 from visit_correction vc where vc.visit_id = v.id and vc.field = 'voided' and vc.new_value = 'true'::jsonb)
+    group by v.site_id`)) as unknown as { site_id: string; n: number }[];
+  return Object.fromEntries(rows.map((r) => [r.site_id, r.n]));
+}
+
 /** Regenerating replaces drafts still in review. Anything already approved or charged is left alone. */
 export async function generateDrafts(ctx: Ctx, stormId: string) {
   return withUser(ctx.userId, async (tx) => {
@@ -146,6 +163,9 @@ export async function generateDrafts(ctx: Ctx, stormId: string) {
       waived: s.waived_flags,
       season: currentSeason(new Date(s.started_at), t!.timezone),
       window: { start: s.started_at, end: s.closed_at, timezone: t!.timezone },
+      seasonPushes: await seasonPushesBefore(tx, s, sites.map((x) => x.id), t!.timezone),
+      // Only drafts made from now on carry it; approved and sent bills stay as they were (issue 232).
+      surcharge: await (await import('./salt-policy')).surchargeFor(ctx.tenantId),
     });
     const rate = tenantFeeRate(t!);
     // The engine prices; this says where and when, so a customer with several sites can read the invoice.
@@ -714,9 +734,11 @@ export async function markInstallmentPaid(ctx: Ctx, id: string) {
 }
 
 /** Approved invoices only: a draft still in review isn't a sale yet, and may still be voided or left unbilled. */
-export async function exportQbo(ctx: Ctx & { timezone: string }, stormId: string) {
+/** One storm's bills, or every storm that started in a date range (issue 239: winter bills back to the books in one file). */
+export async function exportQbo(ctx: Ctx & { timezone: string }, sel: string | { from: string; to: string }) {
   return withUser(ctx.userId, async (tx) => {
-    const rows = await tx.select({ draft: invoice_draft, customer, storm }).from(invoice_draft).innerJoin(customer, eq(customer.id, invoice_draft.customer_id)).innerJoin(storm, eq(storm.id, invoice_draft.storm_id)).where(and(eq(invoice_draft.storm_id, stormId), inArray(invoice_draft.status, ['approved', 'charged', 'sent', 'paid', 'failed'])));
+    const which = typeof sel === 'string' ? eq(invoice_draft.storm_id, sel) : and(sql`${storm.started_at} >= ${sel.from}::date`, sql`${storm.started_at} < (${sel.to}::date + 1)`);
+    const rows = await tx.select({ draft: invoice_draft, customer, storm }).from(invoice_draft).innerJoin(customer, eq(customer.id, invoice_draft.customer_id)).innerJoin(storm, eq(storm.id, invoice_draft.storm_id)).where(and(which, inArray(invoice_draft.status, ['approved', 'charged', 'sent', 'paid', 'failed'])));
     const date = (d: Date) => fmtLocal(d, ctx.timezone, { year: 'numeric', month: '2-digit', day: '2-digit' });
     const out: QboRow[] = [];
     for (const { draft, customer: c, storm: s } of rows) {

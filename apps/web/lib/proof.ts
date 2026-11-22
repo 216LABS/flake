@@ -8,6 +8,7 @@ import { buildManifest, type ProofInput, type ProofSnapshot, type ProofVisit } f
 import { getBlob, putBlob } from './blob';
 import { stationHistory } from './weather';
 import { sha256Hex } from './tokens';
+import { rationNote } from './salt-policy';
 
 /** Only this site's value survives from a shared NOHRSC row, and the hourly detail stays out of the packet. */
 function snapshotForPacket(s: typeof weather_snapshot.$inferSelect, siteId: string): ProofSnapshot {
@@ -83,7 +84,7 @@ export async function assembleProof(tenantId: string, siteId: string, from: stri
     ...(incidentAt ? await incidentExtras(tenantId, siteId, row.site.nws_station, from, to, incidentAt) : {}),
     ...(walk.length ? { site_walk: walk.map((w) => ({ id: w.id, season: w.season, kind: w.kind, note: w.note, taken_at: w.taken_at, photo: w.photo_path ? { storage_path: w.photo_path, sha256: w.photo_sha256 } : null })) } : {}),
     ...(agreements.length > 1 ? { agreements: agreements.map((k) => ({ season: k.season, services: k.services, accepted_at: k.accepted_at, accepted_name: k.accepted_name })) } : {}),
-    storms: storms.map((s) => ({ id: s.id, name: s.name, started_at: s.started_at, closed_at: s.closed_at, snapshots: snapshots.filter((x) => (s.forecast_snapshot_ids ?? []).includes(x.id) && relevant(x)).map((x) => snapshotForPacket(x, siteId)) })),
+    storms: await Promise.all(storms.map(async (s) => ({ id: s.id, name: s.name, started_at: s.started_at, closed_at: s.closed_at, snapshots: snapshots.filter((x) => (s.forecast_snapshot_ids ?? []).includes(x.id) && relevant(x)).map((x) => snapshotForPacket(x, siteId)), salt_policy: await rationNote(tenantId, s, siteId) }))),
     visits: proofVisits,
     messages: messages.map((m) => ({ id: m.id, channel: m.channel!, template: m.template, body: m.body, created_at: m.created_at!, status: m.status })),
     corrections: corrections.map((c2) => ({ id: c2.id, visit_id: c2.visit_id, field: c2.field, old_value: c2.old_value, new_value: c2.new_value, reason: c2.reason, created_at: c2.created_at! })),

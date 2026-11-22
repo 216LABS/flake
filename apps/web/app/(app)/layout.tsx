@@ -6,6 +6,7 @@ import { isProd, isTestEnv } from '@/lib/env';
 import { AppNav, MobileTabs } from './app-nav';
 import { ViewOnly } from './view-only';
 import { FeedbackButton } from './feedback-button';
+import { FIELD_PAGES } from '@/lib/roles';
 import { eq, sql, storm } from '@flake/db';
 
 /**
@@ -15,6 +16,7 @@ import { eq, sql, storm } from '@flake/db';
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const ctx = await requirePage();
   const test = isTestEnv();
+  const only = ctx.memberRole === 'field_lead' ? FIELD_PAGES : undefined;
   // A storm running anywhere puts Live on Storms in both navs (issue 187).
   const live = (await asUser(ctx, (tx) => tx.select({ n: sql<number>`count(*)::int` }).from(storm).where(eq(storm.status, 'active'))))[0]!.n > 0;
   return (
@@ -25,7 +27,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         <div className="chevrons" />
         <div className="flex items-center gap-3 py-2 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] md:h-[calc(100dvh-6px)] md:flex-col md:items-stretch md:gap-y-5 md:px-3 md:py-5">
           <Link href="/dashboard" className="shrink-0 md:px-2.5" aria-label="Flake dashboard"><Wordmark /></Link>
-          <AppNav showDev={!isProd()} live={live} />
+          <AppNav showDev={!isProd()} live={live} only={only} />
           <div className="flex min-w-0 flex-1 items-center gap-3 text-sm md:mt-auto md:flex-none md:flex-col md:items-start md:gap-2 md:px-2.5">
             <span className="line-clamp-2 min-w-0 flex-1 break-words text-xs leading-tight text-slate-200 md:flex-none md:text-sm" data-testid="company-name">{ctx.tenant.name}</span>
             {test ? <Badge tone="amber" className="shrink-0 md:order-first" title="Test: no real charges or texts" data-testid="test-badge"><span className="md:hidden">Test</span><span className="hidden md:inline">Test: no real charges or texts</span></Badge> : null}
@@ -38,7 +40,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         {ctx.role === 'viewer' ? <ViewOnly>{children}</ViewOnly> : children}
         <FeedbackButton />
       </main>
-      <MobileTabs showDev={!isProd()} live={live} />
+      <MobileTabs showDev={!isProd()} live={live} only={only} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { BUCKETS, BUCKET_LABEL, bucketTotals, localDay, type Bucket } from '@flake/core/receivables';
 import { desc, eq, isNull, payment, customer } from '@flake/db';
-import { Card, EmptyState, PageHeader } from '@flake/ui';
+import { buttonVariants, Card, EmptyState, PageHeader } from '@flake/ui';
 import { asUser, requirePage } from '@/lib/auth';
 import { money } from '@/lib/client';
 import { openBills } from '@/lib/receivables';
@@ -9,7 +9,7 @@ import { ReceivablesTable } from './receivables-table';
 export const metadata = { title: 'Receivables' };
 
 /** Who owes what and how late (issue 168). Payments, due dates and reminders are recorded here. */
-export default async function Receivables({ searchParams }: { searchParams: Promise<{ bucket?: string; customer?: string }> }) {
+export default async function Receivables({ searchParams }: { searchParams: Promise<{ bucket?: string; customer?: string; page?: string }> }) {
   const q = await searchParams;
   const ctx = await requirePage();
   const tz = ctx.tenant.timezone;
@@ -22,6 +22,11 @@ export default async function Receivables({ searchParams }: { searchParams: Prom
   const bucket = BUCKETS.includes(q.bucket as Bucket) ? (q.bucket as Bucket) : null;
   const shown = data.rows.filter((r) => (!bucket || r.bucket === bucket) && (!q.customer || r.customer_id === q.customer));
   const all = data.rows.reduce((a, r) => a + r.balance_cents, 0);
+  // 100 bills a page (issue 228); totals above still count every bill.
+  const PAGE = 100;
+  const pages = Math.max(1, Math.ceil(shown.length / PAGE));
+  const page = Math.min(pages, Math.max(1, Number(q.page) || 1));
+  const pageHref = (n: number) => `/receivables?${new URLSearchParams({ ...(bucket ? { bucket } : {}), ...(q.customer ? { customer: q.customer } : {}), page: String(n) }).toString()}`;
   return (
     <>
       <PageHeader title="Receivables" subtitle="Open bills, what is left on each, and how late. Record a check or cash payment here; a part payment leaves the rest open." />
@@ -36,7 +41,13 @@ export default async function Receivables({ searchParams }: { searchParams: Prom
         ))}
       </div>
       {shown.length
-        ? <ReceivablesTable rows={shown} today={today} readOnly={ctx.role === 'viewer'} />
+        ? <><ReceivablesTable rows={shown.slice((page - 1) * PAGE, page * PAGE)} today={today} readOnly={ctx.role === 'viewer'} />{pages > 1 ? (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm" data-testid="receivables-pages">
+            {page > 1 ? <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={pageHref(page - 1)}>Previous</a> : null}
+            <span className="text-muted">Page {page} of {pages}, {shown.length} bills</span>
+            {page < pages ? <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={pageHref(page + 1)} data-testid="receivables-next">Next</a> : null}
+          </div>
+        ) : null}</>
         : <EmptyState title={data.rows.length ? 'Nothing in this group' : 'Nothing owed'} />}
       {data.recent.length ? (
         <Card className="mt-6 max-w-3xl" data-testid="recent-payments">

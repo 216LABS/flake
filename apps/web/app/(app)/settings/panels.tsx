@@ -204,12 +204,28 @@ export function CrewPanel({ crew, canText = true, cover = {} }: { crew: any[]; c
   );
 }
 
-export function TeamPanel({ members, me }: { members: { user_id: string; email: string | null; role: string; pending?: boolean }[]; me: string }) {
+const ROLE_OPTIONS: [string, string][] = [['owner', 'Owner'], ['dispatcher', 'Dispatcher'], ['viewer', 'Viewer'], ['billing', 'Billing'], ['field_lead', 'Field lead'], ['branch_manager', 'Branch manager']];
+const ROLE_HELP: Record<string, string> = {
+  owner: 'Everything, including company settings and plans.',
+  dispatcher: 'Storms, routes, customers and billing.',
+  viewer: 'Sees everything, changes nothing.',
+  billing: 'Billing review, receivables and exports. Can look at storms but not run them.',
+  field_lead: 'Runs the storm board. Sees no prices, bills or pay.',
+  branch_manager: 'Dispatcher powers for the branches you pick, and nothing outside them.',
+};
+
+/** Office team (issue 227 added billing, field lead and branch manager, and limiting someone to branches). */
+export function TeamPanel({ members, me, branches = [] }: { members: { user_id: string; email: string | null; role: string; branch_ids?: string[] | null; pending?: boolean }[]; me: string; branches?: { id: string; name: string }[] }) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('dispatcher');
+  const [picked, setPicked] = useState<string[]>([]);
   const { msg, busy, run } = useAction();
   const [ask, dialog] = useConfirm();
+  // Branch managers need branches; the role only shows once the company has more than one.
+  const options = ROLE_OPTIONS.filter(([k]) => k !== 'branch_manager' || branches.length > 1);
+  const limitable = (r: string) => branches.length > 1 && (r === 'branch_manager' || r === 'field_lead');
+  const branchNames = (ids: string[] | null | undefined) => (ids?.length ? ids.map((id) => branches.find((b) => b.id === id)?.name ?? 'removed branch').join(', ') : null);
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       {dialog}
@@ -219,12 +235,26 @@ export function TeamPanel({ members, me }: { members: { user_id: string; email: 
           <tbody>
             {members.map((m) => (
               <tr key={m.user_id} data-testid="team-row">
-                <Td>{m.email}{m.pending ? <Badge tone="amber" className="ml-2" data-testid="team-pending">invited, not signed in yet</Badge> : null}</Td>
+                <Td>{m.email}{m.pending ? <Badge tone="amber" className="ml-2" data-testid="team-pending">invited, not signed in yet</Badge> : null}{branchNames(m.branch_ids) ? <span className="block text-xs text-muted" data-testid="team-branches">Only {branchNames(m.branch_ids)}</span> : null}</Td>
                 <Td>{m.user_id !== me ? (
-                  <Select aria-label={`Role for ${m.email ?? 'this person'}`} className="h-8 w-32 py-0 text-xs" value={m.role} data-testid="team-role-change" disabled={busy} onChange={(e) => void run(async () => { await api(`/api/settings/team/${m.user_id}`, { method: 'PATCH', body: { role: e.target.value } }); router.refresh(); }, 'Role changed')}>
-                    <option value="owner">Owner</option><option value="dispatcher">Dispatcher</option><option value="viewer">Viewer</option>
+                  <Select aria-label={`Role for ${m.email ?? 'this person'}`} className="h-8 w-36 py-0 text-xs" value={m.role} data-testid="team-role-change" disabled={busy} onChange={(e) => {
+                    const next = e.target.value;
+                    // Becoming a branch manager needs branches: start them on the first, changeable below.
+                    const ids = limitable(next) ? (m.branch_ids?.length ? m.branch_ids : next === 'branch_manager' ? [branches[0]!.id] : null) : null;
+                    void run(async () => { await api(`/api/settings/team/${m.user_id}`, { method: 'PATCH', body: { role: next, branch_ids: ids } }); router.refresh(); }, 'Role changed');
+                  }}>
+                    {ROLE_OPTIONS.filter(([k]) => k !== 'branch_manager' || branches.length > 1 || m.role === k).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
                   </Select>
-                ) : <Badge>{m.role}</Badge>}</Td>
+                ) : <Badge>{ROLE_OPTIONS.find(([k]) => k === m.role)?.[1] ?? m.role}</Badge>}
+                {m.user_id !== me && limitable(m.role) ? (
+                  <details className="mt-1 text-xs"><summary className="cursor-pointer text-muted">Branches</summary>
+                    {branches.map((b) => <label key={b.id} className="flex items-center gap-1 py-0.5"><input type="checkbox" checked={!m.branch_ids?.length || m.branch_ids.includes(b.id)} disabled={busy} data-testid="team-branch-toggle" onChange={(e) => {
+                      const cur = m.branch_ids?.length ? m.branch_ids : branches.map((x) => x.id);
+                      const ids = e.target.checked ? [...new Set([...cur, b.id])] : cur.filter((x) => x !== b.id);
+                      void run(async () => { await api(`/api/settings/team/${m.user_id}`, { method: 'PATCH', body: { role: m.role, branch_ids: ids.length === branches.length && m.role !== 'branch_manager' ? null : ids } }); router.refresh(); }, 'Branches changed');
+                    }} />{b.name}</label>)}
+                  </details>
+                ) : null}</Td>
                 <Td>{m.user_id !== me ? (
                   <div className="flex flex-wrap gap-1">
                     {m.pending ? <Button size="sm" variant="ghost" data-testid="team-resend" disabled={busy} onClick={() => void run(async () => { await api(`/api/settings/team/${m.user_id}`, { method: 'POST' }); }, `Sent the invite to ${m.email} again.`)}>Resend invite</Button> : null}
@@ -245,8 +275,14 @@ export function TeamPanel({ members, me }: { members: { user_id: string; email: 
         <Label className="mt-3" htmlFor="team-email">Email</Label>
         <Input id="team-email" type="email" data-testid="team-email" value={email} onChange={(e) => setEmail(e.target.value)} />
         <Label className="mt-2" htmlFor="team-role">Role</Label>
-        <Select id="team-role" data-testid="team-role" value={role} onChange={(e) => setRole(e.target.value)}><option value="dispatcher">Dispatcher</option><option value="viewer">Viewer</option><option value="owner">Owner</option></Select>
-        <Button className="mt-3 w-full" disabled={busy || !email.includes('@')} data-testid="team-add" onClick={() => run(async () => { await api('/api/settings/team', { body: { email, role } }); setEmail(''); router.refresh(); }, 'Added. We emailed them a sign-in link.')}>Add</Button>
+        <Select id="team-role" data-testid="team-role" value={role} onChange={(e) => { setRole(e.target.value); setPicked(e.target.value === 'branch_manager' && branches[0] ? [branches[0].id] : []); }}>{[...options.filter(([k]) => k !== 'owner'), ...options.filter(([k]) => k === 'owner')].map(([k, label]) => <option key={k} value={k}>{label}</option>)}</Select>
+        <p className="mt-1 text-xs text-muted" data-testid="team-role-help">{ROLE_HELP[role]}</p>
+        {limitable(role) ? (
+          <fieldset className="mt-2 text-sm"><legend className="font-medium">{role === 'branch_manager' ? 'Their branches' : 'Only these branches (none ticked is all)'}</legend>
+            {branches.map((b) => <label key={b.id} className="flex items-center gap-2 py-0.5"><input type="checkbox" checked={picked.includes(b.id)} onChange={(e) => setPicked(e.target.checked ? [...picked, b.id] : picked.filter((x) => x !== b.id))} data-testid="team-add-branch" />{b.name}</label>)}
+          </fieldset>
+        ) : null}
+        <Button className="mt-3 w-full" disabled={busy || !email.includes('@') || (role === 'branch_manager' && !picked.length)} data-testid="team-add" onClick={() => run(async () => { await api('/api/settings/team', { body: { email, role, branch_ids: limitable(role) && picked.length ? picked : null } }); setEmail(''); setPicked([]); router.refresh(); }, 'Added. We emailed them a sign-in link.')}>Add</Button>
         {msg ? <p className="mt-2 text-sm text-muted" data-testid="team-msg">{msg}</p> : null}
       </Card>
     </div>

@@ -18,7 +18,7 @@ export const POST = route(async (req) => {
   const body = await parseJson(req, crewCreate);
   const token = newInviteToken();
   const row = await asUser(ctx, async (tx) => {
-    const [c] = await tx.insert(crew_member).values({ ...body, tenant_id: ctx.tenantId, invite_token_hash: hashToken(token) }).returning();
+    const [c] = await tx.insert(crew_member).values({ ...body, tenant_id: ctx.tenantId, invite_token_hash: hashToken(token), branch_id: ctx.branchIds?.[0] ?? null }).returning();
     return c!;
   });
   return NextResponse.json({ ...row, invite_url: `${baseUrl()}/join/${token}` }, { status: 201 });

@@ -1,4 +1,4 @@
-import { and, eq, inArray, membership, push_subscription, serviceDb, short_link, sms_consent, sql, tenant } from '@flake/db';
+import { and, eq, inArray, push_subscription, serviceDb, short_link, sms_consent, sql, tenant } from '@flake/db';
 import { emailFooter, inInvoiceHours, renderTemplate, type TemplateKey } from '@flake/core/messages';
 import { localHm, nextInvoiceWindow } from '@flake/core/time';
 import { baseUrl } from './env';
@@ -133,6 +133,35 @@ export interface OfficePush {
   related?: Record<string, unknown>;
 }
 
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+
+/**
+ * Who in the office gets an alert: owners and dispatchers always, and branch managers and field leads whose branches
+ * the alert is about (issue 227). The branch comes from the storm, alert or lot it names; an alert about none of those
+ * goes to every manager. Billing staff get none.
+ */
+export async function alertStaff(tenantId: string, n: { url?: string; related?: Record<string, unknown> }): Promise<{ user_id: string; email: string | null }[]> {
+  const db = serviceDb();
+  const path = n.url ?? '';
+  const stormId = (typeof n.related?.storm_id === 'string' ? n.related.storm_id : null) ?? path.match(new RegExp(`/storms/(${UUID})`))?.[1] ?? null;
+  const alertId = (typeof n.related?.alert_id === 'string' ? n.related.alert_id : null) ?? path.match(new RegExp(`/alerts/(${UUID})`))?.[1] ?? null;
+  const siteId = typeof n.related?.site_id === 'string' ? n.related.site_id : null;
+  const where = stormId ? sql`select branch_id from storm where id = ${stormId} and tenant_id = ${tenantId}`
+    : alertId ? sql`select s.branch_id from trigger_alert a join site s on s.id = any(a.site_ids) where a.id = ${alertId} and a.tenant_id = ${tenantId}`
+    : siteId ? sql`select branch_id from site where id = ${siteId} and tenant_id = ${tenantId}` : null;
+  const branches = where ? ((await db.execute(where)) as unknown as { branch_id: string | null }[]).map((r) => r.branch_id) : [];
+  // Known branches only; a storm across branches (none stamped) or an unknown subject reaches every manager.
+  const known = [...new Set(branches.filter((b): b is string => !!b))];
+  const any = !where || !known.length || branches.some((b) => b === null);
+  const branchArr = known.length ? sql`array[${sql.join(known.map((b) => sql`${b}::uuid`), sql`, `)}]` : sql`array[]::uuid[]`;
+  return (await db.execute(sql`
+    select m.user_id, u.email from membership m join auth.users u on u.id = m.user_id
+    where m.tenant_id = ${tenantId} and (
+      m.role in ('owner', 'dispatcher')
+      or (m.role in ('branch_manager', 'field_lead') and (m.branch_ids is null or ${any} or m.branch_ids && ${branchArr}))
+    )`)) as unknown as { user_id: string; email: string | null }[];
+}
+
 export const queuePush = (tenantId: string, msg: OfficePush) => enqueue('notify.push', { tenantId, msg }, { dedupeKey: `push:${tenantId}:${msg.key}` });
 
 /** Each device is logged and retried on its own, so one bad device can't repeat the alert on the others. */
@@ -142,7 +171,7 @@ export async function sendOfficePush(tenantId: string, msg: OfficePush) {
   const db = serviceDb();
   const [t] = await db.select().from(tenant).where(eq(tenant.id, tenantId));
   if (!t) return;
-  const staff = msg.userId ? [{ user_id: msg.userId }] : await db.select({ user_id: membership.user_id }).from(membership).where(and(eq(membership.tenant_id, tenantId), inArray(membership.role, ['owner', 'dispatcher'])));
+  const staff = msg.userId ? [{ user_id: msg.userId }] : await alertStaff(tenantId, { url: msg.url, related: msg.related });
   if (!staff.length) return;
   const subs = await db.select().from(push_subscription).where(and(eq(push_subscription.tenant_id, tenantId), inArray(push_subscription.user_id, staff.map((s) => s.user_id))));
   let failure: unknown = null;
@@ -177,9 +206,7 @@ export const plainText = (s: string, max = 300) => {
  * headline, which can quote what someone typed, goes in the body only.
  */
 export async function notifyOffice(t: TenantRow, n: { headline: string; subject?: string; link: string; key: string; related?: Record<string, unknown> }) {
-  const staff = (await serviceDb().execute(sql`
-    select u.email from membership m join auth.users u on u.id = m.user_id
-    where m.tenant_id = ${t.id} and m.role in ('owner','dispatcher') and u.email is not null`)) as unknown as { email: string }[];
+  const staff = (await alertStaff(t.id, { url: n.link, related: n.related })).filter((s): s is { user_id: string; email: string } => !!s.email);
   const headline = plainText(n.headline, 600);
   const subject = plainText(n.subject ?? n.headline, 120);
   const vars = { headline, link: n.link };

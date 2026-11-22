@@ -1,5 +1,6 @@
 import { PageHeader, buttonVariants } from '@flake/ui';
 import Link from 'next/link';
+import { seesMoney } from '@/lib/roles';
 import { notFound } from 'next/navigation';
 import { asUser, requirePage } from '@/lib/auth';
 import { HttpError, isUuid } from '@/lib/http';
@@ -24,10 +25,10 @@ export default async function StormPage({ params }: { params: Promise<{ id: stri
   const sites = await asUser(ctx, (tx) => lotOptions(tx));
   return (
     <>
-      <PageHeader title={live.storm.name} actions={<>
+      <PageHeader title={live.storm.name} actions={seesMoney(ctx.memberRole ?? ctx.role) ? <>
         <Link className={buttonVariants({ variant: 'outline' })} href={`/billing?storm=${id}`}>Billing</Link>
         <Link className={buttonVariants({ variant: 'outline' })} href={`/storms/${id}/pay`}>Sub pay</Link>
-      </>} />
+      </> : null} />
       <StormBoard stormId={id} tz={ctx.tenant.timezone} initial={JSON.parse(JSON.stringify(live))} layers={tiles.layers()} canEdit={ctx.role !== 'viewer'} canText={canTextFrom(ctx.tenant)} sites={sites} />
     </>
   );

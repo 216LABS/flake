@@ -3,6 +3,7 @@ import { fmtLocal, stormWhen } from '@flake/core/time';
 import { Badge, buttonVariants, Eyebrow, PageHeader, Stat, Table, Td, Th } from '@flake/ui';
 import Link from 'next/link';
 import { asUser, requirePage } from '@/lib/auth';
+import { seesMoney } from '@/lib/roles';
 import { stormStatus } from '@/lib/labels';
 import { money } from '@/lib/client';
 import { listMaintenance } from '@/lib/maintenance';
@@ -23,6 +24,8 @@ export const metadata = { title: 'Dashboard' };
 
 export default async function Dashboard() {
   const ctx = await requirePage();
+  // A field lead never sees money (issue 227).
+  const money_ = seesMoney(ctx.memberRole ?? ctx.role);
   const tz = ctx.tenant.timezone;
   const data = await asUser(ctx, async (tx) => ({
     alerts: await tx.select().from(trigger_alert).where(eq(trigger_alert.status, 'open')).orderBy(desc(trigger_alert.created_at)).limit(10),
@@ -222,7 +225,7 @@ export default async function Dashboard() {
             </section>
           ) : null}
           {/* (d) Money: unsigned quotes and money owed are different things, so two cards (issue 188). */}
-          {owedTotal || quotes ? (
+          {money_ && (owedTotal || quotes) ? (
             <section data-testid="waiting-on">
               <Eyebrow className="mb-2">Money</Eyebrow>
               <div className="grid gap-3 md:grid-cols-2">
@@ -269,7 +272,7 @@ export default async function Dashboard() {
                   <Td><Link className={entityLink} href={`/storms/${s.id}`}>{s.name}</Link></Td>
                   <Td label="Started">{stormWhen(s.started_at, tz)}</Td>
                   <Td label="Status"><Badge tone={stormStatus(s.status ?? '', s.billedNothing).tone}>{stormStatus(s.status ?? '', s.billedNothing).word}</Badge></Td>
-                  <Td><ButtonLink size="sm" href={`/billing?storm=${s.id}`}>Billing</ButtonLink></Td>
+                  <Td>{money_ ? <ButtonLink size="sm" href={`/billing?storm=${s.id}`}>Billing</ButtonLink> : null}</Td>
                 </tr>
               ))}
             </tbody>

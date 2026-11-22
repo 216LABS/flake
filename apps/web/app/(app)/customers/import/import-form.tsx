@@ -5,7 +5,7 @@ import { QuoteLots } from '@/components/quote-lots';
 import { ButtonLink } from '@/components/links';
 import { useState } from 'react';
 import { api } from '@/lib/client';
-import { customersFromCsv, type CsvCustomer } from '@/lib/csv';
+import { CSV_FIELDS, customersFromCsv, FIELD_WORD, SOURCE_WORD, type CsvCustomer, type CsvField } from '@/lib/csv';
 
 type Result = { row: number; ok: true; customer: string; site: string; site_id: string; added_to_existing: boolean } | { row: number; ok: false; error: string };
 const SAMPLE = 'name,address,label,email,phone,kind,billing\nBayview HOA,100 Lake Ave Lakewood OH,North drive,board@example.com,216-555-0101,HOA,invoice\nBayview HOA,120 Lake Ave Lakewood OH,South drive,,,HOA,invoice\nKim Lee,14 Elm St Lakewood OH,,kim@example.com,,residential,card';
@@ -19,7 +19,9 @@ export function ImportForm() {
   const [error, setError] = useState<string | null>(null);
   // A chosen file is checked even when it's empty, so a 0-byte file says so instead of nothing (issue 136).
   const [fromFile, setFromFile] = useState(false);
-  const parsed = text.trim() || fromFile ? customersFromCsv(text) : null;
+  // Columns picked by hand, for an export whose headers Flake doesn't know (issue 239).
+  const [pick, setPick] = useState<Partial<Record<CsvField, number>>>({});
+  const parsed = text.trim() || fromFile ? customersFromCsv(text, pick) : null;
   const ready = parsed?.rows.filter((r) => !r.problem) ?? [];
   const run = async () => {
     setBusy(true);
@@ -67,7 +69,24 @@ export function ImportForm() {
       <Label className="mt-3" htmlFor="csv-text">Or paste it here</Label>
       <textarea id="csv-text" rows={8} value={text} onChange={(e) => { setFromFile(false); setText(e.target.value); }} placeholder={SAMPLE} className="mt-1 block w-full rounded-md border border-line p-2 font-mono text-base" data-testid="csv-text" />
       {parsed?.empty ? <p className="mt-2 text-sm text-danger" role="alert" data-testid="csv-empty">This file has no rows. The first row names the columns, and each row after it is one lot.</p> : null}
-      {parsed?.missing.length ? <p className="mt-2 text-sm text-danger" role="alert" data-testid="csv-missing">The first row needs a column called {parsed.missing.join(' and ')}.</p> : null}
+      {parsed?.missing.length ? <p className="mt-2 text-sm text-danger" role="alert" data-testid="csv-missing">The first row needs a column called {parsed.missing.join(' and ')}, or pick which column holds {parsed.missing.length === 1 ? 'it' : 'them'} below.</p> : null}
+      {parsed && !parsed.empty && parsed.headers ? (
+        <details className="mt-3 rounded-md border border-line-faint p-2 text-sm" open={Boolean(parsed.missing.length) || Boolean(parsed.source)} data-testid="csv-mapping">
+          <summary className="cursor-pointer font-medium">{parsed.source ? <span data-testid="csv-source">Detected: {SOURCE_WORD[parsed.source]}. </span> : null}Columns used</summary>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {CSV_FIELDS.map((k) => (
+              <label key={k} className="flex items-center gap-2">
+                <span className="w-20 shrink-0 text-muted">{FIELD_WORD[k]}</span>
+                <select className="min-h-11 w-full rounded-md border border-line bg-surface px-2 text-base" data-testid={`csv-pick-${k}`} value={pick[k] ?? -2} onChange={(e) => { const v = Number(e.target.value); const { [k]: _drop, ...rest } = pick; setPick(v === -2 ? rest : { ...rest, [k]: v }); }}>
+                  <option value={-2}>{pick[k] === undefined && parsed.used?.[k] ? parsed.used[k] : 'Automatic'}</option>
+                  <option value={-1}>Not used</option>
+                  {parsed.headers!.map((h, i) => <option key={i} value={i}>{h}</option>)}
+                </select>
+              </label>
+            ))}
+          </div>
+        </details>
+      ) : null}
       {parsed && !parsed.empty && !parsed.missing.length ? (
         <>
           <p className="mt-3 text-sm" data-testid="csv-summary">{parsed.rows.length === 1 ? '1 row' : `${parsed.rows.length} rows`}, {ready.length} ready{parsed.rows.length > ready.length ? `, ${parsed.rows.length - ready.length} with a problem (left out)` : ''}.</p>

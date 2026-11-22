@@ -1,21 +1,27 @@
 import { fmtLocal, stormWhen } from '@flake/core/time';
-import { buttonVariants, Card, Eyebrow, Input, Label, PageHeader, Stat, Table, Td, Th } from '@flake/ui';
+import { buttonVariants, Card, Eyebrow, Input, Label, PageHeader, Select, Stat, Table, Td, Th } from '@flake/ui';
 import { ButtonA, ButtonLink, entityLink, FilterTabs } from '@/components/links';
 import { ReportsNav } from './reports-nav';
 import { sql } from '@flake/db';
 import { asUser, requirePage } from '@/lib/auth';
+import { listBranches } from '@/lib/branches';
 import { money } from '@/lib/client';
 import { crewHours, equipmentReport, period, saltReport, subPayReport } from '@/lib/reports';
 import { tenantHasPro } from '@/lib/billing';
 import { contractorSalt, saltOrderingReady } from '@/lib/salt-orders';
 import { SaltOrder } from './salt-order';
 import { SaltStockForm } from './salt-stock';
+import { SeasonTerms } from './season-terms';
+import { InsurancePack } from './insurance-pack';
+import { currentSeason } from '@flake/core/time';
+import { localDay } from '@flake/core/receivables';
+import { seasonTerms } from '@/lib/season-terms';
 
 export const metadata = { title: 'Reports' };
 
 const tons = (n: number) => `${n.toLocaleString('en-US', { maximumFractionDigits: 2 })} t`;
 
-export default async function Reports({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; subs?: string }> }) {
+export default async function Reports({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; subs?: string; branch?: string }> }) {
   const q = await searchParams;
   const ctx = await requirePage();
   const tz = ctx.tenant.timezone;
@@ -38,6 +44,12 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
     );
   }
   const showPay = ctx.role !== 'viewer' && tenantHasPro(ctx.tenant);
+  // One branch (issue 227): its storms' bills and its crew's hours. Storms and crew are each in one branch, so the
+  // branches add up to the company. Everything else on this page is the whole company.
+  const branches = await asUser(ctx, (tx) => listBranches(tx));
+  const branchId = q.branch === 'none' || branches.some((b) => b.id === q.branch) ? q.branch! : null;
+  const stormBranch = branchId === 'none' ? sql`and s.branch_id is null` : branchId ? sql`and s.branch_id = ${branchId}` : sql``;
+  const crewBranch = branchId ? new Set((await asUser(ctx, (tx) => tx.execute(sql`select id from crew_member where ${branchId === 'none' ? sql`branch_id is null` : sql`branch_id = ${branchId}`}`)) as unknown as { id: string }[]).map((r) => r.id)) : null;
   const { hours: allHours, salt, bills, equipment, subPay } = await asUser(ctx, async (tx) => ({
     equipment: await equipmentReport(tx, p),
     subPay: showPay ? await subPayReport(tx, p) : [],
@@ -51,7 +63,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
         coalesce(sum(d.subtotal_cents) filter (where d.status in ('approved', 'sent', 'failed')), 0)::int as owed,
         coalesce(sum(d.subtotal_cents) filter (where d.status = 'charged'), 0)::int as processing
       from storm s join invoice_draft d on d.storm_id = s.id and d.status not in ('draft', 'void')
-      where s.started_at >= ${p.startAt} and s.started_at < ${p.endAt}
+      where s.started_at >= ${p.startAt} and s.started_at < ${p.endAt} ${stormBranch}
       group by s.id, s.name, s.started_at order by s.started_at`)) as unknown as { id: string; name: string; started_at: string; billed: number; paid: number; owed: number; processing: number }[],
   }));
   const installments = (await asUser(ctx, (tx) => tx.execute(sql`
@@ -61,7 +73,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
     from installment_invoice where period >= ${p.from.slice(0, 7)} and period <= ${p.to.slice(0, 7)}`)) as unknown as { billed: number; paid: number; owed: number; processing: number }[])[0] ?? { billed: 0, paid: 0, owed: 0, processing: 0 };
   // Crew hours are for payroll: employees only, unless asked. Subs are paid from Sub pay (issue 160).
   const withSubs = q.subs === '1';
-  const hours = allHours.filter((h) => withSubs || h.kind !== 'sub');
+  const hours = allHours.filter((h) => (withSubs || h.kind !== 'sub') && (!crewBranch || crewBranch.has(h.crewId)));
   const subsHidden = !withSubs && allHours.some((h) => h.kind === 'sub');
   // Billed = Paid + Owed + In progress, always (issue 132): a card or bank payment under way is neither yet.
   const billTotal = (k: 'billed' | 'paid' | 'owed' | 'processing') => bills.reduce((n, b) => n + b[k], 0) + installments[k];
@@ -81,6 +93,8 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
       <form method="get" className="mb-6 grid grid-cols-1 items-end gap-3 sm:flex sm:flex-wrap" data-testid="period">
         <div className="min-w-0"><Label htmlFor="from">From</Label><Input id="from" name="from" type="date" defaultValue={p.from} /></div>
         <div className="min-w-0"><Label htmlFor="to">To</Label><Input id="to" name="to" type="date" defaultValue={p.to} /></div>
+        {branches.length > 1 ? <div className="min-w-0"><Label htmlFor="branch">Bills and hours for</Label><Select id="branch" name="branch" defaultValue={branchId ?? ''} data-testid="reports-branch"><option value="">All branches</option>{branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}<option value="none">No branch</option></Select></div> : null}
+        {q.subs ? <input type="hidden" name="subs" value={q.subs} /> : null}
         <button type="submit" className={buttonVariants({ variant: 'outline', className: 'h-11 sm:h-10' })} data-testid="period-show">Show</button>
       </form>
       {p.invalid.length ? <p className="mb-4 rounded-md bg-warn-tint p-3 text-sm text-warn-ink" role="alert" data-testid="period-invalid">{p.invalid.join(' and ')} {p.invalid.length === 1 ? "isn't a valid date" : "aren't valid dates"}, so this shows {p.from} to {p.to} instead.</p> : null}
@@ -126,6 +140,8 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
         ) : <Card className="text-sm text-muted">No driver activity between these dates.</Card>}
       </section>
 
+      {ctx.role !== 'viewer' ? await (async () => { const st = await asUser(ctx, (tx) => seasonTerms(tx, ctx.tenant.timezone)); return <SeasonTerms season={st.season} rows={st.rows} owner={ctx.role === 'owner'} />; })() : null}
+      <InsurancePack from={`${currentSeason(new Date(), ctx.tenant.timezone).slice(0, 4)}-07-01`} to={localDay(new Date(), ctx.tenant.timezone)} canShare={ctx.role !== 'viewer'} />
       <section className="mb-8" aria-labelledby="money-title" data-testid="money-report">
         <Eyebrow id="money-title" className="mb-2">Money</Eyebrow>
         {billTotal('billed') ? (

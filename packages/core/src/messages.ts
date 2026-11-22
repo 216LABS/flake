@@ -2,7 +2,7 @@
 /** Who an email is for decides why the footer says they got it. */
 const AUDIENCE: Record<string, 'customer' | 'crew' | 'office' | 'flake'> = {
   on_the_way: 'customer', done: 'customer', done_no_photo: 'customer', late: 'customer', invoice: 'customer', overdue: 'customer', receipt: 'customer', quote: 'customer', portal: 'customer', completion_report: 'customer', help: 'customer',
-  crew_link: 'crew', route_changed: 'crew', crew_invite: 'crew', call_out: 'crew',
+  crew_link: 'crew', route_changed: 'crew', crew_invite: 'crew', call_out: 'crew', run_offer: 'crew', offer_taken: 'crew', offer_won: 'crew',
   owner_alert: 'office', team_invite: 'office',
   salt_supplier: 'flake', feedback: 'flake',
 };
@@ -25,11 +25,14 @@ export function emailFooter(template: string, c: { name: string; phone?: string 
   return `\n\n--\n${lines.join('\n')}`;
 }
 
-export type TemplateKey = 'team_invite' | 'receipt' | 'crew_link' | 'call_out' | 'on_the_way' | 'done' | 'done_no_photo' | 'late' | 'invoice' | 'bill' | 'help' | 'route_changed' | 'quote' | 'owner_alert' | 'crew_invite' | 'portal' | 'overdue';
+export type TemplateKey = 'team_invite' | 'receipt' | 'crew_link' | 'call_out' | 'on_the_way' | 'done' | 'done_no_photo' | 'late' | 'invoice' | 'bill' | 'help' | 'route_changed' | 'quote' | 'owner_alert' | 'crew_invite' | 'portal' | 'overdue' | 'run_offer' | 'offer_taken' | 'offer_won';
 
 const TEMPLATES: Record<TemplateKey, string> = {
   crew_link: '{company}: Storm on. Route {route} - {n} stops. Start: {link} Reply STOP to opt out.',
   call_out: '{company}: Plowing expected ~{time}. Can you run {route}? Reply YES or NO.',
+  run_offer: '{company}: Route {route} needs a driver now. First to reply YES gets it.',
+  offer_taken: '{company}: Route {route} is taken. Thanks for answering.',
+  offer_won: '{company}: Route {route} is yours. Your route link is on its way.',
   on_the_way: '{company}: Your plow is on the way to {site}.',
   done: '{company}: {site} cleared at {time}. Photo: {link}',
   // No photo came (issue 148): no "Photo:" link that would open the company's page instead.
@@ -57,6 +60,9 @@ const TEMPLATES: Record<TemplateKey, string> = {
 const TEMPLATES_ES: Partial<Record<TemplateKey, string>> = {
   crew_link: '{company}: Hay tormenta. Ruta {route} - {n} paradas. Empieza: {link} Responde STOP para no recibir más.',
   call_out: '{company}: Se espera quitar nieve ~{time}. ¿Puedes hacer la ruta {route}? Responde SI o NO.',
+  run_offer: '{company}: La ruta {route} necesita conductor ahora. El primero en responder SI se la queda.',
+  offer_taken: '{company}: La ruta {route} ya está tomada. Gracias por responder.',
+  offer_won: '{company}: La ruta {route} es tuya. Tu enlace de ruta va en camino.',
   route_changed: '{company}: Tu ruta cambió. Abre tu enlace para verla: {link}',
   crew_invite: '{company} te invitó a recibir enlaces de ruta. Únete: {link}',
 };

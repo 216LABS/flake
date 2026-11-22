@@ -110,6 +110,8 @@ export async function getQuote(token: string) {
     consent_text: CUSTOMER_CONSENT_TEXT(r.tenant.name),
     payments_ready: Boolean(r.tenant.stripe_account_id && r.tenant.stripe_charges_enabled),
     pay_instructions: r.tenant.pay_instructions,
+    // The company's salt surcharge, in one sentence on the quote (issue 232).
+    salt_surcharge: await (await import('./salt-policy')).surchargeFor(r.tenant.id),
     has_payment_method: Boolean(r.customer.stripe_payment_method_id),
   };
 }

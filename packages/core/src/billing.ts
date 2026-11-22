@@ -2,7 +2,7 @@ import type { MultiPolygon, Polygon } from 'geojson';
 import { distanceMeters, distanceToPolygonMeters, gpsMatches } from './geo';
 import { usDistanceText } from './units';
 import { fmtLocal, isLaterSeason } from './time';
-import { DEPTH_DISAGREE_IN, priceSiteForStorm, stormDepthIn, type ContractService, type InvoiceLine, type PricedVisit, type SaltPricing, type StormDepthContext } from './pricing';
+import { DEPTH_DISAGREE_IN, priceSiteForStorm, stormDepthIn, surchargeLines, type SaltSurcharge, type ContractService, type InvoiceLine, type PricedVisit, type SaltPricing, type StormDepthContext } from './pricing';
 
 export const DUPLICATE_WINDOW_MS = 60 * 60 * 1000;
 
@@ -128,6 +128,10 @@ export interface DraftInput {
    * close is held for review: a phone with a wrong clock, or a replayed queue, would put that date on a bill.
    */
   window?: { start: string; end: string | null; timezone: string };
+  /** A salt surcharge on new drafts (issue 232). */
+  surcharge?: SaltSurcharge | null;
+  /** Pushes each lot already had this season, before this storm, for seasonal caps (issue 233). */
+  seasonPushes?: Record<string, number>;
 }
 
 /** A phone can be set a little early, and a driver can finish soon after the office closes the storm. */
@@ -254,7 +258,8 @@ export function draftInvoices(input: DraftInput): DraftInvoice[] {
     const depthCtx = input.depth[site.id] ?? { nohrsc24hIn: null, nwsElapsedIn: null };
     // "Don't bill" on a lot under its trigger: its work stays on record, its charge comes off this storm's bill.
     const noBill = waived.has(noBillKey(site.id));
-    const lines = contract && !noBill ? priceSiteForStorm(contract.services, contract.salt_pricing, visits, depthCtx) : [];
+    const lines = contract && !noBill ? priceSiteForStorm(contract.services, contract.salt_pricing, visits, depthCtx, { pushesBefore: input.seasonPushes?.[site.id] ?? 0 }) : [];
+    if (input.surcharge) lines.push(...surchargeLines(lines, visits, input.surcharge, input.window?.timezone ?? 'America/New_York'));
     const flags = flagsForSite(site, contract, statuses, visits, stormDepthIn(visits.map((v) => v.depth_in), depthCtx), corrected.find((v) => v.site_id === site.id && v.departed_at === null), input.window)
       .map((f) => (noBill && f.code === 'below_trigger' ? { ...f, message: `${f.message} Not billed for this storm.`, waived: true } : f));
     // No contract signed for this season yet: last season's prices carry on (most plow contracts renew), but the

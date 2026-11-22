@@ -8,6 +8,7 @@ import QRCode from 'qrcode';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StopSheet } from './stop-sheet';
 import { sendRoutesBody } from './send-routes';
+import { CrewReport, DriverStatus, StandbyPicker } from './crew-panel';
 import { api, possessive } from '@/lib/client';
 import { LotPicker } from '@/components/lot-picker';
 import type { LotOption } from '@/lib/lots';
@@ -297,6 +298,14 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
           {calloutSent ? <span className="text-muted" data-testid="callout-sent">{calloutSent}</span> : null}
         </div>
       ) : null}
+      {editable ? <StandbyPicker stormId={stormId} crew={live.crew} standby={live.standby ?? []} onSaved={() => void load()} /> : null}
+      {/* Salt rationing tonight (issue 232): drivers see "priority areas only", and proof packets record the policy. */}
+      {editable ? (
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-sm" data-testid="storm-ration">
+          <span className={live.ration?.on ? 'font-semibold text-warn-ink' : 'text-muted'}>{live.ration?.on ? `Salt is rationed this storm${live.ration.scope === 'company' ? ' (company-wide)' : ''}: priority areas only.` : 'Salt: normal amounts.'}</span>
+          <Button size="sm" variant="ghost" data-testid="storm-ration-toggle" onClick={() => act(() => api('/api/salt/policy', { method: 'PUT', body: { action: 'ration', on: !live.ration?.on, storm_id: stormId } }))}>{live.ration?.on ? 'Normal salt for this storm' : 'Ration salt this storm'}</Button>
+        </div>
+      ) : null}
 
       {error ? <p className="mb-3 rounded-md bg-danger-tint p-3 text-sm text-danger" role="alert">{error}</p> : null}
       {!closed && now - lastOk > 60_000 ? <p className="mb-3 rounded-md bg-warn-tint p-3 text-sm text-warn-ink" role="status" data-testid="board-stale">This board hasn&apos;t updated for {since(new Date(lastOk).toISOString(), now)}. Check your connection; it catches up on its own.</p> : null}
@@ -464,7 +473,13 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
                     <div className="mb-2 px-1">
                       <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted">
                         {/* The picker below already shows the name, so the label just says what it is. */}
-                        <span>{editable ? 'Driver' : `${r.crew?.name ?? 'No driver'}${r.crew?.kind === 'sub' ? ' (sub)' : ''}`}{r.crew?.callout_reply ? `, replied ${r.crew.callout_reply}` : ''}</span>
+                        <span>{editable ? 'Driver' : `${r.crew?.name ?? 'No driver'}${r.crew?.kind === 'sub' ? ' (sub)' : ''}`}</span>
+                        {!closed && r.driver_status ? <DriverStatus status={r.driver_status} /> : null}
+                        {/* Hours on shift and rest before it (issue 235). */}
+                        {!closed && r.fatigue?.long_shift ? <Badge tone="amber" data-testid="fatigue-long">On {Math.floor(r.fatigue.on_hours)} h</Badge> : null}
+                        {!closed && r.fatigue?.short_rest ? <Badge tone="amber" data-testid="fatigue-rest">{r.fatigue.rest_hours} h rest</Badge> : null}
+                        {/* The driver isn't coming: the storm's standby drivers get a text, and the first YES gets this run (issue 234). */}
+                        {editable && canText && (live.standby ?? []).some((id: string) => id !== r.crew?.id) && ['declined', 'no_reply', 'not_opened', 'no_driver'].includes(r.driver_status) ? <Button size="sm" variant="outline" className="h-7 px-2 text-xs" data-testid="offer-standby" onClick={() => act(async () => { const out = await api<{ sent: number }>(`/api/runs/${r.id}/offer`, { method: 'POST' }); setCalloutSent(`Offered ${r.name} to ${out.sent} standby driver${out.sent === 1 ? '' : 's'}. The first YES gets it.`); })}>Offer to standbys</Button> : null}
                         {r.published_at && r.link && r.crew && !r.crew.reachable && !closed ? <Badge tone="amber" data-testid="no-reach">Link not sent</Badge> : null}
                       </div>
                       {editable ? (
@@ -504,6 +519,7 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
           })}
         </div>
       </div>
+      {closed ? <CrewReport rows={live.crew_report ?? []} /> : null}
     </div>
   );
 }

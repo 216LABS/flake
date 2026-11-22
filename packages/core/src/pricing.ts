@@ -2,10 +2,13 @@ export type ServiceKind = 'plow' | 'salt' | 'walks' | 'haul';
 export type SaltUnit = 'bag50lb' | 'lb' | 'ton' | 'application';
 
 export type Pricing =
-  | { type: 'per_push'; amount_cents: number }
-  | { type: 'per_inch_tier'; tiers: { up_to_in: number | null; amount_cents: number }[] }
+  /** season_min_cents: a seasonal minimum, trued up at season end for review (issue 233). */
+  | { type: 'per_push'; amount_cents: number; season_min_cents?: number | null }
+  /** depth_source: what decides the inches, named on the contract and the bill (issue 233). Driver depth by default. */
+  | { type: 'per_inch_tier'; tiers: { up_to_in: number | null; amount_cents: number }[]; depth_source?: 'driver' | 'noaa' | null }
   | { type: 'per_event'; amount_cents: number }
-  | { type: 'seasonal'; total_cents: number; installments: number }
+  /** included_pushes and overage_cents: a seasonal price covers so many pushes, then each one more is billed (issue 233). */
+  | { type: 'seasonal'; total_cents: number; installments: number; included_pushes?: number | null; overage_cents?: number | null }
   | { type: 'hourly'; rate_cents: number };
 
 export interface ContractService {
@@ -69,7 +72,9 @@ export interface InvoiceLine {
  * snow, the rain-snow line). null when there's no evidence, which the bill flags as depth missing. The caller only
  * passes an observed total whose window falls inside the storm, so snow from an earlier storm never sets the tier.
  */
-export function stormDepth(driverDepths: (number | null)[], ctx: StormDepthContext): { in: number; source: DepthSource } | null {
+export function stormDepth(driverDepths: (number | null)[], ctx: StormDepthContext, prefer: 'driver' | 'noaa' = 'driver'): { in: number; source: DepthSource } | null {
+  // A contract that names NOAA's observed snowfall as the measure uses it first (issue 233), then the usual evidence.
+  if (prefer === 'noaa' && ctx.nohrsc24hIn !== null) return { in: ctx.nohrsc24hIn, source: 'observed' };
   const site = driverDepths.filter((v): v is number => v !== null);
   if (site.length) return { in: Math.max(...site), source: 'site' };
   if (ctx.nohrsc24hIn !== null) return { in: ctx.nohrsc24hIn, source: 'observed' };
@@ -183,11 +188,23 @@ export function priceSiteForStorm(
   salt: SaltPricing | null | undefined,
   visits: PricedVisit[],
   ctx: StormDepthContext,
+  /** Pushes this lot already had this season before this storm, for a seasonal cap (issue 233). */
+  opts: { pushesBefore?: number } = {},
 ): InvoiceLine[] {
-  const depth = stormDepth(visits.map((v) => v.depth_in), ctx);
   const lines: InvoiceLine[] = [];
   for (const svc of services) {
+    const p = svc.pricing;
+    const depth = stormDepth(visits.map((v) => v.depth_in), ctx, p?.type === 'per_inch_tier' && p.depth_source === 'noaa' ? 'noaa' : 'driver');
     const relevant = visits.filter((v) => v.services.includes(svc.service));
+    if (p?.type === 'seasonal' && p.included_pushes != null && p.overage_cents) {
+      const cap = p.included_pushes;
+      const before = opts.pushesBefore ?? 0;
+      [...relevant].sort((a, b) => a.arrived_at.localeCompare(b.arrived_at)).forEach((v, i) => {
+        const n = before + i + 1;
+        if (n > cap) lines.push(line(v, svc, 'seasonal', 1, p.overage_cents!, p.overage_cents!, `push ${n} of the season, past the ${cap} included`));
+      });
+      continue;
+    }
     const priced = relevant.flatMap((v) => priceVisit(svc, v, depth?.in ?? null, depth?.source));
     const once = svc.pricing?.type === 'per_event' || svc.pricing?.type === 'per_inch_tier';
     if (once && priced.length) {
@@ -219,5 +236,39 @@ export function seasonalInstallments(totalCents: number, count: number): number[
   const base = Math.floor(totalCents / count);
   const out = Array.from({ length: count }, () => base);
   out[0]! += totalCents - base * count;
+  return out;
+}
+
+/**
+ * A salt surcharge on top of contract prices (issue 232): salt bought at spot prices this season. Priced from the salt
+ * the driver recorded on each visit, per ton, per 50 lb bag, or flat per salted visit, for visits on or after `from`
+ * (and on or before `until`), in the company's local days.
+ */
+export interface SaltSurcharge { per: 'ton' | 'bag50lb' | 'application'; amount_cents: number; from: string; until?: string | null }
+
+const TONS_PER: Record<string, number> = { ton: 1, bag50lb: 0.025, lb: 0.0005 };
+const localDate = (iso: string, tz: string) => new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
+const PER_WORD: Record<SaltSurcharge['per'], string> = { ton: 'ton', bag50lb: '50 lb bag', application: 'salting' };
+
+export function surchargeLines(salted: InvoiceLine[], visits: PricedVisit[], s: SaltSurcharge | null | undefined, tz: string): InvoiceLine[] {
+  if (!s || s.amount_cents <= 0) return [];
+  const out: InvoiceLine[] = [];
+  for (const line of salted.filter((l) => l.service === 'salt' && l.pricing_type === 'salt')) {
+    const v = visits.find((x) => x.id === line.source_visit_ids[0]);
+    if (!v) continue;
+    const day = localDate(v.departed_at ?? v.arrived_at, tz);
+    if (day < s.from || (s.until && day > s.until)) continue;
+    const entry = (v.salt ?? []).find((e) => e.qty === line.quantity) ?? (v.salt ?? [])[0];
+    const tons = entry && TONS_PER[entry.unit] !== undefined ? line.quantity * TONS_PER[entry.unit]! : null;
+    // Per ton or per bag needs a weight; a salting priced "per application" has none, so it isn't surcharged by weight.
+    const qty = s.per === 'application' ? 1 : tons === null ? null : s.per === 'ton' ? tons : tons / TONS_PER.bag50lb!;
+    if (qty === null || qty <= 0) continue;
+    const q = Math.round(qty * 1000) / 1000;
+    out.push({
+      site_id: line.site_id, service: 'salt_surcharge', pricing_type: 'salt',
+      description: `Salt surcharge (${q} x ${PER_WORD[s.per]}), for this season's salt prices`,
+      quantity: q, unit_amount_cents: s.amount_cents, amount_cents: Math.round(q * s.amount_cents), source_visit_ids: line.source_visit_ids,
+    });
+  }
   return out;
 }

@@ -14,7 +14,7 @@ type VisitRow = { id: string; site_id: string; storm_id: string; crew_id: string
  * Profit per lot for storms that started in [startAt, endAt), or one storm (issue 167). Rules are in
  * packages/core/src/profit.ts and on the page.
  */
-export async function profitReport(tx: Tx, tenantId: string, opts: { startAt: string; endAt: string; stormId?: string | null; collectedOnly?: boolean; minMarginPct?: number | null }): Promise<ProfitResult> {
+export async function profitReport(tx: Tx, tenantId: string, opts: { startAt: string; endAt: string; stormId?: string | null; collectedOnly?: boolean; minMarginPct?: number | null; branchId?: string | null }): Promise<ProfitResult> {
   const storms = await tx.select({ id: storm.id }).from(storm).where(opts.stormId ? eq(storm.id, opts.stormId) : and(gte(storm.started_at, opts.startAt), lt(storm.started_at, opts.endAt)));
   const stormIds = storms.map((s) => s.id);
   const costs = new Map<string, LotCosts>();
@@ -90,8 +90,16 @@ export async function profitReport(tx: Tx, tenantId: string, opts: { startAt: st
   }
 
   const ids = [...costs.keys()];
-  const names = ids.length ? await tx.select({ id: site.id, label: site.label, customer: customer.name, customer_id: customer.id }).from(site).innerJoin(customer, eq(customer.id, site.customer_id)).where(inArray(site.id, ids)) : [];
-  const rows: ProfitRow[] = ids.map((id) => {
+  const names = ids.length ? await tx.select({ id: site.id, label: site.label, customer: customer.name, customer_id: customer.id, branch_id: site.branch_id }).from(site).innerJoin(customer, eq(customer.id, site.customer_id)).where(inArray(site.id, ids)) : [];
+  // One branch's lots (issue 227), or 'none' for lots in no branch. Lots are only ever in one branch, so the branches
+  // add up to the company total. A lot this member can't see (another branch's) is left out rather than shown nameless.
+  const inBranch = (id: string) => {
+    const n = names.find((x) => x.id === id);
+    if (!n) return false;
+    if (opts.branchId === undefined || opts.branchId === null) return true;
+    return opts.branchId === 'none' ? n.branch_id === null : n.branch_id === opts.branchId;
+  };
+  const rows: ProfitRow[] = ids.filter(inBranch).map((id) => {
     const n = names.find((x) => x.id === id);
     const p = profitOf(costs.get(id)!, { minMarginPct: opts.minMarginPct });
     const waiting = unapproved.get(id) ?? 0;

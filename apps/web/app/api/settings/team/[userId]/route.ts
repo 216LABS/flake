@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { teamChange } from '@flake/contracts';
 import { requireApi } from '@/lib/auth';
 import { parseJson, route } from '@/lib/http';
 import { changeRole, removeMember, resendInvite } from '@/lib/team';
@@ -14,8 +14,8 @@ export const DELETE = route<P>(async (_req, { params }) => {
 /** Changes someone's role. */
 export const PATCH = route<P>(async (req, { params }) => {
   const ctx = await requireApi('owner');
-  const { role } = await parseJson(req, z.object({ role: z.enum(['owner', 'dispatcher', 'viewer']) }));
-  return changeRole(ctx.tenantId, (await params).userId, role, ctx.userId);
+  const { role, branch_ids } = await parseJson(req, teamChange);
+  return changeRole(ctx.tenantId, (await params).userId, role, ctx.userId, branch_ids);
 });
 
 /** Sends the invite email again. */

@@ -7,6 +7,7 @@ import { entityLink } from '@/components/links';
 import { asUser, requirePage } from '@/lib/auth';
 import { money } from '@/lib/client';
 import { profitReport } from '@/lib/profit';
+import { listBranches } from '@/lib/branches';
 
 export const metadata = { title: 'Profit per lot' };
 
@@ -17,7 +18,7 @@ function seasonRange(season: string, tz: string) {
 }
 
 /** What each lot earned less what it cost, worst first (issue 167). */
-export default async function Profit({ searchParams }: { searchParams: Promise<{ season?: string; storm?: string; collected?: string; margin?: string }> }) {
+export default async function Profit({ searchParams }: { searchParams: Promise<{ season?: string; storm?: string; collected?: string; margin?: string; branch?: string }> }) {
   const ctx = await requirePage();
   if (ctx.role === 'viewer') return <><PageHeader title="Profit per lot" /><Card className="max-w-2xl"><p className="text-sm">Profit shows pay and costs, so only owners and dispatchers can open it.</p></Card></>;
   const q = await searchParams;
@@ -25,10 +26,15 @@ export default async function Profit({ searchParams }: { searchParams: Promise<{
   const season = q.season && /^\d{4}-\d{2}$/.test(q.season) ? q.season : quotingSeason(new Date(), tz);
   const margin = q.margin && Number(q.margin) > 0 && Number(q.margin) < 100 ? Number(q.margin) : null;
   const { startAt, endAt } = seasonRange(season, tz);
-  const data = await asUser(ctx, async (tx) => ({
-    storms: await tx.select({ id: storm.id, name: storm.name, started_at: storm.started_at }).from(storm).orderBy(desc(storm.started_at)).limit(60),
-    report: await profitReport(tx, ctx.tenantId, { startAt, endAt, stormId: q.storm || null, collectedOnly: q.collected === '1', minMarginPct: margin }),
-  }));
+  const data = await asUser(ctx, async (tx) => {
+    const branches = await listBranches(tx);
+    const branchId = q.branch === 'none' || branches.some((b) => b.id === q.branch) ? q.branch! : null;
+    return {
+      branches, branchId,
+      storms: await tx.select({ id: storm.id, name: storm.name, started_at: storm.started_at }).from(storm).orderBy(desc(storm.started_at)).limit(60),
+      report: await profitReport(tx, ctx.tenantId, { startAt, endAt, stormId: q.storm || null, collectedOnly: q.collected === '1', minMarginPct: margin, branchId }),
+    };
+  });
   const r = data.report;
   const pct = (m: number | null) => (m == null ? '-' : `${m}%`);
   const y = Number(season.slice(0, 4));
@@ -39,6 +45,7 @@ export default async function Profit({ searchParams }: { searchParams: Promise<{
       <form method="get" className="mb-4 flex flex-wrap items-end gap-3" data-testid="profit-filters">
         <div><Label htmlFor="season">Season</Label><Select id="season" name="season" defaultValue={season} className="w-auto">{[y + 1, y, y - 1, y - 2].map((s) => { const v = `${s}-${String((s + 1) % 100).padStart(2, '0')}`; return <option key={v} value={v}>{s}-{String((s + 1) % 100).padStart(2, '0')}</option>; })}</Select></div>
         <div><Label htmlFor="storm">Or one storm</Label><Select id="storm" name="storm" defaultValue={q.storm ?? ''} className="w-auto max-w-64"><option value="">The whole season</option>{data.storms.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></div>
+        {data.branches.length > 1 ? <div><Label htmlFor="branch">Branch</Label><Select id="branch" name="branch" defaultValue={data.branchId ?? ''} className="w-auto" data-testid="profit-branch"><option value="">All branches</option>{data.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}<option value="none">No branch</option></Select></div> : null}
         <div><Label htmlFor="margin">Flag under margin (%)</Label><Input id="margin" name="margin" type="number" min={1} max={99} defaultValue={margin ?? ''} className="w-24" /></div>
         <label className="flex items-center gap-2 pb-2 text-sm"><input type="checkbox" name="collected" value="1" defaultChecked={q.collected === '1'} /> Collected only</label>
         <button type="submit" className="h-10 rounded-md border px-3 text-sm font-semibold">Show</button>

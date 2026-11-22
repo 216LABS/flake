@@ -11,6 +11,8 @@ export const tenant = pgTable('tenant', {
   id: id(),
   name: text('name').notNull(),
   slug: text('slug').notNull().unique(),
+  /** Hard-block subs with an expired or missing insurance certificate from storm runs (issue 226). */
+  block_lapsed_coi: boolean('block_lapsed_coi').notNull().default(false),
   timezone: text('timezone').notNull().default('America/New_York'),
   plan: text('plan').$type<'free' | 'pro'>().notNull().default('free'),
   free_season_until: date('free_season_until', { mode: 'string' }),
@@ -52,12 +54,21 @@ export const tenant = pgTable('tenant', {
 export const membership = pgTable('membership', {
   tenant_id: uuid('tenant_id').notNull(),
   user_id: uuid('user_id').notNull(),
-  role: text('role').$type<'owner' | 'dispatcher' | 'viewer'>().notNull(),
+  role: text('role').$type<MemberRole>().notNull(),
+  /** Branches this member is limited to (issue 227); null is every branch. */
+  branch_ids: uuidArray('branch_ids'),
 }, (t) => [primaryKey({ columns: [t.tenant_id, t.user_id] })]);
+
+/** Issue 227: branch managers, billing staff and field leads, as well as the original three. */
+export type MemberRole = 'owner' | 'dispatcher' | 'viewer' | 'branch_manager' | 'billing' | 'field_lead';
 
 export const crew_member = pgTable('crew_member', {
   id: id(),
   tenant_id: tenantId(),
+  /** The subcontractor company this driver works for (issue 226). */
+  sub_company_id: uuid('sub_company_id'),
+  /** Branch (issue 227); null is the company as a whole. */
+  branch_id: uuid('branch_id'),
   name: text('name').notNull(),
   phone_e164: text('phone_e164'),
   email: text('email'),
@@ -100,6 +111,9 @@ export const customer = pgTable('customer', {
 export const site = pgTable('site', {
   id: id(),
   tenant_id: tenantId(),
+  /** A subcontractor company given this lot directly (issue 226). */
+  sub_company_id: uuid('sub_company_id'),
+  branch_id: uuid('branch_id'),
   customer_id: uuid('customer_id').notNull(),
   label: text('label').notNull(),
   address: text('address').notNull(),
@@ -159,6 +173,7 @@ export const contract = pgTable('contract', {
 export const route = pgTable('route', {
   id: id(),
   tenant_id: tenantId(),
+  branch_id: uuid('branch_id'),
   name: text('name').notNull(),
   default_crew_id: uuid('default_crew_id'),
   archived_at: ts('archived_at'),
@@ -205,6 +220,7 @@ export const trigger_alert = pgTable('trigger_alert', {
 export const storm = pgTable('storm', {
   id: id(),
   tenant_id: tenantId(),
+  branch_id: uuid('branch_id'),
   name: text('name').notNull(),
   started_at: ts('started_at').notNull(),
   closed_at: ts('closed_at'),
@@ -700,6 +716,7 @@ export const payment = pgTable('payment', {
 export const yard = pgTable('yard', {
   id: id(),
   tenant_id: tenantId(),
+  branch_id: uuid('branch_id'),
   name: text('name').notNull(),
   address: text('address'),
   lat: doublePrecision('lat'),
@@ -722,5 +739,67 @@ export const salt_ledger = pgTable('salt_ledger', {
   note: text('note'),
   at: ts('at').notNull().defaultNow(),
   created_by: uuid('created_by'),
+  created_at: createdAt(),
+});
+
+/** Issue 236: a proof packet or insurance renewal pack shared by an expiring, revocable link, with every open logged. */
+export const share_link = pgTable('share_link', {
+  id: id(),
+  tenant_id: tenantId(),
+  kind: text('kind').$type<'proof' | 'renewal'>().notNull(),
+  proof_packet_id: uuid('proof_packet_id'),
+  params: jsonb('params').$type<{ from?: string; to?: string }>().notNull().default(sql`'{}'::jsonb`),
+  label: text('label'),
+  token_hash: text('token_hash').notNull().unique(),
+  token_enc: text('token_enc'),
+  expires_at: ts('expires_at').notNull(),
+  revoked_at: ts('revoked_at'),
+  created_by: uuid('created_by'),
+  created_at: createdAt(),
+});
+
+export const share_link_open = pgTable('share_link_open', {
+  id: id(),
+  tenant_id: tenantId(),
+  share_link_id: uuid('share_link_id').notNull(),
+  opened_at: ts('opened_at').notNull().defaultNow(),
+  ip_hash: text('ip_hash'),
+  user_agent: text('user_agent'),
+});
+
+/** Issue 226: a subcontractor company with several drivers, pay rolled up, and its own portal link. */
+export const sub_company = pgTable('sub_company', {
+  id: id(),
+  tenant_id: tenantId(),
+  name: text('name').notNull(),
+  contact_name: text('contact_name'),
+  phone_e164: text('phone_e164'),
+  email: text('email'),
+  portal_token_hash: text('portal_token_hash').unique(),
+  portal_token_enc: text('portal_token_enc'),
+  archived_at: ts('archived_at'),
+  created_at: createdAt(),
+});
+
+export const sub_statement = pgTable('sub_statement', {
+  id: id(),
+  tenant_id: tenantId(),
+  sub_company_id: uuid('sub_company_id').notNull(),
+  period_from: date('period_from', { mode: 'string' }).notNull(),
+  period_to: date('period_to', { mode: 'string' }).notNull(),
+  status: text('status').$type<'acknowledged' | 'disputed'>().notNull(),
+  note: text('note'),
+  disputed_line: text('disputed_line'),
+  responded_at: ts('responded_at').notNull().defaultNow(),
+});
+
+/** Issue 227: a branch or yard with its own sites, routes, crew, salt and storms. */
+export const branch = pgTable('branch', {
+  id: id(),
+  tenant_id: tenantId(),
+  name: text('name').notNull(),
+  yard: jsonb('yard').$type<{ address: string; lat: number; lon: number } | null>(),
+  timezone: text('timezone'),
+  archived_at: ts('archived_at'),
   created_at: createdAt(),
 });

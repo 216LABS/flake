@@ -16,6 +16,8 @@ interface Stop {
   pins: { id: string; kind: string | null; note: string | null; has_photo: boolean }[];
   services: string[];
   salt_unit: string | null;
+  /** Salt is rationed tonight: these areas only (empty: the lot's priority areas). null when not rationing. */
+  ration_areas?: string[] | null;
   /** This driver's unfinished visit here, when the stop is on site (issue 143). */
   open_visit?: { client_uuid: string; arrived_at: string } | null;
 }
@@ -27,6 +29,7 @@ interface RunData {
   crew: { name: string; language: string } | null;
   build?: string;
   has_reported_depth: boolean;
+  long_shift_hours?: number | null;
   stops: Stop[];
 }
 interface LocalVisit { visit: string; arrived_at: string; depth: number | null; services: string[]; salt: number; before: boolean; after: boolean; beforeN?: number; afterN?: number }
@@ -588,6 +591,8 @@ export function DriverApp({ token, build }: { token: string; build?: string }) {
       {geoAsk && !locationOff && !onSiteView ? <div className="mx-4 mb-2 rounded-lg bg-slate-800 p-3 text-base text-white" data-testid="location-ask">{t('location_ask')}</div> : null}
       {locationOff && !onSiteView ? <div role="alert" className="mx-4 mb-2 rounded-lg bg-amber-300 p-3 text-base font-semibold text-black" data-testid="location-off">{t('location_off')}<details className="mt-2 text-base font-normal" data-testid="location-how"><summary className="flex min-h-[48px] cursor-pointer list-none items-center justify-between rounded-lg bg-black/10 px-3 font-bold">{t('location_how')}<span aria-hidden="true">▾</span></summary><p className="mt-2">{t('location_steps')}</p></details></div> : null}
       {/* Always mounted, so a screen reader hears every toast, not only ones it happened to catch appearing (issue 158). */}
+      {/* Off the on-site card only, so it never pushes the stop's buttons down (issue 211). */}
+      {run.long_shift_hours && !onSiteView ? <div className="mx-4 mb-2 rounded-lg bg-slate-800 p-3 text-base text-amber-300" data-testid="fatigue-note">{t('fatigue_note', { h: Math.floor(run.long_shift_hours) })}</div> : null}
       {/* It floats over the header bar, so it never pushes the buttons a driver is about to tap (issue 211) or hides the lot's name (issue 214). */}
       <div role="status" aria-live="polite" data-testid="toast-region" className="pointer-events-none fixed inset-x-0 top-2 z-20">{toast ? <div className="mx-4 rounded-lg bg-sky-300 p-3 text-center text-lg font-bold text-black shadow-lg">{toast}</div> : null}</div>
 
@@ -735,6 +740,7 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; lo
         </div>
       </div>
       {/* Salt sits right after depth, one compact row; its scroll margin keeps it above the After photo panel when scrolled to (issue 211). */}
+      {stop.ration_areas ? <p className="-mb-1 text-base font-semibold text-amber-300" data-testid="ration-note">{t('ration_note', { areas: stop.ration_areas.length ? stop.ration_areas.map((a) => t(`area_${a}` as DictKey)).join(', ') : t('area_priority') })}</p> : null}
       {stop.salt_unit ? (
         <div className="flex scroll-mb-52 items-center gap-3" data-testid="salt-row">
           <h2 className="min-w-0 flex-1 text-lg font-bold leading-tight">{t('salt')} <span className="block text-base font-medium text-slate-300">{UNIT_KEY[stop.salt_unit] ? t(UNIT_KEY[stop.salt_unit]!) : stop.salt_unit}</span></h2>

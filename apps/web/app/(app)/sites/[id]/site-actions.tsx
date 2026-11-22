@@ -13,6 +13,15 @@ import { scopeLine, type PriorBilled } from '@/lib/scope';
 
 type PricingType = 'per_push' | 'per_inch_tier' | 'per_event' | 'seasonal' | 'hourly';
 
+interface Terms { min: string; source: 'driver' | 'noaa'; cap: string; overage: string }
+/** A seasonal minimum on per push, what measures the inches on per inch, a push cap on seasonal (issue 233). */
+function withTerms(p: ReturnType<typeof pricing>, t: Terms) {
+  if (p.type === 'per_push' && Number(t.min) > 0) return { ...p, season_min_cents: dollarsToCents(t.min) };
+  if (p.type === 'per_inch_tier') return { ...p, depth_source: t.source };
+  if (p.type === 'seasonal' && Number(t.cap) > 0 && Number(t.overage) > 0) return { ...p, included_pushes: Math.round(Number(t.cap)), overage_cents: dollarsToCents(t.overage) };
+  return p;
+}
+
 function pricing(type: PricingType, cents: number) {
   switch (type) {
     case 'per_push': return { type, amount_cents: cents };
@@ -43,6 +52,8 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [],
   const [price, setPrice] = useState(() => hint('per_push'));
   // Until the price is typed over, switching the pricing type moves to that type's suggested price.
   const [priceTyped, setPriceTyped] = useState(false);
+  // Optional contract terms (issue 233).
+  const [terms, setTerms] = useState<Terms>({ min: '', source: 'driver', cap: '', overage: '' });
   const [trigger, setTrigger] = useState<string>(String(defaultTrigger));
   const [season, setSeason] = useState(defaultSeason);
   const [salt, setSalt] = useState(false);
@@ -74,7 +85,7 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [],
     setBusy(true);
     try {
       const services = [
-        ...(plow ? [{ service: 'plow', trigger_in: Number(trigger), pricing: pricing(type, dollarsToCents(price)) }] : []),
+        ...(plow ? [{ service: 'plow', trigger_in: Number(trigger), pricing: withTerms(pricing(type, dollarsToCents(price)), terms) }] : []),
         ...(salt ? [{ service: 'salt', trigger_in: null }] : []),
         ...(walks ? [{ service: 'walks', trigger_in: plow ? Number(trigger) : null, pricing: { type: 'per_push', amount_cents: dollarsToCents(walksPrice) } }] : []),
         ...(haul ? [{ service: 'haul', trigger_in: null, pricing: { type: 'hourly', rate_cents: dollarsToCents(haulRate) } }] : []),
@@ -98,6 +109,9 @@ export function NewQuote({ siteId, defaultSeason, saltCents, signedSeasons = [],
       <div className="mt-2 space-y-2">
         <div><Label htmlFor="q-type">Pricing</Label><Select id="q-type" value={type} data-testid="q-type" onChange={(e) => { const t = e.target.value as PricingType; setType(t); if (!priceTyped) setPrice(hint(t)); }}><option value="per_push">Per push</option><option value="per_inch_tier">Per inch tiers (price is the first tier)</option><option value="per_event">Per event</option><option value="seasonal">Seasonal (5 installments)</option><option value="hourly">Hourly</option></Select></div>
         <div><Label htmlFor="q-price">{type === 'seasonal' ? 'Season total ($)' : 'Price ($)'}{!priceTyped && price && price === hint(type) ? <span className="font-normal text-muted"> suggested from your rate card</span> : null}</Label><Input id="q-price" type="number" step="0.01" min="0.01" max="100000" value={price} data-testid="q-price" onChange={(e) => { setPrice(e.target.value); setPriceTyped(true); }} /></div>
+        {type === 'per_push' ? <div><Label htmlFor="q-min">Minimum for the year ($, optional)</Label><Input id="q-min" type="number" step="0.01" min="0" value={terms.min} data-testid="q-season-min" onChange={(e) => setTerms({ ...terms, min: e.target.value })} /><p className="mt-1 text-xs text-muted">If the season&apos;s pushes come to less, you can bill the difference at season end. Nothing is billed by itself.</p></div> : null}
+        {type === 'per_inch_tier' ? <div><Label htmlFor="q-source">Inches measured by</Label><Select id="q-source" value={terms.source} data-testid="q-depth-source" onChange={(e) => setTerms({ ...terms, source: e.target.value as Terms['source'] })}><option value="driver">The driver, on site</option><option value="noaa">NOAA observed snowfall (NOHRSC)</option></Select></div> : null}
+        {type === 'seasonal' ? <div className="grid grid-cols-2 gap-2"><div><Label htmlFor="q-cap">Pushes included (optional)</Label><Input id="q-cap" type="number" min="1" step="1" value={terms.cap} data-testid="q-cap" onChange={(e) => setTerms({ ...terms, cap: e.target.value })} /></div><div><Label htmlFor="q-over">Each push after ($)</Label><Input id="q-over" type="number" step="0.01" min="0.01" value={terms.overage} data-testid="q-overage" onChange={(e) => setTerms({ ...terms, overage: e.target.value })} /></div></div> : null}
         <div><Label htmlFor="q-trigger">Trigger depth (in)</Label><Input id="q-trigger" type="number" step="0.5" min="0" max="48" value={trigger} data-testid="q-trigger" onChange={(e) => setTrigger(e.target.value)} /></div>
         {zero ? <p className="text-xs text-warn-ink" data-testid="q-zero-warning">0 inches means any measurable snow starts service{type === 'seasonal' ? '.' : ', so every dusting is billable.'}</p> : null}
         {/* This season or next: a typed season could land on a winter long gone or decades out (issue 126). */}

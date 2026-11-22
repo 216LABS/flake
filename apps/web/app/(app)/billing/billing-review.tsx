@@ -33,12 +33,15 @@ const TONE: Record<string, 'gray' | 'blue' | 'green' | 'amber' | 'red'> = { draf
 
 const SALT_UNIT: Record<string, string> = { bag50lb: 'bags', lb: 'lb', ton: 'tons', application: 'applications' };
 
+const PAGE = 100;
+
 export function BillingReview({ stormId, initial, canExport, showFees, stormActive = false, stripeReady = true, nothingToBill = false, readOnly = false, sending = true, paymentsAvailable = true }: { paymentsAvailable?: boolean; readOnly?: boolean; stormId: string; initial: DraftRow[]; canExport: boolean; showFees: boolean; stormActive?: boolean; stripeReady?: boolean; nothingToBill?: boolean; sending?: boolean }) {
   const router = useRouter();
   const [ask, dialog] = useConfirm();
   const [rows, setRows] = useState(initial);
   // Everything shows by default, flagged first, so the clean invoices and the total aren't hidden (issue 50).
   const [flaggedOnly, setFlaggedOnly] = useState(false);
+  const [pageSize, setPageSize] = useState(PAGE);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => setRows(initial), [initial]);
@@ -145,7 +148,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
       ) : null}
       {flaggedOnly && rows.length && !shown.length ? <EmptyState title="Nothing is flagged" body="Everything here is clean. Approve it, or turn off the filter to see it." /> : null}
       <div className="space-y-3">
-        {shown.map((r) => (
+        {shown.slice(0, pageSize).map((r) => (
           <Card key={r.id} data-testid="draft" data-status={r.status} data-draft-id={r.id}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="font-semibold">{r.customer}</div>
@@ -195,6 +198,9 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
           </Card>
         ))}
       </div>
+      {/* A 600-lot storm is 600 bills: shown 100 at a time so the page stays quick on a phone (issue 228). Approve and the
+          filters above still act on all of them. */}
+      {shown.length > pageSize ? <Button className="mt-3 w-full" variant="outline" data-testid="drafts-more" onClick={() => setPageSize(pageSize + PAGE)}>Show the next {Math.min(PAGE, shown.length - pageSize)} ({shown.length - pageSize} more)</Button> : null}
     </div>
   );
 }

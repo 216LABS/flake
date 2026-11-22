@@ -14,7 +14,7 @@ export const POST = route(async (req) => {
     site: b.site,
     season: `${b.season_start} to ${b.season_end}`,
     services: [],
-    serviceLines: [`Services: ${b.services.join(', ')}`, b.trigger_in === 0 ? 'Trigger: zero tolerance, any measurable snow' : `Trigger depth: ${b.trigger_in}"`, `Pricing (${b.pricing_type.replace(/_/g, ' ')}): ${moneyText(b.price_text)}`],
+    serviceLines: [`Services: ${b.services.join(', ')}`, b.trigger_in === 0 ? 'Trigger: zero tolerance, any measurable snow' : `Trigger depth: ${b.trigger_in}"`, `Pricing (${b.pricing_type.replace(/_/g, ' ')}): ${moneyText(b.price_text)}`, ...(b.pricing_type === 'per_inch_tier' ? [b.measure === 'noaa' ? "Snow depth: NOAA's observed snowfall at the property (NOHRSC), or the contractor's measurement on site if NOAA has none." : "Snow depth: measured on site by the contractor's driver, or NOAA's observed snowfall if no measurement was taken."] : []), ...(b.limits_text.trim() ? [`Season limits: ${b.limits_text.trim()}`] : [])],
     saltText: b.salt_text ? `Salt: ${moneyText(b.salt_text)}` : null,
     terms: [b.insurance_text && `Liability and insurance: ${b.insurance_text}`, `Payment terms: ${b.payment_terms}`].filter(Boolean).join('\n\n'),
     disclaimer: 'This template is not legal advice. Have an attorney review it for your state before you rely on it.',

@@ -8,6 +8,9 @@ import { yardStock } from '@/lib/yards';
 import { SaltOrder } from '../reports/salt-order';
 import { SeasonEvents } from './season-events';
 import { YardsPanel } from './yards-panel';
+import { SaltPolicyCard } from './salt-policy-card';
+import { companyRation, surchargeFor } from '@/lib/salt-policy';
+import { localDay } from '@flake/core/receivables';
 
 export const metadata = { title: 'Salt' };
 
@@ -26,6 +29,7 @@ export default async function Salt() {
   return (
     <>
       <PageHeader title="Salt" subtitle="What you have, what the next storm needs, and what each lot uses. Bags count as 50 lb." actions={ordering ? <ButtonA variant="accent" href="#order" data-testid="order-salt">Order salt</ButtonA> : null} />
+      <SaltPolicyCard surcharge={await surchargeFor(ctx.tenantId)} ration={await companyRation(ctx.tenantId)} today={localDay(new Date(), ctx.tenant.timezone)} owner={ctx.role === 'owner'} canEdit={ctx.role !== 'viewer'} />
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="salt-summary">
         <Card><Stat label="On hand" value={plan.on_hand === null ? 'Not counted' : t(plan.on_hand)} note={plan.on_hand === null ? 'Count a pile below to start' : `Across ${yards.length === 1 ? '1 yard' : `${yards.length} yards`}`} /></Card>
         <Card data-testid="salt-next-storm">

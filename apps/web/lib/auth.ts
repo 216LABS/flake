@@ -1,15 +1,22 @@
 import { createServerClient } from '@supabase/ssr';
-import { and, eq, membership, serviceDb, tenant, withUser, type Tx } from '@flake/db';
+import { and, eq, membership, serviceDb, tenant, withUser, type MemberRole, type Tx } from '@flake/db';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
 import { HttpError } from './http';
+import { RANK_OF, roleAllows, type Role } from './roles';
 
-export type Role = 'owner' | 'dispatcher' | 'viewer';
+export type { Role } from './roles';
 export interface OfficeContext {
   userId: string;
   email: string | null;
   tenantId: string;
+  /** The rank this member acts with: one of the original three (issue 227). */
   role: Role;
+  /** Their actual role, including branch manager, billing and field lead. */
+  memberRole?: MemberRole;
+  /** Branches they're limited to; null is every branch. */
+  branchIds?: string[] | null;
   tenant: typeof tenant.$inferSelect;
 }
 
@@ -40,7 +47,7 @@ async function contextFor(user: { id: string; email: string | null }): Promise<O
   if (!m) return null;
   const [t] = await serviceDb().select().from(tenant).where(eq(tenant.id, m.tenant_id));
   if (!t) return null;
-  return { userId: user.id, email: user.email, tenantId: t.id, role: m.role, tenant: t };
+  return { userId: user.id, email: user.email, tenantId: t.id, role: RANK_OF[m.role], memberRole: m.role, branchIds: m.branch_ids ?? null, tenant: t };
 }
 
 /** For pages: sends visitors to login, and new users to company setup. */
@@ -49,6 +56,8 @@ export async function requirePage(): Promise<OfficeContext> {
   if (!user) redirect('/login');
   const ctx = await contextFor(user);
   if (!ctx) redirect('/onboarding');
+  // A field lead opening a money page lands on the storm board instead (issue 227).
+  if (!roleAllows(ctx.memberRole ?? ctx.role, (await headers()).get('x-flake-path'))) redirect('/storms');
   return ctx;
 }
 
@@ -60,6 +69,8 @@ export async function requireApi(minRole: Role = 'viewer'): Promise<OfficeContex
   if (!ctx) throw new HttpError(403, 'No company on this account');
   const rank: Record<Role, number> = { viewer: 0, dispatcher: 1, owner: 2 };
   if (rank[ctx.role] < rank[minRole]) throw new HttpError(403, 'Your role cannot do this');
+  const h = await headers();
+  if (!roleAllows(ctx.memberRole ?? ctx.role, h.get('x-flake-path'), h.get('x-flake-method') ?? 'GET')) throw new HttpError(403, 'Your role cannot do this');
   return ctx;
 }
 

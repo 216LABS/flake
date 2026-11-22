@@ -25,7 +25,7 @@ export function period(from: string | undefined, to: string | undefined, tz: str
   return { from: start, to: end, startAt: zonedDayStart(start, tz).toISOString(), endAt: zonedDayStart(next, tz).toISOString(), backward: backward ? { from: typedFrom!, to: end } : null, invalid };
 }
 
-type Period = ReturnType<typeof period>;
+export type Period = ReturnType<typeof period>;
 /** postgres.js hands back timestamps as Date objects. */
 const ms = (v: unknown) => new Date(v as string).getTime();
 const rowsOf = <T>(r: unknown) => (Array.isArray(r) ? r : ((r as { rows?: T[] }).rows ?? [])) as T[];
@@ -209,16 +209,18 @@ export async function equipmentReport(tx: Tx, p: Period): Promise<TruckReport[]>
     .filter((r) => r.storms || r.gallons || r.fuel_cents || r.maintenance_cents);
 }
 
-export interface SubPayRow { crew_id: string; name: string; storms: { id: string; name: string; total_cents: number; visits: number }[]; season_cents: number; visits: number; hours: number; bags: number; total_cents: number; checks: number }
+export interface SubPayRow { crew_id: string; name: string; sub_company_id: string | null; storms: { id: string; name: string; total_cents: number; visits: number }[]; season_cents: number; visits: number; hours: number; bags: number; total_cents: number; checks: number }
 
 /**
  * Sub pay across storms for a period (issue 160): each storm that started in the period, priced the same way as that
  * storm's pay page (corrections count: an undone visit isn't paid, a corrected salt amount is), plus any season flat
  * rate for the months whose first day falls in the period while the sub is on the crew.
  */
-export async function subPayReport(tx: Tx, p: Period): Promise<SubPayRow[]> {
-  const rows = rowsOf<{ crew_id: string; name: string; active: boolean; card: SubRateCard | null; storm_id: string | null; storm: string | null; visit_id: string | null; label: string | null; arrived: string | null; departed: string | null; salt: { unit: string; qty: number }[] | null }>(await tx.execute(sql`
-    select c.id as crew_id, c.name, c.active, c.sub_rate_card as card, s.id as storm_id, s.name as storm, v.id as visit_id, st.label,
+export async function subPayReport(tx: Tx, p: Period, only?: { tenantId: string; subCompanyId: string }): Promise<SubPayRow[]> {
+  // The sub portal reads on the server connection, so it names the company and sub itself (issue 226).
+  const scope = only ? sql`and c.tenant_id = ${only.tenantId} and c.sub_company_id = ${only.subCompanyId}` : sql``;
+  const rows = rowsOf<{ crew_id: string; name: string; sub_company_id: string | null; active: boolean; card: SubRateCard | null; storm_id: string | null; storm: string | null; visit_id: string | null; label: string | null; arrived: string | null; departed: string | null; salt: { unit: string; qty: number }[] | null }>(await tx.execute(sql`
+    select c.id as crew_id, c.name, c.sub_company_id, c.active, c.sub_rate_card as card, s.id as storm_id, s.name as storm, v.id as visit_id, st.label,
       v.arrived_device_at as arrived, v.departed_device_at as departed,
       coalesce((select k.new_value from visit_correction k where k.visit_id = v.id and k.field = 'salt' order by k.created_at desc limit 1), v.salt) as salt
     from crew_member c
@@ -227,12 +229,12 @@ export async function subPayReport(tx: Tx, p: Period): Promise<SubPayRow[]> {
       and v.storm_id in (select id from storm where started_at >= ${p.startAt} and started_at < ${p.endAt})
     left join storm s on s.id = v.storm_id
     left join site st on st.id = v.site_id
-    where c.kind = 'sub'
+    where c.kind = 'sub' ${scope}
     order by c.name, s.started_at`));
   const months = monthsStarting(p);
   const out = new Map<string, SubPayRow>();
   for (const r of rows) {
-    const e = out.get(r.crew_id) ?? { crew_id: r.crew_id, name: r.name, storms: [], season_cents: 0, visits: 0, hours: 0, bags: 0, total_cents: 0, checks: 0 };
+    const e = out.get(r.crew_id) ?? { crew_id: r.crew_id, name: r.name, sub_company_id: r.sub_company_id, storms: [], season_cents: 0, visits: 0, hours: 0, bags: 0, total_cents: 0, checks: 0 };
     out.set(r.crew_id, e);
     if (!r.visit_id || !r.storm_id) continue;
     let s = e.storms.find((x) => x.id === r.storm_id);

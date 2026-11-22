@@ -216,6 +216,7 @@ function ProofDoc({ manifest: m, manifestSha256, generatedAt, images }: ProofPdf
         {m.storms.map((st) => (
           <View key={st.id} wrap>
             <Text style={s.h3}>{st.name}: {when(st.started_at)} to {when(st.closed_at)}</Text>
+            {st.salt_policy ? <Text style={{ marginBottom: 4 }}>{st.salt_policy}</Text> : null}
             {st.snapshots.length === 0 ? <Text style={s.muted}>Weather data unavailable for this storm.</Text> : null}
             {st.snapshots.map((sn) => (
               <View key={sn.id} style={{ marginBottom: 6 }} wrap={false}>
@@ -414,20 +415,23 @@ export interface InvoicePdfInput {
   terms: string;
   payInstructions?: string | null;
   payLink?: string | null;
+  /** The free templates (issue 237): an estimate reads Estimate, with its own closing line; a footer line for the CTA. */
+  kind?: 'invoice' | 'estimate';
+  footer?: string | null;
 }
 
 /** A printable bill for a customer who pays by check (issue 146): number, lines, total, terms and how to pay. */
 function InvoiceDoc(i: InvoicePdfInput) {
   const money = (c: number) => `${c < 0 ? '-' : ''}$${(Math.abs(c) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   return (
-    <Document title={`Invoice ${i.number} - ${i.company.name}`} author={i.company.name}>
+    <Document title={`${i.kind === 'estimate' ? 'Estimate' : 'Invoice'} ${i.number} - ${i.company.name}`} author={i.company.name}>
       <Page size="LETTER" style={s.page}>
         {i.company.logo ? <Image style={{ maxHeight: 48, maxWidth: 160, objectFit: 'contain', marginBottom: 6 }} src={{ data: Buffer.from(i.company.logo.data), format: i.company.logo.format }} /> : null}
         <Text style={s.h2}>{i.company.name}</Text>
         {i.company.address ? <Text>{i.company.address}</Text> : null}
         {[i.company.phone, i.company.email].filter(Boolean).length ? <Text>{[i.company.phone, i.company.email].filter(Boolean).join(' | ')}</Text> : null}
-        <Text style={s.h1}>Invoice {i.number}</Text>
-        <Text>Bill to: {i.customer.name}</Text>
+        <Text style={s.h1}>{i.kind === 'estimate' ? 'Estimate' : 'Invoice'} {i.number}</Text>
+        <Text>{i.kind === 'estimate' ? 'Prepared for' : 'Bill to'}: {i.customer.name}</Text>
         <Text>Date: {fmtLocal(i.issuedAt, i.timezone, { year: 'numeric', month: 'short', day: 'numeric' })}</Text>
         <Text>For: snow service, {i.storm}</Text>
         <Text style={s.h2}>Services</Text>
@@ -441,7 +445,8 @@ function InvoiceDoc(i: InvoicePdfInput) {
           </View>
         ) : null}
         {i.payLink ? <Text style={{ marginTop: 8 }}>Pay online: {i.payLink}</Text> : null}
-        <Text style={[s.muted, { marginTop: 18 }]}>Please write invoice {i.number} on your check. Thank you for your business.</Text>
+        <Text style={[s.muted, { marginTop: 18 }]}>{i.kind === 'estimate' ? 'Prices are per service visit unless noted, and good for 30 days. Thank you for considering us.' : `Please write invoice ${i.number} on your check. Thank you for your business.`}</Text>
+        {i.footer ? <Text style={[s.muted, { marginTop: 8 }]}>{i.footer}</Text> : null}
       </Page>
     </Document>
   );
@@ -449,4 +454,58 @@ function InvoiceDoc(i: InvoicePdfInput) {
 
 export async function renderInvoicePdf(input: InvoicePdfInput): Promise<Buffer> {
   return renderToBuffer(<InvoiceDoc {...pdfSafe(input)} /> as ReactElement<any>);
+}
+
+/**
+ * A printable snow plow log sheet (issue 237): one row per visit, built around SIMA's documentation checklist: date,
+ * arrive and leave, depth, service, salt, weather and the driver's initials. Blank rows to fill in by hand.
+ */
+export interface LogSheetPdfInput { company: string; site: string; season: string; rows: number; footer?: string | null }
+function LogSheetDoc(i: LogSheetPdfInput) {
+  const cols = ['Date', 'Arrive', 'Leave', 'Snow (in)', 'Service', 'Salt', 'Weather', 'Initials'];
+  return (
+    <Document title={`Snow plow log - ${i.site}`} author={i.company || 'Flake'}>
+      <Page size="LETTER" orientation="landscape" style={s.page}>
+        <Text style={s.h1}>Snow plow service log</Text>
+        <Text>{[i.company && `Contractor: ${i.company}`, i.site && `Site: ${i.site}`, i.season && `Season: ${i.season}`].filter(Boolean).join('    ')}</Text>
+        <Text style={[s.muted, { marginTop: 4, marginBottom: 8 }]}>One line per visit. Write the time you arrived and left, the snow depth you measured, what you did (plow, salt, walks), how much salt, the weather, and your initials. Keep photos with the date.</Text>
+        <Table widths={[1.2, 1, 1, 1, 1.6, 1.2, 1.8, 0.9]} cols={cols} rows={Array.from({ length: i.rows }, () => cols.map(() => ' '))} />
+        {i.footer ? <Text style={[s.muted, { marginTop: 8 }]}>{i.footer}</Text> : null}
+      </Page>
+    </Document>
+  );
+}
+
+export async function renderLogSheetPdf(input: LogSheetPdfInput): Promise<Buffer> {
+  return renderToBuffer(<LogSheetDoc {...pdfSafe(input)} /> as ReactElement<any>);
+}
+
+/** The insurance renewal pack (issue 236): documentation stats across the whole book, then a table per site. */
+export interface RenewalPackPdfInput {
+  company: string; from: string; to: string; generatedAt: string;
+  facts: [string, string][];
+  sites: { customer: string; site: string; visits: number; gps: number; photos: number; depth: number; salt_tons: number }[];
+  coi: string | null;
+  claims: string | null;
+}
+function RenewalDoc(i: RenewalPackPdfInput) {
+  return (
+    <Document title={`Insurance renewal pack - ${i.company}`} author={i.company}>
+      <Page size="LETTER" style={s.page}>
+        <Text style={s.h1}>Snow service documentation</Text>
+        <Text>{i.company}, {i.from} to {i.to}</Text>
+        <Text style={[s.muted, { marginBottom: 8 }]}>Made {i.generatedAt} from the visit records Flake keeps: each visit's arrival and departure from the driver's phone, GPS, photos and snow depth. Voided visits are left out.</Text>
+        <Table widths={[3, 1.4]} cols={['', '']} rows={i.facts.map(([a, b]) => [a, b])} />
+        {i.coi ? <Text style={{ marginTop: 8 }}>Insurance on file: {i.coi}</Text> : null}
+        {i.claims ? <Text style={{ marginTop: 4 }}>Claims in this period: {i.claims}</Text> : null}
+        <Text style={s.h2}>By site</Text>
+        <Table widths={[2.2, 2.2, 0.8, 0.8, 1, 0.8, 0.9]} cols={['Customer', 'Site', 'Visits', 'GPS', 'Photos', 'Depth', 'Salt t']} rows={i.sites.map((r) => [r.customer, r.site, String(r.visits), String(r.gps), String(r.photos), String(r.depth), String(r.salt_tons)])} />
+        <Text style={[s.muted, { marginTop: 10 }]}>Photos counts visits with both a before and an after photo. A proof packet for any site and dates has every visit in full, with the weather records.</Text>
+      </Page>
+    </Document>
+  );
+}
+
+export async function renderRenewalPackPdf(input: RenewalPackPdfInput): Promise<Buffer> {
+  return renderToBuffer(<RenewalDoc {...pdfSafe(input)} /> as ReactElement<any>);
 }

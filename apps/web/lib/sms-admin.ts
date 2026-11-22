@@ -104,6 +104,13 @@ export async function handleInboundSms(to: string, from: string, body: string): 
     await db.insert(sms_consent).values({ tenant_id: t.id, phone_e164: from, opted_in_at: now, opted_in_source: 'sms_start' }).onConflictDoUpdate({ target: [sms_consent.tenant_id, sms_consent.phone_e164], set: { opted_out_at: null, opted_in_at: now, opted_in_source: 'sms_start' } });
   } else if (kind === 'yes' || kind === 'no') {
     await db.update(crew_member).set({ callout_reply: kind.toUpperCase(), callout_reply_at: now }).where(and(eq(crew_member.tenant_id, t.id), eq(crew_member.phone_e164, from)));
+    // A standby driver saying yes to "Route X needs a driver now": the first one gets it (issue 234).
+    if (kind === 'yes') {
+      const [c] = await db.select({ id: crew_member.id }).from(crew_member).where(and(eq(crew_member.tenant_id, t.id), eq(crew_member.phone_e164, from), eq(crew_member.active, true)));
+      const { claimOffer } = await import('./noshow');
+      const said = c ? await claimOffer(t, c.id) : null;
+      if (said) return { kind: 'offer', reply: said };
+    }
   }
   if (kind === 'other' && body.trim()) {
     // Someone wrote to us in their own words. Only known numbers, so spam doesn't reach the office.

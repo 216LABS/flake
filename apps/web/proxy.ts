@@ -11,13 +11,20 @@ export async function proxy(request: NextRequest) {
   if (isProd() && pathname.startsWith('/api/dev/')) return new NextResponse('Not found', { status: 404 });
   // A page gets the app's own 404, which fits a phone, instead of a bare desktop-width "Not found" (issue 124).
   if (isProd() && (pathname === '/dev' || pathname.startsWith('/dev/'))) return NextResponse.rewrite(new URL('/not-found-hidden', request.url));
-  let response = NextResponse.next({ request });
+  // The path and method, for the role checks in lib/auth (issue 227). Always set here, so a client can't send its own.
+  const forward = () => {
+    const h = new Headers(request.headers);
+    h.set('x-flake-path', pathname);
+    h.set('x-flake-method', request.method);
+    return NextResponse.next({ request: { headers: h } });
+  };
+  let response = forward();
   const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (list) => {
         list.forEach(({ name, value }) => request.cookies.set(name, value));
-        response = NextResponse.next({ request });
+        response = forward();
         list.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
       },
     },

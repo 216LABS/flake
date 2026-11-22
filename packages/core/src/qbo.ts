@@ -46,7 +46,8 @@ export function qboCsv(rows: QboRow[]): string {
 /** The QuickBooks item each kind of Flake line posts to (issue 162). Anything else, like a fee, posts as 'other'. */
 export const QBO_KEYS = ['plow', 'salt', 'walks', 'haul', 'seasonal', 'other'] as const;
 export type QboKey = (typeof QBO_KEYS)[number];
-export const qboKeyFor = (service: string): QboKey => (['plow', 'salt', 'walks', 'haul'].includes(service) ? (service as QboKey) : 'other');
+// A salt surcharge (issue 232) is salt income too.
+export const qboKeyFor = (service: string): QboKey => (service === 'salt_surcharge' ? 'salt' : ['plow', 'salt', 'walks', 'haul'].includes(service) ? (service as QboKey) : 'other');
 export const QBO_KEY_LABEL: Record<QboKey, string> = { plow: 'Plowing', salt: 'Salt', walks: 'Walks', haul: 'Hauling', seasonal: 'Seasonal installments', other: 'Anything else' };
 
 /** "Lakewood Medical Center, LLC" and "lakewood medical center" are the same customer. */

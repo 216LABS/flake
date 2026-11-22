@@ -46,6 +46,7 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
             {many && l.contract.status === 'accepted' ? <p className="mt-1 text-sm text-ok-ink">Signed.</p> : null}
           </section>
         ))}
+        {quote.salt_surcharge && lots.some((l: any) => l.contract.services.some((s: any) => s.service === 'salt')) ? <p className="mt-4 text-sm" data-testid="surcharge-line"><b>Salt surcharge</b>: {money(quote.salt_surcharge.amount_cents)} {quote.salt_surcharge.per === 'ton' ? 'per ton' : quote.salt_surcharge.per === 'bag50lb' ? 'per 50 lb bag' : 'per salting'} of salt used, from {quote.salt_surcharge.from}{quote.salt_surcharge.until ? ` to ${quote.salt_surcharge.until}` : ''}, because salt costs much more this season. It shows as its own line on each bill.</p> : null}
         <p className="mt-4 text-sm" data-testid="payment-line"><b>Payment</b>: {paymentText(quote.customer.billing_mode, quote.company, quote.payments_ready, billedBy(lots.map((l) => l.contract)), quote.pay_instructions)}</p>
         {terms.map((t, i) => <div key={i}><h3 className="mt-3 text-sm font-semibold">Terms{terms.length > 1 ? ` (${lots.filter((l) => l.contract.terms_md === t).map((l) => l.site.label).join(', ')})` : ''}</h3><p className="mt-1 whitespace-pre-wrap text-sm text-ink-2">{t}</p></div>)}
       </Card>

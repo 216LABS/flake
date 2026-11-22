@@ -68,7 +68,7 @@ async function setup() {
       const siteId = randomUUID();
       await db.insert(customer).values({ id: customerId, tenant_id: tenantId, name: `Lot ${r + 1}-${i + 1}`, kind: 'commercial', email: `lot${r}-${i}-${stamp}@flake.test`, billing_mode: i % 5 === 4 ? 'invoice_net30' : 'card_on_file', stripe_payment_method_id: i % 5 === 4 ? null : 'pm_mock_4242' });
       await db.insert(site).values({ id: siteId, tenant_id: tenantId, customer_id: customerId, label: `Lot ${r + 1}-${i + 1}`, address: `${100 + i} Load St, Lakewood, OH`, lat: 41.45 + r * 0.004, lon: -81.85 + i * 0.003, area_estimate_sqft: 20000 + i * 3000, service_window: i % 4 === 0 ? { open_by: '07:00' } : null });
-      await db.insert(contract).values({ tenant_id: tenantId, site_id: siteId, season: '2026-27', status: 'accepted', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 9000 + i * 500 } }] });
+      await db.insert(contract).values({ tenant_id: tenantId, site_id: siteId, season: '2026-27', status: 'accepted', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 9000 + i * 500 } }, { service: 'salt', trigger_in: null }], salt_pricing: { unit: 'bag50lb', amount_cents: 1800 } });
       await db.insert(route_stop).values({ route_id: routeId, site_id: siteId, seq: i + 1, tenant_id: tenantId });
     }
   }

@@ -1,7 +1,8 @@
 'use client';
 
+import { ShareButton } from '@/components/share-button';
 import { addDays, fmtLocal, todayIn, zonedDayEnd, zonedDayStart } from '@flake/core/time';
-import { Button, Card, Input, Label, Segmented, Table, Td, Th } from '@flake/ui';
+import { Button, buttonVariants, Card, Input, Label, Segmented, Table, Td, Th } from '@flake/ui';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/client';
 import { ButtonA } from '@/components/links';
@@ -9,7 +10,7 @@ import { LotPicker } from '@/components/lot-picker';
 import type { LotOption } from '@/lib/lots';
 
 
-export function ProofForm({ sites, packets: firstPackets, preselect, tz, incident: startIncident }: { sites: LotOption[]; packets: any[]; preselect?: string; tz: string; incident?: string }) {
+export function ProofForm({ sites, packets: firstPackets, preselect, tz, incident: startIncident, newerHref = null, olderHref = null }: { sites: LotOption[]; packets: any[]; preselect?: string; tz: string; incident?: string; newerHref?: string | null; olderHref?: string | null }) {
   const [siteId, setSiteId] = useState(preselect ?? sites[0]?.id ?? '');
   // Opened from a claim (issue 165): the incident mode, with the claim's time filled in.
   const [mode, setMode] = useState<'range' | 'claim' | 'incident'>(startIncident ? 'incident' : 'range');
@@ -188,12 +189,18 @@ export function ProofForm({ sites, packets: firstPackets, preselect, tz, inciden
                 <Td label="Period">{fmtLocal(p.from_ts, tz, { month: 'short', day: 'numeric', year: 'numeric' })} to {fmtLocal(p.to_ts, tz, { month: 'short', day: 'numeric', year: 'numeric' })}</Td>
                 <Td label="Created">{fmtLocal(p.created_at, tz)}</Td>
                 <Td label="Manifest" className="font-mono text-xs">{p.manifest_sha256?.slice(0, 12)}</Td>
-                <Td><Button size="sm" variant="outline" className="max-md:mt-1 max-md:h-11 max-md:w-full" data-testid="packet-open" onClick={() => void open(p.id)}>Open</Button></Td>
+                <Td><Button size="sm" variant="outline" className="max-md:mt-1 max-md:h-11 max-md:w-full" data-testid="packet-open" onClick={() => void open(p.id)}>Open</Button>{/* For an agent, adjuster or attorney: an expiring link to this one packet (issue 236). */}<ShareButton kind="proof" proofPacketId={p.id} testId="packet-share" /></Td>
               </tr>
             ))}
             {!packets.length ? <tr><Td colSpan={5}>None yet.</Td></tr> : null}
           </tbody>
         </Table>
+        {newerHref || olderHref ? (
+          <div className="mt-2 flex gap-2" data-testid="packets-pages">
+            {newerHref ? <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={newerHref}>Newer packets</a> : null}
+            {olderHref ? <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={olderHref} data-testid="packets-older">Older packets</a> : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );

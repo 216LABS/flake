@@ -67,29 +67,77 @@ export function checkImportRow(r: RowIn) {
 }
 
 const HEADERS: Record<string, string[]> = {
-  name: ['name', 'customer', 'customer name', 'client', 'client name'],
-  address: ['address', 'street', 'service address', 'property address', 'location'],
-  label: ['label', 'lot', 'site', 'property', 'site name', 'lot name'],
-  email: ['email', 'e-mail', 'email address'],
-  phone: ['phone', 'mobile', 'cell', 'phone number'],
-  kind: ['kind', 'type', 'customer type'],
-  billing: ['billing', 'payment', 'pay by', 'billing mode'],
+  name: ['name', 'customer', 'customer name', 'client', 'client name', 'display name', 'company name', 'company'],
+  address: ['address', 'street', 'service address', 'property address', 'location', 'full address'],
+  label: ['label', 'lot', 'site', 'property', 'site name', 'lot name', 'property name'],
+  email: ['email', 'e-mail', 'email address', 'e-mails', 'emails', 'primary email'],
+  phone: ['phone', 'mobile', 'cell', 'phone number', 'mobile phone #s', 'main phone #s', 'phone #s', 'mobile phone', 'main phone', 'primary phone', 'cell phone'],
+  kind: ['kind', 'type', 'customer type', 'client type', 'property type'],
+  billing: ['billing', 'payment', 'pay by', 'billing mode', 'payment method'],
 };
 
 export type CsvCustomer = { name: string; address: string; label: string | null; email: string | null; phone: string | null; kind: string | null; billing: string | null };
+export type CsvField = keyof CsvCustomer;
+export const CSV_FIELDS: CsvField[] = ['name', 'address', 'label', 'email', 'phone', 'kind', 'billing'];
+export const FIELD_WORD: Record<CsvField, string> = { name: 'Name', address: 'Address', label: 'Lot name', email: 'Email', phone: 'Mobile', kind: 'Kind', billing: 'Billing' };
 
 /**
- * A customer list from a spreadsheet: the first row names the columns, in any order and any of the usual words for them.
- * Name and address are needed; the rest may be missing. Each row says what's wrong with it, if anything.
+ * Jobber and Service Autopilot client and property exports (issue 239): split address columns, and a person's name in
+ * first and last columns. Spotted by their tell-tale headers, so a list moves over without reworking it by hand.
  */
-export function customersFromCsv(text: string): { rows: (CsvCustomer & { problem: string | null })[]; missing: string[]; empty?: boolean } {
+const ADDRESS_PARTS = [
+  ['service street 1', 'service street 2', 'service city', 'service state', 'service zip code'],
+  ['property street 1', 'property street 2', 'property city', 'property state', 'property zip code'],
+  ['service address 1', 'service address 2', 'service city', 'service state', 'service zip'],
+  ['street 1', 'street 2', 'city', 'state', 'zip code'],
+  ['address 1', 'address 2', 'city', 'state', 'zip'],
+  ['billing street 1', 'billing street 2', 'billing city', 'billing state', 'billing zip code'],
+];
+function detectSource(h: string[]): 'jobber' | 'service_autopilot' | null {
+  if (h.includes('j-id') || h.some((x) => x.endsWith('phone #s')) || (h.includes('display name') && h.some((x) => x.includes('street 1')))) return 'jobber';
+  if (h.some((x) => /^(sa )?client id$/.test(x)) || h.includes('client status') || (h.includes('client name') && h.includes('service address 1'))) return 'service_autopilot';
+  return null;
+}
+export const SOURCE_WORD = { jobber: 'Jobber export', service_autopilot: 'Service Autopilot export' } as const;
+
+/**
+ * A customer list from a spreadsheet: the first row names the columns, in any order and any of the usual words for them,
+ * including Jobber and Service Autopilot exports (issue 239). Name and address are needed; the rest may be missing. Any
+ * field can be pointed at a column by hand (`pick`, a column index, or -1 for none). Each row says what's wrong with it.
+ */
+export function customersFromCsv(text: string, pick: Partial<Record<CsvField, number>> = {}): {
+  rows: (CsvCustomer & { problem: string | null })[]; missing: string[]; empty?: boolean;
+  source?: 'jobber' | 'service_autopilot' | null; headers?: string[]; used?: Partial<Record<CsvField, string>>;
+} {
   const [head, ...body] = parseCsv(text, sepOf(text));
   if (!head || !body.length) return { rows: [], missing: [], empty: true };
-  const at = Object.fromEntries(Object.entries(HEADERS).map(([key, names]) => [key, head.findIndex((h) => names.includes(h.trim().toLowerCase()))])) as Record<keyof CsvCustomer, number>;
-  const missing = (['name', 'address'] as const).filter((k) => at[k] < 0);
-  const cell = (r: string[], k: keyof CsvCustomer) => (at[k] >= 0 ? (r[at[k]] ?? '').trim() : '') || null;
+  const h = head.map((x) => x.trim().toLowerCase());
+  const source = detectSource(h);
+  const at = Object.fromEntries(Object.entries(HEADERS).map(([key, names]) => [key, names.map((n) => h.indexOf(n)).find((i) => i >= 0) ?? -1])) as Record<CsvField, number>;
+  for (const [k, i] of Object.entries(pick)) if (typeof i === 'number' && i >= -1 && i < h.length) at[k as CsvField] = i;
+  // No single address column: street, city, state and ZIP put together, the service or property address first.
+  // Each row uses the first of these it has filled in, so a client with no service address falls back to billing.
+  const sets = at.address < 0 ? ADDRESS_PARTS.map((set) => set.map((n) => h.indexOf(n))).filter((idx) => idx[0]! >= 0 && (idx[2]! >= 0 || idx[4]! >= 0)) : [];
+  const parts = sets[0];
+  // A person, not a company: first and last name.
+  const first = h.indexOf('first name');
+  const last = h.indexOf('last name');
+  const nameFromParts = at.name < 0 && first >= 0;
+  const missing = ([['name', at.name >= 0 || nameFromParts], ['address', at.address >= 0 || Boolean(parts)]] as const).filter(([, ok]) => !ok).map(([k]) => k);
+  const cell = (r: string[], k: CsvField) => (at[k] >= 0 ? (r[at[k]] ?? '').trim() : '') || null;
+  const part = (r: string[], i: number | undefined) => (i !== undefined && i >= 0 ? (r[i] ?? '').trim() : '');
+  const addressOf = (r: string[]) => {
+    if (!parts) return cell(r, 'address') ?? '';
+    const p = sets.find((idx) => part(r, idx[0])) ?? parts;
+    const street = [part(r, p[0]), part(r, p[1])].filter(Boolean).join(' ');
+    const stateZip = [part(r, p[3]), part(r, p[4])].filter(Boolean).join(' ');
+    return [street, part(r, p[2]), stateZip].filter(Boolean).join(', ');
+  };
+  // Jobber puts several numbers or emails in one cell; the first one is the one to use.
+  const one = (v: string | null) => (v ? v.split(/[,;/]|\s{2,}/)[0]!.trim() || null : null);
   const rows = missing.length ? [] : body.map((r) => {
-    const c: CsvCustomer = { name: cell(r, 'name') ?? '', address: cell(r, 'address') ?? '', label: cell(r, 'label'), email: cell(r, 'email'), phone: cell(r, 'phone'), kind: cell(r, 'kind'), billing: cell(r, 'billing') };
+    const name = cell(r, 'name') ?? (nameFromParts ? [part(r, first), part(r, last)].filter(Boolean).join(' ') : '');
+    const c: CsvCustomer = { name, address: addressOf(r), label: cell(r, 'label'), email: one(cell(r, 'email')), phone: one(cell(r, 'phone')), kind: cell(r, 'kind'), billing: cell(r, 'billing') };
     const check = checkImportRow(c);
     const problem = !c.name ? 'No name.' : c.address.length < 5 ? 'No address.' : check.ok ? null : check.problem;
     return { ...c, problem };
@@ -99,12 +147,16 @@ export function customersFromCsv(text: string): { rows: (CsvCustomer & { problem
   rows.forEach((r, i) => {
     if (r.problem) return;
     const key = `${r.name.toLowerCase()}|${r.address.toLowerCase().replace(/\s+/g, ' ')}`;
-    const first = seen.get(key);
-    if (first === undefined) seen.set(key, i);
+    const firstSeen = seen.get(key);
+    if (firstSeen === undefined) seen.set(key, i);
     // Numbered the way the preview table numbers rows, from 1 under the header (issue 136).
-    else r.problem = `Same lot as #${first + 1}.`;
+    else r.problem = `Same lot as #${firstSeen + 1}.`;
   });
-  return { rows, missing };
+  const used: Partial<Record<CsvField, string>> = {};
+  for (const k of CSV_FIELDS) if (at[k] >= 0) used[k] = head[at[k]]!.trim();
+  if (!used.name && nameFromParts) used.name = [head[first], last >= 0 ? head[last] : null].filter(Boolean).join(' + ');
+  if (!used.address && parts) used.address = parts.filter((i) => i >= 0).map((i) => head[i]!.trim()).join(' + ');
+  return { rows, missing, source, headers: head.map((x) => x.trim()), used };
 }
 
 /** Crew kinds from a spreadsheet (issue 174). Blank means an employee. */

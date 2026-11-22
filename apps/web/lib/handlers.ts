@@ -142,7 +142,13 @@ export const JOB_HANDLERS: Record<string, JobHandler> = {
   'weather.map_sites': (p) => oneAtATime(`alerts:${p.tenantId}`, () => mapNewLots(p.tenantId)),
   'trigger.evaluate': (p) => oneAtATime(`alerts:${p.tenantId}`, () => evaluateTenant(p.tenantId)),
   'storm.publish_links': (p) => sendRunLink(p.tenantId, p.runId),
-  'storm.late_check': async () => void (await lateCheck()),
+  'storm.late_check': async () => {
+    await lateCheck();
+    const { noShowCheck } = await import('./noshow');
+    await noShowCheck();
+    const { fatigueCheck } = await import('./fatigue');
+    await fatigueCheck();
+  },
   'notify.customer': (p) => notifyCustomer(p as Parameters<typeof notifyCustomer>[0]),
   'notify.visit_done': async (p) => {
     await holdForPhotos(p as Parameters<typeof holdForPhotos>[0]);

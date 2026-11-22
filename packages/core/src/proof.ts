@@ -72,7 +72,8 @@ export interface ProofInput {
   incident_at?: string;
   problems?: ProofProblem[];
   observations?: ProofObservations;
-  storms: { id: string; name: string; started_at: string; closed_at: string | null; snapshots: ProofSnapshot[] }[];
+  /** salt_policy: rationing was the office's policy for this storm (issue 232), so reduced salting reads as policy. */
+  storms: { id: string; name: string; started_at: string; closed_at: string | null; snapshots: ProofSnapshot[]; salt_policy?: string | null }[];
   visits: ProofVisit[];
   messages: { id: string; channel: string; template: string; body: string; created_at: string; status: string | null }[];
   corrections: { id: string; visit_id: string; field: string; old_value: unknown; new_value: unknown; reason: string; created_at: string }[];

@@ -1,4 +1,4 @@
-import { and, asc, asService, contract, crew_member, customer, desc, driver_position, eq, inArray, invoice_draft, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, truck, visit, visit_photo, visitNotVoided, withUser, sms_consent, type Tx } from '@flake/db';
+import { and, asc, asService, contract, crew_member, customer, desc, driver_position, eq, inArray, invoice_draft, problem_report, route, route_stop, run_stop, serviceDb, site, site_pin, sql, storm, storm_run, tenant, trigger_alert, truck, visit, visit_photo, visitNotVoided, withUser, sms_consent, sub_company, type Tx } from '@flake/db';
 import { CREW_SUBJECT } from '@flake/core/messages';
 import { clock12 } from './labels';
 import { isLate, liveContracts, localHm } from '@flake/core/time';
@@ -16,8 +16,10 @@ import { latestSnapshotIds, stormWeather, tenantWeatherHeader } from './weather'
 import { roadTimes } from './road-times';
 import { generateDrafts } from './billing';
 import { log } from './log';
+import { requireCoveredSubs } from './subs';
+import { stampStormBranch, yardForRoute } from './branches';
 
-export interface Ctx { userId: string; tenantId: string }
+export interface Ctx { userId: string; tenantId: string; branchIds?: string[] | null }
 
 const FAR_FUTURE_DAYS = 14;
 
@@ -59,7 +61,7 @@ export async function createStorm(ctx: Ctx, raw: z.input<typeof stormCreate>) {
       .innerJoin(storm_run, eq(storm_run.id, run_stop.storm_run_id)).innerJoin(storm, eq(storm.id, storm_run.storm_id)).innerJoin(site, eq(site.id, run_stop.site_id))
       .where(eq(storm.status, 'active'));
     const busyIds = new Set(busy.map((b) => b.site_id));
-    const plans: { r: typeof route.$inferSelect; chosen: { site_id: string }[] }[] = [];
+    const plans: { r: typeof route.$inferSelect; chosen: { site_id: string; sub_company_id: string | null }[] }[] = [];
     const taken = new Set<string>();
     const clash: typeof busy = [];
     const leftDeclined = new Set<string>();
@@ -68,7 +70,7 @@ export async function createStorm(ctx: Ctx, raw: z.input<typeof stormCreate>) {
       if (!r) throw new HttpError(404, 'Route not found');
       if (r.archived_at) throw new HttpError(409, `${r.name} is archived. Restore it on Routes to use it in a storm.`, 'route_archived');
       // Retired sites stay on old storms but don't join new ones.
-      const stops = await tx.select({ site_id: route_stop.site_id }).from(route_stop).innerJoin(site, eq(site.id, route_stop.site_id)).where(and(eq(route_stop.route_id, routeId), eq(site.active, true))).orderBy(asc(route_stop.seq));
+      const stops = await tx.select({ site_id: route_stop.site_id, sub_company_id: site.sub_company_id }).from(route_stop).innerJoin(site, eq(site.id, route_stop.site_id)).where(and(eq(route_stop.route_id, routeId), eq(site.active, true))).orderBy(asc(route_stop.seq));
       // A lot on two of the chosen routes goes on the first one only, so it isn't plowed twice (issue 26).
       const declined = await declinedLots(tx, stops.map((x) => x.site_id));
       for (const x of stops) if (declined.has(x.site_id)) leftDeclined.add(x.site_id);
@@ -84,6 +86,21 @@ export async function createStorm(ctx: Ctx, raw: z.input<typeof stormCreate>) {
       const names = clash.slice(0, 3).map((c) => c.label).join(', ') + (clash.length > 3 ? ` and ${clash.length - 3} more` : '');
       throw new HttpError(409, `${clash.length === 1 ? 'This lot is' : `${clash.length} lots are`} already on ${clash[0]!.storm}, which is still running: ${names}. Close that storm first, or start this one without ${clash.length === 1 ? 'it' : 'them'}.`, 'busy_sites');
     }
+    // Lots given to a sub company (issue 226) go on that sub's own run, unless the route's driver already works for it.
+    const crewFor = (r: typeof route.$inferSelect) => (r.id in input.crewAssignments ? input.crewAssignments[r.id] : r.default_crew_id) ?? null;
+    const routeCrew = await crewCompanies(tx, plans.map((x) => crewFor(x.r)));
+    const subLots = new Map<string, { site_id: string }[]>();
+    for (const plan of plans) {
+      const mine = routeCrew.get(crewFor(plan.r) ?? '') ?? null;
+      plan.chosen = plan.chosen.filter((x) => {
+        if (!x.sub_company_id || x.sub_company_id === mine || busyIds.has(x.site_id)) return true;
+        subLots.set(x.sub_company_id, [...(subLots.get(x.sub_company_id) ?? []), x]);
+        return false;
+      });
+    }
+    const subRuns = await subDrivers(tx, [...subLots.keys()]);
+    // The insurance block, when the company turned it on: no lapsed sub goes out on a run.
+    await requireCoveredSubs(tx, ctx.tenantId, [...plans.filter((x) => x.chosen.some((c) => !busyIds.has(c.site_id))).map((x) => crewFor(x.r)), ...subRuns.values()]);
     const [s] = await tx.insert(storm).values({
       tenant_id: ctx.tenantId,
       name: input.name,
@@ -106,8 +123,19 @@ export async function createStorm(ctx: Ctx, raw: z.input<typeof stormCreate>) {
       await tx.insert(run_stop).values(chosen.map((x, i) => ({ tenant_id: ctx.tenantId, storm_run_id: run!.id, site_id: x.site_id, seq: i + 1 })));
       runs.push(run!);
     }
+    for (const [subId, lots] of subLots) {
+      const link = newLink();
+      const [run] = await tx.insert(storm_run).values({
+        tenant_id: ctx.tenantId, storm_id: s!.id, route_id: null, crew_id: subRuns.get(subId) ?? null,
+        link_token_hash: link.hash, link_token_enc: link.enc, link_expires_at: link.expires,
+      }).returning();
+      await tx.insert(run_stop).values(lots.map((x, i) => ({ tenant_id: ctx.tenantId, storm_run_id: run!.id, site_id: x.site_id, seq: i + 1 })));
+      runs.push(run!);
+    }
     // An alert for lots this storm now covers has been acted on, so it leaves the dashboard (issue 5).
     if (runs.length) await settleAlerts(tx, s!.id);
+    // The storm belongs to the branch its routes share (issue 227).
+    if (runs.length) await stampStormBranch(tx, s!.id);
     if (!runs.length && clash.length) throw new HttpError(409, `Every lot on these routes is already on ${clash[0]!.storm}, which is still running. Add to that storm from its board instead.`, 'all_busy');
     if (!runs.length) throw new HttpError(422, leftDeclined.size ? 'There is nothing to plow: the only lots on these routes have a declined quote and no signed contract.' : 'There is nothing to plow: none of these sites is on a route. Add them to a route first.', 'no_stops');
     return { storm: s!, runs, left_out: clash.length, left_declined: leftDeclined.size };
@@ -130,6 +158,23 @@ async function requireActiveStorm(tx: Tx, where: { stormId?: string; runId?: str
     : await tx.select({ status: storm.status }).from(storm_run).innerJoin(storm, eq(storm.id, storm_run.storm_id)).where(eq(storm_run.id, where.runId!));
   if (!s) throw new HttpError(404, where.stormId ? 'Storm not found' : 'Run not found');
   if (s.status !== 'active') throw new HttpError(409, 'This storm is closed.', 'closed');
+}
+
+/** Each driver's sub company, for the drivers given. */
+async function crewCompanies(tx: Tx, crewIds: (string | null)[]): Promise<Map<string, string | null>> {
+  const ids = [...new Set(crewIds.filter((x): x is string => !!x))];
+  if (!ids.length) return new Map();
+  const rows = await tx.select({ id: crew_member.id, sub: crew_member.sub_company_id }).from(crew_member).where(inArray(crew_member.id, ids));
+  return new Map(rows.map((r) => [r.id, r.sub]));
+}
+
+/** The driver a sub company's run goes to: its first active driver by name. The office can swap on the board. */
+async function subDrivers(tx: Tx, subIds: string[]): Promise<Map<string, string>> {
+  if (!subIds.length) return new Map();
+  const rows = await tx.select({ id: crew_member.id, sub: crew_member.sub_company_id }).from(crew_member).where(and(inArray(crew_member.sub_company_id, subIds), eq(crew_member.active, true))).orderBy(asc(crew_member.name));
+  const out = new Map<string, string>();
+  for (const r of rows) if (r.sub && !out.has(r.sub)) out.set(r.sub, r.id);
+  return out;
 }
 
 /** A route's usual driver may have left since it was set: a run gets nobody rather than someone who's gone. */
@@ -233,6 +278,7 @@ export async function patchRunStop(ctx: Ctx, stopId: string, patch: z.infer<type
       const [target] = await tx.select().from(storm_run).where(eq(storm_run.id, patch.storm_run_id));
       const [source] = await tx.select().from(storm_run).where(eq(storm_run.id, stop.storm_run_id));
       if (!target || target.storm_id !== source!.storm_id) throw new HttpError(422, 'That run is not in this storm');
+      await requireCoveredSubs(tx, ctx.tenantId, [target.crew_id]);
       const [{ max } = { max: 0 }] = await tx.select({ max: sql<number>`coalesce(max(seq), 0)` }).from(run_stop).where(eq(run_stop.storm_run_id, target.id));
       set.storm_run_id = target.id;
       set.seq = patch.seq ?? Number(max) + 1;
@@ -309,8 +355,10 @@ export async function planRun(ctx: Ctx & { timezone: string }, runId: string) {
     const stops = await tx.select({ stop: run_stop, site }).from(run_stop).innerJoin(site, eq(site.id, run_stop.site_id)).where(eq(run_stop.storm_run_id, runId)).orderBy(asc(run_stop.seq));
     if (!stops.length) throw new HttpError(404, 'Run not found');
     const [pos] = await tx.select().from(driver_position).where(eq(driver_position.storm_run_id, runId)).orderBy(desc(driver_position.device_at)).limit(1);
-    const [trip] = await tx.select({ yard_trip: route.yard_trip, yard: tenant.yard }).from(storm_run).leftJoin(route, eq(route.id, storm_run.route_id)).innerJoin(tenant, eq(tenant.id, storm_run.tenant_id)).where(eq(storm_run.id, runId));
-    return { stops, pos, trip };
+    const [trip] = await tx.select({ yard_trip: route.yard_trip, yard: tenant.yard, route_id: storm_run.route_id }).from(storm_run).leftJoin(route, eq(route.id, storm_run.route_id)).innerJoin(tenant, eq(tenant.id, storm_run.tenant_id)).where(eq(storm_run.id, runId));
+    // A branch's routes start and end at that branch's yard (issue 227).
+    const yardAt = trip ? await yardForRoute(tx, trip.route_id, trip.yard) : null;
+    return { stops, pos, trip: trip ? { ...trip, yard: yardAt } : trip };
   });
   const onsite = data.stops.find((x) => x.stop.status === 'onsite');
   const open = data.stops.filter((x) => ['open', 'enroute', 'problem'].includes(x.stop.status));
@@ -479,11 +527,18 @@ export async function assignRunDriver(ctx: Ctx, runId: string, crewId: string) {
   const run = await withUser(ctx.userId, async (tx) => {
     await requireActiveStorm(tx, { runId });
     if (!(await activeCrew(tx, crewId))) throw new HttpError(422, 'That person is no longer on your crew.', 'inactive_crew');
+    await requireCoveredSubs(tx, ctx.tenantId, [crewId]);
     // A new driver hasn't opened it yet, so the board asks again (issue 86). The same driver picked again keeps it.
+    const [was] = await tx.select({ crew_id: storm_run.crew_id }).from(storm_run).where(eq(storm_run.id, runId));
     const [r] = await tx.update(storm_run).set({ crew_id: crewId, link_opened_at: sql`case when ${storm_run.crew_id} is not distinct from ${crewId} then ${storm_run.link_opened_at} end` }).where(eq(storm_run.id, runId)).returning();
     if (!r) throw new HttpError(404, 'Run not found');
-    return r;
+    return { ...r, previous: was?.crew_id ?? null };
   });
+  // A run changing hands mid-storm, for the after-storm crew report (issue 234). Done visits keep their own driver.
+  if (run.previous && run.previous !== crewId) {
+    const { logHandoff } = await import('./noshow');
+    await logHandoff(ctx.tenantId, run.storm_id, { run_id: runId, from: run.previous, to: crewId, at: new Date().toISOString(), how: 'office' });
+  }
   if (run.published_at) await enqueue('storm.publish_links', { tenantId: ctx.tenantId, runId }, { dedupeKey: `publish:${runId}:${crewId}` });
   return run;
 }
@@ -501,7 +556,8 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     const runIds = runs.map((r) => r.run.id);
     const stops = runIds.length ? await tx.select({ stop: run_stop, site, customer }).from(run_stop).innerJoin(site, eq(site.id, run_stop.site_id)).innerJoin(customer, eq(customer.id, site.customer_id)).where(inArray(run_stop.storm_run_id, runIds)).orderBy(asc(run_stop.seq)) : [];
     const visits = await tx.select().from(visit).where(and(eq(visit.storm_id, stormId), visitNotVoided));
-    const photoCounts = visits.length ? await tx.select({ visit_id: visit_photo.visit_id, n: sql<number>`count(*)::int`, after: sql<number>`(count(*) filter (where ${visit_photo.phase} = 'after'))::int` }).from(visit_photo).where(inArray(visit_photo.visit_id, visits.map((v) => v.id))).groupBy(visit_photo.visit_id) : [];
+    // By the storm, not a list of thousands of visit ids (issue 228).
+    const photoCounts = visits.length ? await tx.select({ visit_id: visit_photo.visit_id, n: sql<number>`count(*)::int`, after: sql<number>`(count(*) filter (where ${visit_photo.phase} = 'after'))::int` }).from(visit_photo).innerJoin(visit, eq(visit.id, visit_photo.visit_id)).where(eq(visit.storm_id, stormId)).groupBy(visit_photo.visit_id) : [];
     const problems = runIds.length ? await tx.select().from(problem_report).where(and(inArray(problem_report.storm_run_id, runIds), sql`resolved_at is null`)).orderBy(desc(problem_report.created_at)) : [];
     const positions = runIds.length ? await tx.selectDistinctOn([driver_position.storm_run_id]).from(driver_position).where(inArray(driver_position.storm_run_id, runIds)).orderBy(driver_position.storm_run_id, desc(driver_position.device_at)) : [];
     const pins = stops.length ? await tx.select().from(site_pin).where(inArray(site_pin.site_id, stops.map((x) => x.site.id))) : [];
@@ -511,22 +567,46 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     const inForce = stops.length ? liveContracts(await tx.select({ site_id: contract.site_id, season: contract.season, services: contract.services }).from(contract).where(and(eq(contract.status, 'accepted'), inArray(contract.site_id, stops.map((x) => x.site.id)))).orderBy(desc(contract.created_at)), s!.started_at, ctx.timezone) : [];
     const contracted = new Map(inForce.map((c) => [c.site_id, ((c.services ?? []) as { service: string }[]).map((x) => x.service)]));
     const trucks = await tx.select({ id: truck.id, name: truck.name }).from(truck).where(eq(truck.active, true)).orderBy(asc(truck.name));
-    return { s: s!, runs, stops, visits, photoCounts, problems, positions, pins, crew, contracted, trucks };
+    // A sub company's own run (issue 226) is named for the sub.
+    const subIds = [...new Set(runs.filter((r) => !r.route && r.crew?.sub_company_id).map((r) => r.crew!.sub_company_id!))];
+    const subNames = new Map((subIds.length ? await tx.select({ id: sub_company.id, name: sub_company.name }).from(sub_company).where(inArray(sub_company.id, subIds)) : []).map((x) => [x.id, x.name]));
+    return { s: s!, runs, stops, visits, photoCounts, problems, positions, pins, crew, contracted, trucks, subNames };
   });
   const now = Date.now();
   const started = Date.parse(data.s.started_at);
   const alerts: { kind: string; text: string; at?: string | null; stop_id?: string; problem_id?: string }[] = [];
   // Late only means something while the crew is still out, and a lot on two passes is one late lot (issue 121).
   const lateSites = new Set<string>();
+  // Where each driver stands, standby drivers and hand-offs (issue 234).
+  const { askedPhones, driverStatus, handoffsFor, standbyFor } = await import('./noshow');
+  const { fatigueFor } = await import('./fatigue');
+  const tired = data.s.status === 'active' ? await fatigueFor(ctx.tenantId, [...new Set(data.runs.map((x) => x.crew?.id).filter((x): x is string => Boolean(x)))]) : new Map();
+  const [asked, standby, handoffs, crewPhones] = await Promise.all([askedPhones(ctx.tenantId, stormId), standbyFor(ctx.tenantId, stormId), handoffsFor(ctx.tenantId, stormId), serviceDb().select({ id: crew_member.id, phone: crew_member.phone_e164, name: crew_member.name }).from(crew_member).where(eq(crew_member.tenant_id, ctx.tenantId))]);
+  // Looked up by key, not by scanning: a 600-lot storm on its fifth pass has 3,000 stops and visits (issue 228).
+  const group = <T, K>(rows: T[], key: (r: T) => K) => {
+    const m = new Map<K, T[]>();
+    for (const r of rows) {
+      const k = key(r);
+      const list = m.get(k);
+      if (list) list.push(r);
+      else m.set(k, [r]);
+    }
+    return m;
+  };
+  const stopsByRun = group(data.stops, (x) => x.stop.storm_run_id);
+  const visitsByStop = group(data.visits, (v) => v.run_stop_id);
+  const photosByVisit = new Map(data.photoCounts.map((p) => [p.visit_id, p]));
+  const problemsBySite = group(data.problems, (p) => p.site_id);
+  const positionByRun = new Map(data.positions.map((p) => [p.storm_run_id, p]));
   const boards = data.runs.map(({ run, crew, route: r }) => {
-    const stops = data.stops.filter((x) => x.stop.storm_run_id === run.id).map(({ stop, site: st, customer: c }) => {
-      const stopVisits = data.visits.filter((v) => v.run_stop_id === stop.id);
+    const stops = (stopsByRun.get(run.id) ?? []).map(({ stop, site: st, customer: c }) => {
+      const stopVisits = visitsByStop.get(stop.id) ?? [];
       const open = stopVisits.find((v) => !v.departed_device_at);
       const finished = stopVisits.filter((v) => v.departed_device_at).at(-1);
-      const photos = stopVisits.reduce((n, v) => n + (data.photoCounts.find((p) => p.visit_id === v.id)?.n ?? 0), 0);
+      const photos = stopVisits.reduce((n, v) => n + (photosByVisit.get(v.id)?.n ?? 0), 0);
       // Billing asks for an after photo; the board says when there isn't one, so the two agree (issue 75).
-      const afterPhotos = finished ? (data.photoCounts.find((p) => p.visit_id === finished.id)?.after ?? 0) : 0;
-      const problem = data.problems.find((p) => p.site_id === st.id && (p.storm_run_id === run.id || stop.previous_run_ids.includes(p.storm_run_id ?? '')));
+      const afterPhotos = finished ? (photosByVisit.get(finished.id)?.after ?? 0) : 0;
+      const problem = (problemsBySite.get(st.id) ?? []).find((p) => p.storm_run_id === run.id || stop.previous_run_ids.includes(p.storm_run_id ?? ''));
       const late = data.s.status === 'active' && (stop.status === 'open' || stop.status === 'enroute') && isLate(st.service_window, started, now, ctx.timezone);
       if (late && !lateSites.has(st.id)) {
         lateSites.add(st.id);
@@ -537,16 +617,21 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     if (crew?.kind === 'sub' && run.published_at && !run.started_at && now - Date.parse(run.published_at) > 30 * 60000) {
       alerts.push({ kind: 'not_started', text: `${crew.name} has not started 30 minutes after publish`, at: run.published_at });
     }
-    const pos = data.positions.find((p) => p.storm_run_id === run.id);
+    const pos = positionByRun.get(run.id);
     return {
-      id: run.id, pass: run.pass, name: r?.name ?? 'Run', truck_id: run.truck_id, crew: crew ? { id: crew.id, name: crew.name, kind: crew.kind, callout_reply: crew.callout_reply_at && Date.parse(crew.callout_reply_at) >= started ? crew.callout_reply : null, reachable: textable.has(crew.phone_e164), reach: { email: false, text: textable.has(crew.phone_e164) } } : null,
+      id: run.id, pass: run.pass, name: r?.name ?? (crew?.sub_company_id ? data.subNames.get(crew.sub_company_id) : null) ?? 'Run', truck_id: run.truck_id, crew: crew ? { id: crew.id, name: crew.name, kind: crew.kind, callout_reply: crew.callout_reply_at && Date.parse(crew.callout_reply_at) >= started ? crew.callout_reply : null, reachable: textable.has(crew.phone_e164), reach: { email: false, text: textable.has(crew.phone_e164) } } : null,
+      // Hours on shift and rest before it (issue 235), while the storm runs.
+      fatigue: crew ? tired.get(crew.id) ?? null : null,
+      driver_status: driverStatus({ crew: Boolean(crew), reply: crew?.callout_reply_at && Date.parse(crew.callout_reply_at) >= started ? crew.callout_reply : null, asked: Boolean(crew?.phone_e164 && asked.has(crew.phone_e164)), opened: Boolean(run.link_opened_at) }),
       published_at: run.published_at, started_at: run.started_at, opened_at: run.link_opened_at, // The link exists from the start; showing a QR in person shouldn't need Publish, which messages the crew (issue 58).
       link: ctx.role !== 'viewer' ? runLink(run) : null, stops,
       position: pos ? { lat: pos.lat, lon: pos.lon, at: pos.device_at } : null,
     };
   });
+  const siteById = new Map(data.stops.map((x) => [x.site.id, x.site]));
   for (const p of data.problems) {
-    const st = data.stops.find((x) => x.site.id === p.site_id);
+    const site_ = siteById.get(p.site_id ?? '');
+    const st = site_ ? { site: site_ } : undefined;
     alerts.push({ kind: 'problem', problem_id: p.id, text: `${p.kind} at ${st?.site.label ?? 'a site'}${p.note ? `: ${p.note}` : ''}`, at: p.created_at });
   }
   const all = boards.flatMap((b) => b.stops);
@@ -557,6 +642,16 @@ export async function stormLive(ctx: Ctx & { timezone: string; role: 'owner' | '
     trucks: data.trucks,
     runs: boards,
     alerts,
+    standby,
+    // Salt rationing for this storm (issue 232): its own setting, else the company's.
+    ration: await (await import('./salt-policy')).stormRation(ctx.tenantId, stormId),
+    // Who was asked, who answered, who never opened their link, and runs that changed hands, per driver (issue 234).
+    crew_report: crewPhones.filter((c) => asked.has(c.phone ?? '') || boards.some((b) => b.crew?.id === c.id) || handoffs.some((h) => h.from === c.id || h.to === c.id)).map((c) => ({
+      id: c.id, name: c.name, asked: asked.has(c.phone ?? ''),
+      reply: data.runs.find((x) => x.crew?.id === c.id)?.crew?.callout_reply_at && Date.parse(data.runs.find((x) => x.crew?.id === c.id)!.crew!.callout_reply_at!) >= started ? data.runs.find((x) => x.crew?.id === c.id)!.crew!.callout_reply : null,
+      no_show: boards.some((b) => b.crew?.id === c.id && (b.driver_status === 'no_reply' || b.driver_status === 'not_opened' || b.driver_status === 'declined')),
+      handed_off: handoffs.filter((h) => h.from === c.id).length, took_over: handoffs.filter((h) => h.to === c.id).length,
+    })),
     counts: { done: all.filter((x) => x.status === 'done').length, open: all.filter((x) => ['open', 'enroute', 'problem'].includes(x.status)).length, onsite: all.filter((x) => x.status === 'onsite').length, skipped: all.filter((x) => x.status === 'skipped').length, late: all.filter((x) => x.late).length, total: all.length },
     // That storm's weather, and while it runs, the live forecast for its lots too (issue 45).
     weather: data.s.status === 'active' ? await tenantWeatherHeader(ctx.tenantId, siteIds) : null,

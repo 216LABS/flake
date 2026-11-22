@@ -145,6 +145,10 @@ export async function loadRun(rs: RunScope) {
   // Depth is asked for until this crew has actually given one this storm (issue 205): Arrive makes a visit with no depth,
   // so counting visits let the first stop through without one once the phone synced.
   const depthGiven = await db.select({ id: visit.id }).from(visit).where(and(eq(visit.tenant_id, tenantId), eq(visit.storm_id, stormId), eq(visit.crew_id, rs.run.crew_id ?? '00000000-0000-0000-0000-000000000000'), isNotNull(visit.depth_in), visitNotVoided)).limit(1);
+  // Salt rationing tonight, with each lot's priority areas (issue 232).
+  const { rationAreas, stormRation } = await import('./salt-policy');
+  const ration = (await stormRation(tenantId, stormId)).on;
+  const areas = ration ? await rationAreas(rows.map((r) => r.site.id)) : new Map<string, string[]>();
   return {
     company: rs.tenant.name,
     office_phone: rs.tenant.contact_phone ?? null,
@@ -154,6 +158,8 @@ export async function loadRun(rs: RunScope) {
     // The deployed version, so a page left open since before a fix knows to reload itself.
     build: APP_BUILD,
     has_reported_depth: depthGiven.length > 0,
+    // A gentle "take a break" after a long shift (issue 235). Never a block.
+    long_shift_hours: rs.run.crew_id && rs.storm.status === 'active' ? await (async () => { const { fatigueFor } = await import('./fatigue'); const f = (await fatigueFor(tenantId, [rs.run.crew_id!])).get(rs.run.crew_id!); return f?.long_shift ? f.on_hours : null; })() : null,
     stops: rows.map(({ stop, site: st }) => {
       const c = contracts.find((x) => x.site_id === st.id);
       const services = ((c?.services ?? [{ service: 'plow' }]) as ContractService[]).map((x) => x.service);
@@ -166,6 +172,7 @@ export async function loadRun(rs: RunScope) {
         pins: pins.filter((p) => p.site_id === st.id).map((p) => ({ id: p.id, kind: p.kind, note: p.note, has_photo: Boolean(p.photo_path) })),
         services,
         salt_unit: salt?.unit ?? (services.includes('salt') ? 'bag50lb' : null),
+        ration_areas: ration && services.includes('salt') ? (areas.get(st.id) ?? []) : null,
         open_visit: stop.status === 'onsite' ? (open.filter((o) => o.stop === stop.id).map((o) => ({ client_uuid: o.client_uuid, arrived_at: new Date(o.arrived_at).toISOString() }))[0] ?? null) : null,
       };
     }),

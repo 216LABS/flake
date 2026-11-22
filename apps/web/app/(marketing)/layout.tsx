@@ -22,9 +22,12 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-6">
           <span>© 216LABS LLC</span>
           <Link className="hover:text-white" href="/compare">Compare</Link>
+          <Link className="hover:text-white" href="/status">Status</Link>
+          <Link className="hover:text-white" href="/security">Security</Link>
           <Link className="hover:text-white" href="/legal/terms">Terms</Link>
           <Link className="hover:text-white" href="/legal/privacy">Privacy</Link>
           <Link className="hover:text-white" href="/legal/sms-terms">SMS terms</Link>
+          <Link className="hover:text-white" href="/legal/data-retention">Data retention</Link>
         </div>
       </footer>
     </div>

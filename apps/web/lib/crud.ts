@@ -20,7 +20,9 @@ export function collectionRoutes<S extends z.ZodTypeAny>(table: T, schema: S, op
       const body = await parseJson(req, schema);
       const row = await withUser(ctx.userId, async (tx) => {
         await opts.beforeCreate?.(tx, ctx.tenantId, body);
-        const values = { ...(opts.transform ? opts.transform(body) : (body as Record<string, unknown>)), tenant_id: ctx.tenantId };
+        const values: Record<string, unknown> = { ...(opts.transform ? opts.transform(body) : (body as Record<string, unknown>)), tenant_id: ctx.tenantId };
+        // A branch manager's new lot, route or driver lands in their branch, so they can still see it (issue 227).
+        if ('branch_id' in table && values.branch_id === undefined && ctx.branchIds?.length) values.branch_id = ctx.branchIds[0];
         const [created] = await tx.insert(table as any).values(values as any).returning();
         await opts.afterCreate?.(tx, created, body, ctx.tenantId);
         return created;

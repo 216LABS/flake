@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { useModal } from '@/components/use-modal';
 
-const NAV = [
+const ALL_NAV = [
   ['/dashboard', 'Dashboard', LayoutDashboard],
   ['/storms', 'Storms', CloudSnow],
   ['/customers', 'Customers', Users],
@@ -21,6 +21,9 @@ const NAV = [
   // The storm-night guide (issue 201): a place in the nav, not a lone footer link.
   ['/help', 'Help', LifeBuoy],
 ] as const;
+
+/** A field lead's nav lists only the pages they can open (issue 227). */
+const navFor = (only?: string[]) => (only ? ALL_NAV.filter(([href]) => only.includes(href)) : ALL_NAV);
 
 /** On a phone, the four places a storm night lives get a tab. The rest are one tap away under More. */
 const TABS = ['/dashboard', '/storms', '/customers', '/billing'];
@@ -37,7 +40,8 @@ function LiveDot({ tab = false }: { tab?: boolean }) {
 }
 
 /** The sidebar on a desk. Phones get the bottom tab bar below instead (issue 40). */
-export function AppNav({ showDev, live = false }: { showDev: boolean; live?: boolean }) {
+export function AppNav({ showDev, live = false, only }: { showDev: boolean; live?: boolean; only?: string[] }) {
+  const NAV = navFor(only);
   const path = usePathname();
   const item = 'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors';
   return (
@@ -61,7 +65,8 @@ export function AppNav({ showDev, live = false }: { showDev: boolean; live?: boo
  * A thumb-reach tab bar fixed to the bottom of a phone, clear of the home indicator. It stays put on a long storm
  * board or customer list, where a nav at the top would have scrolled away.
  */
-export function MobileTabs({ showDev, live = false }: { showDev: boolean; live?: boolean }) {
+export function MobileTabs({ showDev, live = false, only }: { showDev: boolean; live?: boolean; only?: string[] }) {
+  const NAV = navFor(only);
   const path = usePathname();
   const [more, setMore] = useState(false);
   const menu = useRef<HTMLElement>(null);
