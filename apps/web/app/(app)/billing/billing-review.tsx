@@ -119,13 +119,14 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
         </p>
       ) : null}
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Button variant={rows.length ? 'outline' : 'accent'} disabled={busy} data-testid="generate" onClick={() => run(() => api(`/api/storms/${stormId}/billing/draft`, { method: 'POST' }))}>{rows.length ? 'Regenerate drafts' : 'Generate drafts'}</Button>
         <Button variant="accent" disabled={busy || !clean.length} data-testid="approve-clean" onClick={() => run(async () => {
           // The server takes 500 at a time, and a big company can have more lots than that in one storm.
           for (let i = 0; i < clean.length; i += 500) await api('/api/billing/approve', { body: { draftIds: clean.slice(i, i + 500).map((r) => r.id) } });
         })}>Approve all clean ({clean.length})</Button>
         <label className="ml-2 flex min-h-11 cursor-pointer items-center gap-2 px-1 text-sm"><input type="checkbox" className="size-5" data-testid="flagged-only" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.target.checked)} /> Show flagged only</label>
         {canExport ? <a className={buttonVariants({ variant: 'outline' })} data-testid="qbo" href={`/api/billing/export.csv?storm=${stormId}`}>QuickBooks CSV (approved)</a> : null}
+        {/* Approve leads; redoing the drafts is the rare one, so it sits last and quiet once there are drafts (UX pass, Nov 23). */}
+        <Button variant={rows.length ? 'ghost' : 'accent'} className={rows.length ? 'sm:ml-auto' : undefined} disabled={busy} data-testid="generate" onClick={() => run(() => api(`/api/storms/${stormId}/billing/draft`, { method: 'POST' }))}>{rows.length ? 'Regenerate drafts' : 'Generate drafts'}</Button>
       </div>
       {error ? <p className="mb-3 rounded-md bg-danger-tint p-3 text-sm text-danger" role="alert">{error}</p> : null}
       {!rows.length ? (nothingToBill
@@ -172,7 +173,7 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
               {r.status === 'approved' && sending && (r.billing_mode === 'manual' || !stripeReady) ? <Button size="sm" variant="outline" disabled={busy} data-testid="send-bill" onClick={() => void sendBill(r)}>Send bill</Button> : null}
               {r.status === 'approved' || r.status === 'failed' ? <Button size="sm" variant="outline" disabled={busy} data-testid="mark-paid" onClick={() => void revise(r, 'paid')}>Mark paid</Button> : null}
               {r.status === 'approved' || r.status === 'failed' ? <Button size="sm" variant="ghost" disabled={busy} data-testid="unapprove" onClick={() => void revise(r, 'draft')}>Back to review</Button> : null}
-              {['draft', 'approved', 'failed'].includes(r.status) ? <Button size="sm" variant="ghost" disabled={busy} data-testid="void" onClick={() => void revise(r, 'void')}>Void</Button> : null}
+              {['approved', 'failed'].includes(r.status) ? <Button size="sm" variant="ghost" disabled={busy} data-testid="void" onClick={() => void revise(r, 'void')}>Void</Button> : null}
               {r.status === 'void' ? <Button size="sm" variant="ghost" disabled={busy} data-testid="unvoid" onClick={() => void revise(r, 'draft')}>Unvoid</Button> : null}
             </div>
             {r.pay_link ? <p className="mt-2 flex flex-wrap items-center gap-2 text-sm">Pay link sent. <ButtonA size="sm" href={r.pay_link} target="_blank" rel="noopener" data-testid="open-pay-link">Open pay link</ButtonA></p> : null}
@@ -192,8 +193,13 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-faint">
               <span>{showFees ? (r.billing_mode === 'manual' ? 'Billed outside Stripe (manual), so no Flake or Stripe fee.' : stripeReady ? `Only owners see this: Flake fee ${money(r.fee_cents)}. Estimated Stripe fee ${money(r.stripe_fee_cents)}. `
                 : `Only owners see this: charged through Stripe, the Flake fee is ${money(r.fee_cents)} and Stripe's about ${money(r.stripe_fee_cents)}. Paid by check, no fee. `) : ''}{r.billing_mode === 'manual' && showFees ? '' : `${billingLabel(r.billing_mode)}.`}</span>
-              {r.status === 'draft' && isDraftClean(r.flags) ? <Button size="sm" variant="outline" disabled={busy} data-testid="approve-one" onClick={() => run(() => api('/api/billing/approve', { body: { draftIds: [r.id] } }))}>Approve</Button> : null}
-              {r.status === 'draft' && !isDraftClean(r.flags) ? <span className="font-medium text-warn-ink" data-testid="approve-blocked">Fix or waive the flags to approve.</span> : null}
+              {/* A bill in review: its two choices together at the bottom, Approve (or what's blocking it) and Void. */}
+              {r.status === 'draft' ? (
+                <span className="flex items-center gap-2">
+                  {isDraftClean(r.flags) ? <Button size="sm" variant="outline" disabled={busy} data-testid="approve-one" onClick={() => run(() => api('/api/billing/approve', { body: { draftIds: [r.id] } }))}>Approve</Button> : <span className="font-medium text-warn-ink" data-testid="approve-blocked">Fix or waive the flags to approve.</span>}
+                  {!readOnly ? <Button size="sm" variant="ghost" disabled={busy} data-testid="void" onClick={() => void revise(r, 'void')}>Void</Button> : null}
+                </span>
+              ) : null}
             </div>
           </Card>
         ))}

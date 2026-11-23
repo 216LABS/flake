@@ -122,7 +122,7 @@ export function CrewPanel({ crew, canText = true, cover = {} }: { crew: any[]; c
             {crew.map((c) => (
               <tr key={c.id} className={c.active ? '' : 'bg-tint text-muted'} data-testid="crew-row">
                 <Td className="font-medium">{c.name}{c.active ? null : <span className="ml-2 text-xs font-medium">(no longer on the crew)</span>}</Td>
-                <Td label="Kind"><Badge>{c.kind}</Badge>{c.kind === 'sub' && c.active && cover[c.id] && cover[c.id] !== 'covered' ? <span className="mt-1 flex flex-wrap items-center gap-1" data-testid="crew-no-cover"><Badge tone="red">{cover[c.id] === 'missing' ? 'No insurance on file' : cover[c.id] === 'expired' ? 'Insurance ended' : 'Insurance ends soon'}</Badge><ButtonLink size="sm" href="/compliance">Fix insurance</ButtonLink></span> : null}</Td>
+                <Td label="Kind"><div className="flex flex-col items-end gap-1 md:items-start"><Badge className="self-end md:self-start">{c.kind}</Badge>{c.kind === 'sub' && c.active && cover[c.id] && cover[c.id] !== 'covered' ? <span className="flex flex-wrap items-center justify-end gap-1 md:justify-start" data-testid="crew-no-cover"><Badge tone="red">{cover[c.id] === 'missing' ? 'No insurance on file' : cover[c.id] === 'expired' ? 'Insurance ended' : 'Insurance ends soon'}</Badge><ButtonLink size="sm" href="/compliance">Fix insurance</ButtonLink></span> : null}</div></Td>
                 <Td label="Contact"><div className="min-w-0"><div className="whitespace-nowrap">{phone(c.phone_e164)}</div><div>{c.email ?? ''}</div></div></Td>
                 <Td label="Language">{c.language === 'es' ? 'Español' : 'English'}</Td>
                 <Td label="Joined">{c.joined_at ? 'Yes' : 'Invited'}</Td>
@@ -350,7 +350,7 @@ const ZONES = [
 /** What customers and crew see: the name on every message, the office's reply address and phone, and the clock. */
 export function CompanyForm({ tenant }: { tenant: any }) {
   const router = useRouter();
-  const [f, setF] = useState({ name: tenant.name ?? '', timezone: tenant.timezone ?? 'America/New_York', contact_email: tenant.contact_email ?? '', contact_phone: tenant.contact_phone ?? '', yard_address: tenant.yard?.address ?? '',
+  const [f, setF] = useState({ name: tenant.name ?? '', timezone: tenant.timezone ?? 'America/New_York', contact_email: tenant.contact_email ?? '', contact_phone: phone(tenant.contact_phone), yard_address: tenant.yard?.address ?? '',
     // The mailing address every customer email ends with (issue 149), here where every company sees it, not only
     // under Text messages. The toll-free form shares it.
     business_legal_name: tenant.business_legal_name ?? '', line1: tenant.address?.line1 ?? '', city: tenant.address?.city ?? '', state: tenant.address?.state ?? '', zip: tenant.address?.zip ?? '' });
@@ -462,7 +462,7 @@ export function BusinessForm({ tenant }: { tenant: any }) {
   const router = useRouter();
   const v = tenant.sms_verification ?? {};
   const [f, setF] = useState({
-    business_legal_name: tenant.business_legal_name ?? '', contact_email: tenant.contact_email ?? '', contact_phone: tenant.contact_phone ?? '', contact_name: v.contact_name ?? '', website: v.website ?? '',
+    business_legal_name: tenant.business_legal_name ?? '', contact_email: tenant.contact_email ?? '', contact_phone: phone(tenant.contact_phone), contact_name: v.contact_name ?? '', website: v.website ?? '',
     line1: tenant.address?.line1 ?? '', city: tenant.address?.city ?? '', state: tenant.address?.state ?? '', zip: tenant.address?.zip ?? '', expected_monthly_volume: v.expected_monthly_volume ?? 1000,
   });
   const { msg, busy, run } = useAction();
@@ -476,7 +476,7 @@ export function BusinessForm({ tenant }: { tenant: any }) {
         {text('business_legal_name', 'Legal business name', 'legal-name')}
         {text('contact_name', 'Contact name', 'contact-name')}
         {text('contact_email', 'Contact email', 'contact-email')}
-        {text('contact_phone', 'Contact phone (+1...)', 'contact-phone')}
+        {text('contact_phone', 'Contact phone', 'contact-phone')}
         {text('line1', 'Street', 'line1')}
         {text('city', 'City', 'city')}
         {text('state', 'State', 'state')}

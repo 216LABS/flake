@@ -189,7 +189,7 @@ export function ProofForm({ sites, packets: firstPackets, preselect, tz, inciden
                 <Td label="Period">{fmtLocal(p.from_ts, tz, { month: 'short', day: 'numeric', year: 'numeric' })} to {fmtLocal(p.to_ts, tz, { month: 'short', day: 'numeric', year: 'numeric' })}</Td>
                 <Td label="Created">{fmtLocal(p.created_at, tz)}</Td>
                 <Td label="Manifest" className="font-mono text-xs">{p.manifest_sha256?.slice(0, 12)}</Td>
-                <Td><Button size="sm" variant="outline" className="max-md:mt-1 max-md:h-11 max-md:w-full" data-testid="packet-open" onClick={() => void open(p.id)}>Open</Button>{/* For an agent, adjuster or attorney: an expiring link to this one packet (issue 236). */}<ShareButton kind="proof" proofPacketId={p.id} testId="packet-share" /></Td>
+                <Td><div className="flex flex-wrap items-start gap-2 max-md:mt-1"><Button size="sm" variant="outline" className="max-md:h-11 max-md:flex-1" data-testid="packet-open" onClick={() => void open(p.id)}>Open</Button>{/* For an agent, adjuster or attorney: an expiring link to this one packet (issue 236). */}<ShareButton kind="proof" proofPacketId={p.id} testId="packet-share" /></div></Td>
               </tr>
             ))}
             {!packets.length ? <tr><Td colSpan={5}>None yet.</Td></tr> : null}

@@ -88,6 +88,8 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   const saltedVisits = salt.storms.reduce((n, s) => n + s.visits, 0);
   return (
     <>
+      {/* The three report pages as tabs at the top, as on Payroll and Profit, not halfway down inside Crew hours (UX pass, Nov 23). */}
+      <ReportsNav here="overview" canSeePay={ctx.role !== 'viewer'} />
       <PageHeader title="Reports" subtitle="What you billed and were paid, crew hours for payroll, and salt used and on hand." />
       {/* Stacked on a phone, so a wide iOS date control can't sit on top of Show (issue 44). */}
       <form method="get" className="mb-6 grid grid-cols-1 items-end gap-3 sm:flex sm:flex-wrap" data-testid="period">
@@ -107,8 +109,6 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
         <p className="mb-3 max-w-2xl text-sm text-muted">
           From each driver&apos;s first tap on their route link to their last, using their phone&apos;s taps and GPS. A quiet gap of two hours or more starts a new shift. A shift that runs past midnight counts in full on the day it started. Check anything with a note before you pay.
         </p>
-        <ReportsNav here="overview" canSeePay={ctx.role !== 'viewer'} />
-      {ctx.role !== 'viewer' ? <p className="mb-3 text-sm text-muted">Payroll has regular, storm, holiday and overtime hours with Gusto and ADP files. Profit per lot shows what each lot earned after labor, salt and equipment.</p> : null}
         {subsHidden || withSubs ? (
           <div className="mb-3" data-testid="subs-hidden">
             <FilterTabs label="Whose hours" className="mb-1" items={[{ href: `/reports?from=${p.from}&to=${p.to}`, label: 'Employees only', active: !withSubs }, { href: `/reports?from=${p.from}&to=${p.to}&subs=1`, label: 'Include subcontractors', active: withSubs, testId: 'include-subs' }]} />
@@ -234,7 +234,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
             <ButtonLink size="sm" className="float-right" href="/salt" data-testid="open-salt-yards">Salt yards</ButtonLink>
             <Stat label="On hand" value={salt.entries.length ? tons(salt.stock.tons) : 'Not counted'} note={salt.stock.since ? `Counted ${fmtLocal(salt.stock.since, tz, { month: 'short', day: 'numeric' })}, less what drivers logged since` : 'Deliveries less what drivers logged. Add a count to set it exactly.'} />
           </Card>
-          <Card><Stat label="Storms left" value={salt.stormsLeft ?? '-'} note="At your average use per storm" /></Card>
+          <Card><Stat label="Storms left" value={salt.stormsLeft ?? 'Not yet'} note={salt.stormsLeft === null || salt.stormsLeft === undefined ? 'Shows once the pile is counted and a storm has used salt' : 'At your average use per storm'} /></Card>
           <Card><Stat label="Used these dates" value={tons(usedTons)} note={`${saltedVisits} salted visit${saltedVisits === 1 ? '' : 's'}`} /></Card>
         </div>
         {!salt.entries.length ? <p className="mb-4 rounded-md bg-tint p-3 text-sm text-ink-2" data-testid="salt-no-stock">No deliveries or counts logged yet, so there&apos;s no stock to show. Add a count of the pile to start.</p> : null}

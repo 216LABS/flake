@@ -193,9 +193,11 @@ export default async function Dashboard() {
               <div className="grid gap-3 md:grid-cols-2">
                 {requests.length ? (
                   <ActionCard title="Customers asking for a visit" testId="visit-requests" body="They asked from their records page in the last week." action={<ButtonLink size="sm" href="/storms">Go to storms</ButtonLink>}>
-                    <ul className="mt-2 space-y-1 text-sm">
-                      {requests.slice(0, 6).map((r) => <li key={`${r.site_id}:${r.created_at}`}><Link className={entityLink} href={`/customers/${r.customer_id}`}>{r.name}</Link>, {r.label}{r.note ? `: "${r.note}"` : ''} <span className="text-xs text-muted">{fmtLocal(r.created_at, tz)}</span></li>)}
+                    {/* Three at most, each note cut short, so a busy week doesn't push the rest of the page off screen. */}
+                    <ul className="mt-2 space-y-1.5 text-sm">
+                      {requests.slice(0, 3).map((r) => <li key={`${r.site_id}:${r.created_at}`} className="wrap-anywhere"><Link className={entityLink} href={`/customers/${r.customer_id}`}>{r.name}</Link>, {r.label}{r.note ? `: "${r.note.length > 90 ? `${r.note.slice(0, 90).trimEnd()}…` : r.note}"` : ''} <span className="whitespace-nowrap text-xs text-muted">{fmtLocal(r.created_at, tz)}</span></li>)}
                     </ul>
+                    {requests.length > 3 ? <p className="mt-1 text-xs text-muted" data-testid="visit-requests-more">And {requests.length - 3} more.</p> : null}
                   </ActionCard>
                 ) : null}
                 {renewNow ? <ActionCard title="Renewals" testId="renewals-due" body={`${renewNow.rows.length} ${renewNow.rows.length === 1 ? 'lot has' : 'lots have'} no quote yet for ${renewNow.next}.`} action={<ButtonLink size="sm" variant="accent" href="/bids">Renew them</ButtonLink>} /> : null}

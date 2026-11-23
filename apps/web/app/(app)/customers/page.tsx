@@ -43,11 +43,12 @@ export default async function Customers({ searchParams }: { searchParams: Promis
     <>
       <PageHeader title={showArchived ? 'Archived customers' : 'Customers'} actions={ctx.role !== 'viewer' && !showArchived ? <><Link href="/bids" className={buttonVariants({ variant: 'outline' })} data-testid="open-bids">Bids and renewals</Link><Link href="/customers/import" className={buttonVariants({ variant: 'outline' })} data-testid="import-customers">Import</Link><Link href="/customers/new" className={buttonVariants({ variant: 'accent' })} data-testid="new-customer">New customer</Link></> : null} />
       {archived.length || showArchived ? <FilterTabs label="Which customers" items={[{ href: '/customers', label: 'Active', active: !showArchived }, { href: '/customers?archived=1', label: `Archived (${archived.length})`, active: showArchived, testId: 'show-archived' }]} /> : null}
+      {/* On a phone the search gets its own full-width line; sort and Show sit under it. */}
       {listed.length > 8 || q ? (
-        <form className="mb-3 flex gap-2" role="search" action="/customers">
+        <form className="mb-3 flex flex-wrap gap-2 sm:flex-nowrap" role="search" action="/customers">
           {showArchived ? <input type="hidden" name="archived" value="1" /> : null}
-          <Input type="search" name="q" defaultValue={params.q ?? ''} aria-label="Search customers" placeholder="Search name, address, email or phone" data-testid="customer-search" />
-          <select name="sort" defaultValue={sort} aria-label="Sort customers" className="h-10 rounded-control border border-line bg-surface px-2 text-sm" data-testid="customer-sort">
+          <Input type="search" name="q" defaultValue={params.q ?? ''} aria-label="Search customers" placeholder="Search name, address, email or phone" className="basis-full sm:basis-auto" data-testid="customer-search" />
+          <select name="sort" defaultValue={sort} aria-label="Sort customers" className="h-10 flex-1 rounded-control border border-line bg-surface px-2 text-base sm:flex-none sm:text-sm" data-testid="customer-sort">
             {Object.entries(SORTS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
           <button type="submit" className={buttonVariants({ variant: 'outline' })}>Show</button>

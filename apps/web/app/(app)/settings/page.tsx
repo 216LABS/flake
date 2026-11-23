@@ -1,3 +1,4 @@
+import { phone } from '@/lib/client';
 import { and, crew_member, customer, desc, eq, isNull, route, site, yard, equipment_log, job, message_log, serviceDb, sql, storm, tenant, truck } from '@flake/db';
 import { AccountingPanel } from './accounting-panel';
 import { EquipmentPanel } from './equipment-panel';
@@ -64,7 +65,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   const today = todayIn(tz);
   return (
     <>
-      <PageHeader title="Settings" subtitle={`Routes are edited on the Routes page. You are the ${ctx.role}.`} />
+      <PageHeader title="Settings" subtitle={`Your company, prices, crew and team. You're ${ctx.role === 'owner' ? 'the owner' : ctx.role === 'viewer' ? 'view-only' : `a ${ctx.role}`}.`} />
       {/* A phone or tablet gets one section picker; a desk gets tabs, wrapping rather than hiding any off the edge (issues 82, 128). */}
       <SectionPicker sections={TABS.filter(([k]) => owner || !OWNER_TABS.includes(k))} current={tab} />
       <nav aria-label="Settings sections" data-testid="settings-tabs" className="mb-5 hidden flex-wrap gap-x-1 whitespace-nowrap border-b border-line text-sm lg:flex">
@@ -117,7 +118,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
           <Card>
             <h2 className="font-semibold">Your text number</h2>
             <p className="mt-1 text-sm">Status: <Badge tone={t.sms_status === 'approved' ? 'green' : t.sms_status === 'rejected' ? 'red' : t.sms_status === 'pending' ? 'amber' : 'gray'} data-testid="sms-status">{t.sms_status}</Badge></p>
-            {t.sms_sender ? <p className="mt-1 text-sm">Number: {t.sms_sender}</p> : null}
+            {t.sms_sender ? <p className="mt-1 text-sm">Number: {phone(t.sms_sender)}</p> : null}
             {t.sms_status_detail ? <p className="mt-1 text-sm text-danger">Reason: {t.sms_status_detail}. Fix the details and resubmit.</p> : null}
             <p className="mt-2 text-sm text-muted">Texts go out from your own verified toll-free number, in your legal business name. Fill in the business details, then submit: verification takes 3 to 5 business days. Until then crew links go by QR and copy-link.</p>
             <p className="mt-2 text-sm">Your public opt-in page: <Link className={proseLink} href={`/b/${t.slug}/sms`}>{baseUrl()}/b/{t.slug}/sms</Link></p>
@@ -219,7 +220,7 @@ async function SystemTab(tenantId: string, tz: string, email: string | null, can
       <Table stack data-testid="messages-table">
         <thead><tr><Th>When</Th><Th>Channel</Th><Th>To</Th><Th>Template</Th><Th>Status</Th></tr></thead>
         <tbody>
-          {messages.map((m) => <tr key={m.id} data-testid="message-row" data-status={m.status ?? ''}><Td className="font-medium">{fmtLocal(m.created_at!, tz)}</Td><Td label="Channel">{m.channel ? CHANNEL_LABEL[m.channel] ?? m.channel : ""}</Td><Td label="To">{m.to_addr}</Td><Td label="Message">{messageLabel(m.template)}</Td><Td label="Status">{messageStatus(m.status)}</Td></tr>)}
+          {messages.map((m) => <tr key={m.id} data-testid="message-row" data-status={m.status ?? ''}><Td className="font-medium">{fmtLocal(m.created_at!, tz)}</Td><Td label="Channel">{m.channel ? CHANNEL_LABEL[m.channel] ?? m.channel : ""}</Td><Td label="To" className="wrap-anywhere">{m.to_addr?.startsWith("+") ? phone(m.to_addr) : m.to_addr}</Td><Td label="Message">{messageLabel(m.template)}</Td><Td label="Status">{messageStatus(m.status)}</Td></tr>)}
           {!messages.length ? <tr><Td colSpan={5}>None yet.</Td></tr> : null}
         </tbody>
       </Table>

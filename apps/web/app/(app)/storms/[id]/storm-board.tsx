@@ -58,7 +58,7 @@ function StormSnow({ w, closed }: { w: { forecast_in: number | null; observed_in
   return (
     <div className="max-w-64" data-testid="storm-snow">
       <div className="font-display text-xs font-semibold uppercase tracking-wider text-slate-300">{closed ? 'Snow this storm' : 'Snow so far'}</div>
-      <div className="font-display tabular text-2xl font-semibold md:text-3xl">{has ? `${w.observed_in ?? w.forecast_in}"` : 'No data'}</div>
+      <div className="font-display tabular text-2xl font-semibold md:text-3xl">{has ? `${w.observed_in ?? w.forecast_in}"` : 'Not yet'}</div>
       <div className={cn('text-xs', w.synthetic ? 'text-amber-300' : 'text-slate-300')}>
         {!has ? w.note : w.observed_in !== null
           ? `Observed (NOHRSC)${w.forecast_in !== null ? `. NWS forecast for the storm's hours: ${w.forecast_in}"` : ''}`
@@ -287,24 +287,35 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
         </div>
       </section>
 
-      {editable && canText ? (
-        <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-muted">Ask drivers by text, reply YES or NO, plowing expected at</span>
-          <Input aria-label="Expected start time" className="h-8 w-28" placeholder="4:00 AM" value={calloutTime} data-testid="callout-time" onChange={(e) => setCalloutTime(e.target.value)} />
-          <Button size="sm" variant="outline" disabled={!calloutTime} data-testid="callout-send" onClick={() => act(async () => {
-            const out = await api<{ sent: number }>(`/api/storms/${stormId}/callout`, { body: { time: calloutTime } });
-            setCalloutSent(`Asked ${out.sent} driver${out.sent === 1 ? '' : 's'}. Replies show on each column.`);
-          })}>Call out</Button>
-          {calloutSent ? <span className="text-muted" data-testid="callout-sent">{calloutSent}</span> : null}
-        </div>
-      ) : null}
-      {editable ? <StandbyPicker stormId={stormId} crew={live.crew} standby={live.standby ?? []} onSaved={() => void load()} /> : null}
-      {/* Salt rationing tonight (issue 232): drivers see "priority areas only", and proof packets record the policy. */}
+      {/* Crew and salt for tonight in one panel, a labeled row each, instead of three loose lines (UX pass, Nov 23). */}
       {editable ? (
-        <div className="mb-3 flex flex-wrap items-center gap-2 text-sm" data-testid="storm-ration">
-          <span className={live.ration?.on ? 'font-semibold text-warn-ink' : 'text-muted'}>{live.ration?.on ? `Salt is rationed this storm${live.ration.scope === 'company' ? ' (company-wide)' : ''}: priority areas only.` : 'Salt: normal amounts.'}</span>
-          <Button size="sm" variant="ghost" data-testid="storm-ration-toggle" onClick={() => act(() => api('/api/salt/policy', { method: 'PUT', body: { action: 'ration', on: !live.ration?.on, storm_id: stormId } }))}>{live.ration?.on ? 'Normal salt for this storm' : 'Ration salt this storm'}</Button>
-        </div>
+        <section aria-label="Crew and salt tonight" className="mb-4 divide-y divide-line-faint rounded-surface border border-line-faint bg-surface text-sm" data-testid="crew-and-salt">
+          {canText ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5">
+              <div className="min-w-0 flex-1 basis-48">
+                <div className="font-semibold">Call out drivers</div>
+                <div className="text-xs text-muted">Each driver gets a text and replies YES or NO. Replies show on their column.</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Input aria-label="Plowing expected at" className="h-9 w-28" placeholder="4:00 AM" value={calloutTime} data-testid="callout-time" onChange={(e) => setCalloutTime(e.target.value)} />
+                <Button size="sm" variant="outline" className="h-9" disabled={!calloutTime} data-testid="callout-send" onClick={() => act(async () => {
+                  const out = await api<{ sent: number }>(`/api/storms/${stormId}/callout`, { body: { time: calloutTime } });
+                  setCalloutSent(`Asked ${out.sent} driver${out.sent === 1 ? '' : 's'}. Replies show on each column.`);
+                })}>Call out</Button>
+              </div>
+              {calloutSent ? <p className="basis-full text-muted" data-testid="callout-sent">{calloutSent}</p> : null}
+            </div>
+          ) : null}
+          <StandbyPicker stormId={stormId} crew={live.crew} standby={live.standby ?? []} onSaved={() => void load()} />
+          {/* Salt rationing tonight (issue 232): drivers see "priority areas only", and proof packets record the policy. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5" data-testid="storm-ration">
+            <div className="min-w-0 flex-1 basis-48">
+              <div className="font-semibold">Salt</div>
+              <div className={live.ration?.on ? 'font-semibold text-warn-ink' : 'text-xs text-muted'}>{live.ration?.on ? `Rationed this storm${live.ration.scope === 'company' ? ' (company-wide)' : ''}: priority areas only.` : 'Normal amounts.'}</div>
+            </div>
+            <Button size="sm" variant="outline" data-testid="storm-ration-toggle" onClick={() => act(() => api('/api/salt/policy', { method: 'PUT', body: { action: 'ration', on: !live.ration?.on, storm_id: stormId } }))}>{live.ration?.on ? 'Back to normal salt' : 'Ration salt'}</Button>
+          </div>
+        </section>
       ) : null}
 
       {error ? <p className="mb-3 rounded-md bg-danger-tint p-3 text-sm text-danger" role="alert">{error}</p> : null}

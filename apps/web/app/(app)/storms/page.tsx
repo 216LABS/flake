@@ -6,6 +6,7 @@ import { asUser, requirePage } from '@/lib/auth';
 import { stormStatus } from '@/lib/labels';
 import { NewStorm } from './new-storm';
 import { LiveBanner } from './live-banner';
+import { StartFold } from './start-fold';
 import { liveStorms } from '@/lib/live';
 import { FilterTabs } from '@/components/links';
 
@@ -64,12 +65,7 @@ export default async function Storms({ searchParams }: { searchParams: Promise<{
             const pastCount = toBill.length + data.billedCount;
             return (
               <>
-                {live.length ? (
-                  <section className="mb-6" data-testid="storms-live">
-                    <Eyebrow className="mb-2">Live</Eyebrow>
-                    <ul className="space-y-2">{live.map(card)}</ul>
-                  </section>
-                ) : null}
+                {/* The banner above already shows the live storm; a second card for it here only repeated it. */}
                 {pastCount ? (
                   <details className="group mb-6" open={!live.length || showOlder} data-testid="storms-past">
                     <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-md border border-line-faint bg-surface px-3 py-2 font-semibold [&::-webkit-details-marker]:hidden" data-testid="storms-past-toggle">
@@ -104,7 +100,7 @@ export default async function Storms({ searchParams }: { searchParams: Promise<{
           {data.storms.length ? null : <EmptyState title="No storms yet" body={data.routes.length ? 'Start your first one here when snow is coming. You can try one now and close it: nothing is billed until you approve.' : 'Put your lots on a route first (Routes), then start your first storm here.'} />}
         </div>
         {/* On a phone the form sits below every storm so far; the header button and the dashboard jump here. */}
-        <div id="start" className="scroll-mt-20"><NewStorm defaultName={`Storm ${fmtLocal(new Date(), ctx.tenant.timezone, { month: 'short', day: 'numeric' })}`} routes={data.routes.map((r) => ({ id: r.id, name: r.name, default_crew_id: r.default_crew_id }))} crew={data.crew.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))} unrouted={data.unrouted.map((s) => s.label)} declined={data.declined.map((s) => s.label)} /></div>
+        <div id="start" className="scroll-mt-20"><StartFold folded={data.live.length > 0}><NewStorm defaultName={`Storm ${fmtLocal(new Date(), ctx.tenant.timezone, { month: 'short', day: 'numeric' })}`} routes={data.routes.map((r) => ({ id: r.id, name: r.name, default_crew_id: r.default_crew_id }))} crew={data.crew.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))} unrouted={data.unrouted.map((s) => s.label)} declined={data.declined.map((s) => s.label)} /></StartFold></div>
       </div>
     </>
   );

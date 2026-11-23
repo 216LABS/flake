@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { finishStops, login, settingsSections, sql, startStorm } from './helpers';
+import { finishStops, login, openStartForm, settingsSections, sql, startStorm } from './helpers';
 
 /** A brand new company, signed in through a fresh browser context. */
 async function strangerContext(browser: import('@playwright/test').Browser, baseURL: string | undefined) {
@@ -163,6 +163,7 @@ test('roles: dispatchers run storms but not settings, viewers only look, nobody 
   await expect(viewerPage.getByTestId('show-link')).toHaveCount(0);
   await expect(viewerPage.getByTestId('assign-driver')).toHaveCount(0);
   await viewerPage.goto('/storms');
+  await openStartForm(viewerPage);
   await expect(viewerPage.getByTestId('create-storm')).toBeDisabled();
   await viewerPage.goto('/customers');
   await expect(viewerPage.getByTestId('new-customer')).toHaveCount(0);

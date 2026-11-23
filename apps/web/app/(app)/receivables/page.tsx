@@ -30,7 +30,8 @@ export default async function Receivables({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageHeader title="Receivables" subtitle="Open bills, what is left on each, and how late. Record a check or cash payment here; a part payment leaves the rest open." />
-      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6" data-testid="aging-totals">
+      {/* With nothing owed at all, six $0.00 boxes say less than one line does (UX pass, Nov 23). */}
+      {data.rows.length ? <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6" data-testid="aging-totals">
         <a href="/receivables" className={`rounded-md border p-3 text-sm ${!bucket ? 'border-ink' : 'border-line-faint'}`}>
           <div className="text-muted">All open</div><div className="tabular text-lg font-semibold" data-testid="aging-all">{money(all)}</div>
         </a>
@@ -39,7 +40,7 @@ export default async function Receivables({ searchParams }: { searchParams: Prom
             <div className="text-muted">{BUCKET_LABEL[b]}</div><div className={`tabular text-lg font-semibold ${b !== 'current' && totals[b] ? 'text-danger' : ''}`}>{money(totals[b])}</div>
           </a>
         ))}
-      </div>
+      </div> : null}
       {shown.length
         ? <><ReceivablesTable rows={shown.slice((page - 1) * PAGE, page * PAGE)} today={today} readOnly={ctx.role === 'viewer'} />{pages > 1 ? (
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm" data-testid="receivables-pages">
@@ -48,7 +49,7 @@ export default async function Receivables({ searchParams }: { searchParams: Prom
             {page < pages ? <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={pageHref(page + 1)} data-testid="receivables-next">Next</a> : null}
           </div>
         ) : null}</>
-        : <EmptyState title={data.rows.length ? 'Nothing in this group' : 'Nothing owed'} />}
+        : <div data-testid="receivables-empty"><EmptyState title={data.rows.length ? 'Nothing in this group' : 'Nothing owed'} body={data.rows.length ? undefined : 'Approved bills that haven’t been paid show here, oldest first, with how late each one is.'} /></div>}
       {data.recent.length ? (
         <Card className="mt-6 max-w-3xl" data-testid="recent-payments">
           <h2 className="font-semibold">Payments recorded</h2>

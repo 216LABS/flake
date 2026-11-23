@@ -19,10 +19,14 @@ export function StandbyPicker({ stormId, crew, standby, onSaved }: { stormId: st
   const [error, setError] = useState<string | null>(null);
   const names = crew.filter((c) => standby.includes(c.id)).map((c) => c.name);
   return (
-    <div className="mb-3 text-sm" data-testid="standby">
-      <span className="text-muted">Standby tonight: </span>
-      <span data-testid="standby-names">{names.length ? names.join(', ') : 'nobody yet'}</span>
-      <Button size="sm" variant="ghost" className="ml-1" data-testid="standby-edit" onClick={() => { setPicked(standby); setOpen(!open); }}>{open ? 'Cancel' : 'Choose'}</Button>
+    <div className="px-3 py-2.5 text-sm" data-testid="standby">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="min-w-0 flex-1 basis-48">
+          <div className="font-semibold">Standby drivers</div>
+          <div className="text-xs text-muted">Offered a run when its driver doesn&apos;t show. Tonight: <span className="text-ink" data-testid="standby-names">{names.length ? names.join(', ') : 'nobody yet'}</span></div>
+        </div>
+        <Button size="sm" variant="outline" data-testid="standby-edit" onClick={() => { setPicked(standby); setOpen(!open); }}>{open ? 'Cancel' : 'Choose'}</Button>
+      </div>
       {open ? (
         <div className="mt-2 flex flex-wrap items-center gap-3 rounded-md border border-line-faint bg-surface p-2">
           {crew.map((c) => (

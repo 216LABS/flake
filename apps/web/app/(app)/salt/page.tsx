@@ -29,7 +29,6 @@ export default async function Salt() {
   return (
     <>
       <PageHeader title="Salt" subtitle="What you have, what the next storm needs, and what each lot uses. Bags count as 50 lb." actions={ordering ? <ButtonA variant="accent" href="#order" data-testid="order-salt">Order salt</ButtonA> : null} />
-      <SaltPolicyCard surcharge={await surchargeFor(ctx.tenantId)} ration={await companyRation(ctx.tenantId)} today={localDay(new Date(), ctx.tenant.timezone)} owner={ctx.role === 'owner'} canEdit={ctx.role !== 'viewer'} />
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="salt-summary">
         <Card><Stat label="On hand" value={plan.on_hand === null ? 'Not counted' : t(plan.on_hand)} note={plan.on_hand === null ? 'Count a pile below to start' : `Across ${yards.length === 1 ? '1 yard' : `${yards.length} yards`}`} /></Card>
         <Card data-testid="salt-next-storm">
@@ -78,6 +77,10 @@ export default async function Salt() {
         ) : <p className="rounded-md bg-tint p-3 text-sm text-ink-2" data-testid="salt-no-lots">No lots have salt on their contract yet. Add salt to a lot&apos;s quote and drivers can log it on each visit.</p>}
         <p className="mt-2 text-xs text-muted">Per 1,000 sq ft helps spot over-salting: a lot far above the others is worth a look. A lot with no salting yet is estimated from its size at about a ton an acre.</p>
       </section>
+      {/* Surcharge and rationing are settings: below the numbers an owner opens this page for, not above them (UX pass, Nov 23). */}
+      <div className="mt-8">
+      <SaltPolicyCard surcharge={await surchargeFor(ctx.tenantId)} ration={await companyRation(ctx.tenantId)} today={localDay(new Date(), ctx.tenant.timezone)} owner={ctx.role === 'owner'} canEdit={ctx.role !== 'viewer'} />
+      </div>
     </>
   );
 }

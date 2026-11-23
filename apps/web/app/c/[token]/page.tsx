@@ -70,19 +70,21 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
           const last = done[0];
           return (
             <section key={s.id} aria-labelledby={`site-${s.id}`} data-testid="portal-site">
-              <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+              <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <h2 id={`site-${s.id}`} className="font-display text-2xl font-semibold">{s.label}</h2>
-                <div className="flex flex-wrap items-center gap-2">
-                  {s.contract?.status === 'accepted' ? <Badge tone="green">Season {s.contract.season}</Badge> : null}
-                  {s.quote ? (s.quote.url
-                    ? <ButtonA variant="accent" size="lg" href={s.quote.url} data-testid="portal-quote-link">Review and sign quote</ButtonA>
-                    : <Badge tone="amber" title="The quote link is in the email it came in.">Quote waiting, see your email</Badge>) : null}
-                </div>
+                {s.contract?.status === 'accepted' ? <Badge tone="green">Season {s.contract.season}</Badge> : null}
               </div>
               <p className="mb-3 text-sm text-muted">{s.address}</p>
+              {/* A quote to sign is the one thing to do here, so it gets its own box, not a button squeezed beside a badge. */}
+              {s.quote ? (s.quote.url ? (
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-surface border border-beacon bg-beacon/10 p-3" data-testid="portal-quote">
+                  <p className="text-sm font-medium">A quote for this lot is waiting for your signature.</p>
+                  <ButtonA variant="accent" href={s.quote.url} className="w-full sm:w-auto" data-testid="portal-quote-link">Review and sign quote</ButtonA>
+                </div>
+              ) : <p className="mb-3"><Badge tone="amber" title="The quote link is in the email it came in.">Quote waiting, see your email</Badge></p>) : null}
               <div className="mb-3 grid grid-cols-2 gap-3">
                 <Card><Stat label="Visits" value={done.length} note="Last 18 months" /></Card>
-                <Card><Stat label="Last service" value={last ? day(last.departed!) : '-'} note={last ? `Finished ${time(last.departed!)}` : 'No visits yet'} /></Card>
+                <Card><Stat label="Last service" value={last ? day(last.departed!) : 'None yet'} note={last ? `Finished ${time(last.departed!)}` : 'No visits yet'} /></Card>
               </div>
               {s.visits.length ? (
                 <ol className="space-y-2">

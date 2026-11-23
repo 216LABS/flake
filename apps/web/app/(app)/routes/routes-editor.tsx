@@ -182,8 +182,8 @@ function RouteStops({ r, filter, label, elsewhere, contracted, site, moving, set
     {sort.live}
     <ol className="mt-3 space-y-1" data-testid="route-stops">
       {r.site_ids.map((id, i) => !q || label(id).toLowerCase().includes(q) ? (
-        <li key={id} {...sort.row(i)} className={cn(sort.row(i).className, 'flex items-center gap-1 rounded-row border bg-surface py-1 pl-0.5 pr-1 text-sm shadow-drop')} data-testid="route-stop">
-          {q ? null : <Grip {...sort.handle(i)} testId="route-grip" className="w-9 md:h-8 md:w-7" />}
+        <li key={id} {...sort.row(i)} className={cn(sort.row(i).className, 'flex items-center gap-0.5 rounded-row border bg-surface py-1 pl-0.5 pr-0.5 text-sm shadow-drop sm:gap-1 sm:pr-1')} data-testid="route-stop">
+          {q ? null : <Grip {...sort.handle(i)} testId="route-grip" className="w-7 md:h-8 md:w-7" />}
           {/* The position control sits in the row, beside the name, so it lines up with the other buttons. */}
           <span className="shrink-0">
             {moving?.route === r.id && moving.id === id ? (
@@ -193,15 +193,15 @@ function RouteStops({ r, filter, label, elsewhere, contracted, site, moving, set
                 onBlur={() => { const to = Math.round(Number(moving.to)); if (to >= 1 && to <= r.site_ids.length && to !== i + 1) moveTo(r, i, to - 1); setMoving(null); }} />
             ) : r.site_ids.length > 3 ? (
               // The number is the "move to position" control (issues 146, 190): a clear button, not a dotted underline.
-              <button type="button" className="mr-1 inline-flex h-11 min-w-9 items-center justify-center rounded-row border border-line px-1 align-middle font-semibold tabular-nums hover:border-ink hover:bg-tint md:h-8 md:min-w-6" aria-label={`${label(id)} is number ${i + 1}. Move it to another position`} title="Move to position" data-testid="route-position" onClick={() => setMoving({ route: r.id, id, to: String(i + 1) })}>{i + 1}</button>
+              <button type="button" className="mr-1 inline-flex h-11 min-w-8 items-center justify-center rounded-row border border-line px-1 align-middle font-semibold tabular-nums hover:border-ink hover:bg-tint md:h-8 md:min-w-6" aria-label={`${label(id)} is number ${i + 1}. Move it to another position`} title="Move to position" data-testid="route-position" onClick={() => setMoving({ route: r.id, id, to: String(i + 1) })}>{i + 1}</button>
             ) : <span className="mr-1 font-semibold tabular-nums">{i + 1}.</span>}
           </span>
           <span className="min-w-0 flex-1 leading-tight">
             {label(id)}{elsewhere(id, r.id).length ? <span className="block text-xs text-warn-ink">Also on {elsewhere(id, r.id).join(', ')}</span> : null}{site(id)?.customer ? <span className="block text-xs text-muted" data-testid="route-stop-customer">{site(id)!.customer}</span> : null}{contracted(id) ? null : site(id)?.declined ? <span className="block text-xs font-medium text-warn-ink" data-testid="route-declined">Quote declined: storms leave it out</span> : <span className="block text-xs font-medium text-warn-ink" data-testid="route-no-contract">No accepted contract: won&apos;t be billed</span>}
           </span>
-          <Button size="sm" variant="ghost" className="h-11 w-9 shrink-0 p-0 md:h-8 md:w-8" aria-label={`Move ${label(id)} up`} data-testid="route-up" disabled={i === 0} onClick={() => moveTo(r, i, i - 1)}><ArrowUp size={18} aria-hidden="true" /></Button>
-          <Button size="sm" variant="ghost" className="h-11 w-9 shrink-0 p-0 md:h-8 md:w-8" aria-label={`Move ${label(id)} down`} data-testid="route-down" disabled={i === r.site_ids.length - 1} onClick={() => moveTo(r, i, i + 1)}><ArrowDown size={18} aria-hidden="true" /></Button>
-          <Button size="sm" variant="ghost" className="h-11 w-9 shrink-0 p-0 hover:bg-danger-tint hover:text-danger md:h-8 md:w-8" aria-label={`Remove ${label(id)}`} data-testid="route-remove" onClick={() => remove(id, i)}><X size={18} aria-hidden="true" /></Button>
+          <Button size="sm" variant="ghost" className="h-11 w-8 shrink-0 p-0 md:h-8 md:w-8" aria-label={`Move ${label(id)} up`} data-testid="route-up" disabled={i === 0} onClick={() => moveTo(r, i, i - 1)}><ArrowUp size={18} aria-hidden="true" /></Button>
+          <Button size="sm" variant="ghost" className="h-11 w-8 shrink-0 p-0 md:h-8 md:w-8" aria-label={`Move ${label(id)} down`} data-testid="route-down" disabled={i === r.site_ids.length - 1} onClick={() => moveTo(r, i, i + 1)}><ArrowDown size={18} aria-hidden="true" /></Button>
+          <Button size="sm" variant="ghost" className="h-11 w-8 shrink-0 p-0 hover:bg-danger-tint hover:text-danger md:h-8 md:w-8" aria-label={`Remove ${label(id)}`} data-testid="route-remove" onClick={() => remove(id, i)}><X size={18} aria-hidden="true" /></Button>
         </li>
       ) : null)}
     </ol>

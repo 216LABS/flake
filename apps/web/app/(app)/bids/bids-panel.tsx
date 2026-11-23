@@ -51,14 +51,29 @@ export function BidsPanel({ data, season, readOnly }: { data: Data; season: stri
       {note ? <p className="rounded-md bg-ok-tint p-3 text-sm text-ok-ink" role="status" data-testid="bids-note">{note}</p> : null}
 
       <Card data-testid="renewals">
-        <h2 className="font-semibold">Renewals for {data.renewals.next}</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-semibold">Renewals for {data.renewals.next}</h2>
+          {/* One tap for the whole list, instead of one per lot (UX pass, Nov 23). Drafts only: nothing is sent. */}
+          {!readOnly && data.renewals.rows.length > 1 ? <Button size="sm" variant="accent" disabled={busy} data-testid="renew-all" onClick={async () => {
+            const rows = data.renewals.rows;
+            if (!(await ask({ title: `Renew all ${rows.length} lots?`, body: `Each gets a ${data.renewals.next} draft with this winter's services and prices. Nothing is sent: you check each one and send its quote from the lot.`, confirm: `Make ${rows.length} drafts` }))) return;
+            let made = 0;
+            const ok = await run(async () => {
+              for (const r of rows) {
+                await api(`/api/contracts/${r.contract_id}/renew`, { method: 'POST' });
+                made++;
+              }
+            });
+            setNote(ok ? `${made} drafts made for ${data.renewals.next}. Open each lot to check it and send the quote.` : made ? `${made} of ${rows.length} drafts made before the error below.` : null);
+          }}>Renew all ({data.renewals.rows.length})</Button> : null}
+        </div>
         <p className="mt-1 text-sm text-muted">This winter&apos;s signed lots with nothing yet for next winter. Renew makes a draft with the same services and prices; you can change it, then send it from the lot like any quote.</p>
         {data.renewals.rows.length ? (
           <ul className="mt-2 divide-y divide-line-faint text-sm">
             {data.renewals.rows.map((r) => (
-              <li key={r.contract_id} className="flex flex-wrap items-center gap-2 py-1.5" data-testid="renewal-row">
-                <Link className={`${entityLink} wrap-anywhere`} href={`/sites/${r.site_id}`}>{r.label}</Link><span className="text-muted wrap-anywhere">{r.customer}</span>
-                {!readOnly ? <Button size="sm" variant="outline" className="ml-auto" disabled={busy} data-testid="renew" onClick={async () => {
+              <li key={r.contract_id} className="flex items-center gap-3 py-2" data-testid="renewal-row">
+                <span className="min-w-0 flex-1"><Link className={`${entityLink} wrap-anywhere`} href={`/sites/${r.site_id}`}>{r.label}</Link><span className="block text-muted wrap-anywhere">{r.customer}</span></span>
+                {!readOnly ? <Button size="sm" variant="outline" className="shrink-0" disabled={busy} data-testid="renew" onClick={async () => {
                   if (await run(() => api(`/api/contracts/${r.contract_id}/renew`, { method: 'POST' }))) setNote(`Draft for ${data.renewals.next} made for ${r.label}. Open the lot to check it and send the quote.`);
                 }}>Renew</Button> : null}
               </li>

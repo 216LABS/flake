@@ -86,3 +86,9 @@ export async function openPastStorms(page: import('@playwright/test').Page) {
   const past = page.getByTestId('storms-past');
   if (!(await past.evaluate((d) => (d as HTMLDetailsElement).open))) await page.getByTestId('storms-past-toggle').click();
 }
+
+/** While a storm is live, Start a storm on /storms is folded to one line; this opens it. */
+export async function openStartForm(page: import('@playwright/test').Page) {
+  const fold = page.getByTestId('start-fold');
+  if ((await fold.count()) && !(await fold.evaluate((d) => (d as HTMLDetailsElement).open))) await page.getByTestId('start-fold-toggle').click();
+}

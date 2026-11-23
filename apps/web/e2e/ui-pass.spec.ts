@@ -20,7 +20,10 @@ test('a live storm is pinned to the top of Storms and the Dashboard, and Storms 
     await expect(banner).toContainText(name);
     await expect(banner.getByTestId('storm-progress')).toContainText(/0 of \d+ stops done/);
     await expect(banner.getByTestId('live-facts')).toContainText('1 truck out');
-    await expect(page.getByTestId('storms-live')).toContainText(name);
+    // The banner is the live storm's only card; the list doesn't repeat it, and Start another storm is folded.
+    await expect(page.getByTestId('storms-live')).toHaveCount(0);
+    await expect(page.getByTestId('start-fold')).toBeVisible();
+    expect(await page.getByTestId('start-fold').evaluate((d) => (d as HTMLDetailsElement).open)).toBe(false);
     // Past storms are one section, folded while a storm is live, and open with one tap (issue 187).
     const past = page.getByTestId('storms-past');
     if (await past.count()) {

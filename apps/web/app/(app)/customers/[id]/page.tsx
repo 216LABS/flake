@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { asUser, requirePage } from '@/lib/auth';
 import { isUuid } from '@/lib/http';
-import { money } from '@/lib/client';
+import { money, phone } from '@/lib/client';
 import { invoiceStatus } from '@/lib/labels';
 import { contractStanding } from '@/lib/scope';
 import { entityLink } from '@/components/links';
@@ -45,6 +45,16 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
         {c.archived_at ? null : <Link href={`/customers/new?customer=${c.id}`} className={buttonVariants({ variant: 'accent' })} data-testid="add-site">Add a site</Link>}
         <ArchiveCustomer id={c.id} name={c.name} archived={Boolean(c.archived_at)} />
       </>} />
+      {/* Reach them in one tap: what the office usually opens a customer for on a storm night (UX pass, Nov 23). */}
+      {c.phone_e164 || c.email ? (
+        <div className="-mt-2 mb-4 flex flex-wrap items-center gap-2" data-testid="customer-contact">
+          {c.contact_name ? <span className="mr-1 text-sm text-muted">{c.contact_name}</span> : null}
+          {c.phone_e164 ? <a href={`tel:${c.phone_e164}`} className={buttonVariants({ variant: 'outline', size: 'sm' })} data-testid="customer-call">Call {phone(c.phone_e164)}</a> : null}
+          {c.phone_e164 ? <a href={`sms:${c.phone_e164}`} className={buttonVariants({ variant: 'outline', size: 'sm' })} data-testid="customer-text">Text</a> : null}
+          {c.email ? <a href={`mailto:${c.email}`} className={buttonVariants({ variant: 'outline', size: 'sm' })} data-testid="customer-email">Email</a> : null}
+          {owed > 0 ? <Link href="/receivables" className="ml-auto text-sm font-semibold text-warn-ink underline-offset-2 hover:underline" data-testid="customer-owed-top">Owes {money(owed)}</Link> : null}
+        </div>
+      ) : null}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <fieldset disabled={ctx.role === 'viewer'} className={ctx.role === 'viewer' ? 'view-only contents' : 'contents'}><CustomerEditor customer={c} /></fieldset>
         <Card>

@@ -15,9 +15,9 @@ export function ShareButton({ kind, proofPacketId, from, to, testId = 'share-ope
   const [label, setLabel] = useState('');
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  if (!open) return <Button size="sm" variant="outline" data-testid={testId} onClick={() => setOpen(true)}>Share a link</Button>;
+  if (!open) return <Button size="sm" variant="outline" className="max-md:h-11 max-md:flex-1" data-testid={testId} onClick={() => setOpen(true)}>Share a link</Button>;
   return (
-    <div className="mt-2 rounded-md border border-line-faint bg-surface p-2 text-sm" data-testid="share-form">
+    <div className="mt-2 basis-full rounded-md border border-line-faint bg-surface p-2 text-sm" data-testid="share-form">
       {url ? (
         <>
           <p>Anyone with this link can open {kind === 'proof' ? 'this packet' : 'this pack'} until it expires. You can turn it off below.</p>

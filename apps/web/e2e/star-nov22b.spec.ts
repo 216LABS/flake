@@ -83,5 +83,5 @@ test('big lists page: past proof packets and receivables offer older pages when 
   const packets = Number((await sql`select count(*)::int as n from proof_packet where tenant_id = (select id from tenant where slug = 'lakeshore-demo')`)[0]!.n);
   await expect(page.getByTestId('packets-older')).toHaveCount(packets > 20 ? 1 : 0);
   await page.goto('/receivables?page=99');
-  await expect(page.getByTestId('aging-totals')).toBeVisible();
+  await expect(page.getByTestId('aging-totals').or(page.getByTestId('receivables-empty')).first()).toBeVisible();
 });

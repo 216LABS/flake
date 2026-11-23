@@ -41,13 +41,14 @@ export function HowItWorks({ step }: { step: number }) {
           }
         }}>Hide</Button>
       </div>
-      <ol className="mt-3 grid gap-2 sm:grid-cols-4">
+      {/* Two by two on a phone, with only the current step's line, so it doesn't fill the first screen. */}
+      <ol className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {STEPS.map((s, i) => (
           <li key={s.title}>
-            <Link href={s.href} aria-current={i === step ? 'step' : undefined} className={cn('block h-full rounded-control border p-3 transition-colors hover:border-ink', i === step ? 'border-beacon bg-beacon/10' : i < step ? 'border-line-faint text-muted' : 'border-line-faint')} data-testid="how-step">
+            <Link href={s.href} aria-current={i === step ? 'step' : undefined} className={cn('block h-full rounded-control border p-2.5 transition-colors sm:p-3 hover:border-ink', i === step ? 'border-beacon bg-beacon/10' : i < step ? 'border-line-faint text-muted' : 'border-line-faint')} data-testid="how-step">
               <span className="text-xs font-bold uppercase tracking-wide text-muted">{i < step ? '✓ ' : ''}Step {i + 1}</span>
               <span className="block font-semibold text-ink">{s.title}</span>
-              <span className="block text-sm text-muted">{s.body}</span>
+              <span className={cn('text-sm text-muted', i === step ? 'block' : 'hidden sm:block')}>{s.body}</span>
             </Link>
           </li>
         ))}

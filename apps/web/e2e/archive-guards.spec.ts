@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { SEASON, login, openPastStorms, sql } from './helpers';
+import { SEASON, login, openPastStorms, openStartForm, sql } from './helpers';
 
 /** Archived things stay archived: no new lots for an archived customer, no archived route on a new storm. */
 test('an archived customer gets no new lots, and an archived route is not offered or accepted for a storm', async ({ page }) => {
@@ -16,6 +16,7 @@ test('an archived customer gets no new lots, and an archived route is not offere
   const r = await (await page.request.post('/api/routes', { data: { name: `Old route ${tag}`, site_ids: [] } })).json();
   expect((await page.request.patch(`/api/routes/${r.id}`, { data: { archived: true } })).ok()).toBe(true);
   await page.goto('/storms');
+  await openStartForm(page);
   await expect(page.getByTestId('create-storm')).toBeVisible();
   await expect(page.getByText(`Old route ${tag}`)).toHaveCount(0);
   const start = await page.request.post('/api/storms', { data: { name: `Old ${tag}`, routeIds: [r.id], crewAssignments: {} } });

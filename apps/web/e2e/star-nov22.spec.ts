@@ -54,7 +54,7 @@ test('salt: a surcharge on new bills, rationing for one storm, a lot\'s priority
     const { id, runs } = await startStorm(page.request, `Ration ${Date.now()}`, ['West Lakewood']);
     await page.goto(`/storms/${id}`);
     await page.getByTestId('storm-ration-toggle').click();
-    await expect(page.getByTestId('storm-ration')).toContainText('Salt is rationed this storm');
+    await expect(page.getByTestId('storm-ration')).toContainText('Rationed this storm');
     const ctx = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 } });
     const d = await ctx.newPage();
     await d.goto(runs[0]!.link);
