@@ -23,11 +23,11 @@ Answers for vendor security questionnaires from larger plow companies and the pr
 - An automated RLS test suite (`pnpm test:db`) runs in CI and checks cross-company reads and writes are refused.
 
 ## Access control
-- **Office users:** passwordless sign-in by a one-time code emailed to the user (Supabase Auth). Roles: owner, dispatcher, view-only.
+- **Office users:** a one-time code emailed to the user, Sign in with Microsoft (Entra ID) or Google, or an optional password the user sets (Supabase Auth). Roles: owner, dispatcher, view-only, branch manager, billing, field lead.
 - **Drivers:** a per-run link that works for one storm, can be revoked by the office, and gives access only to that run's stops. No prices, customer contacts or other runs.
 - **Customers:** a private records-page link per customer, which the office can reset. Quotes have their own link.
 - **Platform admins:** a fixed allow-list (`ADMIN_EMAILS`) for a few cross-company tools. Nothing else.
-- **SSO:** not offered yet (Google Workspace and Microsoft Entra later, when a customer needs it).
+- **SSO:** Sign in with Microsoft (Entra ID, work and personal accounts) and Google, over OpenID Connect with Authorization Code and PKCE. Supabase checks the ID token (issuer, audience, signature, expiry, nonce); Flake never receives provider tokens or secrets. A user can connect either to their existing account under Account. SAML and forcing SSO for a whole company are not offered yet.
 
 ## Backups and recovery
 - **Daily database backups: not enabled yet.** Daily backups need the database host's paid plan (Supabase Pro), which is on the launch list and not yet turned on. A backup and restore test is planned once it is.
@@ -56,4 +56,4 @@ Answers for vendor security questionnaires from larger plow companies and the pr
 - Report vulnerabilities to sam@216labs.dev. No bug bounty.
 
 ## Later (known gaps, for honesty)
-- SOC 2 (no tooling bought; Flip's call), daily backups and restore tests, written incident response plan, SSO, penetration test, a data processing agreement template.
+- SOC 2 (no tooling bought; Flip's call), daily backups and restore tests, written incident response plan, SAML SSO and required SSO, penetration test, a data processing agreement template.

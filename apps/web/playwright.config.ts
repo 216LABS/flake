@@ -7,7 +7,7 @@ const fromFile = existsSync(file)
   ? Object.fromEntries(readFileSync(file, 'utf8').split(/\r?\n/).map((l) => l.match(/^([A-Z_0-9]+)=(.*)$/)).filter(Boolean).map((m) => [m![1]!, m![2]!]))
   : {};
 const PORT = Number(process.env.E2E_PORT ?? 3100);
-const env = { ...process.env, ...fromFile, APP_ENV: 'test', NEXT_PUBLIC_APP_ENV: 'test', PROVIDERS_MODE: 'mock', APP_BASE_URL: `http://localhost:${PORT}` } as Record<string, string>;
+const env = { ...process.env, ...fromFile, APP_ENV: 'test', NEXT_PUBLIC_APP_ENV: 'test', PROVIDERS_MODE: 'mock', SSO_PROVIDERS: 'azure,google', APP_BASE_URL: `http://localhost:${PORT}` } as Record<string, string>;
 for (const [k, v] of Object.entries(env)) process.env[k] = v;
 
 /**

@@ -24,7 +24,7 @@ export const ROLE_HELP: Record<MemberRole, string> = {
 const under = (path: string, prefixes: string[]) => prefixes.some((p) => path === p || path.startsWith(`${p}/`));
 
 // Field leads: these pages and APIs only.
-export const FIELD_PAGES = ['/dashboard', '/storms', '/alerts', '/help', '/routes'];
+export const FIELD_PAGES = ['/dashboard', '/storms', '/alerts', '/help', '/routes', '/account'];
 const FIELD_APIS = ['/api/storms', '/api/runs', '/api/run-stops', '/api/alerts', '/api/push', '/api/feedback', '/api/sites/suggest', '/api/lots'];
 // Billing: any page and any read; changes only here.
 const BILLING_WRITES = ['/api/billing', '/api/receivables', '/api/insurance', '/api/season', '/api/share', '/api/customers', '/api/proof', '/api/integrations/qbo', '/api/settings/export', '/api/push', '/api/feedback'];

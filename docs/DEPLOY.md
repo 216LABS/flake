@@ -43,6 +43,8 @@ In Auth, URL Configuration, set Site URL to the app URL and add `<app url>/**` t
 | Sender email | a verified Resend address, the same one as `EMAIL_FROM` |
 | Sender name | `Flake` |
 
+**Microsoft and Google sign-in (optional):** follow `docs/SSO_SETUP.md`. The buttons appear on their own once a provider is on in Supabase; nothing goes in Vercel. Turn on **Allow manual linking** either way.
+
 **Sign-in email templates:** in Authentication, Emails, Templates, paste `packages/db/supabase/templates/magic_link.html` into **Magic Link** and `packages/db/supabase/templates/confirmation.html` into **Confirm signup**, both with the subject `Your Flake sign-in`. Both include `{{ .Token }}`, the code an iPhone Home Screen user types in. A first sign-in sends Confirm signup, so without it new drivers and office users get a link only.
 
 In the SQL editor, insert two Vault secrets. Do not commit either value. `app_base_url` is the public origin with no trailing slash. `cron_secret` is the same string as `CRON_SECRET` (`openssl rand -hex 32`).

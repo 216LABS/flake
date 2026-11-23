@@ -44,6 +44,22 @@ jwt_expiry = 3600
 enable_refresh_token_rotation = true
 enable_signup = true
 enable_anonymous_sign_ins = false
+# Account, Connect Microsoft or Google: links a provider to the signed-in account (issue 242, docs/SSO_SETUP.md).
+enable_manual_linking = true
+# A password is optional (Account, Password); the app asks for 8 too.
+minimum_password_length = 8
+
+# Microsoft and Google sign-in (issue 242). Off locally: there are no provider apps for localhost. The e2e run shows the
+# buttons with SSO_PROVIDERS instead. To try one locally, register an app per docs/SSO_SETUP.md and uncomment:
+# [auth.external.azure]
+# enabled = true
+# client_id = "env(SUPABASE_AUTH_AZURE_CLIENT_ID)"
+# secret = "env(SUPABASE_AUTH_AZURE_SECRET)"
+# url = "https://login.microsoftonline.com/common/v2.0"
+# [auth.external.google]
+# enabled = true
+# client_id = "env(SUPABASE_AUTH_GOOGLE_CLIENT_ID)"
+# secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
 
 [auth.email]
 enable_signup = true

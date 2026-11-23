@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { isProd } from './lib/env';
 import { safeNext } from './lib/next-path';
 
-const APP_PREFIXES = ['/admin', '/dashboard', '/alerts', '/storms', '/customers', '/sites', '/routes', '/billing', '/proof', '/reports', '/settings', '/onboarding', '/help'];
+const APP_PREFIXES = ['/admin', '/dashboard', '/alerts', '/storms', '/customers', '/sites', '/routes', '/billing', '/proof', '/reports', '/settings', '/onboarding', '/help', '/account'];
 
 /** Refreshes the Supabase session cookie, sends signed-out office visits to login, and hides /dev in production. */
 export async function proxy(request: NextRequest) {

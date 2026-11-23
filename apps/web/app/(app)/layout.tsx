@@ -31,6 +31,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           <div className="flex min-w-0 flex-1 items-center gap-3 text-sm md:mt-auto md:flex-none md:flex-col md:items-start md:gap-2 md:px-2.5">
             <span className="line-clamp-2 min-w-0 flex-1 break-words text-xs leading-tight text-slate-200 md:flex-none md:text-sm" data-testid="company-name">{ctx.tenant.name}</span>
             {test ? <Badge tone="amber" className="shrink-0 md:order-first" title="Test: no real charges or texts" data-testid="test-badge"><span className="md:hidden">Test</span><span className="hidden md:inline">Test: no real charges or texts</span></Badge> : null}
+            {/* Your own sign-in: Microsoft, Google, a password (issue 242). On a phone it's under More. */}
+            <Link href="/account" className="hidden shrink-0 whitespace-nowrap text-slate-300 underline-offset-2 hover:text-white hover:underline md:inline" data-testid="account-link">Account</Link>
             <form action="/auth/signout" method="post" className="shrink-0"><button type="submit" className="min-h-11 whitespace-nowrap px-1 text-slate-300 underline-offset-2 hover:text-white hover:underline md:min-h-0 md:px-0" data-testid="sign-out">Sign out</button></form>
           </div>
         </div>

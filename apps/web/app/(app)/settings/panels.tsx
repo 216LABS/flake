@@ -271,7 +271,7 @@ export function TeamPanel({ members, me, branches = [] }: { members: { user_id: 
       </div>
       <Card>
         <h2 className="font-semibold">Add someone to the office</h2>
-        <p className="mt-1 text-sm text-muted">Dispatchers run storms and billing. Viewers can only look. They sign in with an email link, with no password.</p>
+        <p className="mt-1 text-sm text-muted">Dispatchers run storms and billing. Viewers can only look. They sign in with a code to that email, or connect their work Microsoft or Google account under Account.</p>
         <Label className="mt-3" htmlFor="team-email">Email</Label>
         <Input id="team-email" type="email" data-testid="team-email" value={email} onChange={(e) => setEmail(e.target.value)} />
         <Label className="mt-2" htmlFor="team-role">Role</Label>

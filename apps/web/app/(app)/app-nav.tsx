@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@flake/ui';
-import { ClipboardList, CloudSnow, FileCheck2, LayoutDashboard, LifeBuoy, Menu, Mountain, Receipt, Route, Settings, Users, Wrench, X } from 'lucide-react';
+import { ClipboardList, CloudSnow, FileCheck2, LayoutDashboard, LifeBuoy, Menu, Mountain, Receipt, Route, Settings, UserRound, Users, Wrench, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -78,7 +78,8 @@ export function MobileTabs({ showDev, live = false, only }: { showDev: boolean; 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [more]);
-  const rest = NAV.filter(([href]) => !TABS.includes(href));
+  // Account sits in the header on a desk; on a phone it's here, so the header keeps room for the company name (issue 242).
+  const rest = [...NAV.filter(([href]) => !TABS.includes(href)), ['/account', 'Account', UserRound] as const];
   const inMore = rest.some(([href]) => isHere(path, href)) || (showDev && isHere(path, '/dev'));
   const tab = 'flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-medium';
   return (

@@ -23,8 +23,11 @@ const TONS: Record<string, number> = { ton: 1, bag50lb: 0.025, lb: 0.0005 };
 
 export async function renewalPack(tenantId: string, from: string, to: string): Promise<RenewalPack> {
   const db = serviceDb();
-  const range = sql`s.started_at >= ${from}::date and s.started_at < (${to}::date + 1)`;
-  const [t] = (await db.execute(sql`select name from tenant where id = ${tenantId}`)) as unknown as { name: string }[];
+  const [t] = (await db.execute(sql`select name, timezone from tenant where id = ${tenantId}`)) as unknown as { name: string; timezone: string }[];
+  // Days are the company's days: a storm started at 9 pm Eastern is that day's, not the next UTC day's.
+  const tz = t?.timezone ?? 'America/New_York';
+  const within = (col: ReturnType<typeof sql>) => sql`(${col} at time zone ${tz})::date between ${from}::date and ${to}::date`;
+  const range = within(sql`s.started_at`);
   const [storms] = (await db.execute(sql`select count(*)::int as n from storm s where s.tenant_id = ${tenantId} and ${range}`)) as unknown as { n: number }[];
   const visits = (await db.execute(sql`
     select v.id, v.site_id, st.label as site, c.name as customer, v.arrive_lat is not null as gps, v.depth_in is not null as depth, v.salt,
@@ -33,14 +36,14 @@ export async function renewalPack(tenantId: string, from: string, to: string): P
     where v.tenant_id = ${tenantId} and v.departed_device_at is not null and ${range}
       and not exists (select 1 from visit_correction vc where vc.visit_id = v.id and vc.field = 'voided' and vc.new_value = 'true'::jsonb)`)) as unknown as { id: string; site_id: string; site: string; customer: string; gps: boolean; depth: boolean; photos: boolean; salt: { unit: string; qty: number }[] | null }[];
   const tons = (salt: { unit: string; qty: number }[] | null) => (salt ?? []).reduce((a, e) => a + (TONS[e.unit] ?? 0) * Number(e.qty || 0), 0);
-  const [runs] = (await db.execute(sql`select count(*)::int as n from trigger_alert a where a.tenant_id = ${tenantId} and a.kind in ('salt_run', 'refreeze') and a.created_at >= ${from}::date and a.created_at < (${to}::date + 1)`)) as unknown as { n: number }[];
+  const [runs] = (await db.execute(sql`select count(*)::int as n from trigger_alert a where a.tenant_id = ${tenantId} and a.kind in ('salt_run', 'refreeze') and ${within(sql`a.created_at`)}`)) as unknown as { n: number }[];
   // From the alert to the first truck on a lot, for storms started from a trigger alert.
   const [resp] = (await db.execute(sql`
     select avg(extract(epoch from (first_arrive - a.created_at)) / 60)::float as m from (
       select s.trigger_alert_id, min(v.arrived_device_at) as first_arrive from storm s join visit v on v.storm_id = s.id
       where s.tenant_id = ${tenantId} and s.trigger_alert_id is not null and ${range} group by s.trigger_alert_id
     ) x join trigger_alert a on a.id = x.trigger_alert_id where first_arrive > a.created_at`)) as unknown as { m: number | null }[];
-  const claims = (await db.execute(sql`select status, count(*)::int as n from claim where tenant_id = ${tenantId} and incident_at >= ${from}::date and incident_at < (${to}::date + 1) group by status order by status`)) as unknown as { status: string; n: number }[];
+  const claims = (await db.execute(sql`select status, count(*)::int as n from claim where tenant_id = ${tenantId} and ${within(sql`incident_at`)} group by status order by status`)) as unknown as { status: string; n: number }[];
   const [coi] = (await db.execute(sql`select insurer, policy_number, expires_on::text as expires_on from certificate where tenant_id = ${tenantId} and crew_id is null and is_default order by expires_on desc nulls last limit 1`)) as unknown as RenewalPack['coi'][];
   const bySite = new Map<string, RenewalSite>();
   for (const v of visits) {

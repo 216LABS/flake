@@ -315,4 +315,14 @@ describe('share links and the renewal pack (issue 236)', () => {
     expect(pack.visits).toBe(3);
     expect(pack.pct_gps).toBe(100);
   });
+
+  it('counts a storm by the company day it started, even late at night when UTC is already tomorrow', async () => {
+    const { renewalPack } = await import('@/lib/renewal-pack');
+    const w = await makeWorld({ plan: 'pro' });
+    await work(w, w.routeId, w.crewId, 2);
+    const day = '2026-12-10';
+    await serviceDb().execute(sql`update storm set started_at = (${`${day} 23:30`}::timestamp at time zone ${tz}) where tenant_id = ${w.tenantId}`);
+    expect((await renewalPack(w.tenantId, day, day)).visits).toBe(2);
+    expect((await renewalPack(w.tenantId, '2026-12-11', '2026-12-11')).visits).toBe(0);
+  });
 });

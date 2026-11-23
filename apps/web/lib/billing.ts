@@ -734,10 +734,10 @@ export async function markInstallmentPaid(ctx: Ctx, id: string) {
 }
 
 /** Approved invoices only: a draft still in review isn't a sale yet, and may still be voided or left unbilled. */
-/** One storm's bills, or every storm that started in a date range (issue 239: winter bills back to the books in one file). */
+/** One storm's bills, or every storm that started in a date range, in the company's days (issue 239: winter bills back to the books in one file). */
 export async function exportQbo(ctx: Ctx & { timezone: string }, sel: string | { from: string; to: string }) {
   return withUser(ctx.userId, async (tx) => {
-    const which = typeof sel === 'string' ? eq(invoice_draft.storm_id, sel) : and(sql`${storm.started_at} >= ${sel.from}::date`, sql`${storm.started_at} < (${sel.to}::date + 1)`);
+    const which = typeof sel === 'string' ? eq(invoice_draft.storm_id, sel) : sql`(${storm.started_at} at time zone ${ctx.timezone})::date between ${sel.from}::date and ${sel.to}::date`;
     const rows = await tx.select({ draft: invoice_draft, customer, storm }).from(invoice_draft).innerJoin(customer, eq(customer.id, invoice_draft.customer_id)).innerJoin(storm, eq(storm.id, invoice_draft.storm_id)).where(and(which, inArray(invoice_draft.status, ['approved', 'charged', 'sent', 'paid', 'failed'])));
     const date = (d: Date) => fmtLocal(d, ctx.timezone, { year: 'numeric', month: '2-digit', day: '2-digit' });
     const out: QboRow[] = [];

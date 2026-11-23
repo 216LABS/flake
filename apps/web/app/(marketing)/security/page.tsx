@@ -27,7 +27,7 @@ export default function Security() {
       </div>
       <div>
         <h2 className="text-xl font-semibold text-ink">Who can see what</h2>
-        <p className="mt-1">Office sign-in is a one-time code to your email; there are no passwords to steal. Each person on your team is an owner, a dispatcher, or view-only. Drivers get a link to their own route for one storm, with no access to prices or other customers. Customers see only their own records page.</p>
+        <p className="mt-1">Office sign-in is your work Microsoft or Google account, or a one-time code to your email. A password is optional, for people with neither. Each person on your team gets a role: owner, dispatcher, view-only, branch manager, billing or field lead. Drivers get a link to their own route for one storm, with no access to prices or other customers. Customers see only their own records page.</p>
       </div>
       <div>
         <h2 className="text-xl font-semibold text-ink">Records you can rely on</h2>

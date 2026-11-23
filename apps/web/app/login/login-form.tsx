@@ -1,21 +1,33 @@
 'use client';
 
 import { Button, Input, Label } from '@flake/ui';
-import { createBrowserClient } from '@supabase/ssr';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api } from '@/lib/client';
 import { NEXT_COOKIE } from '@/lib/next-path';
+import { browserSupabase, SsoButtons, type SsoProvider } from '@/components/sso-buttons';
 import { AuthShell } from '../auth-shell';
 
-export function LoginForm({ demo, next = '/dashboard' }: { demo: boolean; next?: string }) {
+export function LoginForm({ demo, next = '/dashboard', providers = [], initialError = null }: { demo: boolean; next?: string; providers?: SsoProvider[]; initialError?: string | null }) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
-  const supabase = () => createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
+  // Issue 242: a password, for someone who set one under Account and has neither Microsoft nor Google.
+  const [withPassword, setWithPassword] = useState(false);
+  const [password, setPassword] = useState('');
+  const supabase = browserSupabase;
+  const signInPassword = async () => {
+    setError(null);
+    setBusy(true);
+    const { error: err } = await supabase().auth.signInWithPassword({ email, password });
+    setBusy(false);
+    if (err) return setError(/invalid login|invalid credentials/i.test(err.message) ? 'That email and password don’t match. No password set yet? Use the email code, then set one under Account.' : err.message);
+    router.push(next);
+    router.refresh();
+  };
   const send = async () => {
     setError(null);
     setBusy(true);
@@ -50,8 +62,24 @@ export function LoginForm({ demo, next = '/dashboard' }: { demo: boolean; next?:
   return (
     <AuthShell>
         <h1 className="font-display text-3xl font-semibold tracking-tight">Sign in to Flake</h1>
-        <p className="mt-1 text-sm text-muted">We&apos;ll email you a link. There is no password to remember.</p>
-        {sent ? (
+        <p className="mt-1 text-sm text-muted">{providers.length ? 'Use your work Microsoft or Google account, or your email.' : 'We’ll email you a link. There is no password to remember.'}</p>
+        {!sent && providers.length ? (
+          <>
+            <div className="mt-5"><SsoButtons providers={providers} next={next} onError={setError} /></div>
+            <div className="mt-5 flex items-center gap-3 text-xs text-muted" aria-hidden="true"><span className="h-px flex-1 bg-line" />or with your email<span className="h-px flex-1 bg-line" /></div>
+          </>
+        ) : null}
+        {withPassword && !sent ? (
+          <>
+            <Label className="mt-4" htmlFor="email">Email</Label>
+            <Input id="email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} data-testid="email" />
+            <Label className="mt-3" htmlFor="password">Password</Label>
+            <Input id="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && password && void signInPassword()} data-testid="password" />
+            {error ? <p className="mt-2 text-sm text-danger" role="alert" data-testid="login-error">{error}</p> : null}
+            <Button variant="accent" className="mt-4 w-full" disabled={busy || !email.includes('@') || !password} onClick={() => void signInPassword()} data-testid="password-sign-in">Sign in</Button>
+            <Button variant="ghost" className="mt-2 w-full" onClick={() => { setWithPassword(false); setError(null); }} data-testid="use-email-code">Email me a link instead</Button>
+          </>
+        ) : sent ? (
           <>
             <p className="mt-3 text-sm" data-testid="link-sent">Check {email} for your sign-in link. Or type the code from that email here.</p>
             <Label className="mt-4" htmlFor="code">Code from the email</Label>
@@ -64,8 +92,9 @@ export function LoginForm({ demo, next = '/dashboard' }: { demo: boolean; next?:
           <>
             <Label className="mt-4" htmlFor="email">Email</Label>
             <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void send()} data-testid="email" />
-            {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
+            {error ? <p className="mt-2 text-sm text-danger" role="alert" data-testid="login-error">{error}</p> : null}
             <Button variant="accent" className="mt-4 w-full" disabled={busy || !email.includes('@')} onClick={() => void send()} data-testid="send-link">Email me a link</Button>
+            <Button variant="ghost" className="mt-2 w-full" onClick={() => { setWithPassword(true); setError(null); }} data-testid="use-password">Sign in with a password</Button>
           </>
         )}
         {demo ? (
