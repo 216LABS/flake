@@ -37,9 +37,11 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
     ...dueBills.map((i) => ({ id: i.id, name: i.storm, total_cents: i.total_cents, status: i.status, pay_link: i.pay_link, offline: !i.pay_link, anchor: `invoice-${i.id}` })),
     ...data.installments.filter((i) => i.due).map((i) => ({ id: i.id, name: installmentName(i), total_cents: i.total_cents, status: i.status, pay_link: null as string | null, offline: i.status === 'manual', anchor: `installment-${i.id}` })),
   ];
-  const contact = `${data.company.name}${data.company.phone ? ` at ${phone(data.company.phone)}` : ''}`;
+  // The phone is a link everywhere it's shown, so a customer on their phone can call in one tap.
+  const tel = data.company.phone ? <a className="font-medium underline underline-offset-2" href={`tel:${data.company.phone}`}>{phone(data.company.phone)}</a> : null;
+  const contact = <>{data.company.name}{tel ? <> at {tel}</> : null}</>;
   // The company's own words for how to pay it, or the usual way when it hasn't written any.
-  const payHow = data.company.pay_instructions ? <span className="whitespace-pre-line" data-testid="pay-instructions">How to pay {data.company.name}: {data.company.pay_instructions}</span> : `Pay ${contact} the way you usually do, by check or over the phone.`;
+  const payHow = data.company.pay_instructions ? <span className="whitespace-pre-line" data-testid="pay-instructions">How to pay {data.company.name}: {data.company.pay_instructions}</span> : <>Pay {contact} the way you usually do, by check or over the phone.</>;
   // "10:32 AM to 10:58 AM", or one time when both fall in the same minute, instead of a window that reads as zero.
   const span = (from: string, to: string | null) => (to && time(to) !== time(from) ? `${time(from)} to ${time(to)}` : to ? `at ${time(from)}` : time(from));
   const photo = (id: string, thumb = false) => `/api/c/${token}/photo/${id}${thumb ? '?thumb=1' : ''}`;
@@ -193,7 +195,7 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
         <RequestVisit token={token} company={data.company.name} sites={data.customer.archived ? [] : data.sites.filter((x) => x.active).map((x) => ({ id: x.id, label: x.label }))} />
 
         <footer className="border-t border-line-faint pt-4 text-sm text-muted">
-          <p>Questions about a visit or a bill? Contact {data.company.name}{data.company.phone ? ` at ${phone(data.company.phone)}` : ''}{data.company.email ? <> or <a className="text-link underline" href={`mailto:${data.company.email}`}>{data.company.email}</a></> : null}.</p>
+          <p>Questions about a visit or a bill? Contact {data.company.name}{tel ? <> at {tel}</> : null}{data.company.email ? <> or <a className="text-link underline" href={`mailto:${data.company.email}`}>{data.company.email}</a></> : null}.</p>
           <p className="mt-1 text-xs">This link is private to {data.customer.name}. Anyone with it can see these records, so share it only with people who should.</p>
           <div className="mt-4 flex items-center gap-2 text-xs text-faint">Records kept by <Wordmark inverse={false} className="text-base" /></div>
         </footer>

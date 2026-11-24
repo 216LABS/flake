@@ -345,7 +345,9 @@ test('customer quote: opting out of email, a declined card, a bank account, and 
   const ctx = await browser.newContext({ baseURL });
   const customer = await ctx.newPage();
   await customer.goto(q.url);
-  await expect(customer.getByTestId('accept')).toBeDisabled();
+  // Accept isn't greyed out; a tap with nothing filled in says what's missing.
+  await customer.getByTestId('accept').click();
+  await expect(customer.getByTestId('accept-error')).toContainText('Type your full name');
   await customer.getByTestId('sign-name').fill('Pat Customer');
   await customer.getByTestId('agree').check();
   await customer.getByTestId('consent-email').uncheck();

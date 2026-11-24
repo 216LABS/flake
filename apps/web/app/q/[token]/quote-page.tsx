@@ -5,7 +5,7 @@ import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-
 // The pure entry loads Stripe.js only when a card form opens; the plain import injects it on every quote view.
 import { loadStripe } from '@stripe/stripe-js/pure';
 import { useState } from 'react';
-import { api, money } from '@/lib/client';
+import { api, money, phone as fmtPhone } from '@/lib/client';
 import { billedBy, paymentText, priceText } from '@/lib/scope';
 
 export function QuotePage({ token, quote }: { token: string; quote: any }) {
@@ -57,7 +57,14 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
         </Card>
       ) : null}
       {accepted ? (
-        <Card className="mt-4 border-ok-line bg-ok-tint" data-testid="accepted"><p className="font-medium">Accepted{acceptedName ? ` by ${acceptedName}` : ''}. Thank you.</p></Card>
+        <Card className="mt-4 border-ok-line bg-ok-tint" data-testid="accepted">
+          <p className="font-medium">Accepted{acceptedName ? ` by ${acceptedName}` : ''}. Thank you.</p>
+          {(() => {
+            const plow = lots[0]!.contract.services.find((x: any) => x.service === 'plow');
+            const when = plow?.trigger_in === 0 ? 'with any measurable snow' : plow?.trigger_in != null ? `when snow reaches ${plow.trigger_in}"` : null;
+            return <p className="mt-1 text-sm" data-testid="accepted-what-next">You&apos;re on {quote.company}&apos;s list for the {lots[0]!.contract.season} season.{when ? ` They come ${when}` : ''}{when ? ', and' : ' They'} keep a record of every visit with photos you can see any time.</p>;
+          })()}
+        </Card>
       ) : (
         <Card className="mt-4">
           <h2 className="font-semibold">Accept</h2>
@@ -68,9 +75,16 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
           <label className="mt-2 flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={sms} onChange={(e) => setSms(e.target.checked)} data-testid="consent-sms" /> {quote.consent_text}</label>
           {sms ? <div className="mt-2"><Label htmlFor="ph">Mobile number</Label><Input id="ph" value={phone} type="tel" placeholder="216-555-0123" onChange={(e) => setPhone(e.target.value)} /></div> : null}
           <label className="mt-2 flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={emailOk} onChange={(e) => setEmailOk(e.target.checked)} data-testid="consent-email" /> Email me service updates.</label>
-          {error ? <p className="mt-2 text-sm text-danger" role="alert">{error}</p> : null}
-          <Button variant="accent" className="mt-4 w-full" disabled={sending || !agree || name.trim().length < 2} data-testid="accept" onClick={async () => {
+          {error ? <p className="mt-2 text-sm text-danger" role="alert" data-testid="accept-error">{error}</p> : null}
+          {/* Never greyed out with no reason: a tap says what's missing (customer-and-driver pass, Nov 23). */}
+          <Button variant="accent" className="mt-4 w-full" disabled={sending} data-testid="accept" onClick={async () => {
             setError(null);
+            if (name.trim().length < 2) {
+              setError('Type your full name above to sign.');
+              document.getElementById('sig')?.focus();
+              return;
+            }
+            if (!agree) return setError('Tick the box to agree to the scope, price and terms.');
             setSending(true);
             try {
               await api(`/api/q/${token}/accept`, { body: { name, agree, consentSms: sms, consentEmail: emailOk, phone_e164: phone || null } });
@@ -113,6 +127,11 @@ export function QuotePage({ token, quote }: { token: string; quote: any }) {
       ) : null}
       {accepted && !quote.payments_ready ? (
         <Card className="mt-4" data-testid="accepted-next"><p className="text-sm">What happens next: {quote.company} bills you {billed.seasonal && !billed.perStorm ? 'for each installment' : 'after each storm, for the service you got'}.{quote.pay_instructions ? ` How to pay: ${quote.pay_instructions.replace(/\s+/g, ' ').trim()}` : ''}</p></Card>
+      ) : null}
+      {quote.company_phone || quote.company_email ? (
+        <p className="mt-6 text-center text-sm text-ink-2" data-testid="quote-contact">
+          Questions about this quote? {quote.company_phone ? <a className="font-medium underline underline-offset-2" href={`tel:${quote.company_phone}`}>Call {fmtPhone(quote.company_phone)}</a> : null}{quote.company_phone && quote.company_email ? ' or ' : ''}{quote.company_email ? <a className="font-medium underline underline-offset-2" href={`mailto:${quote.company_email}`}>email {quote.company}</a> : null}.
+        </p>
       ) : null}
       <p className="mt-8 text-center text-xs text-muted">Quotes and service records by Flake</p>
     </main>

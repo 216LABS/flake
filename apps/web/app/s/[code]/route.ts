@@ -19,7 +19,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
   if (code === 'sample') return NextResponse.redirect(new URL('/', baseUrl()));
   const db = serviceDb();
   const [link] = await db.select().from(short_link).where(eq(short_link.code, code));
-  if (!link) return new NextResponse('This link is not valid.', { status: 404 });
+  // A mistyped or cut-off code from a text: the same friendly page as any other link that doesn't work.
+  if (!link) return NextResponse.redirect(new URL('/link-gone', baseUrl()));
   // A photo opens a page with the company, the lot, the time and the visit's photos (journey walk, Nov 23). ?raw=1 still
   // gives the image itself.
   if (link.target.startsWith('photo:')) {

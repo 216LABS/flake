@@ -108,3 +108,42 @@ test('a photo link from a text opens a page with the company, the lot and when i
     await sql`delete from short_link where code = ${code}`;
   }
 });
+
+test('customer and driver links: quote says what is missing and what happens next, a bad short link gets a page, and a driver with no signal is told so', async ({ page, browser, baseURL }, info) => {
+  once(info.project.name);
+  await login(page);
+  const [lot] = await sql`select s.id from site s join customer c on c.id = s.customer_id join tenant t on t.id = c.tenant_id where t.slug = 'lakeshore-demo' and c.archived_at is null order by s.created_at desc limit 1`;
+  const q = await (await page.request.post('/api/quotes', { data: { site_id: lot!.id, season: '2027-28', services: [{ service: 'plow', trigger_in: 2, pricing: { type: 'per_push', amount_cents: 9000 } }], send: false } })).json();
+  const ctx = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 } });
+  try {
+    const c = await ctx.newPage();
+    await c.goto(q.url);
+    await expect(c.getByTestId('quote-contact')).toContainText('Call (216) 555-0100');
+    await c.getByTestId('accept').click();
+    await expect(c.getByTestId('accept-error')).toContainText('Type your full name');
+    await c.getByTestId('sign-name').fill('Pat Customer');
+    await c.getByTestId('accept').click();
+    await expect(c.getByTestId('accept-error')).toContainText('Tick the box');
+    await c.getByTestId('agree').check();
+    await c.getByTestId('accept').click();
+    await expect(c.getByTestId('accepted-what-next')).toContainText('2027-28 season');
+    await expect(c.getByTestId('accepted-what-next')).toContainText('when snow reaches 2"');
+    // A short link with a typo lands on a page that says what to do.
+    await c.goto('/s/notarealcode');
+    await expect(c.getByTestId('link-gone')).toBeVisible();
+    // A driver whose phone loses signal sees it in the badge and a line saying their work is safe.
+    const { runs } = await startStorm(page.request, `Signal ${Date.now()}`, ['Rocky River']);
+    const d = await ctx.newPage();
+    await d.goto(runs[0]!.link);
+    await expect(d.getByTestId('arrive')).toBeVisible();
+    await ctx.setOffline(true);
+    await expect(d.getByTestId('sync-badge')).toHaveText('No signal');
+    await expect(d.getByTestId('no-signal')).toContainText('saved on your phone');
+    await ctx.setOffline(false);
+    await expect(d.getByTestId('no-signal')).toHaveCount(0);
+  } finally {
+    await ctx.close();
+    await sql`update contract set status = 'void' where site_id = ${lot!.id} and season = '2027-28'`;
+    await closeRunningStorms();
+  }
+});

@@ -82,6 +82,18 @@ export function DriverApp({ token, build }: { token: string; build?: string }) {
   const [lang, setLang] = useState<Lang>('en');
   // Only claim everything has landed once the phone has checked.
   const [sync, setSync] = useState<Sync>('saved');
+  // The badge said "Synced" with the phone in airplane mode, which isn't true (customer-and-driver pass, Nov 23).
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    const update = () => setOffline(!navigator.onLine);
+    update();
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
   const [dead, setDead] = useState(false);
   const [uploadsRefused, setUploadsRefused] = useState(false);
   const [noCache, setNoCache] = useState(false);
@@ -568,7 +580,7 @@ export function DriverApp({ token, build }: { token: string; build?: string }) {
     );
   }
 
-  const badge = { saved: t('saved'), sending: t('sending'), synced: t('synced') }[sync];
+  const badge = offline ? t('no_signal') : { saved: t('saved'), sending: t('sending'), synced: t('synced') }[sync];
   const needDepth = !run.has_reported_depth && !local.depthGiven;
   const canUndo = local.last && Date.now() - local.last.at < UNDO_MS;
   void tick;
@@ -582,12 +594,13 @@ export function DriverApp({ token, build }: { token: string; build?: string }) {
           <div className="text-base text-slate-200" data-testid="progress">{skippedCount ? t('of_done_skipped', { d: doneCount, s: skippedCount, n: stops.length }) : t('of_done', { d: doneCount, n: stops.length })}</div>
         </div>
         <div className="flex items-center gap-2">
-          <span data-testid="sync-badge" aria-live="polite" data-state={sync} className={cn('shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold', sync === 'synced' ? 'bg-emerald-400 text-black' : sync === 'sending' ? 'bg-sky-300 text-black' : 'bg-amber-300 text-black')}>{badge}</span>
+          <span data-testid="sync-badge" aria-live="polite" data-state={sync} data-offline={offline ? 'yes' : undefined} className={cn('shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold', offline ? 'bg-amber-300 text-black' : sync === 'synced' ? 'bg-emerald-400 text-black' : sync === 'sending' ? 'bg-sky-300 text-black' : 'bg-amber-300 text-black')}>{badge}</span>
           {run.office_phone ? <a href={`tel:${run.office_phone}`} className="inline-flex min-h-[60px] items-center rounded-xl bg-slate-700 px-4 text-center text-base font-bold text-white [overflow-wrap:normal]" data-testid="call-office">{t('call_office')}</a> : null}
         </div>
       </header>
 
       {/* On site the driver is already at the lot, so these banners give way to a small line in the stop card: they can't push salt and Services under the Done panel (issue 211). */}
+      {offline ? <div role="status" className="mx-4 mb-2 rounded-lg bg-slate-800 p-3 text-base text-white" data-testid="no-signal">{t('no_signal_note')}</div> : null}
       {geoAsk && !locationOff && !onSiteView ? <div className="mx-4 mb-2 rounded-lg bg-slate-800 p-3 text-base text-white" data-testid="location-ask">{t('location_ask')}</div> : null}
       {locationOff && !onSiteView ? <div role="alert" className="mx-4 mb-2 rounded-lg bg-amber-300 p-3 text-base font-semibold text-black" data-testid="location-off">{t('location_off')}<details className="mt-2 text-base font-normal" data-testid="location-how"><summary className="flex min-h-[48px] cursor-pointer list-none items-center justify-between rounded-lg bg-black/10 px-3 font-bold">{t('location_how')}<span aria-hidden="true">▾</span></summary><p className="mt-2">{t('location_steps')}</p></details></div> : null}
       {/* Always mounted, so a screen reader hears every toast, not only ones it happened to catch appearing (issue 158). */}
@@ -745,7 +758,7 @@ function OnSite(p: { t: T; stop: Stop; visit: LocalVisit; needDepth: boolean; lo
       {stop.salt_unit ? (
         <div className="flex scroll-mb-52 items-center gap-3" data-testid="salt-row">
           <h2 className="min-w-0 flex-1 text-lg font-bold leading-tight">{t('salt')} <span className="block text-base font-medium text-slate-300">{UNIT_KEY[stop.salt_unit] ? t(UNIT_KEY[stop.salt_unit]!) : stop.salt_unit}</span></h2>
-          <BigButton className="w-16 text-3xl" aria-label={`${t('salt')} -1`} onClick={() => p.onSalt(Math.max(0, visit.salt - 1))} data-testid="salt-minus">-</BigButton>
+          <BigButton className="w-16 text-3xl" aria-label={`${t('salt')} -1`} onClick={() => p.onSalt(Math.max(0, visit.salt - 1))} data-testid="salt-minus">−</BigButton>
           <span className="w-12 text-center text-3xl font-bold" data-testid="salt-qty">{visit.salt}</span>
           <BigButton className="w-16 text-3xl" aria-label={`${t('salt')} +1`} onClick={() => p.onSalt(visit.salt + 1)} data-testid="salt-plus">+</BigButton>
         </div>

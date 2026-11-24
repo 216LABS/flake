@@ -3,7 +3,7 @@ export type Lang = 'en' | 'es';
 const en = {
   next_stop: 'Next stop', navigate: 'Navigate', arrive: 'Arrive', done: 'Done', problem: 'Problem', undo_last: 'Undo last',
   before_photo: 'Before photo', after_photo: 'After photo', photo_saved: 'Photo saved', depth: 'Snow depth', depth_required: 'Snow depth (needed on your first stop)',
-  services: 'Services', salt: 'Salt', unit_bag50lb: '50 lb bags', unit_lb: 'lb', unit_ton: 'tons', unit_application: 'applications', of_done: '{d} of {n} done', of_done_skipped: '{d} done, {s} skipped, of {n}', saved: 'Saved on phone', sending: 'Sending', synced: 'Synced',
+  services: 'Services', salt: 'Salt', unit_bag50lb: '50 lb bags', unit_lb: 'lb', unit_ton: 'tons', unit_application: 'applications', of_done: '{d} of {n} done', of_done_skipped: '{d} done, {s} skipped, of {n}', saved: 'Saved on phone', sending: 'Sending', synced: 'Synced', no_signal: 'No signal', no_signal_note: 'No signal. Keep working: every tap and photo is saved on your phone and sends when you have signal.',
   no_service: 'Tick what you did here first. With nothing ticked, this visit can\'t be billed.', problem_note: 'What happened? (optional)', send_problem_kind: 'Send: {k}',
   remaining: 'Remaining stops', here_arrive: "You're here. Arrive?", all_done: 'All stops done. Thanks.', blocked: 'Blocked', breakdown: 'Breakdown',
   skip: 'Skip', damage: 'Damage', other: 'Other', voice_note: 'Voice note', stop_recording: 'Stop recording', back: 'Back', send_problem: 'Send',
@@ -18,7 +18,7 @@ const en = {
 const es: typeof en = {
   next_stop: 'Siguiente parada', navigate: 'Navegar', arrive: 'Llegué', done: 'Terminado', problem: 'Problema', undo_last: 'Deshacer',
   before_photo: 'Foto antes', after_photo: 'Foto después', photo_saved: 'Foto guardada', depth: 'Profundidad de nieve', depth_required: 'Profundidad de nieve (requerida en la primera parada)',
-  services: 'Servicios', salt: 'Sal', unit_bag50lb: 'sacos de 50 lb', unit_lb: 'lb', unit_ton: 'toneladas', unit_application: 'aplicaciones', of_done: '{d} de {n} listas', of_done_skipped: '{d} listas, {s} omitidas, de {n}', saved: 'Guardado en el teléfono', sending: 'Enviando', synced: 'Sincronizado',
+  services: 'Servicios', salt: 'Sal', unit_bag50lb: 'sacos de 50 lb', unit_lb: 'lb', unit_ton: 'toneladas', unit_application: 'aplicaciones', of_done: '{d} de {n} listas', of_done_skipped: '{d} listas, {s} omitidas, de {n}', saved: 'Guardado en el teléfono', sending: 'Enviando', synced: 'Sincronizado', no_signal: 'Sin señal', no_signal_note: 'Sin señal. Sigue trabajando: cada toque y foto se guarda en tu teléfono y se envía cuando haya señal.',
   no_service: 'Marca lo que hiciste aquí primero. Sin nada marcado, esta visita no se puede cobrar.', problem_note: '¿Qué pasó? (opcional)', send_problem_kind: 'Enviar: {k}',
   remaining: 'Paradas restantes', here_arrive: 'Ya llegaste. ¿Marcar llegada?', all_done: 'Todas las paradas listas. Gracias.', blocked: 'Bloqueado', breakdown: 'Avería',
   skip: 'Omitir', damage: 'Daño', other: 'Otro', voice_note: 'Nota de voz', stop_recording: 'Detener', back: 'Atrás', send_problem: 'Enviar',

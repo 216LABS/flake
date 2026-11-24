@@ -103,6 +103,9 @@ export async function getQuote(token: string) {
   return {
     company: r.tenant.name,
     company_logo: logoUrl(r.tenant),
+    // So a customer with a question can reach the company from the quote (customer-and-driver pass, Nov 23).
+    company_phone: r.tenant.contact_phone ?? null,
+    company_email: r.tenant.contact_email ?? null,
     lots: await Promise.all([...r.lots].reverse().map(async (l) => ({ site: { label: l.site.label, address: l.site.address, area_sqft: l.site.area_confirmed_sqft ?? l.site.area_estimate_sqft }, contract: await view(l.contract) }))),
     customer: { name: r.customer.name, email: r.customer.email, phone: r.customer.phone_e164, billing_mode: r.customer.billing_mode },
     site: { label: r.site.label, address: r.site.address, area_sqft: r.site.area_confirmed_sqft ?? r.site.area_estimate_sqft },
