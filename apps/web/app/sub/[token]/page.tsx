@@ -50,7 +50,7 @@ export default async function SubPortal({ params, searchParams }: { params: Prom
         </form>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
           <Stat label="Visits" value={String(visits.length)} />
-          <Stat label="With full proof" value={visits.length ? `${Math.round((proofed / visits.length) * 100)}%` : '-'} />
+          <Stat label="With full proof" value={visits.length ? `${Math.round((proofed / visits.length) * 100)}%` : 'No visits yet'} />
           {statement ? <Stat label="Statement total" value={money(statement.total_cents)} /> : null}
         </div>
         {statement ? (
@@ -67,7 +67,8 @@ export default async function SubPortal({ params, searchParams }: { params: Prom
                 </tbody>
               </Table>
             ) : <p className="text-sm text-muted">No paid work in these dates.</p>}
-            <AnswerStatement token={token} from={p.from} to={p.to} answer={statement.answer} lines={statement.lines.map((l) => `${l.driver}, ${l.storm}, ${money(l.amount_cents)}`)} />
+            {/* Nothing to confirm on an empty statement. */}
+            {statement.lines.length || statement.season.length ? <AnswerStatement token={token} from={p.from} to={p.to} answer={statement.answer} lines={statement.lines.map((l) => `${l.driver}, ${l.storm}, ${money(l.amount_cents)}`)} /> : null}
           </Card>
         ) : null}
         <section>

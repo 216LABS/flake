@@ -80,11 +80,14 @@ export function renderTemplate(key: TemplateKey, vars: Record<string, string | n
   });
 }
 
+/** A name at the end of a sentence: "Northcoast Snow Co." keeps its one period instead of getting "Co..". */
+export const endSentence = (name: string) => (/[.!?]$/.test(name.trim()) ? name.trim() : `${name.trim()}.`);
+
 export const CREW_CONSENT_TEXT = (company: string, lang: 'en' | 'es' = 'en') => lang === 'es'
-  ? `Envíenme por texto los enlaces de ruta y los avisos de tormenta de ${company}. Pueden aplicarse tarifas de mensajes y datos. Responde STOP para no recibir más, HELP para ayuda.`
-  : `Text me route links and storm call-outs from ${company}. Msg & data rates may apply. Reply STOP to opt out, HELP for help.`;
+  ? `Envíenme por texto los enlaces de ruta y los avisos de tormenta de ${endSentence(company)} Pueden aplicarse tarifas de mensajes y datos. Responde STOP para no recibir más, HELP para ayuda.`
+  : `Text me route links and storm call-outs from ${endSentence(company)} Msg & data rates may apply. Reply STOP to opt out, HELP for help.`;
 export const CUSTOMER_CONSENT_TEXT = (company: string) =>
-  `Text me service updates (on the way, completed with photo, invoices) from ${company}. Msg & data rates may apply. Reply STOP to opt out, HELP for help.`;
+  `Text me service updates (on the way, completed with photo, invoices) from ${endSentence(company)} Msg & data rates may apply. Reply STOP to opt out, HELP for help.`;
 
 const STOP = new Set(['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT']);
 const START = new Set(['START', 'YES', 'UNSTOP']);

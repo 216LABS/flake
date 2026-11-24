@@ -89,6 +89,12 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
   // Only the reasons actually on these bills (issue 75 retest).
   const tierWhy = (t: FlagTier) => tierReasons(t, rows.filter((r) => r.status === 'draft' && !unplowed.includes(r)).flatMap((r) => open(r).map((f) => f.code)));
   const total = rows.reduce((s, r) => s + r.subtotal_cents, 0);
+  const drafts = rows.filter((r) => r.status === 'draft');
+  const paid = rows.filter((r) => r.status === 'paid').length;
+  const waiting = rows.filter((r) => ['approved', 'charged', 'sent'].includes(r.status)).length;
+  const failedN = rows.filter((r) => r.status === 'failed').length;
+  // Proof flags the office can waive in one go, like "no GPS on arrival" on every visit when phones had location off.
+  const waivable = drafts.flatMap((r) => open(r).filter((f) => FLAG_TIER[f.code] === 'proof' && f.code !== 'missing_depth' && f.code !== 'below_trigger'));
   const fees = rows.reduce((s, r) => s + r.fee_cents, 0);
 
   if (stormActive) return <EmptyState title="This storm is still going" body="Close it on the storm board when the work is done. Its invoices are drafted here after that, so nothing still coming in is missed." />;
@@ -127,20 +133,32 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
               <div className="text-sm text-muted">{rows.length === 1 ? '1 bill' : `${rows.length} bills`} this storm</div>
               <div className="font-display tabular text-3xl font-semibold leading-tight" data-testid="billing-total">{money(total)}</div>
               <p className="mt-1 text-sm" data-testid="billing-counts">
-                <span className="font-semibold text-ok-ink">{clean.length} ready to approve</span>
-                {flagged.length ? <>, <button type="button" data-read className="font-semibold text-warn-ink underline-offset-2 hover:underline" data-testid="show-flagged" onClick={() => setFlaggedOnly(true)}>{flagged.length} need a look ›</button></> : null}.
+                {drafts.length ? <span className="font-semibold text-ok-ink">{clean.length} ready to approve</span> : <span className="font-semibold text-ok-ink">All approved</span>}
+                {flagged.length ? <>, <button type="button" data-read className="font-semibold text-warn-ink underline-offset-2 hover:underline" data-testid="show-flagged" onClick={() => setFlaggedOnly(true)}>{flagged.length} need a look ›</button></> : null}
+                {!drafts.length ? <span>: {[paid ? `${paid} paid` : null, waiting ? `${waiting} waiting on payment` : null, failedN ? `${failedN} failed` : null].filter(Boolean).join(', ') || 'nothing owed'}</span> : null}.
                 {showFees && fees ? <span className="text-muted">{stripeReady ? ` Flake fees ${money(fees)}.` : ` Flake fees ${money(fees)} if charged through Stripe.`}</span> : null}
               </p>
             </div>
-            <Button variant="accent" size="lg" className="w-full sm:w-auto" disabled={busy || !clean.length} data-testid="approve-clean" onClick={() => run(async () => {
-              // The server takes 500 at a time, and a big company can have more lots than that in one storm.
-              for (let i = 0; i < clean.length; i += 500) await api('/api/billing/approve', { body: { draftIds: clean.slice(i, i + 500).map((r) => r.id) } });
-            })}>{clean.length ? `Approve ${clean.length} ready` : 'Nothing ready to approve'}</Button>
+            {/* The one button that matters, only when it can do something. With everything flagged, say what to do instead
+                of showing a disabled button; with everything approved, there's nothing to press. */}
+            {clean.length ? (
+              <Button variant="accent" size="lg" className="w-full sm:w-auto" disabled={busy} data-testid="approve-clean" onClick={() => run(async () => {
+                // The server takes 500 at a time, and a big company can have more lots than that in one storm.
+                for (let i = 0; i < clean.length; i += 500) await api('/api/billing/approve', { body: { draftIds: clean.slice(i, i + 500).map((r) => r.id) } });
+              })}>Approve {clean.length} ready</Button>
+            ) : drafts.length ? <p className="max-w-xs text-sm text-muted" data-testid="approve-none">Fix or waive the flags on the bills below, then approve them.</p> : null}
           </div>
           {tierCount('money') || tierCount('proof') ? (
             <p className="mt-3 border-t border-line-faint pt-3 text-sm" data-testid="flag-tiers">
               {tierCount('money') ? <><b className="text-danger">{tierCount('money')} with money at risk</b> ({tierWhy('money')}). </> : null}
               {tierCount('proof') ? <><b>{proofCount === 1 ? '1 visit' : `${proofCount} visits`} missing proof</b> ({tierWhy('proof')}). Waive if you know the work was done.</> : null}
+              {/* One tap instead of one per bill, when the same small gap is on many (phones with location off, say). */}
+              {waivable.length > 1 && !readOnly ? <Button size="sm" variant="outline" className="ml-2 mt-1" disabled={busy} data-testid="waive-all-proof" onClick={async () => {
+                if (!(await ask({ title: `Waive ${waivable.length} missing-proof flags?`, body: 'Do this only if you know the work was done. The bills stay in review for you to approve, and each waived flag stays on the bill as waived.', confirm: `Waive ${waivable.length}` }))) return;
+                await run(async () => {
+                  for (const f of waivable) await api('/api/billing/fix', { body: { storm_id: stormId, action: 'waive', flag_key: flagKey(f) } });
+                });
+              }}>Waive all {waivable.length}</Button> : null}
             </p>
           ) : null}
           <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-faint pt-3">

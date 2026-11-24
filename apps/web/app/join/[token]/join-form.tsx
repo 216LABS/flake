@@ -20,7 +20,7 @@ const T = {
     nothing: 'There is nothing to install, and you can close this page.',
     intro: "Route links open in your phone's browser with no app and no login. While your route page is open and a storm is active, it uses your location to prompt you when you arrive and to record your arrival. It doesn't track you in the background.",
     mobile: 'Your mobile number',
-    hasPhone: (company: string) => `${company} already has a number for you. Enter yours here only if it's different.`,
+    hasPhone: (company: string, last4?: string | null) => last4 ? `${company} has your number ending in ${last4}. Leave this empty unless that's wrong.` : `${company} already has a number for you. Enter yours here only if it's different.`,
     noPhone: 'Your route links come to this number by text.',
     badPhone: 'Enter a 10-digit US mobile number.',
     join: 'Join',
@@ -37,7 +37,7 @@ const T = {
     nothing: 'No hay nada que instalar y puedes cerrar esta página.',
     intro: 'Los enlaces de ruta se abren en el navegador de tu teléfono, sin app y sin iniciar sesión. Mientras tu página de ruta está abierta y hay una tormenta activa, usa tu ubicación para avisarte cuando llegas y para registrar tu llegada. No te rastrea en segundo plano.',
     mobile: 'Tu número de celular',
-    hasPhone: (company: string) => `${company} ya tiene un número tuyo. Escribe el tuyo aquí solo si es otro.`,
+    hasPhone: (company: string, last4?: string | null) => last4 ? `${company} tiene tu número que termina en ${last4}. Déjalo vacío salvo que esté mal.` : `${company} ya tiene un número tuyo. Escribe el tuyo aquí solo si es otro.`,
     noPhone: 'Tus enlaces de ruta llegan a este número por texto.',
     badPhone: 'Escribe un número de celular de EE. UU. de 10 dígitos.',
     join: 'Unirme',
@@ -48,7 +48,7 @@ const T = {
  * A driver joins the crew: their mobile, and whether they agree to route links by text (D16: drivers get texts, never
  * email). Saying no still joins; the office then shows them the route's QR code.
  */
-export function JoinForm({ token, company, name, hasPhone, consentText, canText, joined = false, expired = false, lang = 'en' }: { expired?: boolean; token: string; company: string; name: string; hasPhone: boolean; consentText: string; email?: string; canText: boolean; joined?: boolean; lang?: Lang }) {
+export function JoinForm({ token, company, name, hasPhone, phoneLast4 = null, consentText, canText, joined = false, expired = false, lang = 'en' }: { expired?: boolean; token: string; company: string; name: string; hasPhone: boolean; phoneLast4?: string | null; consentText: string; email?: string; canText: boolean; joined?: boolean; lang?: Lang }) {
   const t = T[lang];
   const [consent, setConsent] = useState(false);
   const [phone, setPhone] = useState('');
@@ -85,8 +85,8 @@ export function JoinForm({ token, company, name, hasPhone, consentText, canText,
             <p className="mt-2 text-sm text-muted">{t.intro}</p>
             <div className="mt-4">
               <Label htmlFor="join-phone">{t.mobile}</Label>
-              <Input id="join-phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="(216) 555-0101" value={phone} onChange={(e) => setPhone(e.target.value)} data-testid="join-phone" aria-describedby="join-phone-hint" />
-              <p id="join-phone-hint" className="mt-1 text-xs text-muted">{hasPhone ? t.hasPhone(company) : t.noPhone}</p>
+              <Input id="join-phone" type="tel" inputMode="tel" autoComplete="tel" placeholder={hasPhone ? '' : '(216) 555-0101'} value={phone} onChange={(e) => setPhone(e.target.value)} data-testid="join-phone" aria-describedby="join-phone-hint" />
+              <p id="join-phone-hint" className="mt-1 text-xs text-muted">{hasPhone ? t.hasPhone(company, phoneLast4) : t.noPhone}</p>
               {!phoneOk ? <p className="mt-1 text-xs text-danger">{t.badPhone}</p> : null}
             </div>
             <label className="mt-4 flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={consent} onChange={(e) => setConsent(e.target.checked)} data-testid="crew-consent" /> {consentText}</label>

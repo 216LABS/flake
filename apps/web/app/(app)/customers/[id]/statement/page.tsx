@@ -38,21 +38,22 @@ export default async function Statement({ params, searchParams }: { params: Prom
         <PrintButton />
         <ButtonA size="lg" href={`/api/customers/${c.id}/statement?from=${from}&to=${to}`} data-testid="statement-csv">Download CSV</ButtonA>
       </form>
+      {/* Stacked on a phone: five columns don't fit 390 px, and the balance was cut off (journey walk, Nov 23). */}
       <Card className="max-w-3xl">
-        <Table>
+        <Table stack>
           <thead><tr><Th>Date</Th><Th>What</Th><Th className="text-right">Charge</Th><Th className="text-right">Payment</Th><Th className="text-right">Balance</Th></tr></thead>
           <tbody>
-            <tr><Td>{day(from)}</Td><Td>Opening balance</Td><Td /><Td /><Td className="text-right tabular" data-testid="statement-opening">{money(s.opening)}</Td></tr>
+            <tr><Td className="font-medium">{day(from)}</Td><Td label="What">Opening balance</Td><Td className="max-md:hidden" /><Td className="max-md:hidden" /><Td label="Balance" className="text-right tabular" data-testid="statement-opening">{money(s.opening)}</Td></tr>
             {s.lines.map((l, i) => (
               <tr key={i} data-testid="statement-line">
-                <Td>{day(l.day)}</Td>
-                <Td className="wrap-anywhere">{l.description}<span className="block text-xs text-muted">{l.ref}</span></Td>
-                <Td className="text-right tabular">{l.kind === 'bill' ? money(l.cents) : ''}</Td>
-                <Td className="text-right tabular">{l.kind === 'payment' ? money(l.cents) : ''}</Td>
-                <Td className="text-right tabular">{money(l.balance)}</Td>
+                <Td className="font-medium">{day(l.day)}</Td>
+                <Td label="What" className="wrap-anywhere">{l.description}<span className="block text-xs text-muted">{l.ref}</span></Td>
+                <Td label="Charge" className={l.kind === 'bill' ? 'text-right tabular' : 'text-right tabular max-md:hidden'}>{l.kind === 'bill' ? money(l.cents) : ''}</Td>
+                <Td label="Payment" className={l.kind === 'payment' ? 'text-right tabular' : 'text-right tabular max-md:hidden'}>{l.kind === 'payment' ? money(l.cents) : ''}</Td>
+                <Td label="Balance" className="text-right tabular">{money(l.balance)}</Td>
               </tr>
             ))}
-            <tr className="font-semibold"><Td>{day(to)}</Td><Td>Balance due</Td><Td /><Td /><Td className="text-right tabular" data-testid="statement-closing">{money(s.closing)}</Td></tr>
+            <tr className="font-semibold"><Td>{day(to)}</Td><Td label="What">Balance due</Td><Td className="max-md:hidden" /><Td className="max-md:hidden" /><Td label="Balance" className="text-right tabular" data-testid="statement-closing">{money(s.closing)}</Td></tr>
           </tbody>
         </Table>
       </Card>

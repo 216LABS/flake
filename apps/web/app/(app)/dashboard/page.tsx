@@ -29,7 +29,9 @@ export default async function Dashboard() {
   const tz = ctx.tenant.timezone;
   const data = await asUser(ctx, async (tx) => ({
     alerts: await tx.select().from(trigger_alert).where(eq(trigger_alert.status, 'open')).orderBy(desc(trigger_alert.created_at)).limit(10),
-    recent: await tx.select({ id: storm.id, name: storm.name, started_at: storm.started_at, status: storm.status, billedNothing: sql<boolean>`not exists (select 1 from invoice_draft d where d.storm_id = ${storm.id} and d.status <> 'void')` }).from(storm).where(sql`${storm.status} <> 'active'`).orderBy(desc(storm.started_at)).limit(5),
+    // "storm"."id" by name: in a one-table select, Drizzle writes ${storm.id} as a bare "id", which inside the
+    // subquery means the bill's own id, so every billed storm read "Closed, no bills" (journey walk, Nov 23).
+    recent: await tx.select({ id: storm.id, name: storm.name, started_at: storm.started_at, status: storm.status, billedNothing: sql<boolean>`not exists (select 1 from invoice_draft d where d.storm_id = "storm"."id" and d.status <> 'void')` }).from(storm).where(sql`${storm.status} <> 'active'`).orderBy(desc(storm.started_at)).limit(5),
     // Active customers decide the first-run card, Start a storm and the checklist; archived ones only change the words (issue 139).
     customers: await tx.select({ n: sql<number>`(count(*) filter (where ${customer.archived_at} is null))::int`, all: sql<number>`count(*)::int` }).from(customer),
     crew: await tx.select({ n: sql<number>`count(*)::int` }).from(crew_member).where(eq(crew_member.active, true)),
@@ -168,8 +170,8 @@ export default async function Dashboard() {
           )}
         </section>
       )}
-      {/* Not mid-storm: the storm is what matters then (UX pass, Nov 23). */}
-      {data.storms.billed === 0 && canEdit && !data.live.length ? <HowItWorks step={step} /> : null}
+      {/* Not mid-storm, and not beside Finish setup, which already says what to do next (UX pass, Nov 23). */}
+      {data.storms.billed === 0 && canEdit && !data.live.length && !showSetup ? <HowItWorks step={step} /> : null}
       <div className={`grid grid-cols-1 gap-6 ${showSetup ? 'lg:grid-cols-3' : ''}`}>
         <div className={`space-y-6 ${showSetup ? 'lg:col-span-2' : ''}`}>
           {/* (b) Snow alerts: the one section that says so when it's empty. */}
@@ -255,7 +257,7 @@ export default async function Dashboard() {
                   {s.done ? (
                     <span className="flex items-start gap-2 text-muted"><span aria-hidden="true" className="text-ok-ink">✓</span><span><span className="sr-only">Done: </span>{s.text}</span></span>
                   ) : (
-                    <span className="flex items-start gap-2"><span aria-hidden="true" className="text-faint">○</span><span><Link className={entityLink} href={s.href}>{s.text}</Link>{s.optional ? <span className="text-muted"> (optional)</span> : null}{s.more ? <ButtonLink size="sm" variant="ghost" className="-ml-3 mt-0.5 flex w-fit" href={s.more.href}>{s.more.text}</ButtonLink> : null}</span></span>
+                    <span className="flex items-start gap-2"><span aria-hidden="true" className="text-faint">○</span><span><Link className={entityLink} href={s.href}>{s.text}<span aria-hidden="true" className="ml-1 text-muted">›</span></Link>{s.optional ? <span className="text-muted"> (optional)</span> : null}{s.more ? <ButtonLink size="sm" variant="ghost" className="-ml-3 mt-0.5 flex w-fit" href={s.more.href}>{s.more.text}</ButtonLink> : null}</span></span>
                   )}
                 </li>
               ))}

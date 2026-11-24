@@ -66,3 +66,21 @@ test('renewals: Renew all asks once, then makes a draft for every lot on the lis
   // Put the demo back: the drafts this made go.
   await sql`delete from contract where tenant_id = ${t!.id} and status = 'draft' and created_at > now() - interval '5 minutes'`;
 });
+
+test('dashboard: a billed storm with bills reads Billed, not "Closed, no bills" (journey walk)', async ({ page }, info) => {
+  once(info.project.name);
+  await login(page);
+  const [t] = await sql`select id from tenant where slug = 'lakeshore-demo'`;
+  const [c] = await sql`select id from customer where tenant_id = ${t!.id} and archived_at is null limit 1`;
+  const name = `Billed ${Date.now()}`;
+  const [s] = await sql`insert into storm (tenant_id, name, started_at, closed_at, status) values (${t!.id}, ${name}, now() + interval '1 hour', now() + interval '2 hours', 'billed') returning id`;
+  await sql`insert into invoice_draft (tenant_id, storm_id, customer_id, lines, subtotal_cents, flags, status) values (${t!.id}, ${s!.id}, ${c!.id}, '[]'::jsonb, 5000, '[]'::jsonb, 'approved')`;
+  try {
+    await page.goto('/dashboard');
+    await expect(page.locator('tr', { hasText: name })).toContainText('Billed');
+    await expect(page.locator('tr', { hasText: name })).not.toContainText('no bills');
+  } finally {
+    await sql`delete from invoice_draft where storm_id = ${s!.id}`;
+    await sql`delete from storm where id = ${s!.id}`;
+  }
+});

@@ -27,6 +27,8 @@ export function AlertActions({ alertId, status, routeIds, siteIds, name }: { ale
   return (
     <div>
       {dialog}
+      {/* After Start storm the buttons change; say so, so it's clear the storm exists and nothing has gone out yet. */}
+      {stormId ? <p className="mb-3 rounded-md bg-ok-tint p-3 text-sm font-medium text-ok-ink" role="status" data-testid="storm-started">Storm started. Nothing has gone to drivers yet: send them their routes now, or open the board to check first.</p> : null}
       <div className="flex flex-wrap gap-2">
         {!stormId ? (
           <>

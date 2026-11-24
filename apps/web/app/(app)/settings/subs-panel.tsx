@@ -3,6 +3,7 @@
 import { Button, Card, Input, Label, Select } from '@flake/ui';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
+import { useConfirm } from '@/components/confirm';
 import { ButtonA } from '@/components/links';
 import { CopyLink } from '@/components/text-it';
 import { api, money } from '@/lib/client';
@@ -54,6 +55,7 @@ export function SubsPanel({ subs, lots, drivers, block, owner, pro }: { subs: Su
 }
 
 function SubRow({ sub, lots, drivers, pro, run }: { sub: Sub; lots: Lot[]; drivers: Driver[]; pro: boolean; run: (fn: () => Promise<unknown>, ok?: string) => Promise<void> }) {
+  const [ask, dialog] = useConfirm();
   const [pickDriver, setPickDriver] = useState('');
   const [giving, setGiving] = useState(false);
   const [filter, setFilter] = useState('');
@@ -70,8 +72,6 @@ function SubRow({ sub, lots, drivers, pro, run }: { sub: Sub; lots: Lot[]; drive
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold">{sub.name}</span>
         <span className="text-muted">{sub.drivers.length} driver{sub.drivers.length === 1 ? '' : 's'}, {sub.lots} lot{sub.lots === 1 ? '' : 's'}</span>
-        <span className="flex-1" />
-        <Button size="sm" variant="ghost" data-testid="sub-archive" onClick={() => { if (confirm(`Archive ${sub.name}? Its lots go back to your routes and its portal link stops working.`)) void run(() => api(`/api/subs/${sub.id}`, { method: 'PATCH', body: { archived: true } }), 'Archived'); }}>Archive</Button>
       </div>
       <p className="mt-1">Drivers: {sub.drivers.length ? sub.drivers.map((d) => d.name).join(', ') : 'none yet'}.</p>
       <div className="mt-1 flex flex-wrap items-end gap-2">
@@ -121,6 +121,11 @@ function SubRow({ sub, lots, drivers, pro, run }: { sub: Sub; lots: Lot[]; drive
           <p className="text-xs" data-testid="sub-statement-answer">{st.answer ? (st.answer.status === 'acknowledged' ? 'The sub said this looks right.' : `The sub disputed ${st.answer.disputed_line ? `"${st.answer.disputed_line}"` : 'a line'}: ${st.answer.note ?? ''}`) : 'The sub hasn’t answered for these dates yet.'}</p>
         </div>
       ) : null}
+      {/* Rare and it moves their lots back: last in the row, with the app's own dialog. */}
+      <div className="mt-3 border-t border-line-faint pt-2">
+        {dialog}
+        <Button size="sm" variant="ghost" data-testid="sub-archive" onClick={async () => { if (await ask({ title: `Archive ${sub.name}?`, body: 'Its lots go back to your routes and its portal link stops working.', confirm: 'Archive', danger: true })) void run(() => api(`/api/subs/${sub.id}`, { method: 'PATCH', body: { archived: true } }), 'Archived'); }}>Archive this sub company</Button>
+      </div>
     </li>
   );
 }

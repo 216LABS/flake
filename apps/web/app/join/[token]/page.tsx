@@ -18,5 +18,5 @@ export default async function Join({ params }: { params: Promise<{ token: string
   if (!row.crew.joined_at && inviteExpired(token)) return <JoinForm token={token} company={row.tenant.name} name={row.crew.name} hasPhone={false} consentText="" email="" canText={false} expired lang={lang} />;
   // Already joined: say so, and don't show the driver's email to whoever else has the link (issue 133).
   if (row.crew.joined_at) return <JoinForm token={token} company={row.tenant.name} name={row.crew.name} hasPhone={false} consentText="" email="" canText={false} joined lang={lang} />;
-  return <JoinForm token={token} company={row.tenant.name} name={row.crew.name} hasPhone={Boolean(row.crew.phone_e164)} consentText={CREW_CONSENT_TEXT(row.tenant.name, lang)} email={row.crew.email ?? ''} canText={canTextFrom(row.tenant)} lang={lang} />;
+  return <JoinForm token={token} company={row.tenant.name} name={row.crew.name} hasPhone={Boolean(row.crew.phone_e164)} phoneLast4={row.crew.phone_e164?.slice(-4) ?? null} consentText={CREW_CONSENT_TEXT(row.tenant.name, lang)} email={row.crew.email ?? ''} canText={canTextFrom(row.tenant)} lang={lang} />;
 }

@@ -191,7 +191,9 @@ export function CrewPanel({ crew, canText = true, cover = {} }: { crew: any[]; c
         {!editing ? <ButtonLink href="/settings/crew-import" className="ml-2 mt-3" data-testid="crew-import-link">Import crew</ButtonLink> : null}
         {msg ? <p className="mt-2 text-sm text-muted" data-testid="crew-msg">{msg}</p> : null}
         {invite ? (
-          <div className="mt-2">
+          // The next step after Invite, set apart so it doesn't read as more of the form (journey walk, Nov 23).
+          <div className="mt-4 rounded-md border border-ok-line bg-ok-tint p-3" data-testid="invite-result">
+            <p className="mb-2 font-semibold text-ok-ink">Invited. Now get them this link.</p>
             <Label>Join link</Label>
             <Input readOnly value={invite} data-testid="invite-url" onFocus={(e) => e.target.select()} />
             {inviteQr ? <img src={inviteQr} alt="QR code for the join link" width={160} height={160} className="mt-2 rounded-sm bg-white p-1" data-testid="invite-qr" /> : null}

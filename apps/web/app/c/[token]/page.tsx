@@ -134,7 +134,13 @@ export default async function Portal({ params }: { params: Promise<{ token: stri
               {s.packets.length ? (
                 <p className="mt-3 text-sm" data-testid="portal-packets">
                   Signed service records (PDF):{' '}
-                  {s.packets.map((p) => <span key={p.id} className="mr-2 inline-block"><ButtonA size="sm" className="mt-1" href={`/api/c/${token}/packet/${p.id}`}>{fmtLocal(p.from, tz, { month: 'short', day: 'numeric', year: 'numeric' })} to {fmtLocal(p.to, tz, { month: 'short', day: 'numeric', year: 'numeric' })} (PDF)</ButtonA></span>)}
+                  {/* One button per date range, the newest packet for it: the office may remake a packet, and three
+                      identical "Dec 1 to Dec 31" buttons read as a mistake (journey walk, Nov 23). */}
+                  {(() => {
+                    const range = (p: { from: string | Date; to: string | Date }) => `${fmtLocal(p.from, tz, { month: 'short', day: 'numeric', year: 'numeric' })} to ${fmtLocal(p.to, tz, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+                    const seen = new Set<string>();
+                    return s.packets.filter((p) => !seen.has(range(p)) && Boolean(seen.add(range(p)))).map((p) => <span key={p.id} className="mr-2 inline-block"><ButtonA size="sm" className="mt-1" href={`/api/c/${token}/packet/${p.id}`}>{range(p)} (PDF)</ButtonA></span>);
+                  })()}
                 </p>
               ) : null}
             </section>

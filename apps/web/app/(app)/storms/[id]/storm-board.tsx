@@ -405,8 +405,9 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
           <ul className="mt-2 grid gap-2 text-sm md:grid-cols-2 xl:grid-cols-3" data-testid="alerts-rail">
             {live.alerts.map((a: any, i: number) => (
               <li key={i} className={cn('flex flex-wrap items-center gap-2 rounded-md p-2', a.kind === 'late' || a.kind === 'problem' ? 'bg-danger-tint text-danger-ink' : 'bg-warn-tint text-warn-ink')}>
-                <span className="min-w-0 flex-1">{a.text}</span>
-                {a.problem_id ? <Button size="sm" variant="ghost" data-testid="resolve-problem" onClick={() => act(() => api(`/api/problems/${a.problem_id}`, { method: 'PATCH' }))}>Resolved</Button> : null}
+                <span className="min-w-0 flex-1">{String(a.text).charAt(0).toUpperCase() + String(a.text).slice(1)}</span>
+                {/* An action, so it says what it does; "Resolved" alone read like a status. */}
+                {a.problem_id ? <Button size="sm" variant="outline" data-testid="resolve-problem" onClick={() => act(() => api(`/api/problems/${a.problem_id}`, { method: 'PATCH' }))}>Mark resolved</Button> : null}
               </li>
             ))}
           </ul>
