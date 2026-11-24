@@ -69,7 +69,7 @@ async function completionReport(tenantId: string, visitId: string) {
     `Crew: ${row.crew.name}`,
     `GPS at arrival: ${row.visit.arrive_lat === null ? 'unavailable' : `${row.visit.arrive_lat}, ${row.visit.arrive_lon}`}`,
     '',
-    ...(links.length ? ['Photos (links expire shortly after opening):', ...links] : ['No photos on this visit.']),
+    ...(links.length ? ['Photos (these links keep working; open them any time):', ...links] : ['No photos on this visit.']),
   ].join('\n');
   await sendEmail(row.tenant, { to: row.customer.email, template: 'completion_report', subject: `${row.tenant.name}: service record, ${row.site.label}`, text, key: `report:${visitId}`, related: { site_id: row.site.id, visit_id: visitId, storm_id: row.visit.storm_id } });
 }

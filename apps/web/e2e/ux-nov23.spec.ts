@@ -84,3 +84,27 @@ test('dashboard: a billed storm with bills reads Billed, not "Closed, no bills" 
     await sql`delete from storm where id = ${s!.id}`;
   }
 });
+
+test('a photo link from a text opens a page with the company, the lot and when it was cleared, not a bare image', async ({ page }, info) => {
+  once(info.project.name);
+  const [p] = await sql`select ph.id, ph.tenant_id, s.label from visit_photo ph join visit v on v.id = ph.visit_id join site s on s.id = v.site_id join tenant t on t.id = ph.tenant_id where t.slug = 'lakeshore-demo' order by ph.received_at desc limit 1`;
+  test.skip(!p, 'needs a visit photo');
+  const code = `t${Date.now().toString(36)}`;
+  await sql`insert into short_link (code, tenant_id, target) values (${code}, ${p!.tenant_id}, ${`photo:${p!.id}`})`;
+  try {
+    await page.goto(`/s/${code}`);
+    await page.waitForURL(`**/photo/${code}`);
+    await expect(page.getByTestId('photo-site')).toHaveText(p!.label as string);
+    await expect(page.getByTestId('photo-when')).toContainText(/Cleared|Visited/);
+    await expect(page.getByTestId('photo-figure').first()).toBeVisible();
+    // The image itself is still there for anyone who wants the file.
+    const raw = await page.request.get(`/s/${code}?raw=1`, { maxRedirects: 0 });
+    expect(raw.status()).toBe(307);
+    expect(raw.headers().location).toContain('/storage/');
+    // A team invite lands on sign-in with a line saying why.
+    await page.goto('/login?invited=1');
+    await expect(page.getByTestId('login-invited')).toBeVisible();
+  } finally {
+    await sql`delete from short_link where code = ${code}`;
+  }
+});

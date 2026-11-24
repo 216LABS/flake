@@ -20,7 +20,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
   const db = serviceDb();
   const [link] = await db.select().from(short_link).where(eq(short_link.code, code));
   if (!link) return new NextResponse('This link is not valid.', { status: 404 });
+  // A photo opens a page with the company, the lot, the time and the visit's photos (journey walk, Nov 23). ?raw=1 still
+  // gives the image itself.
   if (link.target.startsWith('photo:')) {
+    if (new URL(req.url).searchParams.get('raw') !== '1') return NextResponse.redirect(new URL(`/photo/${code}`, baseUrl()));
     const [p] = await db.select().from(visit_photo).where(and(eq(visit_photo.id, link.target.slice(6)), eq(visit_photo.tenant_id, link.tenant_id)));
     const url = p && (await visitPhotoUrl(p, false));
     if (!url) return new NextResponse('This photo is unavailable.', { status: 404 });

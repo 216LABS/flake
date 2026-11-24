@@ -51,7 +51,7 @@ export async function addMember(tenantId: string, email: string, role: MemberRol
     await tx.insert(membership).values({ tenant_id: tenantId, user_id: uid, role, branch_ids });
   });
   const [t] = await db.select().from(tenant).where(eq(tenant.id, tenantId));
-  await queueNotify(tenantId, { email: address }, { template: 'team_invite', vars: { link: `${baseUrl()}/login` }, subject: `${t!.name} added you to Flake`, key: `team_invite:${userId}` });
+  await queueNotify(tenantId, { email: address }, { template: 'team_invite', vars: { link: `${baseUrl()}/login?invited=1` }, subject: `${t!.name} added you to Flake`, key: `team_invite:${userId}` });
   return { user_id: userId };
 }
 
@@ -65,7 +65,7 @@ export async function resendInvite(tenantId: string, userId: string) {
   if (row.last_sign_in_at) throw new HttpError(409, 'They have already signed in. They can sign in any time at the sign-in page.', 'signed_in');
   const [t] = await db.select().from(tenant).where(eq(tenant.id, tenantId));
   // A fresh key per press, a minute apart, so a resend actually sends and a double tap doesn't send twice.
-  await queueNotify(tenantId, { email: row.email }, { template: 'team_invite', vars: { link: `${baseUrl()}/login` }, subject: `${t!.name} added you to Flake`, key: `team_invite:${userId}:${Math.floor(Date.now() / 60_000)}` });
+  await queueNotify(tenantId, { email: row.email }, { template: 'team_invite', vars: { link: `${baseUrl()}/login?invited=1` }, subject: `${t!.name} added you to Flake`, key: `team_invite:${userId}:${Math.floor(Date.now() / 60_000)}` });
   return { ok: true };
 }
 

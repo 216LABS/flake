@@ -8,7 +8,7 @@ import { NEXT_COOKIE } from '@/lib/next-path';
 import { browserSupabase, SsoButtons, type SsoProvider } from '@/components/sso-buttons';
 import { AuthShell } from '../auth-shell';
 
-export function LoginForm({ demo, next = '/dashboard', providers = [], initialError = null }: { demo: boolean; next?: string; providers?: SsoProvider[]; initialError?: string | null }) {
+export function LoginForm({ demo, next = '/dashboard', providers = [], initialError = null, invited = false }: { demo: boolean; next?: string; providers?: SsoProvider[]; initialError?: string | null; invited?: boolean }) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
@@ -61,6 +61,8 @@ export function LoginForm({ demo, next = '/dashboard', providers = [], initialEr
   };
   return (
     <AuthShell>
+        {/* From a team invite email: say why they're here and which address to use (journey walk, Nov 23). */}
+        {invited ? <p className="mb-4 rounded-md bg-ok-tint p-3 text-sm text-ok-ink" role="status" data-testid="login-invited">You&apos;ve been added to your company&apos;s Flake. Sign in with the email address this invite came to.</p> : null}
         <h1 className="font-display text-3xl font-semibold tracking-tight">Sign in to Flake</h1>
         <p className="mt-1 text-sm text-muted">{providers.length ? 'Use your work Microsoft or Google account, or your email.' : 'We’ll email you a link. There is no password to remember.'}</p>
         {!sent && providers.length ? (
