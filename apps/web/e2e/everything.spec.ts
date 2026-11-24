@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
-import { SEASON, finishStops, login, routeByName, sql, startStorm, type LiveRun } from './helpers';
+import { SEASON, finishStops, login, routeByName, sql, startStorm, type LiveRun, openQuoteForm } from './helpers';
 
 /**
  * The controls a one-press crawl can't reach: anything that needs earlier steps first, and every way back out of a
@@ -175,6 +175,7 @@ test('site: retire can be cancelled, every quote type sends, and edits save', as
   await login(page);
   const { site } = await newCustomerSite(page, `Site ${Date.now()}`);
   await page.goto(`/sites/${site.id}`);
+  await openQuoteForm(page);
   await page.getByTestId('retire').click();
   await expect(page.getByTestId('retire-confirm')).toBeVisible();
   await page.getByRole('button', { name: 'Cancel' }).click();

@@ -25,9 +25,10 @@ export default async function StormPage({ params }: { params: Promise<{ id: stri
   const sites = await asUser(ctx, (tx) => lotOptions(tx));
   return (
     <>
+      {/* Billing and Sub pay are for after the storm: quiet links while it runs, buttons once it's closed (UX pass, Nov 23). */}
       <PageHeader title={live.storm.name} actions={seesMoney(ctx.memberRole ?? ctx.role) ? <>
-        <Link className={buttonVariants({ variant: 'outline' })} href={`/billing?storm=${id}`}>Billing</Link>
-        <Link className={buttonVariants({ variant: 'outline' })} href={`/storms/${id}/pay`}>Sub pay</Link>
+        <Link className={buttonVariants({ variant: live.storm.status === 'active' ? 'ghost' : 'outline', size: live.storm.status === 'active' ? 'sm' : 'md' })} href={`/billing?storm=${id}`}>Billing</Link>
+        <Link className={buttonVariants({ variant: live.storm.status === 'active' ? 'ghost' : 'outline', size: live.storm.status === 'active' ? 'sm' : 'md' })} href={`/storms/${id}/pay`}>Sub pay</Link>
       </> : null} />
       <StormBoard stormId={id} tz={ctx.tenant.timezone} initial={JSON.parse(JSON.stringify(live))} layers={tiles.layers()} canEdit={ctx.role !== 'viewer'} canText={canTextFrom(ctx.tenant)} sites={sites} />
     </>

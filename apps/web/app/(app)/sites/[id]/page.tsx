@@ -4,6 +4,7 @@ import { SiteWalk } from './site-walk';
 import { contract, customer, desc, eq, site, site_pin, site_walk_item } from '@flake/db';
 import { Badge, buttonVariants, PageHeader } from '@flake/ui';
 import Link from 'next/link';
+import { Fold } from '@/components/fold';
 import { proseLink } from '@/components/links';
 import { ServiceChips, SERVICES_FROM } from '@/components/service-chips';
 import { ButtonA } from '@/components/links';
@@ -58,13 +59,16 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
         <p className="mt-1 text-xs text-muted">{SERVICES_FROM}</p>
       </section>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="space-y-3 lg:col-span-2"><fieldset disabled={!canEdit} className={canEdit ? 'contents' : 'view-only contents'}><SiteEditor site={JSON.parse(JSON.stringify(s))} pins={JSON.parse(JSON.stringify(pins))} layers={tiles.layers()} /></fieldset><SiteWalk siteId={s.id} canEdit={canEdit} tz={ctx.tenant.timezone} season={quotingSeason(new Date(), ctx.tenant.timezone)} items={walk.map((w) => ({ id: w.id, season: w.season, kind: w.kind, note: w.note, has_photo: Boolean(w.photo_path), taken_at: w.taken_at }))} /><RationAreas siteId={s.id} canEdit={canEdit} initial={(await rationAreas([s.id])).get(s.id) ?? []} /><RetireSite siteId={s.id} customerId={c.id} active={Boolean(s.active)} canEdit={canEdit} /></div>
+        <div className="space-y-3 lg:col-span-2"><fieldset disabled={!canEdit} className={canEdit ? 'contents' : 'view-only contents'}><SiteEditor site={JSON.parse(JSON.stringify(s))} pins={JSON.parse(JSON.stringify(pins))} layers={tiles.layers()} /></fieldset><SiteWalk siteId={s.id} canEdit={canEdit} tz={ctx.tenant.timezone} season={quotingSeason(new Date(), ctx.tenant.timezone)} items={walk.map((w) => ({ id: w.id, season: w.season, kind: w.kind, note: w.note, has_photo: Boolean(w.photo_path), taken_at: w.taken_at }))} /><RationAreas siteId={s.id} canEdit={canEdit} initial={(await rationAreas([s.id])).get(s.id) ?? []} /></div>
         <div className="space-y-4">
         {await (async () => { const r = (await asUser(ctx, (tx) => seasonTerms(tx, ctx.tenant.timezone))).rows.find((x) => x.site_id === s.id); return r ? <p className="mb-2 rounded-md bg-tint p-2 text-sm" data-testid="site-season-terms">This season: {r.included ? `${r.pushes} of ${r.included} included pushes used` : `${r.pushes} pushes`}{r.minimum_cents ? `, ${money(r.billed_cents)} billed of the ${money(r.minimum_cents)} minimum` : ''}.</p> : null; })()}<ContractList contracts={JSON.parse(JSON.stringify(contracts.map((k, n) => ({ id: k.id, status: k.status, season: k.season, services: k.services, salt_pricing: k.salt_pricing, accepted_name: k.accepted_name, accepted_at: k.accepted_at, created_at: k.created_at, installments_billed: k.installments_billed, quote_url: quoteUrl(k), quote_share: quoteUrl(k) ? quoteShare(ctx.tenant.name, quoteUrl(k)!, c.phone_e164) : null, decline_reason: k.decline_reason, prior: priors[n], in_force: k.id === inForceId && (contracts.filter((x) => x.status === 'accepted').length > 1 || standing?.tone === 'amber') }))))} canEdit={canEdit} pdf={pdf} />
         {/* A retired lot can't be quoted; restore it first. */}
-        {s.active && canEdit ? <div id="quote" className="scroll-mt-20"><NewQuote siteId={s.id} defaultSeason={quotingSeason(new Date(), ctx.tenant.timezone)} saltCents={((ctx.tenant.rate_card as { salt_bag_cents?: number }).salt_bag_cents) ?? 1800} signedSeasons={contracts.filter((k) => k.status === 'accepted').map((k) => k.season)} defaultTrigger={await defaultTrigger(ctx.tenantId)} suggested={suggested} /></div> : null}
+        {/* With a signed contract in force, a new quote is the rare case: one line until wanted (UX pass, Nov 23). */}
+        {s.active && canEdit ? <div id="quote" className="scroll-mt-20"><Fold folded={Boolean(inForceId)} label="Send a new quote" hash="quote" testId="quote-fold"><NewQuote siteId={s.id} defaultSeason={quotingSeason(new Date(), ctx.tenant.timezone)} saltCents={((ctx.tenant.rate_card as { salt_bag_cents?: number }).salt_bag_cents) ?? 1800} signedSeasons={contracts.filter((k) => k.status === 'accepted').map((k) => k.season)} defaultTrigger={await defaultTrigger(ctx.tenantId)} suggested={suggested} /></Fold></div> : null}
         </div>
       </div>
+      {/* Retiring a lot is rare and final-feeling, so it sits at the very end, not between everyday sections. */}
+      <div className="mt-8 border-t border-line-faint pt-4"><RetireSite siteId={s.id} customerId={c.id} active={Boolean(s.active)} canEdit={canEdit} /></div>
     </>
   );
 }

@@ -118,27 +118,44 @@ export function BillingReview({ stormId, initial, canExport, showFees, stormActi
           Stripe isn&apos;t connected, so approving doesn&apos;t charge anyone. Approve, then send each customer their link ({sending ? 'Send bill, or ' : ''}copy it or text it from your phone), and press Mark paid when the money comes in.{paymentsAvailable ? <> To take cards, connect Stripe in <a className={proseLink} href="/settings?tab=payments">Settings, Payments</a>.</> : null}
         </p>
       ) : null}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Button variant="accent" disabled={busy || !clean.length} data-testid="approve-clean" onClick={() => run(async () => {
-          // The server takes 500 at a time, and a big company can have more lots than that in one storm.
-          for (let i = 0; i < clean.length; i += 500) await api('/api/billing/approve', { body: { draftIds: clean.slice(i, i + 500).map((r) => r.id) } });
-        })}>Approve all clean ({clean.length})</Button>
-        <label className="ml-2 flex min-h-11 cursor-pointer items-center gap-2 px-1 text-sm"><input type="checkbox" className="size-5" data-testid="flagged-only" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.target.checked)} /> Show flagged only</label>
-        {canExport ? <a className={buttonVariants({ variant: 'outline' })} data-testid="qbo" href={`/api/billing/export.csv?storm=${stormId}`}>QuickBooks CSV (approved)</a> : null}
-        {/* Approve leads; redoing the drafts is the rare one, so it sits last and quiet once there are drafts (UX pass, Nov 23). */}
-        <Button variant={rows.length ? 'ghost' : 'accent'} className={rows.length ? 'sm:ml-auto' : undefined} disabled={busy} data-testid="generate" onClick={() => run(() => api(`/api/storms/${stormId}/billing/draft`, { method: 'POST' }))}>{rows.length ? 'Regenerate drafts' : 'Generate drafts'}</Button>
-      </div>
+      {/* The answer first: how much, how many are ready, how many need a look, and the one button that matters
+          (UX pass, Nov 23). The tools sit underneath, smaller. */}
+      {rows.length ? (
+        <Card className="mb-4" data-testid="billing-summary">
+          <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+            <div className="min-w-0">
+              <div className="text-sm text-muted">{rows.length === 1 ? '1 bill' : `${rows.length} bills`} this storm</div>
+              <div className="font-display tabular text-3xl font-semibold leading-tight" data-testid="billing-total">{money(total)}</div>
+              <p className="mt-1 text-sm" data-testid="billing-counts">
+                <span className="font-semibold text-ok-ink">{clean.length} ready to approve</span>
+                {flagged.length ? <>, <button type="button" data-read className="font-semibold text-warn-ink underline-offset-2 hover:underline" data-testid="show-flagged" onClick={() => setFlaggedOnly(true)}>{flagged.length} need a look ›</button></> : null}.
+                {showFees && fees ? <span className="text-muted">{stripeReady ? ` Flake fees ${money(fees)}.` : ` Flake fees ${money(fees)} if charged through Stripe.`}</span> : null}
+              </p>
+            </div>
+            <Button variant="accent" size="lg" className="w-full sm:w-auto" disabled={busy || !clean.length} data-testid="approve-clean" onClick={() => run(async () => {
+              // The server takes 500 at a time, and a big company can have more lots than that in one storm.
+              for (let i = 0; i < clean.length; i += 500) await api('/api/billing/approve', { body: { draftIds: clean.slice(i, i + 500).map((r) => r.id) } });
+            })}>{clean.length ? `Approve ${clean.length} ready` : 'Nothing ready to approve'}</Button>
+          </div>
+          {tierCount('money') || tierCount('proof') ? (
+            <p className="mt-3 border-t border-line-faint pt-3 text-sm" data-testid="flag-tiers">
+              {tierCount('money') ? <><b className="text-danger">{tierCount('money')} with money at risk</b> ({tierWhy('money')}). </> : null}
+              {tierCount('proof') ? <><b>{proofCount === 1 ? '1 visit' : `${proofCount} visits`} missing proof</b> ({tierWhy('proof')}). Waive if you know the work was done.</> : null}
+            </p>
+          ) : null}
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-faint pt-3">
+            <label className="flex min-h-11 cursor-pointer items-center gap-2 pr-2 text-sm"><input type="checkbox" className="size-5" data-testid="flagged-only" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.target.checked)} /> Only the ones that need a look</label>
+            {canExport ? <a className={buttonVariants({ variant: 'outline', size: 'sm' })} data-testid="qbo" href={`/api/billing/export.csv?storm=${stormId}`}>QuickBooks CSV (approved)</a> : null}
+            <Button size="sm" variant="ghost" className="sm:ml-auto" disabled={busy} data-testid="generate" onClick={() => run(() => api(`/api/storms/${stormId}/billing/draft`, { method: 'POST' }))}>Regenerate drafts</Button>
+          </div>
+        </Card>
+      ) : (
+        <div className="mb-4"><Button variant="accent" disabled={busy} data-testid="generate" onClick={() => run(() => api(`/api/storms/${stormId}/billing/draft`, { method: 'POST' }))}>Generate drafts</Button></div>
+      )}
       {error ? <p className="mb-3 rounded-md bg-danger-tint p-3 text-sm text-danger" role="alert">{error}</p> : null}
       {!rows.length ? (nothingToBill
         ? <EmptyState title="Nothing to bill for this storm" body="Its lots are on seasonal contracts, or were skipped, so no invoice was needed. Seasonal installments bill on their own each month." />
         : <EmptyState title="No drafts yet" body="Generate drafts to price this storm's visits." />) : null}
-      {rows.length ? <p className="mb-3 text-sm text-muted">{flagged.length} flagged, {clean.length} clean and ready. Total {money(total)}.{showFees && fees ? (stripeReady ? ` Flake fees ${money(fees)}.` : ` Flake fees ${money(fees)} if charged through Stripe.`) : ''}</p> : null}
-      {rows.length && (tierCount('money') || tierCount('proof')) ? (
-        <p className="mb-3 text-sm" data-testid="flag-tiers">
-          {tierCount('money') ? <><b className="text-danger">{tierCount('money')} with money at risk</b> ({tierWhy('money')}). </> : null}
-          {tierCount('proof') ? <><b>{proofCount === 1 ? '1 visit' : `${proofCount} visits`} missing proof</b> ({tierWhy('proof')}). Waive if you know the work was done.</> : null}
-        </p>
-      ) : null}
       {unplowed.length ? (
         <Card className="mb-3 border-line" data-testid="unplowed">
           <p className="font-medium">{unplowedSites.length === 1 ? '1 lot was' : `${unplowedSites.length} lots were`} not plowed this storm.</p>

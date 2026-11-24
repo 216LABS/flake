@@ -238,7 +238,8 @@ test('a new plow company runs a whole storm from sign up to paid invoices', asyn
     await open.first().getByTestId('fix-waive').click();
     await expect(open).toHaveCount(left - 1);
   }
-  await expect(page.getByText(/0 flagged, 4 clean/)).toBeVisible();
+  await expect(page.getByTestId('billing-counts')).toHaveText(/^4 ready to approve/);
+  await expect(page.getByTestId('show-flagged')).toHaveCount(0);
   await page.getByTestId('approve-clean').click();
   await expect.poll(async () => (await sql`select count(*)::int as n from invoice_draft where storm_id = ${stormId} and status in ('paid','sent')`)[0]!.n, { timeout: 60000 }).toBe(4);
   const bills = await sql`select c.name, d.status, d.subtotal_cents as total, d.pay_link from invoice_draft d join customer c on c.id = d.customer_id where d.storm_id = ${stormId}`;

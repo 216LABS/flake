@@ -123,16 +123,18 @@ test('two tabs on one customer: a rename survives the other tab saving twice', a
   const b = await (await browser.newContext({ baseURL, storageState: await page.context().storageState() })).newPage();
   await page.goto(`/customers/${c.id}`);
   await b.goto(`/customers/${c.id}`);
+  await page.getByTestId('customer-edit').click();
   await page.locator('#name').fill(`Tabs ${tag} renamed`);
   await page.getByTestId('customer-save').click();
   await expect(page.getByTestId('customer-msg')).toHaveText('Saved');
   for (const who of ['Pat', 'Sam']) {
+    await b.getByTestId('customer-edit').click();
     await b.locator('#contact_name').fill(who);
     await b.getByTestId('customer-save').click();
     await expect(b.getByTestId('customer-msg')).toHaveText('Saved');
   }
   // The tab that never touched the name now shows the rename instead of sending its old copy back.
-  await expect(b.locator('#name')).toHaveValue(`Tabs ${tag} renamed`);
+  await expect(b.getByTestId('customer-name')).toHaveText(`Tabs ${tag} renamed`);
   const [row] = await sql`select name, contact_name from customer where id = ${c.id}`;
   expect([row!.name, row!.contact_name]).toEqual([`Tabs ${tag} renamed`, 'Sam']);
 });

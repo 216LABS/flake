@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { login, sql } from './helpers';
+import { login, sql, openQuoteForm } from './helpers';
 
 /** Issues from STAR's first done-bar pass (#88), at iPhone 13 and iPhone SE sizes. */
 for (const size of [{ width: 390, height: 844 }, { width: 375, height: 667 }]) {
@@ -14,6 +14,7 @@ for (const size of [{ width: 390, height: 844 }, { width: 375, height: 667 }]) {
 
     // Issue 92: "Get link only" makes the quote and sends nothing.
     await page.goto(`/sites/${s.id}`);
+    await openQuoteForm(page);
     await page.getByTestId('q-price').fill('80');
     await page.getByTestId('q-link-only').click();
     const url = await page.getByTestId('q-url').inputValue();
@@ -47,6 +48,7 @@ test('a new quote on a measured lot starts from the rate card price, and follows
   const [s] = await sql`select s.id from site s join tenant t on t.id = s.tenant_id where t.slug = 'lakeshore-demo' and s.active and coalesce(s.area_confirmed_sqft, s.area_estimate_sqft) > 0 limit 1`;
   test.skip(!s, 'no measured lot in the seed');
   await page.goto(`/sites/${s!.id}`);
+  await openQuoteForm(page);
   const price = page.getByTestId('q-price');
   const perPush = await price.inputValue();
   expect(Number(perPush)).toBeGreaterThan(0);

@@ -48,6 +48,8 @@ export function SiteEditor({ site, pins, layers }: { site: any; pins: any[]; lay
   return (
     <Card id="area" className="scroll-mt-20">
       {dialog}
+      {/* A title says what this card is for: where the lot is, and what the driver and the route planner need. */}
+      <h2 className="mb-2 font-semibold">The lot</h2>
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <Button size="sm" variant={mode === 'edit' ? 'accent' : 'outline'} onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}>Draw / edit area</Button>
         <Button size="sm" variant={mode === 'pin' ? 'accent' : 'outline'} onClick={() => setMode(mode === 'pin' ? 'view' : 'pin')}>Drop pin</Button>

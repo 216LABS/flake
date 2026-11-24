@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { finishStops, login, openStartForm, settingsSections, sql, startStorm } from './helpers';
+import { finishStops, login, openQuoteForm, openStartForm, settingsSections, sql, startStorm } from './helpers';
 
 /** A brand new company, signed in through a fresh browser context. */
 async function strangerContext(browser: import('@playwright/test').Browser, baseURL: string | undefined) {
@@ -174,8 +174,9 @@ test('roles: dispatchers run storms but not settings, viewers only look, nobody 
   // Pages read like a report for a viewer: no write buttons that would only fail (issue 131).
   const [someCustomer] = await sql`select c.id, s.id as site_id from customer c join site s on s.customer_id = c.id join tenant t on t.id = c.tenant_id where t.slug = 'lakeshore-demo' and c.archived_at is null limit 1`;
   await viewerPage.goto(`/customers/${someCustomer!.id}`);
-  await expect(viewerPage.locator('#name')).toBeDisabled();
-  await expect(viewerPage.getByTestId('customer-save')).toBeHidden();
+  // A viewer reads the details card and gets no Edit.
+  await expect(viewerPage.getByTestId('customer-details')).toBeVisible();
+  await expect(viewerPage.getByTestId('customer-edit')).toHaveCount(0);
   await viewerPage.goto(`/sites/${someCustomer!.site_id}`);
   await expect(viewerPage.getByTestId('site-save')).toBeHidden();
   await expect(viewerPage.getByRole('button', { name: 'Draw / edit area' })).toBeHidden();
@@ -269,6 +270,7 @@ test('a multi-site customer: add a second site, fix their details, send a renewa
 
   // Fix their details. A phone typed the way people type it is accepted, and a bad one says why.
   await page.goto(`/customers/${customer.id}`);
+  await page.getByTestId('customer-edit').click();
   await page.getByLabel('Mobile').fill('12');
   await page.getByTestId('customer-save').click();
   await expect(page.getByTestId('customer-msg')).toContainText('phone');
@@ -283,6 +285,7 @@ test('a multi-site customer: add a second site, fix their details, send a renewa
   await page.getByRole('link', { name: '100 Second Lot Rd', exact: false }).first().click();
   await page.waitForURL(/\/sites\//);
   const siteId = page.url().split('/').pop()!;
+  await openQuoteForm(page);
   await page.getByTestId('q-price').fill('222');
   await page.getByTestId('q-send').click();
   const url = await page.getByTestId('q-url').inputValue();

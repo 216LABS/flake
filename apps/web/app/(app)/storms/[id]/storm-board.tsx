@@ -252,7 +252,9 @@ export function StormBoard({ stormId, tz, initial, layers, canEdit, canText, sit
           }}>Another pass</Button> : null}
           <Button className={DARK_RING} variant="outline" onClick={() => setShowMap(!showMap)}>{showMap ? 'Hide map' : 'Map'}</Button>
           {editable ? (
-            <Button className={DARK_RING} variant="danger" data-testid="close-storm" onClick={async () => {
+            // Ending the storm sits apart from the everyday buttons, on its own row on a phone, so it isn't the
+            // neighbour of Map (UX pass, Nov 23). It still asks first.
+            <Button className={cn(DARK_RING, 'col-span-2 mt-2 border-red-400 bg-transparent text-red-300 shadow-none hover:bg-red-950 hover:text-red-200 sm:col-span-1 sm:mt-0 lg:ml-4')} variant="outline" data-testid="close-storm" onClick={async () => {
               // A stray tap mid-storm must not close it, and the office should see what's still undone.
               const left = live.counts.open + live.counts.onsite;
               const ok = await ask({

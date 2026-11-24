@@ -92,3 +92,10 @@ export async function openStartForm(page: import('@playwright/test').Page) {
   const fold = page.getByTestId('start-fold');
   if ((await fold.count()) && !(await fold.evaluate((d) => (d as HTMLDetailsElement).open))) await page.getByTestId('start-fold-toggle').click();
 }
+
+/** A lot with a signed contract folds Send a new quote to one line; this opens it (no-op otherwise). */
+export async function openQuoteForm(page: import('@playwright/test').Page) {
+  await page.waitForLoadState('domcontentloaded');
+  const fold = page.getByTestId('quote-fold');
+  if ((await fold.count()) && !(await fold.evaluate((d) => (d as HTMLDetailsElement).open))) await page.getByTestId('quote-fold-toggle').click();
+}

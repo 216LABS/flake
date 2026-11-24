@@ -168,7 +168,8 @@ export default async function Dashboard() {
           )}
         </section>
       )}
-      {data.storms.billed === 0 && canEdit ? <HowItWorks step={step} /> : null}
+      {/* Not mid-storm: the storm is what matters then (UX pass, Nov 23). */}
+      {data.storms.billed === 0 && canEdit && !data.live.length ? <HowItWorks step={step} /> : null}
       <div className={`grid grid-cols-1 gap-6 ${showSetup ? 'lg:grid-cols-3' : ''}`}>
         <div className={`space-y-6 ${showSetup ? 'lg:col-span-2' : ''}`}>
           {/* (b) Snow alerts: the one section that says so when it's empty. */}

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { closeRunningStorms, login, sql, startStorm } from './helpers';
+import { closeRunningStorms, login, sql, startStorm, openQuoteForm } from './helpers';
 
 /** STAR's Nov 22 tickets (issues 231-239), screen by screen. */
 const once = (name: string) => test.skip(name !== 'iphone-13', 'once is enough');
@@ -75,6 +75,7 @@ test('contract terms: a season minimum on a quote reads in plain words, and Repo
   const c = await (await page.request.post('/api/customers', { data: { name: `Floor ${tag}`, kind: 'commercial', billing_mode: 'manual' } })).json();
   const s = await (await page.request.post('/api/sites', { data: { customer_id: c.id, label: `Floor lot ${tag}`, address: '12 Floor St, Lakewood, OH', lat: 41.48, lon: -81.8 } })).json();
   await page.goto(`/sites/${s.id}`);
+  await openQuoteForm(page);
   await page.getByTestId('q-price').fill('70');
   await page.getByTestId('q-season-min').fill('900');
   await page.getByTestId('q-link-only').click();

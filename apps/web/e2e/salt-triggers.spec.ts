@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { login, sql } from './helpers';
+import { login, sql, openQuoteForm } from './helpers';
 
 /** Issue 197: Salt is its own page. Issue 198: every lot's trigger and area in one table, and a default trigger. */
 test('Salt has its own page with on hand, next storm, season estimate, use by lot and a CSV', async ({ page }) => {
@@ -42,6 +42,7 @@ test('Snow triggers: each lot is listed with its area, an area can be renamed, a
   try {
     const [lot] = await sql`select s.id from site s where s.tenant_id = ${t!.id} and s.active limit 1`;
     await page.goto(`/sites/${lot!.id}`);
+    await openQuoteForm(page);
     await expect(page.getByTestId('q-trigger')).toHaveValue('3');
   } finally {
     await page.request.put('/api/settings/triggers', { data: { inches: 2 } });

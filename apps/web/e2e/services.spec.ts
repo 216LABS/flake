@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
-import { closeRunningStorms, login, SEASON, sql } from './helpers';
+import { closeRunningStorms, login, SEASON, sql, openQuoteForm } from './helpers';
 
 /** Issue 192: where a lot's services come from, said on screen, and walks and haul can be quoted. */
 test('a lot shows its services; with no contract it says plow only, and a quote can add salt by the ton and walks', async ({ page, browser, baseURL }) => {
@@ -14,6 +14,7 @@ test('a lot shows its services; with no contract it says plow only, and a quote 
   await expect(page.getByTestId('site-row').first().getByTestId('no-contract-chip')).toBeVisible();
   await expect(page.getByTestId('site-row').first()).not.toContainText('unavailable');
   await page.goto(`/sites/${s.id}`);
+  await openQuoteForm(page);
   await expect(page.getByTestId('lot-services')).toContainText('No signed contract: plow only, not billed');
   await expect(page.getByTestId('lot-services')).toContainText('Services come from the signed contract');
 

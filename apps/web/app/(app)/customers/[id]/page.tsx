@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { asUser, requirePage } from '@/lib/auth';
 import { isUuid } from '@/lib/http';
-import { money, phone } from '@/lib/client';
+import { money } from '@/lib/client';
 import { invoiceStatus } from '@/lib/labels';
 import { contractStanding } from '@/lib/scope';
 import { entityLink } from '@/components/links';
@@ -42,21 +42,10 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
   return (
     <>
       <PageHeader title={<>{c.name}{c.archived_at ? <Badge className="ml-2 align-middle" data-testid="archived-badge">archived</Badge> : null}</>} subtitle={c.kind === 'hoa' ? 'HOA' : `${c.kind[0]!.toUpperCase()}${c.kind.slice(1)}`} actions={ctx.role === 'viewer' ? null : <>
-        {c.archived_at ? null : <Link href={`/customers/new?customer=${c.id}`} className={buttonVariants({ variant: 'accent' })} data-testid="add-site">Add a site</Link>}
-        <ArchiveCustomer id={c.id} name={c.name} archived={Boolean(c.archived_at)} />
+        {c.archived_at ? <ArchiveCustomer id={c.id} name={c.name} archived /> : <Link href={`/customers/new?customer=${c.id}`} className={buttonVariants({ variant: 'accent' })} data-testid="add-site">Add a site</Link>}
       </>} />
-      {/* Reach them in one tap: what the office usually opens a customer for on a storm night (UX pass, Nov 23). */}
-      {c.phone_e164 || c.email ? (
-        <div className="-mt-2 mb-4 flex flex-wrap items-center gap-2" data-testid="customer-contact">
-          {c.contact_name ? <span className="mr-1 text-sm text-muted">{c.contact_name}</span> : null}
-          {c.phone_e164 ? <a href={`tel:${c.phone_e164}`} className={buttonVariants({ variant: 'outline', size: 'sm' })} data-testid="customer-call">Call {phone(c.phone_e164)}</a> : null}
-          {c.phone_e164 ? <a href={`sms:${c.phone_e164}`} className={buttonVariants({ variant: 'outline', size: 'sm' })} data-testid="customer-text">Text</a> : null}
-          {c.email ? <a href={`mailto:${c.email}`} className={buttonVariants({ variant: 'outline', size: 'sm' })} data-testid="customer-email">Email</a> : null}
-          {owed > 0 ? <Link href="/receivables" className="ml-auto text-sm font-semibold text-warn-ink underline-offset-2 hover:underline" data-testid="customer-owed-top">Owes {money(owed)}</Link> : null}
-        </div>
-      ) : null}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <fieldset disabled={ctx.role === 'viewer'} className={ctx.role === 'viewer' ? 'view-only contents' : 'contents'}><CustomerEditor customer={c} /></fieldset>
+        <CustomerEditor customer={c} canEdit={ctx.role !== 'viewer'} />
         <Card>
           <h2 className="font-semibold">Notices and payment</h2>
           <p className="mt-1 text-sm">Texts: {c.notify_sms ? 'yes' : 'no'}. Emails: {c.notify_email ? 'yes' : 'no'}.</p>
@@ -127,6 +116,8 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
           ) : null}
         </>
       ) : <p className="text-sm text-muted">No invoices yet. They show here once a storm&apos;s bills are approved.</p>}
+      {/* Archiving is rare and takes their lots off routes, so it sits at the end, not beside Add a site (UX pass, Nov 23). */}
+      {ctx.role !== 'viewer' && !c.archived_at ? <div className="mt-8 border-t border-line-faint pt-4"><ArchiveCustomer id={c.id} name={c.name} archived={false} /></div> : null}
     </>
   );
 }
